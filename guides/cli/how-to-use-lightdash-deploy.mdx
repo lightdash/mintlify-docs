@@ -2,7 +2,7 @@
 title: "Sync your changes with Lightdash deploy"
 ---
 
-## `lightdash deploy` syncs the changes in your dbt project to Lightdash[](#lightdash-deploy-syncs-the-changes-in-your-dbt-project-to-lightdash "Direct link to lightdash-deploy-syncs-the-changes-in-your-dbt-project-to-lightdash")
+## `lightdash deploy` syncs the changes in your dbt project to Lightdash
 
 If you've made some changes to your dbt project and you'd like to make them available in your Lightdash project, you can easily do this using the `lightdash deploy` command in the Lightdash CLI tool.
 
@@ -10,21 +10,21 @@ If you've made some changes to your dbt project and you'd like to make them avai
 git checkout main # checkout main or master - or whatever your production branch name is where you've merged your changes
 git pull
 lightdash deploy # --target prod. If you use developer profiles in your dbt project, you might need this flag. See below.
-
 ```
 
 This will deploy the changes in your dbt project to the Lightdash project you set up on your CLI tool earlier.
 
-<Note>
+<Info>
 Lightdash's deploy command will deploy using your **default dbt profile** unless you specify to use a different target. For example, if you've set up a developer profile where it targets a dev dataset (like `dbt_khindson.my_model_names`), then you'll need to pass the production target in your `lightdash deploy` command. Something like: `lightdash deploy --profile prod`.
-</Note>
+</Info>
+
 And voilà! Once it's completed click the URL to head straight to your project where your changes will be ready to be explored.
 
-## Automatically deploy your changes to Lightdash using a GitHub action[](#automatically-deploy-your-changes-to-lightdash-using-a-github-action "Direct link to Automatically deploy your changes to Lightdash using a GitHub action")
+## Automatically deploy your changes to Lightdash using a GitHub action
 
 If you've connected Lightdash to GitHub, you can setup a `github action` and get Lightdash to deploy your project automatically. This is the easiest way to keep Lightdash in sync with your changes in dbt.
 
-### Step 1: add the credentials to Github secrets[](#step-1-add-the-credentials-to-github-secrets "Direct link to Step 1: add the credentials to Github secrets")
+### Step 1: add the credentials to Github secrets
 
 We are going to add some secrets and config to GitHub actions, but you don't want those to be public, so the best way to do this is to add them as secrets on Github.
 
@@ -32,31 +32,33 @@ We are going to add some secrets and config to GitHub actions, but you don't wan
 <Info>
 If you already have a GitHub action for Lightdash, then you can use the same Lightdash secrets you created for your other action.
 </Info>
+
 Go to your repo, click on `Settings` , on the left sidebar, click on `Secrets` under `Security`. Now click on the `New repository secret`
+
 <Frame>
   <img src="/images/guides/cli/github-secrets-fc35152c7ebb768974b385a0e2601dc5.jpg" alt=""/>
 </Frame>
 
-
 We need to add the following secrets:
 
-#### `LIGHTDASH_API_KEY`[](#lightdash%5Fapi%5Fkey "Direct link to lightdash_api_key")
+##### `LIGHTDASH_API_KEY`
 
 Create a new personal access token, by going to `Settings` \> `Personal Access Tokens`. This is the token you'll put in for `LIGHTDASH_API_KEY`.
+
 <Frame>
   <img src="/images/guides/cli/personal-access-token-9ed8a8c2b16edc5ee745c4909d4093d3.png" alt=""/>
 </Frame>
 
 
-#### `LIGHTDASH_PROJECT`[](#lightdash%5Fproject "Direct link to lightdash_project")
+##### `LIGHTDASH_PROJECT`
 
 The UUID for your project. For example, if your URL looks like `https://eu1.lightdash.cloud/projects/3538ab33-dc90-aabb-bc00-e50bba3a5f69/tables`, then `3538ab33-dc90-45f0-aabb-e50bba3a5f69` is your `LIGHTDASH_PROJECT`
 
-#### `LIGHTDASH_URL`[](#lightdash%5Furl "Direct link to lightdash_url")
+##### `LIGHTDASH_URL`
 
 This is either `https://eu1.lightdash.cloud` or `https://app.lightdash.cloud` for Lightdash Cloud users (check the URL to your Lightdash project). If you self-host, this should be your own custom domain.
 
-#### `DBT_PROFILES`[](#dbt%5Fprofiles "Direct link to dbt_profiles")
+##### `DBT_PROFILES`
 
 Some tips for this bit:
 
@@ -66,15 +68,15 @@ Some tips for this bit:
 
 Find your data warehouse from the list below to get a profiles.yml file template. Fill out this template, and this is your `DBT_PROFILES` secret.
 
-BigQuery
-
-BigQuery OAuth:
+<AccordionGroup>
+ <Accordion title="BigQuery">
+ BigQuery OAuth:
 
 Step 1: create a secret called `GOOGLE_APPLICATION_CREDENTIALS`
 
 Add the service account credentials (the JSON file) that you want to use for your GitHub action. It should look something like this:
 
-```bash
+```yaml
 {
   "type": "service_account",
   "project_id": "jaffle_shop",
@@ -87,7 +89,6 @@ Add the service account credentials (the JSON file) that you want to use for you
   "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
   "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/jaffle_shop"
 }
-
 ```
 
 Step 2: create another secret called `DBT_PROFILES`
@@ -96,7 +97,7 @@ Copy-paste this template into the secret and fill out the details.
 
 This will always use this project connection in your GitHub actions. If you want your preview projects to have different connection settings depending on the user that opened the pull request (dev profiles), then see what you need to add to your secret [in this guide](/guides/cli/how-to-use-lightdash-preview#how-to-use-the-developer-credentials-in-your-preview-project).
 
-```bash
+```yaml
 [my-bigquery-db]: # this is the name of your project
   target: dev
   outputs:
@@ -106,16 +107,14 @@ This will always use this project connection in your GitHub actions. If you want
       keyfile: keyfile.json # no need to change this! We'll automatically use the keyfile you created in the last step.
       project: [GCP project id]
       dataset: [the name of your dbt dataset]
-
 ```
 
 More info in dbt's profiles docs: [https://docs.getdbt.com/reference/warehouse-profiles/bigquery-profile#service-account-file](https://docs.getdbt.com/reference/warehouse-profiles/bigquery-profile#service-account-file)
-
-Postgres
-
+</Accordion>
+<Accordion title="Postgres">
 Postgres profile configuration:
 
-```bash
+```yaml
 company-name:
   target: dev
   outputs:
@@ -131,18 +130,16 @@ company-name:
       keepalives_idle: 0
       connect_timeout: 10
       retries: 1
-
 ```
 
 More info in dbt's profiles docs: [https://docs.getdbt.com/reference/warehouse-profiles/postgres-profile#profile-configuration](https://docs.getdbt.com/reference/warehouse-profiles/postgres-profile#profile-configuration)
 
 This will always use this project connection in your GitHub actions. If you want your preview projects to have different connection settings depending on the user that opened the pull request (dev profiles), then see what you need to add to your secret [in this guide](/guides/cli/how-to-use-lightdash-preview#how-to-use-the-developer-credentials-in-your-preview-project).
-
-Redshift
-
+</Accordion>
+<Accordion title="Redshift">
 Redshift password-based authentication:
 
-```bash
+```yaml
 company-name:
   target: dev
   outputs:
@@ -158,18 +155,16 @@ company-name:
       keepalives_idle: 240
       connect_timeout: 10
       ra3_node: true # enables cross-database sources
-
 ```
 
 More info in dbt's profiles docs: [https://docs.getdbt.com/reference/warehouse-profiles/redshift-profile#password-based-authentication](https://docs.getdbt.com/reference/warehouse-profiles/redshift-profile#password-based-authentication)
 
 This will always use this project connection in your GitHub actions. If you want your preview projects to have different connection settings depending on the user that opened the pull request (dev profiles), then see what you need to add to your secret [in this guide](/guides/cli/how-to-use-lightdash-preview#how-to-use-the-developer-credentials-in-your-preview-project).
-
-Snowflake
-
+</Accordion>
+<Accordion title="Snowflake">
 User / Password authentication:
 
-```bash
+```yaml
 my-snowflake-db:
   target: dev
   outputs:
@@ -188,18 +183,16 @@ my-snowflake-db:
       threads: [1 or more]
       client_session_keep_alive: False
       query_tag: [anything]
-
 ```
 
 More info in dbt's profiles docs: [https://docs.getdbt.com/reference/warehouse-profiles/snowflake-profile#user--password-authentication](https://docs.getdbt.com/reference/warehouse-profiles/snowflake-profile#user--password-authentication)
 
 This will always use this project connection in your GitHub actions. If you want your preview projects to have different connection settings depending on the user that opened the pull request (dev profiles), then see what you need to add to your secret [in this guide](/guides/cli/how-to-use-lightdash-preview#how-to-use-the-developer-credentials-in-your-preview-project).
-
-DataBricks
-
+</Accordion>
+<Accordion title="DataBricks">
 Set up a DataBricks target:
 
-```bash
+```yaml
 your_profile_name:
   target: dev
   outputs:
@@ -216,14 +209,15 @@ your_profile_name:
       http_path: [/sql/your/http/path]
       token: [dapiXXXXXXXXXXXXXXXXXXXXXXX] # Personal Access Token (PAT)
       threads: [1 or more]
-
 ```
 
 More info in dbt's profiles docs: [https://docs.getdbt.com/reference/warehouse-profiles/bigquery-profile#service-account-json](https://docs.getdbt.com/reference/warehouse-profiles/bigquery-profile#service-account-json)
 
 This will always use this project connection in your GitHub actions. If you want your preview projects to have different connection settings depending on the user that opened the pull request (dev profiles), then see what you need to add to your secret [in this guide](/guides/cli/how-to-use-lightdash-preview#how-to-use-the-developer-credentials-in-your-preview-project).
+</Accordion>
+</AccordionGroup>
 
-### Step 2: Create deploy.yml workflow in Github[](#step-2-create-deployyml-workflow-in-github "Direct link to Step 2: Create deploy.yml workflow in Github")
+### Step 2: Create deploy.yml workflow in Github
 
 Go to your repo, click on `Actions` menu.
 
@@ -247,7 +241,7 @@ Give it a nice name like `deploy-lightdash.yml`
 
 And commit this to your repo by clicking on `Start commit`.
 
-### You're done![](#youre-done "Direct link to You're done!")
+### You're done!
 
 Everytime you make a change to your repo, on the `main` branch, it will automatically deploy your new config into your Lightdash projects
 
