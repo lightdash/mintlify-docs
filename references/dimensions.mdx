@@ -46,13 +46,13 @@ models:
         description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
         meta:
           dimension:
-            type: string
+            type: number
             label: 'Total revenue' # this is the label you'll see in Lightdash
             description: 'My custom description' # you can override the description you'll see in Lightdash here
             sql: 'IF(${TABLE}.revenue_gbp_total_est = NULL, 0, ${registered_user_email})' # custom SQL applied to the column from dbt used to define the dimension
             hidden: false
             round: 2
-            format: 'gbp'
+            format: '[$£]#,##0.00' # GBP rounded to two decimal points
             groups: ['finance']
       - name: forecast_date
         description: 'Date of the forecasting.'
@@ -71,12 +71,16 @@ models:
         meta:
           dimension:
             type: date
-          additional_dimensions:
-            dimension_name_one:
+            day_of_week_num:
               type: number
-              label: 'Day of Week'
+              label: 'Day of Week (number)'
               sql: 'day_of_week(${date})'
-            dimension_name_two:
+            day_of_week_day:
+              type: date
+              label: 'Day of Week (day)'
+              sql: ${date}
+              format: 'dddd'
+            is_weekday_or_weekend:
               type: boolean
               label: 'Weekday or Weekend'
               sql: "case when day_of_week(${date}) < 5 then 'weekday' else 'weekend' end"
@@ -92,9 +96,7 @@ All the properties you can customize:
 | sql                                          | No       | string                                                                                                                                         | Custom SQL applied to the column used to define the dimension.                                                                                                                                                                                             |
 | [time\_intervals](#time-intervals)           | No       | 'default' or OFF or an array\[] containing elements of [date](#date-options), [numeric](#numeric-options) or [string](#string-options) options | 'default' (or not setting the time\_intervals property) will be converted into \['DAY', 'WEEK', 'MONTH', 'YEAR'] for dates and \['RAW', 'DAY', 'WEEK', 'MONTH', 'YEAR'] for timestamps; if you want no time intervals set 'OFF'.                           |
 | hidden                                       | No       | boolean                                                                                                                                        | If set to true, the dimension is hidden from Lightdash. By default, this is set to false if you don't include this property.                                                                                                                               |
-| round                                        | No       | number                                                                                                                                         | Rounds a number to a specified number of digits                                                                                                                                                                                                            |
-| [format](#format)                            | No       | string                                                                                                                                         | This option will format the output value on the result table and CSV export. Currently supports one of the following: \['km', 'mi', 'usd', 'gbp', 'eur', 'percent', 'id']                                                                                  |
-| [compact](#compact-values)                   | No       | string                                                                                                                                         | This option will compact the number value (e.g. 1,500 to 1.50K). Currently supports one of the following: \['thousands', 'millions', 'billions', 'trillions']                                                                                              |
+| [format](#format)                           | No       | string                                                                                                                                            | This option will format the output value on the results table and CSV export. Supports spreadsheet-style formatting (e.g. #,##0.00). Use [this website](https://customformats.com/) to help build your custom format.`                                                                                 |
 | [groups](#groups)                            | No       | string or string\[]                                                                                                                            | If you set this property, the dimension will be grouped in the sidebar with other dimensions with the same group label.                                                                                                                                    |
 | [urls](#urls)                                | No       | Array of \{ url, label }                                                                                                                       | Adding urls to a dimension allows your users to click dimension values in the UI and take actions, like opening an external tool with a url, or open at a website. You can use liquid templates to customise the link based on the value of the dimension. |
 | [required\_attributes](#required-attributes) | No       | Object with \{ user\_attribute, value }                                                                                                        | Limits access to users with those attributes                                                                                                                                                                                                               |
@@ -183,7 +185,79 @@ and it will stay on multiple lines
 
 You can also use dbt docs blocks in descriptions, [more on that here](/guides/cli/how-to-auto-generate-schema-files#using-doc-blocks-to-build-better-yml-files).
 
-## Compact values
+## Format
+
+You can use the `format` parameter to have your dimensions show in a particular format in Lightdash. Lightdash supports spreadsheet-style format expressions for all dimension types.
+
+To help you build your format expression, we recommend using https://customformats.com/.
+
+```yaml
+- name: us_revenue
+  meta:
+    dimension:
+      type: number
+      description: 'Revenue in USD, with two decimal places, compacted to thousands'
+      format: '$#,##0.00," K"' # 505,430 will appear as '$505.43 K'
+    additional_dimensions:
+      percent_of_global_revenue:
+        type: number
+        description: 'Percent of total global revenue coming from US revenue.'
+        sql: ${us_revenue} / ${global_revenue}
+        format: '0.00%' # 0.67895243 will appear as '67.89%
+```
+
+Example format expressions:
+
+| Raw Value   | Formatted value | Format expression  |
+| :----------- | :--------------- | :------------------ | 
+| 100000.00   | 100,00.00 km    | '#,##0.00" km"'    | 
+| 12345232    | 12345232        | '0'                |
+| 56.7856     | 57              | '#,##0'            |
+| 15430.75436 | $15,430.75      | '[$]#,##0.00'      | 
+| 15430.75436 | $15K            | '[$]#,##0,"K"'     | 
+| 15430.75436 | $15.43K         | '[$]#,##0.00,"K"'  | 
+| 13334567    | $13.33M         | '[$]#,##0.00,,"M"' |
+| 0.6758      | 67.58%          | '#,##0.00%'        | 
+
+<Accordion title="(Legacy) format, round, and compact options">
+
+Spreadsheet-style format expressions are the recommended way of adding formatting to your metrics in Lightdash. There are legacy formatting options, listed below, which are less flexible than the spreadsheet-style formatting. 
+
+<Info>
+
+If you use both legacy and spreadsheet-style formatting options for a single dimension, Lightdash will ignore the legacy `format`, `compact`, and `round` options and only apply the spreadsheet-style formatting expression.
+
+</Info>
+
+#### Format (legacy)
+
+```yaml
+version: 2
+
+models:
+  - name: sales_stats
+    columns:
+      - name: revenue
+        description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
+        meta:
+          dimension:
+            format: 'gbp'
+```
+
+These are the options:
+
+| Option  | Equivalent format expression   | Description                                                                         | Raw value  | Displayed value |
+| :------- | :------------------------------ | :----------------------------------------------------------------------------------- | :---------- | :--------------- |
+| km      | '#,##0.00" km"'                | Adds the suffix `km` to your value                                                  | 10         | 10 km           |
+| mi      | '#,##0.00" mi"'                | Adds the suffix `mile` to your value                                                | 10         | 10 mi           |
+| usd     | '[$]#,##0.00'                  | Adds the `$` symbol to your number value                                            | 10         | $10.00          |
+| gbp     | '[$£]#,##0.00'                  | Adds the `£` symbol to your number value                                            | 10         | £10.00          |
+| eur     | '[$€]#,##0.00'                  | Adds the `€` symbol to your number value                                            | 10         | €10.00          |
+| jpy     | '[$¥]#,##0.00'                  | Adds the `¥` symbol to your number value                                            | 10         | ¥10             |
+| percent | '#,##0.00%'                    | Adds the `%` symbol and multiplies your value by 100                                | 0.1        | %10             |
+| id      | '0'                            | Removes commas and spaces from number or string types so that they appear like IDs. | 12389572   | 12389572        |
+
+#### Compact (legacy)
 
 You can compact values in your YAML. For example, if I wanted all of my revenue values to be shown in thousands (e.g. `1,500` appears as `1.50K`), then I would write something like this in my .yml:
 
@@ -195,15 +269,32 @@ You can compact values in your YAML. For example, if I wanted all of my revenue 
         - name: revenue
           meta:
             dimension:
-                compact: thousands # You can also use 'K'
+              compact: thousands # You can also use 'K'
 ```
 
-| Value     | Alias              | Example output |
-| :-------- | :----------------- | :------------- |
-| thousands | "K" and "thousand" | 1K             |
-| millions  | "M" and "million"  | 1M             |
-| billions  | "B" and "billion"  | 1B             |
-| trillions | "T" and "trillion" | 1T             |
+| Value     | Alias              | Equivalent format expression            | Example output |
+| :--------- | :------------------ | :--------------------------------------- | :-------------- |
+| thousands | "K" and "thousand" | '#,##0," K"' or '#,##0.00," K"'       | 1K             |
+| millions  | "M" and "million"  | '#,##0,," M"' or '#,##0.00,," M"'     | 1M             |
+| billions  | "B" and "billion"  | '#,##0,,," B"' or '#,##0.00,,," B"'   | 1B             |
+| trillions | "T" and "trillion" | '#,##0,,,," T"' or '#,##0.00,,,," T"' | 1T             |
+
+#### Round (legacy)
+
+You can round values to appear with a certain number of decimal points.
+
+```yaml
+	version: 2
+	models:
+	- name: sales
+	  columns:
+	    - name: revenue
+	      meta:
+	        dimension:
+	          round: 0 # equivalent format expression: '#,##0.0'
+```
+
+</Accordion>
 
 ## Time intervals
 
@@ -221,6 +312,14 @@ Lightdash breaks this out into the default intervals automatically. So, this is 
 <Frame>
   ![screenshot-default-intervals](/images/references/screenshot-default-intervals-1fb6e04e2d4f617bb22f9fea86fa52c6.png)
 </Frame>
+
+<Info>
+
+**[Formatting](#format) added to a date or timestamp dimension will be applied to all of the time intervals for that dimension.**
+
+If you want to apply different formats for different time intervals, we recommend creating [additional dimensions](#additional-dimensions) for time intervals where you want to customize the format.
+
+</Info>
 
 ### By default, the time intervals we use are:
 
@@ -296,34 +395,6 @@ You can see all of the interval options for date and timestamp fields below.
 | DAY\_OF\_WEEK\_NAME | Day of the week | String | Monday          |
 | MONTH\_NAME         | Month name      | String | March           |
 | QUARTER\_NAME       | Quarter name    | String | Q3              |
-
-## Format
-
-You can use the `format` parameter to have your dimensions show in a particular format in Lightdash.
-
-```yaml
-- name: revenue
-  description: 'Timestamp when the user was created.'
-  meta:
-    dimension:
-      format: 'usd'
-    metrics:
-      total_revenue:
-        type: sum
-        format: 'usd'
-```
-
-These are the options:
-
-| Option  | Description                                                                         | Raw value  | Displayed value |
-| :------ | :---------------------------------------------------------------------------------- | :--------- | :-------------- |
-| km      | Adds the suffix km to your value                                                    | 10         | 10 km           |
-| mi      | Adds the suffix mile to your value                                                  | 10         | 10 mi           |
-| usd     | Adds the $ symbol to your number value                                              | 10         | $10.00          |
-| gbp     | Adds the £ symbol to your number value                                              | 10         | £10.00          |
-| eur     | Adds the € symbol to your number value                                              | 10         | €10.00          |
-| percent | Adds the % symbol and multiplies your value by 100                                  | 0.1        | %10             |
-| id      | Removes commas and spaces from number or string types so that they appear like IDs. | 12,389,572 | 12389572        |
 
 ## Groups
 
@@ -559,10 +630,10 @@ columns:
       additional_dimensions:
         revenue_in_thousands:
           type: number
-          compact: thousands
+          format: '#,##0," K"'
         revenue_in_millions:
           type: number
-          compact: million
+          format: '#,##0,," M"'
 ```
 
 ### Comparing or combining columns
