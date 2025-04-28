@@ -65,32 +65,38 @@ Here is a more complete example for bar charts with `tooltips` and `pivot`
 
 ### Heatmaps
 
-Heatmaps can currently only be created using the Custom Charts feature. The following example shows how to build a simple heatmap that conveys the number of issues created in a Github repository over time.
+Heatmaps can currently only be created using the Custom Charts feature.
 
-1. Return a dataset with two dimensions, and one metric.
-2. Add the below to the Config tab, replacing the fields with the relevant field names from the Data tab.
+1. This chart works best for a simple  `string or date`  dimension and a `string` dimension, using a `numeric` metric as `color`
 
 ```json
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
   "mark": "rect",
   "encoding": {
-    "y": {
-      "field": "github_daily_date_day_of_week_index",
-      "type": "ordinal",
-      "title": "Day of Week"
-    },
     "x": {
-      "field": "github_daily_date_week",
-      "type": "temporal",
-      "title": "Week"
+      "field": "orders_order_date_week",
+      "type": "temporal"
+    },
+    "y": {
+      "field": "orders_status",
+      "type": "nominal"
     },
     "color": {
-      "field": "github_daily_issues_created_num_total",
+      "field": "orders_total_order_amount",
       "type": "quantitative",
       "aggregate": "sum",
-      "title": "Issues Created"
-    }
+      "scale": {
+        "scheme": "reds"
+      }
+    },
+    "tooltip": [
+      {
+        "field": "orders_total_order_amount",
+        "type": "quantitative",
+        "aggregate": "sum"
+      }
+    ]
   }
 }
 ```
@@ -103,8 +109,7 @@ You should output a heatmap with the standard Vega-Lite settings that looks like
 
 Bubble plots build on top of standard scatter plot visualizations, by allowing you to adjust the size of a given point based on the output of a field. Here's one looking at some Healthcare data.
 
-1. Return a dataset with one dimension, and three metrics.
-2. Add the below to the Config tab, replacing the fields with the relevant field names from the Data tab.
+1. This chart works best for a simple  `string or date`  dimension and a `numeric` metric for the `y` axis and another `numeric` metric for the size
 
 ```json
 {
@@ -112,21 +117,164 @@ Bubble plots build on top of standard scatter plot visualizations, by allowing y
   "mark": "point",
   "encoding": {
     "x": {
-      "field": "outpatient_charges_sum_total_paid",
-      "type": "quantitative"
+      "field": "orders_order_date_week",
+      "type": "temporal"
     },
     "y": {
-      "field": "outpatient_charges_sum_number_services",
+      "field": "orders_total_order_amount",
       "type": "quantitative"
     },
     "size": {
-      "field": "outpatient_charges_diff_avg_estimate_vs_avg_payment",
+      "field": "customers_unique_customer_count",
       "type": "quantitative"
     }
   }
 }
 ```
 
-Below is the Bubble Plot generated from the code above\! Experiment with further Vega-Lite settings to adjust things like Bubble size, colour and general formatting.
+You should output a bubble plot with the standard Vega-Lite settings that looks like the one below:
 
-![](/images/references/bubble-plot-custom-chart.png)
+### ![](/images/references/bubble-plot-custom-chart.png)
+
+Funnel charts
+
+Funnel charts are ideal for visualizing a flow or process where the quantity decreases step-by-step, such as sales pipelines, conversion rates, or order processes. Each stage is represented as a bar whose width reflects the corresponding value.
+
+This chart works best when you have a **categorical dimension** (like a status or step name) and a **numeric metric** (such as order amount or count) to measure at each step.
+
+1. This chart works best for a simple  `string`  dimension ( like a status or step name) and a `numeric` metric  (such as order amount or count) to measure at each step.
+
+<Tip>
+  Make sure you don't have any extra dimensions, otherwise the funnel chart will not get generated correctly.
+</Tip>
+
+This is just a sample of the template. Funnel chart configurations are a bit more complex than other charts, so we recommend loading the template directly in Lightdash instead of copying this code manually. The template will automatically map your data fields into the configuration.
+
+```json
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "config": {
+    "view": {
+      "strokeWidth": 0
+    }
+  },
+  "transform": [
+    {
+      "calculate": "datum.orders_total_order_amount + ' ' + datum.orders_status",
+      "as": "label"
+    },
+    {
+      "window": [
+        {
+          "op": "lag",
+          "field": "orders_total_order_amount",
+          "as": "previous_value"
+        }
+      ],
+      "frame": [
+        1,
+        0
+      ]
+    },
+    {
+      "calculate": "datum.previous_value ? (datum.orders_total_order_amount / datum.previous_value) * 100 : null",
+      "as": "percent_of_previous"
+    },
+    {
+      "calculate": "isValid(datum.percent_of_previous) ? '↓ ' + format(datum.percent_of_previous, '.1f') + '%' : 'N/A'",
+      "as": "change_label"
+    }
+  ],
+  "layer": [
+    {
+      "mark": {
+        "type": "bar",
+        "color": "#40817c"
+      },
+      "encoding": {
+        "x": {
+          "field": "orders_total_order_amount",
+          "type": "quantitative",
+          "stack": "center",
+          "axis": null
+        },
+        "y": {
+          "field": "orders_status",
+          "type": "nominal",
+          "axis": null,
+          "sort": null,
+          "scale": {
+            "padding": 0.5
+          }
+        },
+        "color": {
+          "field": "orders_status",
+          "scale": {
+            "range": [
+              "#bde4e2",
+              "#a2d0ce",
+              "#87bcb9",
+              "#6ea8a5",
+              "#569490",
+              "#40817c"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "mark": {
+        "type": "text",
+        "color": "white"
+      },
+      "encoding": {
+        "y": {
+          "field": "orders_status",
+          "type": "nominal",
+          "axis": null,
+          "sort": null
+        },
+        "text": {
+          "field": "label"
+        }
+      }
+    },
+    {
+      "mark": {
+        "type": "text",
+        "color": "black"
+      },
+      "encoding": {
+        "y": {
+          "field": "orders_status",
+          "type": "nominal",
+          "axis": null,
+          "sort": null
+        },
+        "yOffset": {
+          "value": -9
+        },
+        "text": {
+          "condition": {
+            "test": "datum.change_label !== 'N/A'",
+            "field": "change_label"
+          },
+          "value": ""
+        }
+      }
+    }
+  ]
+}
+```
+
+You should output a funnel chart with the standard Vega-Lite settings that looks like the one below:
+
+![Custom Funnel Chart Jp](/references/custom-funnel-chart.jpg)
+
+### Waterfall charts
+
+Waterfall charts are used to show how an initial value is affected by a series of positive and negative changes over time or across different categories. They are perfect for visualizing how different factors contribute to a total, like revenue changes, customer growth, or budget breakdowns.
+
+Each bar represents a step: increases are shown in one color (e.g., green), decreases in another (e.g., red), and the final total in a third (e.g., blue).
+
+1. This chart works best with a **time-based or categorical dimension** for the x-axis (such as year or stage) and a **numeric metric** for the y-axis (such as amount or count).
