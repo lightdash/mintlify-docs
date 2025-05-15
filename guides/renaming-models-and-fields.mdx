@@ -1,96 +1,79 @@
 ---
-title: "Renaming models, metrics and dimensions"
+title: "Renaming models, metrics, and dimensions"
 ---
 
-Lightdash provides powerful renaming capabilities that allow you to update metrics, dimensions or  models across your entire project, where those fields or models are used across charts, dashboards and even scheduled deliveries. This feature is particularly useful when you need to standardize naming conventions, fix typos, or make your metrics more user-friendly.
+This guide explains two workflows that can be used to rename metrics, dimensions, or models across your entire project. All field or model references will be updated across charts, dashboards, and scheduled deliveries. This feature is particularly useful when you need to standardize naming conventions or fix typos.
 
 <Info>
-  Most of the content can also be renamed using [Dashboards as code](https://docs.lightdash.com/references/dashboards-as-code#dashboards-as-code), however, this rename method will automatically respect the right syntax for different field types . And more importantly, it will update content that is not exposed on Dashboards as code, like scheduled deliveries. 
+  Most content can also be renamed using [Dashboards as code](/references/dashboards-as-code), however, the rename methods in this doc require fewer steps and will automatically respect the right syntax for different field types. More importantly, it will update some content that is not exposed on Dashboards as code, like scheduled delivery filters.
+
+  Chart names and descriptions will not be updated using these rename workflows. If you want to update those in bulk, we recommend using Dashboards as code.
 </Info>
 
-## **Use Case: Standardizing Field Names**
 
-Imagine you have a field called **user_id** in one model and you want to rename it **customer_id**. If you change this field in dbt, all existing lightdash content will fail, so you might want to rename all the references to that new field in your charts and dashboards. 
+## Rename in Lightdash
 
-## **Renaming via UI**
-
-After making changes to dbt, you will notice some charts will start failing. You can fix these directly on the validation page by renaming the broken charts. You can easily access to the validation page by clicking on the bell on the navigation bar.
+If you change field or table names in dbt, you will notice validation errors in your charts that use those fields or tables. You can fix these directly on the validation page by renaming references in the broken charts. You can easily access the validation page by clicking on the bell on the navigation bar.
 
 <img
-  src="/images/Screenshotfrom2025-05-1315-48-15.png"
-  alt="Screenshot from 2025-05-13 15-48-15.png"
-  title="Screenshot from 2025-05-13 15-48-15.png"
+  src="/images/rename-validation-errors.png"
+  alt="rename validation errors"
   className="mx-auto"
-  style={{ width:"57%" }}
+  style={{ width:"50%" }}
 />
 
 On the navigation page, hover over the chart you want to fix, and click on the **Fix** button.
 
-![Screenshot from 2025-05-13 15-49-35.png](/images/Screenshotfrom2025-05-1315-49-35.png)
+![rename fix button](/images/rename_fix_button.png)
 
 A popup menu will appear, where you can choose to rename a field or model using an **existing** value.
 
 <img
-  src="/images/Screenshotfrom2025-05-1309-11-51.png"
-  alt="Screenshot from 2025-05-13 09-11-51.png"
-  title="Screenshot from 2025-05-13 09-11-51.png"
+  src="/images/rename_modal.png"
+  alt="rename modal"
   className="mx-auto"
-  style={{ width:"52%" }}
+  style={{ width:"50%" }}
 />
 
-<img
-  src="/images/Screenshotfrom2025-05-1315-51-19.png"
-  alt="Screenshot from 2025-05-13 15-51-19.png"
-  title="Screenshot from 2025-05-13 15-51-19.png"
-  className="mx-auto"
-  style={{ width:"53%" }}
-/>
+Optionally, you can click **Fix all ocurrences** to rename the same field or table on all content, including other charts, dashboards and scheduled deliveries. 
 
-Optionally, you can click **Fix all ocurrences** to rename the same field / table on all content, including other charts, dashboards and scheduled deliveries. 
+If you have made mulitple field or table changes to the same chart (eg: you changed 2 metrics), you will have to perform multiple rename actions. 
 
-If you have made mulitple field / table changes to the same chart (eg: you changed 2 metrics), you will have to perform multiple rename actions. 
+After renaming, consider running validation again to ensure everything works as expected.
 
-## **Renaming via CLI**
+
+## Rename in the CLI
 
 The Lightdash CLI provides an alternative and more flexible way to rename models or fields across your project. This is a more advanced option to the UI and affects all the content in the project. The CLI will also allow you to rename content before changes happen to dbt. 
 
-### **Basic Usage**
 
-`lightdash rename --type field --from user_id --to customer_id`
+### Important CLI callouts
 
-### **Basic options**
+- Renaming is project-wide by default, but can be scoped to a specific model using the `--model` option.
+- Always use `--dry-run` first to understand the impact of your changes.
+- You can use `--list` on your actual run to get a full list of everything that was updated.
+- Only lowercase letters (a-z) and underscores `_` are allowed in field and table names.
 
-- **--type**: Specify what you're renaming (field or model)
-- **--from**: The current name you want to change
-- **--to**: The new name you want to use
-- **--project**: (Optional) Project UUID to target a specific project, if not set, it will used your current project
-- **--dry-run**: Test the rename action, no changes will be made. 
 
-Use `lightdash rename --help`  to see all available options. 
-
-### **Example Workflow**
+### Example CLI Workflow
 
 This is a sample of how you can take the most from this feature, when renaminig content on your dbt project. 
 
-- Rename a field in your dbt project YML file: **user_id** becomes **customer_id**
-- Create a preview environment to test those changes
-- Existing charts will fail, you can go into validation to confirm which ones are affected
-- Run `lightdash rename --type field --from user_id --to customer_id -p <preview-project-id> --dry-run`  to list the affected charts. 
-- If you are happy with the changes, run rename without `--dry-run`
-- Confirm all charts are referencing new fields (they might still error if you haven't updated your warehouses using dbt run) 
-- Merge the code and run rename on your main project. 
+1. Rename a field in your dbt project YML file: `user_id` becomes `customer_id`.
+2. Create a preview environment to test those changes.
+3. Existing charts will fail, you can go into validation to confirm which ones are affected.
+4. Run `lightdash rename --type field --from user_id --to customer_id -p <preview-project-id> --dry-run`  to list the affected charts. 
+5. If you are happy with the changes, run rename without `--dry-run`.
+6. Confirm all charts are referencing new fields (they might still error if you haven't updated your warehouses using dbt run).
+7. Merge the code, run dbt, then run `lightdash rename --type field --from user_id --to customer_id -p <production-project-id> --list` on your main project.
+  - The `--list` option gives you a full list of content that was changed.
 
-The CLI will show you which charts, dashboards, alerts, and dashboard schedulers will be updated and also, we will generate a JSON log that contains the affected chart/dashboard names and UUIDs, you can use those UUIDs to manually revert some of the charts to a previous version. 
+The CLI will show you which charts, dashboards, alerts, and dashboard schedulers will be updated and also, we will generate a JSON log that contains the affected chart and dashboard names and UUIDs, you can use those UUIDs to manually revert some of the charts to a previous version. 
 
-![Screenshot from 2025-05-08 12-26-05.png](/images/Screenshotfrom2025-05-0812-26-05.png)
+![rename CLI list](/images/rename_cli_list.png)
 
-## **Important Notes**
+[Read the CLI reference doc](/references/lightdash-cli#lightdash-rename) for all arguments and more examples.
 
-- Only field ids and references are updated, chart names or descriptions will remain the same. If you want to update that content, we recommend using [Dashboards as code](https://docs.lightdash.com/references/dashboards-as-code#dashboards-as-code).
-- Only lowercase letters (a-z) and underscores `_` are allowed in names
-- On the CLI, renaming is project-wide by default, but can be scoped to a specific model
-- On the CLI, always consider running a **--dry-run** first to understand the impact of your changes
-- After renaming, consider running validation to ensure everything works as expected
 
 ## Reverting changes 
 
