@@ -7,46 +7,54 @@ A metric is a value that describes or summarizes features from a collection of d
 
 In Lightdash, metrics are used to summarize dimensions or, sometimes, other metrics.
 
+
 ## Adding metrics to your project using the `meta` tag.
 
-### 1. Using the column `meta` tag (Suggested)
+
+### 1. Using the column `meta` tag
 
 To add a metric to Lightdash using the `meta` tag, you define it in your dbt project under the dimension name you're trying to describe/summarize.
 
 ```yaml
 models:
-  - name: my_model
+  - name: orders_model
     columns:
-      - name: user_id # dimension name of your metric
+      - name: user_id # dimension your metric is aggregating
         meta:
           metrics:
-            num_unique_user_ids: # name of your metric
+            distinct_user_ids: # name of your metric
               type: count_distinct # metric type
-            num_user_ids:
-              type: count
+      - name: revenue # dimension your metric is aggregating
+        meta:
+          metrics:
+            sum_revenue: # name of your metric
+              type: sum # metric type
 ```
 
 Once you've got the hang of what these metrics look like, read more about the [metric types you can use below.](#metric-types)
 
+
 ### 2. Using the model `meta` tag
 
-Sometimes a metric references many columns, in these cases you can define the metric at the model level:
+Sometimes a metric references multiple columns, in these cases you can define the metric at the model level:
 
 ```yaml
-version: 2
-
 models:
-  - name: my_model
+  - name: orders_model
     meta:
       metrics:
-        num_unique_user_ids:
-          type: count_distinct
-          sql: ${TABLE}.user_id
+        revenue_per_user:
+          type: number # number type metrics can only reference other METRICS - DIMENSIONS cannot be used in this type 
+          sql: ${sum_revenue} / ${distinct_user_ids} # two aggregation metrics from this model are referenced here
+        sum_total_paid:
+          type: sum # sum or count metrics can only reference DIMENSIONS - METRICS cannot be used in this type
+          sql: ${revenue} + ${taxes_paid} # two dimensions are added, then put inside a sum() aggregation
 ```
 
 ## Metric Categories
 
 Each metric type falls into one of these categories. The metric categories tell you whether the metric type is an aggregation and what type of fields the metric can reference:
+
 
 ### Aggregate metrics
 
