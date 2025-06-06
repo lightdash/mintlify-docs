@@ -88,6 +88,34 @@
         }
     }
 
-    // Track page view
-    window.rudderanalytics.page();
+    // Store current URL
+    let currentUrl = undefined;
+
+    // Store the original pushState and replaceState functions
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+
+    // Function to call RudderStack's page view
+    function trackPageView() {
+        // Double-check if the URL has changed
+        if( currentUrl !== window.location.href) {
+            currentUrl = window.location.href;
+            window.rudderanalytics.page();
+        }
+    }
+
+    // Override pushState to track page view
+    history.pushState = function () {
+        originalPushState.apply(this, arguments);
+        trackPageView();
+    };
+
+    // Override replaceState to track page view
+    history.replaceState = function () {
+        originalReplaceState.apply(this, arguments);
+        trackPageView();
+    };
+
+    // Listen for popstate event (browser back/forward buttons) to track page view
+    window.addEventListener('popstate', trackPageView);
 })();
