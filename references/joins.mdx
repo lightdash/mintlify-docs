@@ -317,63 +317,166 @@ Doing this (combined with using the `hidden` label for the joined table above) w
   ![](/images/references/hide-joined-table-from-tables-list-98cfc0374f1c599ad786db5d05bcd08c.jpg).
 </Frame>
 
-## Metric inflation
+## Metric inflation in SQL Joins
 
 When joining tables in SQL, it can accidentally inflate your metrics if those tables have one-to-many or many-to-many relationships. Understanding when this happens helps you know which metrics need special handling.
 
 When dealing with joins that might cause metric inflation, certain types of calculations remain safe to use. These "inflation-proof" metrics include:
 
+### Safe vs. Risky Metrics
+
+These metrics stay accurate even when the data contains duplicates:
+- **MIN/MAX functions** - `MIN(user_id)` and `MAX(user_id)` give you the same answer whether you have duplicates or not, because they're looking for the extreme values, not counting or adding things up. The maximum value in a set doesn't change just because that value appears multiple times.
 - **Aggregate functions with DISTINCT** - `COUNT(DISTINCT user_id)` ensures each user is counted only once, regardless of how many times they appear in the joined result.
 
-- **MIN/MAX functions** - `MIN(user_id)` and `MAX(user_id)` are safe because they return a single value regardless of duplication. These functions look at the entire set of values and return just one result.
+These metrics can give you the wrong answers: 
+- **SUM()**, **COUNT()**, **AVG()** without DISTINCT
+- Any calculation that treats duplicated rows as separate data points
 
-- **Custom deduplication techniques** - For other metrics, you may need to implement specific deduplication strategies based on your data model.
-
-### Examples
+### Common Scenarios and What Gets Affected
 
 #### Single one-to-many join
 
-When you join an organization table to a users table, each organization can have multiple users. In this scenario:
+**Example:** When you join an `organization` table to a `users` table, each organization can have multiple users.
+
+In this scenario:
 
 ✅ **User metrics remain accurate** - Since each user appears exactly once in the joined result, any metrics calculated on the user level (like average user age or total user count) will be correct.
 
-❌ **Organization metrics become inflated** - Each organization will appear multiple times in the result set (once for each associated user). This means organization-level metrics like "total revenue per organization" will be counted multiple times, leading to inflated results. For example, if "Acme Corp" has 5 users, its revenue would be counted 5 times in a simple SUM calculation.
+❌ **Organization metrics become inflated** - Each organization will appear multiple times in the result set (once for each associated user). This means organization-level metrics will be counted multiple times, leading to inflated results. 
+
+For example, if "ABC Corp" has 2 users, its org_total_users metric cannot be summed because it will be duplicated twice. 
+
+**Raw Tables**
+```
+# organizations table 
+organization_id | organization_name | org_total_users
+1               | ABC Corp          | 2
+2               | XYZ Ltd           | 3
+
+# users table 
+organization_id | user_id   | user_age
+1                | 100       | 57
+1                | 200       | 13
+2                | 300       | 20
+2                | 400       | 30
+2                | 500       | 19
+```
+
+**Joined Output**
+# Organizations are multiplied by the number of users
+organization_id  | user_id    | org_total_users | user_age
+1                | 100        | 2               | 57
+1                | 200        | 2               | 13
+2                | 300        | 3               | 20
+2                | 400        | 3               | 30
+2                | 500        | 3               | 19
+# We cannot sum org_total_users on this joined table 
+# because it will be incorrect. 
+```
 
 #### Chained one-to-many joins
 
-When you create a chain of one-to-many relationships by joining users to their orders, and then orders to their support tickets:
+**Example:** When you create a chain of one-to-many relationships by joining `users` to their `orders`, and then `orders` to their support `tickets`. 
+In this scenario: 
 
-✅ **Ticket metrics remain accurate** - The final table (tickets) in the chain will have accurate metrics because each ticket appears exactly once in the result set.
+✅ **Ticket metrics remain accurate** - The final table (`tickets`) in the chain will have accurate metrics because each ticket appears exactly once in the result set.
 
 ❌ **Upstream tables experience compounding inflation** - The further up the chain you go, the worse the inflation gets:
   - **Order metrics become inflated** by the number of tickets per order. If Order #1001 has 3 support tickets, any metrics for this order (like order value) will be counted 3 times.
   - **User metrics suffer even more inflation** as they're multiplied by the total number of tickets. If a user has 2 orders with 3 tickets each, user-level metrics (like lifetime value) will be counted 6 times in aggregate calculations.
 
+For example, if the user Alice has 2 orders and each of these orders have 3 tickets, after joining `users` → `orders` → `tickets`, the result would look like:
+
+**Raw Tables** 
+```
+# users table 
+user_id | user_name | user_age
+1       | Alice     | 23
+
+# orders table 
+order_id | user_id | order_total_items
+1001     | 1       | 5
+2001     | 1       | 2
+
+# tickets Table 
+order_id | ticket_id | ticket_time_to_first_response_mins
+1001     | A         | 8 
+1001     | B         | 62 
+1001     | C         | 47 
+2001     | D         | 5 
+2001     | E         | 1   
+2001     | F         | 89   
+
+```
+**Joined Output**
+```
+# Step 1: First Join users to orders
+user_name | user_age | order_id | order_total_items
+Alice     | 23       | 1001     | 5
+Alice     | 23       | 2001     | 2
+
+# Step 2: Join the result of step 1 to tickets
+user_name  | order_id    | ticket_id | user_age | order_total_items | ticket_time_to_first_response_mins 
+Alice      |  1001       |   A       | 23       | 5                 | 8  
+Alice      |  1001       |   B       | 23       | 5                 | 62  
+Alice      |  1001       |   C       | 23       | 5                 | 47  
+Alice      |  2001       |   D       | 23       | 2                 | 5    
+Alice      |  2001       |   E       | 23       | 2                 | 1    
+Alice      |  2001       |   F       | 23       | 2                 | 89    
+
+# Note: users and orders are duplicated but 
+# tickets are not which means we can only safely apply 
+# aggregates to ticket metrics 
+```
+
 #### Multiple one-to-many joins
 
-**Example:** Users → Orders AND Users → Tickets (both relate to users, but not directly to each other)
+**Example:** When you join `users` → `orders` AND `users` → `tickets` (both `orders` and `tickets` relate to `users`, but not directly to each other)
 
-This scenario creates the most problematic data situation, when you join multiple one-to-many relationships that branch from the same table but aren't directly related to each other:
+This creates the most problematic data situation, when you join multiple one-to-many relationships that branch from the same table but aren't directly related to each other. 
+In this scenario: 
 
 ❌ **EVERY aggregate metric gets inflated due to the cartesian product effect**
 
-- **User metrics become massively inflated** by the product of orders × tickets. If a user has 5 orders and 10 support tickets, each user-level metric will be counted 50 times!
+- **User metrics become massively inflated** by the product of `orders` × `tickets`. If a user has 5 orders and 10 support tickets, each user-level metric will be counted 50 times!
 
-- **Order metrics get inflated** by the number of tickets the user has. Even if an order has no tickets itself, it will appear multiple times in the result set - once for each ticket the user has.
+- **Order metrics get inflated** by the number of tickets the user has. 
 
-- **Ticket metrics get inflated** by the number of orders the user has. Similarly, each ticket will be duplicated for every order the user has placed.
+- **Ticket metrics get inflated** by the number of orders the user has.
 
-For example, if Alice has 2 orders and 3 tickets, after joining users → orders → tickets, the result would look like:
+For example, if the user Alice has 2 orders and 3 tickets, after joining `users` to both `orders` and `tickets` separately, the result would look like:
 
+**Raw Tables**
 ```
-Alice | Order 1 | Ticket 1
-Alice | Order 1 | Ticket 2
-Alice | Order 1 | Ticket 3
-Alice | Order 2 | Ticket 1
-Alice | Order 2 | Ticket 2
-Alice | Order 2 | Ticket 3
+# users table 
+user_id | user_name | user_credit_amount
+1       | Alice     | 100
 
-Result: 6 rows instead of 1
+# orders table 
+user_id | order_id | order_total_items
+1       | 1001     | 5
+1       | 2001     | 2
+
+# tickets Table 
+user_id | ticket_id | ticket_time_to_first_response_mins
+1       | A         | 8
+1       | B         | 62
+1       | C         | 47
 ```
+**The Cartesian Product (every record is joined to every other record) of users, orders and tickets** 
+```
+user_name  | order_id    | ticket_id | user_credit_amount | order_total_items | ticket_time_to_first_response_mins
+Alice      |  1001       |   A       |  100               | 5                 | 8
+Alice      |  1001       |   B       |  100               | 5                 | 62
+Alice      |  1001       |   C       |  100               | 5                 | 47
+Alice      |  2001       |   A       |  100               | 2                 | 8
+Alice      |  2001       |   B       |  100               | 2                 | 62 
+Alice      |  2001       |   C       |  100               | 2                 | 47  
 
-This creates the worst-case scenario where virtually no aggregate metric (`SUM`, `COUNT`, `AVG`) is safe without explicit deduplication techniques.
+# Note that there is duplication in users, orders 
+# and tickets records. We cannot apply aggregates 
+# on any user, order or ticket metrics without 
+# deduplicating records.  
+```
+This creates the worst-case scenario where no aggregate metric (`SUM`, `COUNT`, `AVG`) is safe without explicit deduplication techniques.
