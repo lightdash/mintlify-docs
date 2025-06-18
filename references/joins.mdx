@@ -316,3 +316,64 @@ Doing this (combined with using the `hidden` label for the joined table above) w
 <Frame>
   ![](/images/references/hide-joined-table-from-tables-list-98cfc0374f1c599ad786db5d05bcd08c.jpg).
 </Frame>
+
+## Metric inflation
+
+When joining tables in SQL, it can accidentally inflate your metrics if those tables have one-to-many or many-to-many relationships. Understanding when this happens helps you know which metrics need special handling.
+
+Only metrics using `DISTINCT`, `MAX` or `MIN` are protected from inflation:
+
+- `MAX(user_id)` ✅
+- `MIN(user_id)` ✅
+- `COUNT(DISTINCT user_id)` ✅
+
+### Examples
+
+#### Single one-to-many join
+
+**Example:** Organizations → Users (one org has many users)
+
+**Impact:**
+
+✅ **Metrics from the "many" side are accurate** (user metrics)
+❌ **Metrics from the "one" side get inflated** (organization metrics get duplicated for each user)
+
+#### Chained one-to-many joins
+
+**Example:** Users → Orders → Tickets (chain relationship where tickets belong to specific orders)
+
+**Impact:**
+
+✅ **Final table metrics are accurate** (ticket metrics)
+❌ **Upstream tables get inflated by downstream counts**
+    - Order metrics: inflated by number of tickets per order
+    - User metrics: inflated by total number of tickets
+
+#### Multiple one-to-many joins
+
+**Example:** Users → Orders AND Users → Tickets (both relate to users, but not directly to each other)
+
+**Impact:**
+
+❌ **EVERY aggregate metric gets inflated** (cartesian product effect)
+- User metrics: inflated by (orders × tickets)
+- Order metrics: inflated by number of tickets
+- Ticket metrics: inflated by number of orders
+
+This creates the worst-case scenario where no aggregate metric (`SUM`, `COUNT`, `AVG`) is safe.
+
+**Visual example:**
+
+```
+Alice has 2 orders and 3 tickets
+
+After joining users → orders → tickets:
+Alice | Order 1 | Ticket 1
+Alice | Order 1 | Ticket 2
+Alice | Order 1 | Ticket 3
+Alice | Order 2 | Ticket 1
+Alice | Order 2 | Ticket 2
+Alice | Order 2 | Ticket 3
+
+Result: 6 rows instead of 1
+```
