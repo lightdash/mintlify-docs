@@ -96,45 +96,17 @@ Then, you should see all of the projects and their project IDs in your organizat
 For the project you want to connect Lightdash to, just copy its `id` and pop it into the `project` field in the Warehouse Connection form in Lightdash.
 
 
-#### Data set 
+#### Authentication type
 
-This is the default dataset used by dbt to compile and run your dbt project. You can find this in the dbt cloud IDE or your local `profiles.yml` file.
+You can choose to connect to BigQuery with a user account (using "Sign in with Google") or with a service account using a JSON key file.
 
-If you're a dbt cloud user you can find this under your profile in the dbt cloud IDE:
+#### User Account (Sign in with Google)
 
-<Frame>
-  <img src="/images/get-started/setup-lightdash/dbt-cloud-credentials-351bb1a9bdda693be0ed82eb17705410.png" alt="" />
-</Frame>
+When you use "Sign in with Google" - Lightdash will execute queries against bigquery with your personal google user account. This is the simplest way to get connected quickly using your existing account.
 
-If you work with dbt locally, then check your `profiles.yml` file at `~/.dbt/profiles.yml` and look for a field named `dataset`:
+#### Service account (JSON Key File)
 
-```yaml
-my-profile:
-  target: dev
-  outputs:
-    dev:
-      type: bigquery
-      method: oauth
-      project: abc-123
-      dataset: my_dataset # look for this one!
-      ...
-```
-
-#### Location
-
-The data location of the dataset in BigQuery where the output of your dbt models is written to.
-
-`location` may be either a multi-regional location (e.g. `EU`, `US`), or a regional location (e.g. `us-west2` ). Check out the [BigQuery documentation](https://cloud.google.com/bigquery/docs/locations) for more information on dataset locations.
-
-You can find the location of the dataset you're using for your dbt project [in your dbt profiles.yml file](https://docs.getdbt.com/reference/warehouse-profiles/bigquery-profile#dataset-locations), or in your BigQuery console.
-
-<Frame>
-  <img src="/images/get-started/setup-lightdash/data-location-55e6d6d1001e53864486bf81014ff921.png" alt="" />
-</Frame>
-
-#### Key File
-
-To connect to BigQuery, you'll need to have a service account that you can use with Lightdash. You can read more about [creating and managing service accounts with Google BigQuery in their docs](https://cloud.google.com/iam/docs/creating-managing-service-accounts).
+To have Lightdash connect to BigQuery with a service account, you need to create the account and JSON key. You can read more about [creating and managing service accounts with Google BigQuery in their docs](https://cloud.google.com/iam/docs/creating-managing-service-accounts). You will need permissions to create service accounts and keys in your Google Project. If you don't have the permissions, use your user account instead.
 
 <Info>
   If you're creating a new service account, make sure that you save your JSON key file somewhere safe! You'll need it for connecting to Lightdash.
@@ -149,6 +121,18 @@ The service account you use with Lightdash will need to have the following roles
 If you need to provide access to data across multiple BigQuery projects, the service account will need to be granted `roles/bigquery.dataViewer` on each additional BigQuery project.
 
 Once you have a service account all ready to go, you'll need to add its JSON key file to Lightdash in the `key file` section of the Warehouse Connection page.
+
+#### Location
+
+The data location of the dataset in BigQuery where the output of your dbt models is written to.
+
+`location` may be either a multi-regional location (e.g. `EU`, `US`), or a regional location (e.g. `us-west2` ). Check out the [BigQuery documentation](https://cloud.google.com/bigquery/docs/locations) for more information on dataset locations.
+
+You can find the location of the dataset you're using for your dbt project [in your dbt profiles.yml file](https://docs.getdbt.com/reference/warehouse-profiles/bigquery-profile#dataset-locations), or in your BigQuery console.
+
+<Frame>
+  <img src="/images/get-started/setup-lightdash/data-location-55e6d6d1001e53864486bf81014ff921.png" alt="" />
+</Frame>
 
 
 #### Timeout in seconds
@@ -395,7 +379,48 @@ If you're a snowflake admin you can list all users available in the snowflake co
 
 #### Authentication type
 
-Choose to authenticate using either a Private Key (recommended) or a Password.
+Choose to authenticate using either a user account (using "Sign in with Snowflake") or with a service account using a JSON key file or password.
+
+#### Sign in with Snowflake
+
+This method requires you to configure an Oauth2 flow from your Snowflake warehouse.
+
+<Accordion title="Adding security integration on Snowflake warehouse">
+
+To do this, first open an SQL console on your Snowflake warehouse, and create a `security integration` like this: 
+
+```
+CREATE SECURITY INTEGRATION lightdash_oauth
+  TYPE = OAUTH
+  ENABLED = TRUE
+  OAUTH_CLIENT = 'CUSTOM'
+  OAUTH_CLIENT_TYPE = 'CONFIDENTIAL'
+  OAUTH_REDIRECT_URI = 'https://<customer>.lightdash.cloud/api/v1/oauth/redirect/snowflake'
+  OAUTH_ISSUE_REFRESH_TOKENS = TRUE
+```
+
+Now you can get the integration details using 
+
+```
+DESCRIBE SECURITY INTEGRATION lightdash_oauth;
+
+```
+
+Copy the `OAUTH_AUTHORIZATION_ENDPOINT` and `OAUTH_TOKEN_ENDPOINT`
+
+Then run 
+
+```
+SELECT SYSTEM$SHOW_OAUTH_CLIENT_SECRETS('LIGHTDASH_OAUTH');
+```
+
+And copy the `OAUTH_CLIENT_SECRET`, `OAUTH_CLIENT_SECRET_2` and `OAUTH_CLIENT_ID`
+
+Finally, contact the Lightdash Team support@lightdash.com to setup Sign in with Snowflake for your instance.
+
+</Accordion>
+
+You can read more about this on [Snowflake official docs](https://docs.snowflake.com/en/user-guide/oauth-snowflake-overview)
 
 #### Private Key
 
