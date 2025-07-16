@@ -4,105 +4,118 @@ description: "You can run queries against the tables in your Lightdash project."
 sidebarTitle: "Tables"
 ---
 
-Tables are built from dbt models (either one, or many joined together).
+Tables in Lightdash are built from dbt models (either one, or many joined together).
+
 
 ## Adding Tables to your project
 
-Tables come from dbt models that have been defined in your dbt project's schema.yml files.
+Tables come from dbt models that have been defined in your dbt project's `schema.yml` files.
 
-If your dbt model has been defined in a .yml file, it will appear in Lightdash as a table.
+If your dbt model has been defined in a YAML file, and has at least one column documented, it will appear in Lightdash as a table.
 
-For example, if we had this in our schema.yml files in dbt, we'd see a Table called `users` in Lightdash.
+For example, if we had this in our `schema.yml` files in dbt, we'd see a Table called **Users** in Lightdash.
 
 ```yaml
-version: 2
-
 models:
   - name: users
+    columns:
+      - name: user_id
+        description: "The unique identified for each user"
 ```
 
 You can read more about [adding Tables to Lightdash here](/guides/adding-tables-to-lightdash).
 
+
 ## Table configuration
 
-You can customize your Tables in your dbt model's YAML file. Here's an example of the properties used in defining a Table:
+You can customize how Tables look in Lightdash by adding configuration to your YAML file. Here's an example of most the properties you can use when defining a Table:
 
 ```yaml
-version: 2
-
 models:
-  - name: my_table
+  - name: users
     meta:
-      label: 'My Custom Table Name'
+      label: 'App Users'
       order_fields_by: 'label'
-      group_label: 'Revenue'
-      sql_filter: ${date_dimension} > '2020-01-01'
-      primary_key: column_a
+      group_label: 'Mobile App'
+      sql_filter: ${date_dimension} >= '2025-01-01'
+      primary_key: user_id
       joins:
-        - join: my_other_table
-          sql_on: ${my_table.column_a} = ${my_other_table.column_a}
+        - join: events
+          sql_on: ${users.user_id} = ${events.user_id}
+          relationship: one-to-many
       required_attributes:
-        is_admin: 'true'
+        product_team: 'Mobile'
+      explores:
+        users_pii:
+          required_attributes:
+            has_pii_access: true 
+          joins: 
+            - join: users_pii
+              sql_on: ${users.user_id} = ${users_pii.user_id}
+              relationship: one-to-one
 ```
 
 Here are all of the properties you can customize:
 
 | Property                                                  | Value                                 | Note                                                                                                                                               |
-| :-------------------------------------------------------- | :------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------- |
-| label                                                     | string                                | Custom label. This is what you'll see in Lightdash instead of the Table name.                                                                      |
-| [order_fields_by](#order-fields-by)                       | 'index' or 'label'                    | How the fields will be sorted in the sidebar. [Read more about the order rules in here](#order-fields-by)                                          |
-| [joins](/references/joins)                                | array                                 | Join logic to join other data models to the Table. [Read more about joins in here.](/references/joins)                                             |
-| [metrics](/references/metrics#2-using-the-model-meta-tag) | object                                | Model metrics. [Read more about model metrics in here](/references/metrics#2-using-the-model-meta-tag)                                             |
-| [group_label](#group-label)                               | string                                | Group tables in the sidebar. [Read more about the group label in here](#group-label)                                                               |
-| [sql_filter](#sql-filter)                                 | string                                | A permanent filter that will always be applied when querying this table directly. Read more about sql_filter [below](#sql-filter)                  |
-| [sql_where](#sql-filter)                                  | string                                | Alias for sql_filter                                                                                                                               |
-| [required_attributes](#required-attributes)               | Object with \{ user_attribute, value } | Limits access to users with those attributes. [Read more about user attributes in here](/references/user-attributes)                               |
-| group_details                                             | Object with \{ label, description }    | Describes the groups for dimensions and metrics                                                                                                    |
-| [default_filters](#default-filters)                       | Array of \{ filter field value }       | Dimension filters that will be applied when no other filter on those dimension exists. Read more about default_filters [below](#default-filters)   |
+| :-------------------------------------------------------- | :----------- | :-------------------------------------------------------------------- |
+| label                                                     | string       | Custom label. This is what you'll see in Lightdash instead of the Table name. |
+| [order_fields_by](#order-fields-by)                       | `index` or `label` | How the fields will be sorted in the sidebar. [Read about the order rules.](#order-fields-by) |
+| [joins](/references/joins)                                | array | Join logic to join other data models to the Table. [Read about joins.](/references/joins) |
+| [metrics](/references/metrics#2-using-the-model-meta-tag) | object | Model metrics. [Read about model metrics](/references/metrics#2-using-the-model-meta-tag) |
+| [group_label](#group-label)                               | string | Group tables in the sidebar. [Read about the group label.](#group-label) |
+| [sql_filter](#sql-filter)                                 | string | A permanent filter that will always be applied when querying this table directly. [Read about `sql_filter`.](#sql-filter) |
+| [sql_where](#sql-filter)                                  | string | Alias for `sql_filter` |
+| [required_attributes](#required-attributes)               | object | Limits access to users with those attributes. [Read about user attributes](/references/user-attributes) |
+| group_details                                             | object | Describes the groups for dimensions and metrics |
+| [default_filters](#default-filters)                       | array | Dimension filters that will be applied when no other filter on those dimension exists. [Read about `default_filters`](#default-filters) |
+| [explores](#explores)                                     | object | Allows you to define multiple table explores in Lightdash from a single dbt model.
 
 
-### If you've added a new dbt model to your project, you need to do `dbt run` \+ `dbt refresh` before it will appear in Lightdash
+### Adding a new dbt model 
+
+If you've added a new dbt model to your project, you need to do `dbt run` \+ `dbt refresh` before it will appear in Lightdash.
 
 Lightdash gets information about your data models from dbt. But it gets information about the data **_generated_** by those data models from your data warehouse.
 
 This means that if you add a new dbt model to your project or update a model so that you're making changes to the table it generates, then you need to do two things before your changes will appear in Lightdash:
 
-1. **`Materialize the new table/changes to the table (using dbt run).`** You basically want the data in your data warehouse to be the new table you're expecting. So you need to do `dbt run` to update the table from the data model you just changed.
-2. **`Click dbt refresh in Lightdash.`** This will re-sync your dbt project in Lightdash so that any changes you made to your dbt models is shown in Lightdash (e.g. adding a new table).
+1. **Materialize the new table or changes using dbt run.** You want the data in your data warehouse to be the new table you're expecting. So you need to do `dbt run` to update the table from the data model you just changed.
+2. **Click Refresh dbt in Lightdash or run `lightdash refresh` in the CLI.** This will re-sync your dbt project in Lightdash so that changes you made to your dbt models are shown in Lightdash (e.g. adding a new table or column).
+
 
 ### Order fields by
 
-By default, the fields in your sidebar for any table will appear alphabetically (`order_fields_by: "label"`). Sometimes, you might not want your fields to appear alphabetically, but instead, in the same order as they are in your model's dbt .yml file. You can achieve this by setting the `order_fields_by` parameter in your table's meta tag to `index`, like this:
+By default, the fields in your sidebar for any table will appear alphabetically (`order_fields_by: "label"`). Sometimes, you might not want your fields to appear alphabetically, but instead, in the same order as they are in your YAML file. You can achieve this by setting the `order_fields_by` parameter in your table's meta tag to `index`, like this:
 
 ```yaml
-version: 2
-
 models:
-  - name: my_table
+  - name: users
     meta:
       order_fields_by: 'index'
     columns:
       - name: user_id
-      - name: product_id
-      - name: account_id
+      - name: user_name
+      - name: user_email
 ```
 
 So, in the example above, the fields in the sidebar for "My Table" would appear in the order:
 
 - user_id
-- product_id
-- account_id
+- user_name
+- user_email
 
 Instead of being listed alphabetically.
 
 Here are some other things worth mentioning about the `order_fields_by` parameter:
 
 - By default, `order_fields_by` is set to `label`, which means that your fields will appear in the table listed alphabetically.
-- Since metrics can be declared in multiple places within your .yml (as a dbt metric, in the model `meta` tag, under a dimension's `meta`), we force the following order on metrics if you set `order_fields_by` to `index`:
+- Since metrics can be declared in multiple places within your YAML (as a dbt metric, in the model `meta` tag, under a dimension's `meta`), we force the following order on metrics if you set `order_fields_by` to `index`:
   - dbt metrics appear first
   - then, metrics defined in the model's `meta`
   - then, metrics defined in the dimensions' `meta`
 - Group labels inherit the index of the first dimension that use them.
+
 
 ### Group label
 
@@ -117,6 +130,7 @@ The tables in your sidebar will appear in the following order:
 <Frame>
   ![](/images/references/table-group-label-a6d42e6d72a08f15c392fb7cb03a2e6a.png)
 </Frame>
+
 
 ### SQL filter (row-level security)
 
@@ -134,12 +148,11 @@ models:
 Any queries that I run using the `Sales` table in Lightdash will always have a filter for `sales_region = 'EMEA'` in their compiled SQL
 
 ```yaml
-SELECT
-  [...]
-FROM `lightdash`.`prod`.`sales`
-
-WHERE sales_region = 'EMEA'
+select [...]
+from lightdash.prod.sales
+where sales_region = 'EMEA'
 ```
+
 
 ##### Row-level security using user attributes
 
@@ -154,6 +167,7 @@ models:
       sql_filter: ${TABLE}.sales_region IN (${lightdash.attributes.sales_region})
 ```
 
+
 ##### `sql_filter` will only be applied when querying tables directly.
 
 For example:
@@ -163,6 +177,7 @@ For example:
 - A user queries Table A and adds a field from the joined table (Table B) to their query
 - the `sql_filter` from Table B will **not** be applied to the query (you would need to add this as a `sql_filter` to Table A directly for it to apply)
 
+
 ##### If you reference a dimension from a joined table in your `sql_filter`, the referenced table will always be joined in your queries.
 
 For example:
@@ -171,6 +186,7 @@ For example:
 - In Table A, you've added a `sql_filter: ${TABLE}.sales_region = 'EMEA' OR ${table_b}.sales_region IS NULL`
 - Table B will always be joined to Table A in your queries (even if there are no fields from Table B selected in your results table)
 
+
 ### Required attributes
 
 Lightdash can use [user attributes](/references/user-attributes) to limit some tables to some users.
@@ -178,7 +194,6 @@ Lightdash can use [user attributes](/references/user-attributes) to limit some t
 In the example below, only users with `is_admin` attribute `true` can use the `payments` table. Users without access to this table will not see it on the `tables page` or the `explore page` when joined to other tables.
 
 ```yaml
-version: 2
 models:
   - name: payments
     meta:
@@ -187,6 +202,7 @@ models:
 ```
 
 If a user without access to this table runs a query that contains this table, they will get a `Forbidden` error.
+
 
 ## Default filters
 
@@ -212,13 +228,13 @@ models:
 ```
 
 <Info>
-  A _required_ filter's field reference can't be changed, but its operator (is, is not, etc.) and value can be changed when querying the table from the UI
+  A _required_ filter's field reference can't be changed, but its operator (is, is not, etc.) and value can be changed when querying the table from the UI.
 </Info>
+
 
 ### If you have many filters in your list, they will be joined using `AND`
 
 ```yaml
-version: 2
   - name: orders
     meta:
       default_filters:
@@ -242,8 +258,6 @@ In the example above, the `orders` table will have a default filter of `date` in
 Note that we do also support a _legacy_ structure for defining required filters, see below:
 
 ```yaml
-version: 2
-
 models:
   - name: orders
     meta:
@@ -257,11 +271,13 @@ models:
             type: date
 ```
 
+
 ## Defining primary keys
 
 You can specify a primary key for your model to uniquely identify each row. This is important for tables as it helps Lightdash understand the relationships between tables and prevent data duplication, especially when dealing with SQL fanouts in joins.
 
 The primary key can be defined in two ways:
+
 
 ### Single column primary key
 
@@ -287,6 +303,7 @@ models:
 
 Using a properly defined primary key helps Lightdash optimize queries and provide accurate results when working with joined tables. It's especially important for preventing metric inflation in SQL joins where duplicate rows can lead to incorrect aggregations.
 
+
 ## Available filter types
 
 | Type                          | Example (in English)                           | Example (as code)           |
@@ -307,3 +324,40 @@ Using a properly defined primary key helps Lightdash optimize queries and provid
 | is not null                   | Status is not NULL                             | status: "\!null"            |
 | is [boolean]                  | Is complete is true                            | is_complete: "true"         |
 | is not [boolean]              | Is complete is false or null                   | is_complete: "\!true"       |
+
+## Explores
+
+You can define multiple table explores from a single table using the `explores` config. This will allow you to list the same dbt model multiple times in the list of Tables in Lightdash. You can use it to show different versions of a table, join different tables to the base table, customize table visibility, etc.
+
+Below is an advanced example of using Explores. This will result in three total tables using the `deals` model at the base. 
+
+- **Deals** will not have any joins or limitations 
+- **Deals w/Accounts** will join to the `accounts` table and show all Accounts fields, but only people with the `is_exec` user attribute can see it
+- **Deals w/Accounts (no Names)** will join to the `accounts` table and only show Industry and Segment dimensions, it has no access restrictions
+
+```yaml
+models:
+- name: deals
+  meta:
+    primary_key: deal_id
+    explores:
+      deals_accounts:
+        required_attributes:
+          is_exec: "true"
+        label: 'Deals w/Accounts'
+        description: The deals table with the Accounts table details included
+        joins:
+        - join: accounts
+          relationship: many-to-one
+          sql_on: ${deals.account_id} = ${accounts.account_id}
+      deals_accounts_no_names:
+        label: 'Deals w/Accounts (no Names)'
+        description: The deals table with the Accounts table details included
+        joins:
+        - join: accounts
+          relationship: many-to-one
+          sql_on: ${deals.account_id} = ${accounts.account_id}
+          fields: [industry, segment, unique_accounts, unique_smb_accounts, unique_midmarket_accounts, unique_enterprise_accounts]
+```
+
+All the [table configuration options](#table-configuration) can be used under the `explores` tag.
