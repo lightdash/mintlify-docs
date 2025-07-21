@@ -173,6 +173,133 @@ You'll need `Hybrid identity administrator` permissions to configure SCIM for yo
 For example, if a user is provisioned as inactive or is deactivated in Azure, that user will still exist in Lightdash marked as inactive, meaning they will be unable to use the platform.
 </Info>
 
+## User Role Provisioning
+
+Lightdash supports provisioning user roles through SCIM, allowing identity providers to specify and manage user roles (admin, member, etc.) when provisioning users. This makes it easier to manage user permissions directly from your identity provider without requiring additional steps in Lightdash.
+
+### Lightdash Extension Schema
+
+To set user roles, Lightdash provides an extension schema that can be included in SCIM requests:
+
+```
+urn:lightdash:params:scim:schemas:extension:2.0:User
+```
+
+The extension schema supports the following properties:
+
+| Property | Description | Required | Default |
+|:---------|:------------|:--------:|:-------:|
+| `role`   | The user's role in the organization | No | `member` [1] |
+
+<Info>
+[1] If the role property is missing when creating a user, the user will be created with the role `member`.
+</Info>
+
+### Valid Roles
+
+The following roles are supported:
+- `member`
+- `viewer`
+- `interactive_viewer`
+- `editor`
+- `developer`
+- `admin`
+
+### SCIM API examples
+
+Here are curl commands for user creation and role updates using the SCIM API in Lightdash.
+
+#### Prerequisites
+```bash
+# Set these variables before running the commands
+SCIM_TOKEN="your-scim-token-here"
+LIGHTDASH_URL="https://your-lightdash-instance.com"  # No trailing slash
+USER_ID="existing-user-id"  # Only needed for update operations
+```
+
+#### Create a New User with Role
+
+```bash
+curl -X POST "${LIGHTDASH_URL}/api/v1/scim/v2/Users" \
+  -H "Authorization: Bearer ${SCIM_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "schemas": [
+      "urn:ietf:params:scim:schemas:core:2.0:User",
+      "urn:lightdash:params:scim:schemas:extension:2.0:User"
+    ],
+    "userName": "newuser@example.com",
+    "name": {
+      "givenName": "New",
+      "familyName": "User"
+    },
+    "active": true,
+    "emails": [
+      {
+        "value": "newuser@example.com",
+        "primary": true
+      }
+    ],
+    "urn:lightdash:params:scim:schemas:extension:2.0:User": {
+      "role": "admin"
+    }
+  }'
+```
+
+#### Update User Role with PUT
+
+```bash
+curl -X PUT "${LIGHTDASH_URL}/api/v1/scim/v2/Users/${USER_ID}" \
+  -H "Authorization: Bearer ${SCIM_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "schemas": [
+      "urn:ietf:params:scim:schemas:core:2.0:User",
+      "urn:lightdash:params:scim:schemas:extension:2.0:User"
+    ],
+    "userName": "existinguser@example.com",
+    "name": {
+      "givenName": "Existing",
+      "familyName": "User"
+    },
+    "active": true,
+    "emails": [
+      {
+        "value": "existinguser@example.com",
+        "primary": true
+      }
+    ],
+    "urn:lightdash:params:scim:schemas:extension:2.0:User": {
+      "role": "editor"
+    }
+  }'
+```
+
+#### Update User Role with PATCH
+
+```bash
+curl -X PATCH "${LIGHTDASH_URL}/api/v1/scim/v2/Users/${USER_ID}" \
+  -H "Authorization: Bearer ${SCIM_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+    "Operations": [
+      {
+        "op": "Add",
+        "path": "urn:lightdash:params:scim:schemas:extension:2.0:User:role",
+        "value": "viewer"
+      }
+    ]
+  }'
+```
+
+#### Get User to Verify Role
+
+```bash
+curl -X GET "${LIGHTDASH_URL}/api/v1/scim/v2/Users/${USER_ID}" \
+  -H "Authorization: Bearer ${SCIM_TOKEN}"
+```
+
 ## Rotating a SCIM access token
 
 To maintain security, you may want to rotate your SCIM access tokens periodically. Follow these steps to rotate an existing token.
