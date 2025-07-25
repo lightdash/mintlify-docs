@@ -33,7 +33,6 @@ When you open Lightdash, the dimensions and metrics from your joined model will 
   - The `sql_on` statement can include references to [user attributes](/references/user-attributes) for row-level filtering.
 </Tip>
 
-
 ## Rename a joined model
 
 When joining tables, you may want to rename for readability. This can be done with the `label` tag, for example on the `messages` model it makes sense to rename the joined `users` table as "Sender":
@@ -48,8 +47,7 @@ models:
           sql_on: ${messages.sent_by} = ${users.user_id}
 ```
 
-
-## Join the same table multiple times 
+## Join the same table multiple times
 
 If you need to join a table multiple times, you can use an `alias` to distinguish between the different tables. A common use case is joining a user table multiple times to another table depending on the type of user. For example this `messages` model has both a sender and a recipient:
 
@@ -71,7 +69,6 @@ Note the following important differences when using alias in joins:
 1. You must reference the fields in the model using the new alias. Notice that the joins above use `${sender.user_id}` rather than `${users.user_id}`.
 2. Because of the above, any fields in the base model or joined model that reference any field `${users.*}` will fail to compile. Be careful of aliasing tables that are used in the base model.
 3. Joined models are automatically relabelled with the alias but you may also customise this using the `label:` field as above.
-
 
 ## Specify your join type
 
@@ -95,13 +92,12 @@ models:
 
 Here's a table to help you understand what each join type means and how it translates to SQL:
 
-| Join Type            | Generated SQL    | Description                                 |
-| :------------------- | :--------------- | :------------------------------------------------------ |
-| [inner](#inner) | inner join | Returns rows that have matching values in both tables. |
-| [left](#left)   | left outer join  | Returns all rows from the left table, and the matching rows from the right table. Non-matching rows will have NULL for right table's columns. |
-| [right](#right) | right outer join | Returns all rows from the right table, and the matching rows from the left table. Non-matching rows will have NULL for left table's columns. |
+| Join Type       | Generated SQL    | Description                                                                                                                                                     |
+| :-------------- | :--------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [inner](#inner) | inner join       | Returns rows that have matching values in both tables.                                                                                                          |
+| [left](#left)   | left outer join  | Returns all rows from the left table, and the matching rows from the right table. Non-matching rows will have NULL for right table's columns.                   |
+| [right](#right) | right outer join | Returns all rows from the right table, and the matching rows from the left table. Non-matching rows will have NULL for left table's columns.                    |
 | [full](#full)   | full outer join  | Returns all rows when there is a match in either the left or right table records. Non-matching rows will have NULL for columns of the table that lacks a match. |
-
 
 ### inner
 
@@ -155,7 +151,6 @@ models:
 
 A full join returns all rows when there is a match in either the left or right table records. Non-matching rows will have `NULL` for columns of the table that lacks a match. For example, if you have a `users` table and a `subscriptions` table, a full join would return all users and all subscriptions, and the subscription information for users who have a subscription.
 
-
 ## Defining join relationships
 
 You can define the relationship between tables in your joins to help Lightdash show warnings and generate the appropriate SQL. This is especially useful for preventing SQL fanouts issues described in the [SQL fanouts](#sql-fanouts) section.
@@ -173,12 +168,11 @@ models:
           relationship: one-to-many
 ```
 
-Supported values: 
+Supported values:
 
 - `one-to-many`
 - `many-to-one`
 - `one-to-one`
-
 
 ## Always join a table
 
@@ -196,7 +190,6 @@ models:
 
 This will make sure that even when you don't select any of the fields from the joined table it will still be joined in the query.
 
-
 ## Only select a subset of fields from a join
 
 Use the `fields` tag to select a subset of fields from a join. This is useful if you want to join a model but only a few of its fields are useful in the joined context. For example this `messages` model only needs the `name` and`email` fields from the `users` model. Note we must also include the `user_id` field since it's needed for the join.
@@ -210,7 +203,6 @@ models:
           sql_on: ${messages.sent_by} = ${users.user_id}
           fields: [user_id, email, name]
 ```
-
 
 ## Using joined dimensions or metrics in your YAML
 
@@ -273,7 +265,6 @@ models:
   Check out our [dimensions](/references/dimensions) and [metrics](/references/metrics) reference docs to see all of the other configurations you can use with your joined fields.
 </Warning>
 
-
 ## Hide joined tables
 
 Sometimes, you need to use an intermediate model to join two models together and don't want to show its columns in the list of available metrics/dimensions. You can add a `hidden: true` tag to joins, like this to hide these intermediate models:
@@ -298,26 +289,23 @@ Using just the `hidden` tag in the join and changing nothing else will remove th
 
 You can adjust which tables show up in the Tables list by adjusting your tables configuration under project settings, [read the guide here](/guides/adding-tables-to-lightdash#configuring-which-tables-appear-in-your-lightdash-project).
 
-
 ## SQL fanouts
 
 When joining tables in SQL, it can accidentally inflate your metrics if those tables have one-to-many relationships. Understanding when this happens helps you know which metrics need special handling.
 
 When dealing with joins that might cause metric inflation, certain types of calculations remain safe to use.
 
-
 ### Safe vs. risky metrics
 
 These metrics stay accurate even when the data contains duplicates:
 
 - **min and max:** `min(order_total)` and `max(order_total)` give you the same answer whether you have duplicates or not, because they're looking for the extreme values, not counting or adding things up. The maximum value in a set doesn't change just because that value appears multiple times.
-- **Aggregate functions with `distinct`:** `count(distinct user_id)` ensures each user is counted only once, regardless of how many times they appear in the joined result.
+- **`Aggregate functions with distinct:`** `count(distinct user_id)` ensures each user is counted only once, regardless of how many times they appear in the joined result.
 
 These metrics can give you the wrong answers:
 
-- `sum`, `count`, `avg` without using distinct 
+- `sum`, `count`, `avg` without using distinct
 - Custom calculations that treat duplicated rows as separate data points
-
 
 ### Common scenarios and what gets affected
 
@@ -335,41 +323,36 @@ For example, if "ABC Corp" has 2 users, its org_total_users metric cannot be sum
 
 **Raw tables**
 
-
-`organizations` table 
-
-
+`organizations` table
 
 | organization_id | organization_name | org_total_users |
 | :-------------- | :---------------- | :-------------- |
 | 1               | ABC Corp          | 2               |
 | 2               | XYZ Ltd           | 3               |
 
-`users` table 
+`users` table
 
-| organization_id | user_id   | user_age |
-| :-------------- | :-------- | :------- |
-| 1               | 100       | 57       |
-| 1               | 200       | 13       |
-| 2               | 300       | 20       |
-| 2               | 400       | 30       |
-| 2               | 500       | 19       |
-
+| organization_id | user_id | user_age |
+| :-------------- | :------ | :------- |
+| 1               | 100     | 57       |
+| 1               | 200     | 13       |
+| 2               | 300     | 20       |
+| 2               | 400     | 30       |
+| 2               | 500     | 19       |
 
 **Joined Output**
 
 Organizations are multiplied by the number of users
 
-| user_id        | organization_id  | org_total_users | user_age |
-| :------------- | :--------- | :-------------- | :-------------- |
-| 100            | 1          | 2               | 57 |
-| 200            | 1          | 2               | 13 |
-| 300            | 2          | 3               | 20 |
-| 400            | 2          | 3               | 30 |
-| 500            | 2          | 3               | 19 |
+| user_id | organization_id | org_total_users | user_age |
+| :------ | :-------------- | :-------------- | :------- |
+| 100     | 1               | 2               | 57       |
+| 200     | 1               | 2               | 13       |
+| 300     | 2               | 3               | 20       |
+| 400     | 2               | 3               | 30       |
+| 500     | 2               | 3               | 19       |
 
-We cannot sum org_total_users on this joined table because it will be incorrect. 
-
+We cannot sum org_total_users on this joined table because it will be incorrect.
 
 #### Chained one-to-many joins
 
@@ -388,54 +371,53 @@ For example, if the user Alice has 2 orders and each of these orders have 3 tick
 
 **Raw tables**
 
-`users` table 
+`users` table
 
 | user_id | user_name | user_age |
 | :------ | :-------- | :------- |
-| 1       | Alice     | 23 |
+| 1       | Alice     | 23       |
 
-`orders` table 
+`orders` table
 
 | order_id | user_id | order_total_items |
-| :------ | :-------- | :------- |
-| 1001     | 1       | 5 |
-| 2001     | 1       | 2 |
+| :------- | :------ | :---------------- |
+| 1001     | 1       | 5                 |
+| 2001     | 1       | 2                 |
 
-`tickets` Table 
+`tickets` Table
 
 | order_id | ticket_id | ticket_time_to_first_response_mins |
-| :------ | :-------- | :------- |
-| 1001     | A         | 8 |
-| 1001     | B         | 62 |
-| 1001     | C         | 47 |
-| 2001     | D         | 5 |
-| 2001     | E         | 1   |
-| 2001     | F         | 89   |
+| :------- | :-------- | :--------------------------------- |
+| 1001     | A         | 8                                  |
+| 1001     | B         | 62                                 |
+| 1001     | C         | 47                                 |
+| 2001     | D         | 5                                  |
+| 2001     | E         | 1                                  |
+| 2001     | F         | 89                                 |
 
 **Joined output**
 
 Step 1: First Join users to orders
 
 | user_name | user_age | order_id | order_total_items |
-| :------ | :-------- | :------- | :------- |
-| Alice     | 23       | 1001     | 5 |
-| Alice     | 23       | 2001     | 2 |
+| :-------- | :------- | :------- | :---------------- |
+| Alice     | 23       | 1001     | 5                 |
+| Alice     | 23       | 2001     | 2                 |
 
 Step 2: Join the result of step 1 to tickets
 
-| user_name  | order_id    | ticket_id | user_age | order_total_items | ticket_time_to_first_response_mins |
-| :------ | :-------- | :------- | :------- | :------- | :------- |
-| Alice      |  1001       |   A       | 23       | 5                 | 8 | 
-| Alice      |  1001       |   B       | 23       | 5                 | 62 | 
-| Alice      |  1001       |   C       | 23       | 5                 | 47  |
-| Alice      |  2001       |   D       | 23       | 2                 | 5    |
-| Alice      |  2001       |   E       | 23       | 2                 | 1    |
-| Alice      |  2001       |   F       | 23       | 2                 | 89    |
+| user_name | order_id | ticket_id | user_age | order_total_items | ticket_time_to_first_response_mins |
+| :-------- | :------- | :-------- | :------- | :---------------- | :--------------------------------- |
+| Alice     | 1001     | A         | 23       | 5                 | 8                                  |
+| Alice     | 1001     | B         | 23       | 5                 | 62                                 |
+| Alice     | 1001     | C         | 23       | 5                 | 47                                 |
+| Alice     | 2001     | D         | 23       | 2                 | 5                                  |
+| Alice     | 2001     | E         | 23       | 2                 | 1                                  |
+| Alice     | 2001     | F         | 23       | 2                 | 89                                 |
 
 <Note>
   Note that `users` and `orders` are duplicated but `tickets` are not, which means we can only safely apply aggregates to metrics on the `tickets` table.
 </Note>
-
 
 #### Multiple one-to-many joins
 
@@ -454,45 +436,43 @@ For example, if the user Alice has 2 orders and 3 tickets, after joining `users`
 
 **Raw tables**
 
-`users` table 
+`users` table
 
 | user_id | user_name | user_credit_amount |
-| :------ | :-------- | :------- |
-| 1       | Alice     | 100 |
+| :------ | :-------- | :----------------- |
+| 1       | Alice     | 100                |
 
-`orders` table 
+`orders` table
 
 | user_id | order_id | order_total_items |
-| :------ | :-------- | :------- |
-| 1       | 1001     | 5 |
-| 1       | 2001     | 2 |
+| :------ | :------- | :---------------- |
+| 1       | 1001     | 5                 |
+| 1       | 2001     | 2                 |
 
-`tickets` Table 
+`tickets` Table
 
 | user_id | ticket_id | ticket_time_to_first_response_mins |
-| :------ | :-------- | :------- |
-| 1       | A         | 8 |
-| 1       | B         | 62 |
-| 1       | C         | 47 |
+| :------ | :-------- | :--------------------------------- |
+| 1       | A         | 8                                  |
+| 1       | B         | 62                                 |
+| 1       | C         | 47                                 |
 
 **The cartesian product** - (every record is joined to every other record) of users, orders and tickets.
 
-user_name  | order_id    | ticket_id | user_credit_amount | order_total_items | ticket_time_to_first_response_mins |
-| :------ | :-------- | :------- | :------ | :-------- | :------- |
-| Alice      |  1001       |   A       |  100               | 5                 | 8 |
-| Alice      |  1001       |   B       |  100               | 5                 | 62 |
-| Alice      |  1001       |   C       |  100               | 5                 | 47 |
-| Alice      |  2001       |   A       |  100               | 2                 | 8 |
-| Alice      |  2001       |   B       |  100               | 2                 | 62  |
-| Alice      |  2001       |   C       |  100               | 2                 | 47   |
+| user_name | order_id | ticket_id | user_credit_amount | order_total_items | ticket_time_to_first_response_mins |
+| :-------- | :------- | :-------- | :----------------- | :---------------- | :--------------------------------- |
+| Alice     | 1001     | A         | 100                | 5                 | 8                                  |
+| Alice     | 1001     | B         | 100                | 5                 | 62                                 |
+| Alice     | 1001     | C         | 100                | 5                 | 47                                 |
+| Alice     | 2001     | A         | 100                | 2                 | 8                                  |
+| Alice     | 2001     | B         | 100                | 2                 | 62                                 |
+| Alice     | 2001     | C         | 100                | 2                 | 47                                 |
 
 <Note>
-  Note that there is duplication in `users`, `orders` and `tickets` records. We cannot apply aggregates on any metrics without deduplicating records.  
+  Note that there is duplication in `users`, `orders` and `tickets` records. We cannot apply aggregates on any metrics without deduplicating records.
 </Note>
 
-
 This creates the worst-case scenario where no aggregate metric (`sum`, `count`, `avg`) is safe without explicit deduplication techniques.
-
 
 ### Handling fanouts
 
@@ -512,10 +492,10 @@ models:
       joins:
         - join: organizations 
           sql_on: ${organizations.organization_id} = ${users.organization_id}
-          relationship: many_to_one 
+          relationship: many-to-one 
         - join: orders
           sql_on: ${users.user_id} = ${orders.user_id}
-          relationship: one_to_many
+          relationship: one-to-many
 ```
 
 Specifying a `primary_key` and the join `relationship` allows Lightdash to:
@@ -527,7 +507,6 @@ Specifying a `primary_key` and the join `relationship` allows Lightdash to:
   Once you've included primary keys and a join relationship, Lightdash will add CTEs to the compiled SQL query that ensure metrics are not inflated.
 </Info>
 
-
 ### Known limitations
 
 There are a few situations where Lightdash doesn't currently handle inflated metrics:
@@ -535,7 +514,6 @@ There are a few situations where Lightdash doesn't currently handle inflated met
 - **Metrics that reference joined dimensions**
 - **Complex sequential joins**, e.g one-to-many, one-to-many and then a many-to-one
 - **Custom dimensions** sometimes cause duplicate rows where they shouldn't
-
 
 ### Warnings
 
