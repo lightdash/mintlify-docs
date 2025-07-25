@@ -9,81 +9,77 @@ description: You can use the `explores` configuration in your Lightdash Semantic
 
 You'll learn how to use the `explores` config in Lightdash to define **multiple curated table experiences** from a single dbt model.
 
-This allows you to:
-
-- Join different tables per use case (e.g. one version of `Users` table joins to the CRM and another version joins to product usage)
-- Show only relevant joined fields for each audience (e.g. `Users` joined to CRM data for Sales group, Users joined to usage for PMs)
-- Restrict access to joined fields with user attributes (e.g. row-level security to only show `Users` from a specific region, column-level security to hide PII for users who don't need that data)
-
-Each explore appears as its own table in the **“Query from tables”** list in Lightdash.
+Each explore appears as its own table in the **Query from tables** list in Lightdash.
 
 ---
 
 ## When to use explores
 
-Use the `explores` config when:
+Use the explores config when you want to create tailored versions of the same table for different teams or use cases. For example:
 
-- You want to create different versions of the same base table for different teams (e.g. Sales vs Execs)
-- You need to join in different context-specific tables (e.g. `deals + accounts` vs `deals + activity`)
-- You want to restrict access to certain table versions (e.g. “Exec-only” views)
+- Show different columns or joins depending on the audience (e.g. Users + CRM for Sales, Users + product usage for PMs)
+- Customize each version of the table to match a specific workflow or department
+- Restrict access to certain versions or fields using user attributes (e.g. exec-only views, region-based filters, or hiding PII)
 
 ---
 
 ## Quickstart
 
-### 1. Start with your base model
 
-This is your regular dbt model — for example, `deals`.
+<Steps>
+  <Step title="Start with your base model">
+    This is your regular dbt model, for example, `deals`.
 
-```yaml
-models:
-  - name: deals
-    meta:
-      primary_key: deal_id
-```
+    ```yaml
+    models:
+      - name: deals
+        meta:
+          primary_key: deal_id
+    ```
+  </Step>
+  <Step title="Add an explores section under meta">
 
-### 2. Add an explores section under meta
+    Use the `explores` config to define multiple versions of the table. Each explore has its own `label`, `joins`, joined fields, and access rules.
 
-Use the explores config to define multiple versions of the table. Each explore has its own `label`, `joins`, joined fields, and access rules.
+    ```yaml
+    models:
+      - name: deals
+        meta:
+          primary_key: deal_id
+          label: Deals (Basic)
+          description: Basic deals table with no joins
+          explores:
+            deals_accounts:
+              label: Deals w/Accounts
+              description: Deals table with accounts joined in, limited acount fields included
+              joins:
+                - join: accounts
+                  relationship: many-to-one
+                  sql_on: ${deals.account_id} = ${accounts.account_id}
+                  fields: [industry, segment, count_accounts]
+            deals_exec_view:
+              label: Deals (Exec View)
+              description: Deals table with account info, for execs only, all acount fields included
+              required_attributes:
+                is_exec: "true"
+              joins:
+                - join: accounts
+                  relationship: many-to-one
+                  sql_on: ${deals.account_id} = ${accounts.account_id}
+    ```
+  </Step>
+  <Step title="Preview the result in Lightdash">
+    Once you commit and deploy your dbt changes:
 
-```yaml
-models:
-  - name: deals
-    meta:
-      primary_key: deal_id
-      label: Deals (Basic)
-      description: Basic deals table with no joins
-      explores:
-        deals_accounts:
-          label: Deals w/Accounts
-          description: Deals table with accounts joined in, limited acount fields included
-          joins:
-            - join: accounts
-              relationship: many-to-one
-              sql_on: ${deals.account_id} = ${accounts.account_id}
-              fields: [industry, segment, count_accounts]
-        deals_exec_view:
-          label: Deals (Exec View)
-          description: Deals table with account info, for execs only, all acount fields included
-          required_attributes:
-            is_exec: "true"
-          joins:
-            - join: accounts
-              relationship: many-to-one
-              sql_on: ${deals.account_id} = ${accounts.account_id}
-```
+    - Go to Query from tables in Lightdash
+    - You'll now see:
+      - **Deals (Basic)**
+      - **Deals w/Accounts**
+      - **Deals (Exec View)** (only visible to users with the required attribute)
 
-### 3. Preview the result in Lightdash
-
-Once you commit and deploy your dbt changes:
-
-- Go to Query from tables in Lightdash
-- You'll now see:
-  - **Deals (Basic)**
-  - **Deals w/Accounts**
-  - **Deals (Exec View)** (only visible to users with the required attribute)
-
-Each shows up as its own table in the UI — but all use the same deals model underneath.
+    Each shows up as its own table in the UI, but all use the same `deals` model.
+  </Step>
+</Steps>
 
 
 ## Table config options you can use
