@@ -514,6 +514,65 @@ There are a few situations where Lightdash doesn't currently handle inflated met
 - **Metrics that reference joined dimensions**
 - **Complex sequential joins**, e.g one-to-many, one-to-many and then a many-to-one
 - **Custom dimensions** sometimes cause duplicate rows where they shouldn't
+- **Intentional fanouts** where the fanout is desired for business logic (see below)
+
+### Intentional fanouts
+
+In some business scenarios, fanouts are actually desired and represent real data relationships. A common example is when you need to calculate per-user fees or charges.
+
+#### Example: Per-user billing
+
+Consider a scenario with accounts, users, and per-user fees where different accounts pay different rates:
+
+**accounts table:**
+| account_id | account_name |
+| :--------- | :----------- |
+| 1          | TechCorp     |
+| 2          | StartupXYZ   |
+
+**users table:**
+| user_id | account_id | user_name |
+| :------ | :--------- | :-------- |
+| 101     | 1          | Alice     |
+| 102     | 1          | Bob       |
+| 201     | 2          | David     |
+
+**fees table:**
+| account_id | fee_type     | per_user_amount |
+| :--------- | :----------- | :-------------- |
+| 1          | Support Fee  | 80.00           |
+| 1          | Training Fee | 120.00          |
+| 2          | Support Fee  | 50.00           |
+| 2          | Training Fee | 75.00           |
+
+When you join these tables:
+
+```sql
+SELECT a.account_name, u.user_name, f.fee_type, f.per_user_amount
+FROM accounts a
+JOIN users u ON a.account_id = u.account_id
+JOIN fees f ON a.account_id = f.account_id;
+```
+
+The resulting fanout is exactly what you want for billing:
+
+| account_name | user_name | fee_type     | per_user_amount |
+| :----------- | :-------- | :----------- | :-------------- |
+| TechCorp     | Alice     | Support Fee  | 80.00           |
+| TechCorp     | Alice     | Training Fee | 120.00          |
+| TechCorp     | Bob       | Support Fee  | 80.00           |
+| TechCorp     | Bob       | Training Fee | 120.00          |
+| StartupXYZ   | David     | Support Fee  | 50.00           |
+| StartupXYZ   | David     | Training Fee | 75.00           |
+
+In this case, each row represents a real charge, and the total billing (TechCorp pays $400, StartupXYZ pays $125) is correctly calculated by summing all rows.
+
+#### Handling intentional fanouts
+
+**Important**: Lightdash does not currently provide a built-in way to explicitly handle intentional fanouts. Using intentional fanouts can cause issues when defining other table relationships and may conflict with Lightdash's automatic fanout handling.
+
+When you need fanouts for your business logic we recommend **creating a dedicated table**.
+Instead of joining tables that cause unwanted fanouts, we strongly encourage creating a dedicated table that already contains the pre-joined data at the correct granularity. This is the most reliable approach to avoid conflicts with Lightdash's fanout handling.
 
 ### Warnings
 
