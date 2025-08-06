@@ -514,8 +514,11 @@ Lightdash uses a pattern of Common Table Expressions (CTEs) to solve the fanout 
 1. **cte_keys**: Contains dimensions (like payment_method, order_id) that define the grain of your final results and the primary keys. Any field you want to GROUP BY in your final output should be included here.
 2. **cte_metrics**: Performs calculations on metrics while maintaining the correct grain established by the keys CTE. This prevents double-counting when aggregating across related tables.
 3. **cte_unaffected**: Only needed when calculating metrics that could be affected by the join relationships. In some cases, this CTE isn't required if you're not calculating any metrics that would suffer from fanout.
+4. **final**: Join the metrics CTEs together to create the complete result set.
 
-**General Rule**: Dimensions go in the keys CTE, metrics get calculated in separate CTEs. The deduplication happening with the DISTINCT clause in the keys CTE is the critical piece that prevents the fanout issue, ensuring each record contributes exactly once to the aggregation.
+<Note>
+  Lightdash creates a separate cte_keys and cte_metrics for each table that contains metrics with fanouts. This is why you'll see names like "cte_keys_orders" and "cte_metrics_orders" in the example below, indicating they're specific to the orders table.
+</Note>
 
 ##### Example
 
@@ -536,7 +539,7 @@ cte_metrics_orders AS (
       cte_keys_orders."orders_status",
       SUM("orders".amount) AS "orders_total_order_amount" -- order metric (affected by fanout)
     FROM cte_keys_orders
-    LEFT JOIN "postgres"."jaffle"."orders" AS "orders" ON cte_keys_orders."pk_order_id" = "orders".order_id
+    LEFT JOIN "postgres"."jaffle"."orders" AS "orders" ON cte_keys_orders."pk_order_id" = "orders".order_id -- join with primary keys
     GROUP BY 1 -- Note orders_status are grouping dimensions
 ),
 # Step 3: Calculate metrics that are not affected by fanouts
@@ -549,7 +552,7 @@ cte_unaffected AS (
       ON ("orders".order_id) = ("payments".order_id)
     GROUP BY 1 -- Note orders_status are grouping dimensions
 )
-# Step 4: Join the metrics ctes together
+# Step 4: Join the metrics CTEs together to create the final result with properly calculated metrics
 SELECT
   cte_unaffected.*,
   cte_metrics_orders."orders_total_order_amount" AS "orders_total_order_amount"
