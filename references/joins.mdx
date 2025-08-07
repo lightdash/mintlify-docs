@@ -514,7 +514,70 @@ There are a few situations where Lightdash doesn't currently handle inflated met
 - **Metrics that reference joined dimensions**
 - **Complex sequential joins**, e.g one-to-many, one-to-many and then a many-to-one
 - **Custom dimensions** sometimes cause duplicate rows where they shouldn't
+- **Intentional fanouts** where the fanout is desired for business logic (see below)
 
-### Warnings
+#### Intentional fanouts
 
-When fanout handling is enabled, Lightdash will show a warning in the UI for models with joins that probably result in fanouts (and therefore inflated metrics). To remove the errors, `relationship` needs to be defined in the join in YAML and the join key needs to be specified.
+In some business scenarios, fanouts are actually desired and represent real data relationships. A common example is when you need to calculate per-user fees or charges.
+
+##### Example: Per-user billing
+
+Consider a scenario with accounts, users, and per-user fees where different accounts pay different rates:
+
+**accounts table:**
+| account_id | account_name |
+| :--------- | :----------- |
+| 1          | TechCorp     |
+| 2          | StartupXYZ   |
+
+**users table:**
+| user_id | account_id | user_name |
+| :------ | :--------- | :-------- |
+| 101     | 1          | Alice     |
+| 102     | 1          | Bob       |
+| 201     | 2          | David     |
+
+**fees table:**
+| account_id | fee_type     | per_user_amount |
+| :--------- | :----------- | :-------------- |
+| 1          | Support Fee  | 80.00           |
+| 1          | Training Fee | 120.00          |
+| 2          | Support Fee  | 50.00           |
+| 2          | Training Fee | 75.00           |
+
+When you join these tables:
+
+```sql
+SELECT 
+  a.account_name, 
+  u.user_name, 
+  f.fee_type, 
+  f.per_user_amount
+FROM 
+  accounts a
+  LEFT JOIN users u ON a.account_id = u.account_id
+  LEFT JOIN fees f ON a.account_id = f.account_id;
+```
+
+The resulting fanout is exactly what you want for billing:
+
+| account_name | user_name | fee_type     | per_user_amount |
+| :----------- | :-------- | :----------- | :-------------- |
+| TechCorp     | Alice     | Support Fee  | 80.00           |
+| TechCorp     | Alice     | Training Fee | 120.00          |
+| TechCorp     | Bob       | Support Fee  | 80.00           |
+| TechCorp     | Bob       | Training Fee | 120.00          |
+| StartupXYZ   | David     | Support Fee  | 50.00           |
+| StartupXYZ   | David     | Training Fee | 75.00           |
+
+In this case, each row represents a real charge, and the total billing (TechCorp pays \$400, StartupXYZ pays \$125) is correctly calculated by summing all rows.
+
+##### Handling intentional fanouts
+
+**Important**: Lightdash does not currently provide a built-in way to explicitly handle intentional fanouts. Using intentional fanouts can cause issues when defining other table relationships and may conflict with Lightdash's automatic fanout handling.
+
+**Our recommendation:** Always use fanout protection for joins. When you actually want a fanout (like per-user billing), create a dedicated dbt model that handles the logic and gets your data to the right granularity first. Then use that model in Lightdash.
+
+**How it works:** When fanout handling is enabled for your Lightdash organization, Lightdash warns you about joins that will likely create fanouts. To remove these warnings and enable fanout protection, specify the join relationship and primary keys in your model.yaml file (details [here](#handling-fanouts)).
+This keeps your setup clean and prevents inflated metrics.
+
