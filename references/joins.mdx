@@ -521,6 +521,36 @@ There are a few situations where Lightdash doesn't currently handle inflated met
 
 Rolledup metrics are pre-aggregated metrics that have already been calculated at a specific granularity in your data warehouse. When these metrics are used in queries that involve joins creating fanouts, they can become inflated because the pre-aggregated values get duplicated across the fanned-out rows.
 
+##### Example: Orders and payments analysis
+
+Consider a scenario where you have an orders table with total_amount and a payments table with payment methods. For each order, you can have multiple payments with different methods:
+
+**orders table:**
+| order_id | total_amount |
+| :------- | :----------- |
+| 1001     | 100.00       |
+| 1002     | 250.00       |
+
+**payments table:**
+| payment_id | order_id | payment_method | amount |
+| :--------- | :------- | :------------- | :----- |
+| 1          | 1001     | cash           | 60.00  |
+| 2          | 1001     | card           | 40.00  |
+| 3          | 1002     | card           | 250.00 |
+
+If you select payment method and average orders total_amount, the results are wrong because total_amount is a rolledup metric that can't be split by method:
+
+| payment_method | avg_order_total |
+| :------------- | :-------------- |
+| cash           | 100.00          |
+| card           | 175.00          |
+
+This is incorrect because:
+- The cash average should reflect that cash was only used for part of order 1001 ($100), but the query shows $100 as if cash paid for the entire order
+- The card average shows $175 (average of $100 and $250), but this doesn't represent the actual relationship between card payments and order totals
+
+The issue is that `total_amount` is a rolledup metric at the order level, but when joined with payments, it gets duplicated across payment methods, making it impossible to correctly analyze the relationship between payment methods and order totals.
+
 ##### Best practices for rolledup metrics
 
 To avoid issues with rolledup metrics in joins that create fanouts:
