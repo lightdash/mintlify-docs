@@ -309,170 +309,172 @@ These metrics can give you the wrong answers:
 
 ### Common scenarios and what gets affected
 
-#### Single one-to-many join
+<AccordionGroup>
+  <Accordion title="Single one-to-many join">
+    **Example:** When you join an `organization` table to a `users` table, each organization can have multiple users.
 
-**Example:** When you join an `organization` table to a `users` table, each organization can have multiple users.
+    In this scenario:
 
-In this scenario:
+    ✅ **User metrics remain accurate** Since each user appears exactly once in the joined result, any metrics calculated on the user level (like average user age or total user count) will be correct.
 
-✅ **User metrics remain accurate** Since each user appears exactly once in the joined result, any metrics calculated on the user level (like average user age or total user count) will be correct.
+    ❌ **Organization metrics become inflated** - Each organization will appear multiple times in the result set (once for each associated user). This means organization-level metrics will be counted multiple times, leading to inflated results.
 
-❌ **Organization metrics become inflated** - Each organization will appear multiple times in the result set (once for each associated user). This means organization-level metrics will be counted multiple times, leading to inflated results.
+    For example, if "ABC Corp" has 2 users, its org_total_users metric cannot be summed because it will be duplicated twice.
 
-For example, if "ABC Corp" has 2 users, its org_total_users metric cannot be summed because it will be duplicated twice.
+    **Raw tables**
 
-**Raw tables**
+    `organizations` table
 
-`organizations` table
+    | organization_id | organization_name | org_total_users |
+    | :-------------- | :---------------- | :-------------- |
+    | 1               | ABC Corp          | 2               |
+    | 2               | XYZ Ltd           | 3               |
 
-| organization_id | organization_name | org_total_users |
-| :-------------- | :---------------- | :-------------- |
-| 1               | ABC Corp          | 2               |
-| 2               | XYZ Ltd           | 3               |
+    `users` table
 
-`users` table
+    | organization_id | user_id | user_age |
+    | :-------------- | :------ | :------- |
+    | 1               | 100     | 57       |
+    | 1               | 200     | 13       |
+    | 2               | 300     | 20       |
+    | 2               | 400     | 30       |
+    | 2               | 500     | 19       |
 
-| organization_id | user_id | user_age |
-| :-------------- | :------ | :------- |
-| 1               | 100     | 57       |
-| 1               | 200     | 13       |
-| 2               | 300     | 20       |
-| 2               | 400     | 30       |
-| 2               | 500     | 19       |
+    **Joined Output**
 
-**Joined Output**
+    Organizations are multiplied by the number of users
 
-Organizations are multiplied by the number of users
+    | user_id | organization_id | org_total_users | user_age |
+    | :------ | :-------------- | :-------------- | :------- |
+    | 100     | 1               | 2               | 57       |
+    | 200     | 1               | 2               | 13       |
+    | 300     | 2               | 3               | 20       |
+    | 400     | 2               | 3               | 30       |
+    | 500     | 2               | 3               | 19       |
 
-| user_id | organization_id | org_total_users | user_age |
-| :------ | :-------------- | :-------------- | :------- |
-| 100     | 1               | 2               | 57       |
-| 200     | 1               | 2               | 13       |
-| 300     | 2               | 3               | 20       |
-| 400     | 2               | 3               | 30       |
-| 500     | 2               | 3               | 19       |
+    We cannot sum org_total_users on this joined table because it will be incorrect.
+  </Accordion>
 
-We cannot sum org_total_users on this joined table because it will be incorrect.
+  <Accordion title="Chained one-to-many joins">
+    **Example:** When you create a chain of one-to-many relationships by joining `users` to their `orders`, and then `orders` to their support `tickets`.
 
-#### Chained one-to-many joins
+    In this scenario:
 
-**Example:** When you create a chain of one-to-many relationships by joining `users` to their `orders`, and then `orders` to their support `tickets`.
+    ✅ **Ticket metrics remain accurate** - The final table (`tickets`) in the chain will have accurate metrics because each ticket appears exactly once in the result set.
 
-In this scenario:
+    ❌ **Upstream tables experience compounding inflation** - The further up the chain you go, the worse the inflation gets:
 
-✅ **Ticket metrics remain accurate** - The final table (`tickets`) in the chain will have accurate metrics because each ticket appears exactly once in the result set.
+    - **Order metrics become inflated** by the number of tickets per order. If Order #1001 has 3 support tickets, any metrics for this order (like order value) will be counted 3 times.
+    - **User metrics suffer even more inflation** as they're multiplied by the total number of tickets. If a user has 2 orders with 3 tickets each, user-level metrics (like lifetime value) will be counted 6 times in aggregate calculations.
 
-❌ **Upstream tables experience compounding inflation** - The further up the chain you go, the worse the inflation gets:
+    For example, if the user Alice has 2 orders and each of these orders have 3 tickets, after joining `users` → `orders` → `tickets`, the result would look like:
 
-- **Order metrics become inflated** by the number of tickets per order. If Order #1001 has 3 support tickets, any metrics for this order (like order value) will be counted 3 times.
-- **User metrics suffer even more inflation** as they're multiplied by the total number of tickets. If a user has 2 orders with 3 tickets each, user-level metrics (like lifetime value) will be counted 6 times in aggregate calculations.
+    **Raw tables**
 
-For example, if the user Alice has 2 orders and each of these orders have 3 tickets, after joining `users` → `orders` → `tickets`, the result would look like:
+    `users` table
 
-**Raw tables**
+    | user_id | user_name | user_age |
+    | :------ | :-------- | :------- |
+    | 1       | Alice     | 23       |
 
-`users` table
+    `orders` table
 
-| user_id | user_name | user_age |
-| :------ | :-------- | :------- |
-| 1       | Alice     | 23       |
+    | order_id | user_id | order_total_items |
+    | :------- | :------ | :---------------- |
+    | 1001     | 1       | 5                 |
+    | 2001     | 1       | 2                 |
 
-`orders` table
+    `tickets` Table
 
-| order_id | user_id | order_total_items |
-| :------- | :------ | :---------------- |
-| 1001     | 1       | 5                 |
-| 2001     | 1       | 2                 |
+    | order_id | ticket_id | ticket_time_to_first_response_mins |
+    | :------- | :-------- | :--------------------------------- |
+    | 1001     | A         | 8                                  |
+    | 1001     | B         | 62                                 |
+    | 1001     | C         | 47                                 |
+    | 2001     | D         | 5                                  |
+    | 2001     | E         | 1                                  |
+    | 2001     | F         | 89                                 |
 
-`tickets` Table
+    **Joined output**
 
-| order_id | ticket_id | ticket_time_to_first_response_mins |
-| :------- | :-------- | :--------------------------------- |
-| 1001     | A         | 8                                  |
-| 1001     | B         | 62                                 |
-| 1001     | C         | 47                                 |
-| 2001     | D         | 5                                  |
-| 2001     | E         | 1                                  |
-| 2001     | F         | 89                                 |
+    Step 1: First Join users to orders
 
-**Joined output**
+    | user_name | user_age | order_id | order_total_items |
+    | :-------- | :------- | :------- | :---------------- |
+    | Alice     | 23       | 1001     | 5                 |
+    | Alice     | 23       | 2001     | 2                 |
 
-Step 1: First Join users to orders
+    Step 2: Join the result of step 1 to tickets
 
-| user_name | user_age | order_id | order_total_items |
-| :-------- | :------- | :------- | :---------------- |
-| Alice     | 23       | 1001     | 5                 |
-| Alice     | 23       | 2001     | 2                 |
+    | user_name | order_id | ticket_id | user_age | order_total_items | ticket_time_to_first_response_mins |
+    | :-------- | :------- | :-------- | :------- | :---------------- | :--------------------------------- |
+    | Alice     | 1001     | A         | 23       | 5                 | 8                                  |
+    | Alice     | 1001     | B         | 23       | 5                 | 62                                 |
+    | Alice     | 1001     | C         | 23       | 5                 | 47                                 |
+    | Alice     | 2001     | D         | 23       | 2                 | 5                                  |
+    | Alice     | 2001     | E         | 23       | 2                 | 1                                  |
+    | Alice     | 2001     | F         | 23       | 2                 | 89                                 |
 
-Step 2: Join the result of step 1 to tickets
+    <Note>
+      Note that `users` and `orders` are duplicated but `tickets` are not, which means we can only safely apply aggregates to metrics on the `tickets` table.
+    </Note>
+  </Accordion>
 
-| user_name | order_id | ticket_id | user_age | order_total_items | ticket_time_to_first_response_mins |
-| :-------- | :------- | :-------- | :------- | :---------------- | :--------------------------------- |
-| Alice     | 1001     | A         | 23       | 5                 | 8                                  |
-| Alice     | 1001     | B         | 23       | 5                 | 62                                 |
-| Alice     | 1001     | C         | 23       | 5                 | 47                                 |
-| Alice     | 2001     | D         | 23       | 2                 | 5                                  |
-| Alice     | 2001     | E         | 23       | 2                 | 1                                  |
-| Alice     | 2001     | F         | 23       | 2                 | 89                                 |
+  <Accordion title="Multiple one-to-many joins">
+    **Example:** When you join `users` → `orders` AND `users` → `tickets` (both `orders` and `tickets` relate to `users`, but not directly to each other)
 
-<Note>
-  Note that `users` and `orders` are duplicated but `tickets` are not, which means we can only safely apply aggregates to metrics on the `tickets` table.
-</Note>
+    This creates the most problematic data situation, when you join multiple one-to-many relationships that branch from the same table but aren't directly related to each other.
+    In this scenario:
 
-#### Multiple one-to-many joins
+    ❌ **EVERY aggregate metric gets inflated due to the cartesian product effect**
 
-**Example:** When you join `users` → `orders` AND `users` → `tickets` (both `orders` and `tickets` relate to `users`, but not directly to each other)
+    - **User metrics become massively inflated** by the product of `orders` × `tickets`. If a user has 5 orders and 10 support tickets, each user-level metric will be counted 50 times\!
+    - **Order metrics get inflated** by the number of tickets the user has.
+    - **Ticket metrics get inflated** by the number of orders the user has.
 
-This creates the most problematic data situation, when you join multiple one-to-many relationships that branch from the same table but aren't directly related to each other.
-In this scenario:
+    For example, if the user Alice has 2 orders and 3 tickets, after joining `users` to both `orders` and `tickets` separately, the result would look like:
 
-❌ **EVERY aggregate metric gets inflated due to the cartesian product effect**
+    **Raw tables**
 
-- **User metrics become massively inflated** by the product of `orders` × `tickets`. If a user has 5 orders and 10 support tickets, each user-level metric will be counted 50 times\!
-- **Order metrics get inflated** by the number of tickets the user has.
-- **Ticket metrics get inflated** by the number of orders the user has.
+    `users` table
 
-For example, if the user Alice has 2 orders and 3 tickets, after joining `users` to both `orders` and `tickets` separately, the result would look like:
+    | user_id | user_name | user_credit_amount |
+    | :------ | :-------- | :----------------- |
+    | 1       | Alice     | 100                |
 
-**Raw tables**
+    `orders` table
 
-`users` table
+    | user_id | order_id | order_total_items |
+    | :------ | :------- | :---------------- |
+    | 1       | 1001     | 5                 |
+    | 1       | 2001     | 2                 |
 
-| user_id | user_name | user_credit_amount |
-| :------ | :-------- | :----------------- |
-| 1       | Alice     | 100                |
+    `tickets` Table
 
-`orders` table
+    | user_id | ticket_id | ticket_time_to_first_response_mins |
+    | :------ | :-------- | :--------------------------------- |
+    | 1       | A         | 8                                  |
+    | 1       | B         | 62                                 |
+    | 1       | C         | 47                                 |
 
-| user_id | order_id | order_total_items |
-| :------ | :------- | :---------------- |
-| 1       | 1001     | 5                 |
-| 1       | 2001     | 2                 |
+    **The cartesian product** - (every record is joined to every other record) of users, orders and tickets.
 
-`tickets` Table
+    | user_name | order_id | ticket_id | user_credit_amount | order_total_items | ticket_time_to_first_response_mins |
+    | :-------- | :------- | :-------- | :----------------- | :---------------- | :--------------------------------- |
+    | Alice     | 1001     | A         | 100                | 5                 | 8                                  |
+    | Alice     | 1001     | B         | 100                | 5                 | 62                                 |
+    | Alice     | 1001     | C         | 100                | 5                 | 47                                 |
+    | Alice     | 2001     | A         | 100                | 2                 | 8                                  |
+    | Alice     | 2001     | B         | 100                | 2                 | 62                                 |
+    | Alice     | 2001     | C         | 100                | 2                 | 47                                 |
 
-| user_id | ticket_id | ticket_time_to_first_response_mins |
-| :------ | :-------- | :--------------------------------- |
-| 1       | A         | 8                                  |
-| 1       | B         | 62                                 |
-| 1       | C         | 47                                 |
+    <Note>
+      Note that there is duplication in `users`, `orders` and `tickets` records. We cannot apply aggregates on any metrics without deduplicating records.
+    </Note>
 
-**The cartesian product** - (every record is joined to every other record) of users, orders and tickets.
-
-| user_name | order_id | ticket_id | user_credit_amount | order_total_items | ticket_time_to_first_response_mins |
-| :-------- | :------- | :-------- | :----------------- | :---------------- | :--------------------------------- |
-| Alice     | 1001     | A         | 100                | 5                 | 8                                  |
-| Alice     | 1001     | B         | 100                | 5                 | 62                                 |
-| Alice     | 1001     | C         | 100                | 5                 | 47                                 |
-| Alice     | 2001     | A         | 100                | 2                 | 8                                  |
-| Alice     | 2001     | B         | 100                | 2                 | 62                                 |
-| Alice     | 2001     | C         | 100                | 2                 | 47                                 |
-
-<Note>
-  Note that there is duplication in `users`, `orders` and `tickets` records. We cannot apply aggregates on any metrics without deduplicating records.
-</Note>
-
-This creates the worst-case scenario where no aggregate metric (`sum`, `count`, `avg`) is safe without explicit deduplication techniques.
+    This creates the worst-case scenario where no aggregate metric (`sum`, `count`, `avg`) is safe without explicit deduplication techniques.
+  </Accordion>
+</AccordionGroup>
 
 ### Handling fanouts
 
@@ -568,199 +570,189 @@ LIMIT 500
 
 There are a few situations where Lightdash doesn't currently handle inflated metrics:
 
-- **Metrics that reference a dimension from joined table** ([see below](#metrics-that-reference-a-dimension-from-joined-table))
-- **Metrics that have a filter with a dimension from joined table** ([see below](#metrics-that-have-a-filter-with-a-dimension-from-joined-table))
-- **Metrics that have multiple levels of references** ([see below](#metrics-that-have-multiple-levels-of-references))
-- **Rolledup metrics** when used with joins that create fanouts ([see below](#rolledup-metrics))
-- **Intentional fanouts** where the fanout is desired for business logic ([see below](#intentional-fanouts))
+<AccordionGroup>
 
-<Note>
-  If you are being impacted by these limitations, please reach out to support as we are interested to understand your use cases.
-</Note>
+  <Accordion title="Metrics that reference a dimension from joined table">
+    When a metric in one table references a dimension from a joined table, Lightdash's fanout handling may not correctly deduplicate the results.
 
-#### Metrics that reference a dimension from joined table
+    ### Example
 
-When a metric in one table references a dimension from a joined table, Lightdash's fanout handling may not correctly deduplicate the results.
+    References in metric `sql`
 
-##### Example
+    ```yaml
+    metrics:
+      total_amount:
+        type: sum
+        sql: ${amount}+${expenses.amount}
+    ```
 
-References in metric `sql`
+    Or when the metric is for a dimension that references a dimension from a joined table.
 
-```yaml
-metrics:
-  total_amount:
-    type: sum
-    sql: ${amount}+${expenses.amount}
-```
+    ```
+    models:
+      - name: test
+        columns:
+          - name: start_time
+    ...
+                additional_dimensions:
+                  duration_minutes:
+                    type: number
+                    sql: DATEDIFF('minutes', ${start_time}, ${user_test_score.calculated_at})
+                    metrics:
+                      average_duration:
+                        type: AVG
+    ```
+  </Accordion>
 
-Or when the metric is for a dimension that references a dimension from a joined table.
+  <Accordion title="Metrics that have a filter with a dimension from joined table">
+    Metrics that include filters based on dimensions from joined tables can also cause issues with Lightdash's fanout handling.
 
-```
-models:
-  - name: test
-    columns:
-      - name: start_time
-...
-            additional_dimensions:
-              duration_minutes:
-                type: number
-                sql: DATEDIFF('minutes', ${start_time}, ${user_test_score.calculated_at})
-                metrics:
-                  average_duration:
-                    type: AVG
-```
+    ### Example
 
-#### Metrics that have a filter with a dimension from joined table
+    ```yaml
+    metrics:
+      count_users:
+        type: count_distinct
+        filters:
+          - web_sessions.is_bot_user: false
+    ```
+  </Accordion>
 
-Metrics that include filters based on dimensions from joined tables can also cause issues with Lightdash's fanout handling.
+  <Accordion title="Metrics that have multiple levels of references">
+    Metrics that involve multiple levels of references or dependencies can be particularly challenging for Lightdash's fanout handling.
 
-##### Example
+    ### Example
 
-```yaml
-metrics:
-  count_users:
-    type: count_distinct
-    filters:
-      - web_sessions.is_bot_user: false
-```
+    ```yaml
+    # orders.yml
+    metrics:
+      total_amount:
+        type: number
+        sql: ${amount}+${expenses.total_amount}
 
-#### Metrics that have multiple levels of references
+    # expenses.yml
+    metrics:
+      total_amount:
+        type: number
+        sql: ${amount}+${tariffs.amount}
+    ```
+  </Accordion>
 
-Metrics that involve multiple levels of references or dependencies can be particularly challenging for Lightdash's fanout handling.
+  <Accordion title="Rolledup metrics">
+    Rolledup metrics are pre-aggregated metrics that have already been calculated at a specific granularity in your data warehouse. When these metrics are used in queries that involve joins creating fanouts, they can become inflated because the pre-aggregated values get duplicated across the fanned-out rows.
 
-##### Example
+    ### Example: Orders and payments analysis
 
-```yaml
-# orders.yml
-metrics:
-  total_amount:
-    type: number
-    sql: ${amount}+${expenses.total_amount}
+    Consider a scenario where you have an orders table with total_amount and a payments table with payment methods. For each order, you can have multiple payments with different methods:
 
-# expenses.yml
-metrics:
-  total_amount:
-    type: number
-    sql: ${amount}+${tariffs.amount}
-```
+    **orders table:**
+    | order_id | total_amount |
+    | :------- | :----------- |
+    | 1001     | 100.00       |
+    | 1002     | 250.00       |
 
-#### Rolledup metrics
+    **payments table:**
+    | payment_id | order_id | payment_method | amount |
+    | :--------- | :------- | :------------- | :----- |
+    | 1          | 1001     | cash           | 60.00  |
+    | 2          | 1001     | card           | 40.00  |
+    | 3          | 1002     | card           | 250.00 |
 
-Rolledup metrics are pre-aggregated metrics that have already been calculated at a specific granularity in your data warehouse. When these metrics are used in queries that involve joins creating fanouts, they can become inflated because the pre-aggregated values get duplicated across the fanned-out rows.
+    If you select payment method and average orders total_amount, the results are wrong because total_amount is a rolledup metric that can't be split by method:
 
-##### Example: Orders and payments analysis
+    | payment_method | avg_order_total |
+    | :------------- | :-------------- |
+    | cash           | 100.00          |
+    | card           | 175.00          |
+    
+    This is incorrect because:
+    - The cash average should reflect that cash was only used for part of order 1001 (\$100), but the query shows \$100 as if cash paid for the entire order
+    - The card average shows \$175 (average of \$100 and \$250), but this doesn't represent the actual relationship between card payments and order totals
 
-Consider a scenario where you have an orders table with total_amount and a payments table with payment methods. For each order, you can have multiple payments with different methods:
+    The issue is that `total_amount` is a rolledup metric at the order level, but when joined with payments, it gets duplicated across payment methods, making it impossible to correctly analyze the relationship between payment methods and order totals.
 
-**orders table:**
-| order_id | total_amount |
-| :------- | :----------- |
-| 1001     | 100.00       |
-| 1002     | 250.00       |
+    ### Best practices for rolledup metrics
 
-**payments table:**
-| payment_id | order_id | payment_method | amount |
-| :--------- | :------- | :------------- | :----- |
-| 1          | 1001     | cash           | 60.00  |
-| 2          | 1001     | card           | 40.00  |
-| 3          | 1002     | card           | 250.00 |
+    To avoid issues with rolledup metrics in joins that create fanouts:
 
-If you select payment method and average orders total_amount, the results are wrong because total_amount is a rolledup metric that can't be split by method:
+    **Avoid rolledup metrics when possible:** Instead of using pre-aggregated values, use the underlying detail-level data. For example, instead of using a pre-calculated `total_amount` at the order level, use individual payment amounts that can be properly aggregated.
 
-| payment_method | avg_order_total |
-| :------------- | :-------------- |
-| cash           | 100.00          |
-| card           | 175.00          |
+    **Name rolledup metrics clearly:** If you must use rolledup metrics, give them descriptive names that indicate their pre-aggregated nature and limitations.
 
-This is incorrect because:
-- The cash average should reflect that cash was only used for part of order 1001 (\$100), but the query shows \$100 as if cash paid for the entire order
-- The card average shows \$175 (average of \$100 and \$250), but this doesn't represent the actual relationship between card payments and order totals
+    **Provide clear descriptions:** Always include detailed descriptions in your dbt model's YAML that explain the metric's granularity and any limitations when used with joins.
 
-The issue is that `total_amount` is a rolledup metric at the order level, but when joined with payments, it gets duplicated across payment methods, making it impossible to correctly analyze the relationship between payment methods and order totals.
+    ```yaml
+    models:
+      - name: orders
+        columns:
+          - name: total_amount
+            meta:
+              metrics:
+                total_order_amount:
+                  type: sum
+                  description: 'Pre-aggregated total amount per order. Cannot be meaningfully split by payment method or other transaction-level dimensions.'
+    ```
+  </Accordion>
 
-##### Best practices for rolledup metrics
+  <Accordion title="Intentional fanouts">
+    In some business scenarios, fanouts are actually desired and represent real data relationships. A common example is when you need to calculate per-user fees or charges.
 
-To avoid issues with rolledup metrics in joins that create fanouts:
+    ### Example: Per-user billing
 
-**Avoid rolledup metrics when possible:** Instead of using pre-aggregated values, use the underlying detail-level data. For example, instead of using a pre-calculated `total_amount` at the order level, use individual payment amounts that can be properly aggregated.
+    Consider a scenario with accounts, users, and per-user fees where different accounts pay different rates:
 
-**Name rolledup metrics clearly:** If you must use rolledup metrics, give them descriptive names that indicate their pre-aggregated nature and limitations.
+    **accounts table:**
+    | account_id | account_name |
+    | :--------- | :----------- |
+    | 1          | TechCorp     |
+    | 2          | StartupXYZ   |
 
-**Provide clear descriptions:** Always include detailed descriptions in your dbt model's YAML that explain the metric's granularity and any limitations when used with joins.
+    **users table:**
+    | user_id | account_id | user_name |
+    | :------ | :--------- | :-------- |
+    | 101     | 1          | Alice     |
+    | 102     | 1          | Bob       |
+    | 201     | 2          | David     |
 
-```yaml
-models:
-  - name: orders
-    columns:
-      - name: total_amount
-        meta:
-          metrics:
-            total_order_amount:
-              type: sum
-              description: 'Pre-aggregated total amount per order. Cannot be meaningfully split by payment method or other transaction-level dimensions.'
-```
+    **fees table:**
+    | account_id | fee_type     | per_user_amount |
+    | :--------- | :----------- | :-------------- |
+    | 1          | Support Fee  | 80.00           |
+    | 1          | Training Fee | 120.00          |
+    | 2          | Support Fee  | 50.00           |
+    | 2          | Training Fee | 75.00           |
 
-#### Intentional fanouts
+    When you join these tables:
 
-In some business scenarios, fanouts are actually desired and represent real data relationships. A common example is when you need to calculate per-user fees or charges.
+    ```sql
+    SELECT 
+      a.account_name, 
+      u.user_name, 
+      f.fee_type, 
+      f.per_user_amount
+    FROM 
+      accounts a
+      LEFT JOIN users u ON a.account_id = u.account_id
+      LEFT JOIN fees f ON a.account_id = f.account_id;
+    ```
 
-##### Example: Per-user billing
+    The resulting fanout is exactly what you want for billing:
 
-Consider a scenario with accounts, users, and per-user fees where different accounts pay different rates:
+    | account_name | user_name | fee_type     | per_user_amount |
+    | :----------- | :-------- | :----------- | :-------------- |
+    | TechCorp     | Alice     | Support Fee  | 80.00           |
+    | TechCorp     | Alice     | Training Fee | 120.00          |
+    | TechCorp     | Bob       | Support Fee  | 80.00           |
+    | TechCorp     | Bob       | Training Fee | 120.00          |
+    | StartupXYZ   | David     | Support Fee  | 50.00           |
+    | StartupXYZ   | David     | Training Fee | 75.00           |
 
-**accounts table:**
-| account_id | account_name |
-| :--------- | :----------- |
-| 1          | TechCorp     |
-| 2          | StartupXYZ   |
+    In this case, each row represents a real charge, and the total billing (TechCorp pays \$400, StartupXYZ pays \$125) is correctly calculated by summing all rows.
 
-**users table:**
-| user_id | account_id | user_name |
-| :------ | :--------- | :-------- |
-| 101     | 1          | Alice     |
-| 102     | 1          | Bob       |
-| 201     | 2          | David     |
+    ### Handling intentional fanouts
 
-**fees table:**
-| account_id | fee_type     | per_user_amount |
-| :--------- | :----------- | :-------------- |
-| 1          | Support Fee  | 80.00           |
-| 1          | Training Fee | 120.00          |
-| 2          | Support Fee  | 50.00           |
-| 2          | Training Fee | 75.00           |
+    **Important**: Lightdash does not currently provide a built-in way to explicitly handle intentional fanouts. Using intentional fanouts can cause issues when defining other table relationships and may conflict with Lightdash's automatic fanout handling.
 
-When you join these tables:
-
-```sql
-SELECT 
-  a.account_name, 
-  u.user_name, 
-  f.fee_type, 
-  f.per_user_amount
-FROM 
-  accounts a
-  LEFT JOIN users u ON a.account_id = u.account_id
-  LEFT JOIN fees f ON a.account_id = f.account_id;
-```
-
-The resulting fanout is exactly what you want for billing:
-
-| account_name | user_name | fee_type     | per_user_amount |
-| :----------- | :-------- | :----------- | :-------------- |
-| TechCorp     | Alice     | Support Fee  | 80.00           |
-| TechCorp     | Alice     | Training Fee | 120.00          |
-| TechCorp     | Bob       | Support Fee  | 80.00           |
-| TechCorp     | Bob       | Training Fee | 120.00          |
-| StartupXYZ   | David     | Support Fee  | 50.00           |
-| StartupXYZ   | David     | Training Fee | 75.00           |
-
-In this case, each row represents a real charge, and the total billing (TechCorp pays \$400, StartupXYZ pays \$125) is correctly calculated by summing all rows.
-
-##### Handling intentional fanouts
-
-**Important**: Lightdash does not currently provide a built-in way to explicitly handle intentional fanouts. Using intentional fanouts can cause issues when defining other table relationships and may conflict with Lightdash's automatic fanout handling.
-
-**Our recommendation:** Always use fanout protection for joins. When you actually want a fanout (like per-user billing), create a dedicated dbt model that handles the logic and gets your data to the right granularity first. Then use that model in Lightdash.
-
-**How it works:** When fanout handling is enabled for your Lightdash organization, Lightdash warns you about joins that will likely create fanouts. To remove these warnings and enable fanout protection, specify the join relationship and primary keys in your model.yaml file (details [here](#handling-fanouts)).
-This keeps your setup clean and prevents inflated metrics.
+    **Our recommendation:** Always use fanout protection for joins. When you actually want a fanout (like per-user billing), create a dedicated dbt model that handles the logic and gets your data to the right granularity first. Then use that model in Lightdash.
+  </Accordion>
+</AccordionGroup>
