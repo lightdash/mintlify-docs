@@ -571,7 +571,64 @@ There are a few situations where Lightdash doesn't currently handle inflated met
 - **Metrics that reference joined dimensions**
 - **Complex sequential joins**, e.g one-to-many, one-to-many and then a many-to-one
 - **Custom dimensions** sometimes cause duplicate rows where they shouldn't
-- **Intentional fanouts** where the fanout is desired for business logic (see below)
+- **Rolledup metrics** when used with joins that create fanouts ([see below](#rolledup-metrics))
+- **Intentional fanouts** where the fanout is desired for business logic ([see below](#intentional-fanouts))
+
+#### Rolledup metrics
+
+Rolledup metrics are pre-aggregated metrics that have already been calculated at a specific granularity in your data warehouse. When these metrics are used in queries that involve joins creating fanouts, they can become inflated because the pre-aggregated values get duplicated across the fanned-out rows.
+
+##### Example: Orders and payments analysis
+
+Consider a scenario where you have an orders table with total_amount and a payments table with payment methods. For each order, you can have multiple payments with different methods:
+
+**orders table:**
+| order_id | total_amount |
+| :------- | :----------- |
+| 1001     | 100.00       |
+| 1002     | 250.00       |
+
+**payments table:**
+| payment_id | order_id | payment_method | amount |
+| :--------- | :------- | :------------- | :----- |
+| 1          | 1001     | cash           | 60.00  |
+| 2          | 1001     | card           | 40.00  |
+| 3          | 1002     | card           | 250.00 |
+
+If you select payment method and average orders total_amount, the results are wrong because total_amount is a rolledup metric that can't be split by method:
+
+| payment_method | avg_order_total |
+| :------------- | :-------------- |
+| cash           | 100.00          |
+| card           | 175.00          |
+
+This is incorrect because:
+- The cash average should reflect that cash was only used for part of order 1001 (\$100), but the query shows \$100 as if cash paid for the entire order
+- The card average shows \$175 (average of \$100 and \$250), but this doesn't represent the actual relationship between card payments and order totals
+
+The issue is that `total_amount` is a rolledup metric at the order level, but when joined with payments, it gets duplicated across payment methods, making it impossible to correctly analyze the relationship between payment methods and order totals.
+
+##### Best practices for rolledup metrics
+
+To avoid issues with rolledup metrics in joins that create fanouts:
+
+**Avoid rolledup metrics when possible:** Instead of using pre-aggregated values, use the underlying detail-level data. For example, instead of using a pre-calculated `total_amount` at the order level, use individual payment amounts that can be properly aggregated.
+
+**Name rolledup metrics clearly:** If you must use rolledup metrics, give them descriptive names that indicate their pre-aggregated nature and limitations.
+
+**Provide clear descriptions:** Always include detailed descriptions in your dbt model's YAML that explain the metric's granularity and any limitations when used with joins.
+
+```yaml
+models:
+  - name: orders
+    columns:
+      - name: total_amount
+        meta:
+          metrics:
+            total_order_amount:
+              type: sum
+              description: 'Pre-aggregated total amount per order. Cannot be meaningfully split by payment method or other transaction-level dimensions.'
+```
 
 #### Intentional fanouts
 
