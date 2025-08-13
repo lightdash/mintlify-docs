@@ -568,11 +568,76 @@ LIMIT 500
 
 There are a few situations where Lightdash doesn't currently handle inflated metrics:
 
-- **Metrics that reference joined dimensions**
-- **Complex sequential joins**, e.g one-to-many, one-to-many and then a many-to-one
-- **Custom dimensions** sometimes cause duplicate rows where they shouldn't
+- **Metrics that reference a dimension from joined table** ([see below](#metrics-that-reference-a-dimension-from-joined-table))
+- **Metrics that have a filter with a dimension from joined table** ([see below](#metrics-that-have-a-filter-with-a-dimension-from-joined-table))
+- **Dimension that references a dimension from joined table** ([see below](#dimension-that-references-a-dimension-from-joined-table))
+- **Metrics that have multiple levels of references** ([see below](#metrics-that-have-multiple-levels-of-references))
 - **Rolledup metrics** when used with joins that create fanouts ([see below](#rolledup-metrics))
 - **Intentional fanouts** where the fanout is desired for business logic ([see below](#intentional-fanouts))
+
+<Note>
+  If you are being impacted by these limitations, please reach out to support as we are interested to understand your use cases.
+</Note>
+
+#### Metrics that reference a dimension from joined table
+
+When a metric in one table references a dimension from a joined table, Lightdash's fanout handling may not correctly deduplicate the results.
+
+##### Example
+
+```yaml
+metrics:
+  total_amount:
+    type: sum
+    sql: ${amount}+${expenses.amount}
+```
+
+#### Metrics that have a filter with a dimension from joined table
+
+Metrics that include filters based on dimensions from joined tables can also cause issues with Lightdash's fanout handling.
+
+##### Example
+
+```yaml
+metrics:
+  count_users:
+    type: count_distinct
+    filters:
+      - web_sessions.is_bot_user: false
+```
+
+#### Dimension that references a dimension from joined table
+
+Dimensions that reference dimensions from joined tables can cause issues with Lightdash's fanout handling.
+
+##### Example
+
+```yaml
+meta:
+  dimension:
+    type: number
+    sql: ${amount}+${expenses.amount}
+```
+
+#### Metrics that have multiple levels of references
+
+Metrics that involve multiple levels of references or dependencies can be particularly challenging for Lightdash's fanout handling.
+
+##### Example
+
+```yaml
+# orders.yml
+metrics:
+  total_amount:
+    type: number
+    sql: ${amount}+${expenses.total_amount}
+
+# expenses.yml
+metrics:
+  total_amount:
+    type: number
+    sql: ${amount}+${tariffs.amount}
+```
 
 #### Rolledup metrics
 
