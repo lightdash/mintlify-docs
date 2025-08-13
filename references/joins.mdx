@@ -507,6 +507,63 @@ Specifying a `primary_key` and the join `relationship` allows Lightdash to:
   Once you've included primary keys and a join relationship, Lightdash will add CTEs to the compiled SQL query that ensure metrics are not inflated.
 </Info>
 
+#### How Lightdash solves SQL fanouts
+
+Lightdash uses a pattern of Common Table Expressions (CTEs) to solve the fanout problem. Here's how it works:
+
+1. **cte_keys**: Contains dimensions (like payment_method, order_id) that define the grain of your final results and the primary keys. Any field you want to GROUP BY in your final output should be included here.
+2. **cte_metrics**: Performs calculations on metrics while maintaining the correct grain established by the keys CTE. This prevents double-counting when aggregating across related tables.
+3. **cte_unaffected**: Calculates all metrics that are not affected by fanouts. This includes metrics that exclude duplicates by definition (i.e. `MIN()`, `MAX()` and `COUNT(DISTINCT)`) as well as metrics that are calculated on the table that is on the `many` side of an `one-to-many` or `many-to-one` join relationship. For example, if you have joined `accounts` to `deals` using a `one-to-many` join relationship, `SUM(deals.amount)` would be calculated in this unaffected_cte because the `deals` data is not susceptible to fanouts. 
+4. **final**: Join the metrics CTEs together to create the complete result set.
+
+<Note>
+  Lightdash creates a separate cte_keys and cte_metrics for each table that contains metrics with fanouts. This is why you'll see names like "cte_keys_orders" and "cte_metrics_orders" in the example below, indicating they're specific to the orders table.
+</Note>
+
+##### Examples
+
+```sql
+# Step 1: Create cte_keys that determine the final grain of your results i.e. whatever we will group by.
+# Exclude fields that we use in aggregations to calculate metrics e.g. `"orders".amount`
+WITH cte_keys_orders AS (
+    SELECT DISTINCT
+      "orders".status AS "orders_status", -- grouping dimension
+      "orders".order_id AS "pk_order_id"  -- primary key
+    FROM "postgres"."jaffle"."payments" AS "payments"
+    LEFT OUTER JOIN "postgres"."jaffle"."orders" AS "orders"
+      ON ("orders".order_id) = ("payments".order_id)
+),
+# Step 2: Calculate metrics that are affected by fanouts
+cte_metrics_orders AS (
+    SELECT
+      cte_keys_orders."orders_status",
+      SUM("orders".amount) AS "orders_total_order_amount" -- order metric (affected by fanout)
+    FROM cte_keys_orders
+    LEFT JOIN "postgres"."jaffle"."orders" AS "orders" ON cte_keys_orders."pk_order_id" = "orders".order_id -- join with primary keys
+    GROUP BY 1 -- Note orders_status are grouping dimensions
+),
+# Step 3: Calculate metrics that are not affected by fanouts
+cte_unaffected AS (
+    SELECT
+      "orders".status AS "orders_status",
+      COUNT(DISTINCT "payments".payment_id) AS "payments_unique_payment_count" -- payment metric (NOT affected by fanout)
+    FROM "postgres"."jaffle"."payments" AS "payments"
+    LEFT OUTER JOIN "postgres"."jaffle"."orders" AS "orders"
+      ON ("orders".order_id) = ("payments".order_id)
+    GROUP BY 1 -- Note orders_status are grouping dimensions
+)
+# Step 4: Join the metrics CTEs together to create the final result with properly calculated metrics
+SELECT
+  cte_unaffected.*,
+  cte_metrics_orders."orders_total_order_amount" AS "orders_total_order_amount"
+FROM cte_unaffected
+INNER JOIN cte_metrics_orders ON (
+  cte_unaffected."orders_status" = cte_metrics_orders."orders_status" OR ( cte_unaffected."orders_status" IS NULL AND cte_metrics_orders."orders_status" IS NULL )
+)
+ORDER BY "orders_total_order_amount" DESC
+LIMIT 500
+```
+
 ### Known limitations
 
 There are a few situations where Lightdash doesn't currently handle inflated metrics:
@@ -580,4 +637,3 @@ In this case, each row represents a real charge, and the total billing (TechCorp
 
 **How it works:** When fanout handling is enabled for your Lightdash organization, Lightdash warns you about joins that will likely create fanouts. To remove these warnings and enable fanout protection, specify the join relationship and primary keys in your model.yaml file (details [here](#handling-fanouts)).
 This keeps your setup clean and prevents inflated metrics.
-
