@@ -70,7 +70,8 @@ models:
 | [required_attributes](#required-attributes) | object | Limits access to users with those attributes. [Read about user attributes](/references/user-attributes) |
 | group_details | object | Describes the groups for dimensions and metrics |
 | [default_filters](#default-filters) | array | Dimension filters that will be applied when no other filter on those dimension exists. [Read about `default_filters`](#default-filters) |
-| [explores](#explores) | object | Allows you to define multiple table explores in Lightdash from a single dbt model.
+| [explores](#explores) | object | Allows you to define multiple table explores in Lightdash from a single dbt model. |
+| [parameters](#parameters-configuration) | object | Model-level parameters that can be referenced in SQL queries. [Read about parameters](#parameters-configuration) |
 
 
 ### Adding a new dbt model 
@@ -337,6 +338,69 @@ Using a properly defined primary key helps Lightdash optimize queries and provid
 | is not null                   | Status is not NULL                             | status: "\!null"            |
 | is [boolean]                  | Is complete is true                            | is_complete: "true"         |
 | is not [boolean]              | Is complete is false or null                   | is_complete: "\!true"       |
+
+## Parameters configuration
+
+The `parameters` section allows you to define model-level parameters that can be referenced in various parts of your model's SQL queries. These parameters are scoped to the specific model where they're defined.
+
+```yaml
+models:
+  - name: orders
+    meta:
+      parameters:
+        region:
+          label: "Region"
+          description: "Filter data by region"
+          options:
+            - "EMEA"
+            - "AMER"
+            - "APAC"
+          default: ["EMEA", "AMER"]
+          multiple: true
+        department:
+          label: "Department"
+          description: "Filter data by department"
+          options_from_dimension:
+            model: "employees"
+            dimension: "department"
+```
+
+Each parameter is defined as a key-value pair where the key is the parameter name (must be alphanumeric with underscores or hyphens) and the value is an object with the following properties:
+
+| Property                 | Required | Value                      | Description |
+| :----------------------- | :------- | :------------------------- | :---------- |
+| `label`                  | Yes      | string                     | A user-friendly label for the parameter as it will be displayed in the UI. |
+| `description`            | No       | string                     | A description of the parameter. |
+| `options`                | No       | Array of strings           | A list of possible values for the parameter. |
+| `default`                | No       | string or Array of strings | The default value(s) for the parameter. |
+| `multiple`               | No       | boolean                    | Whether the parameter input will be a multi-select. |
+| `allow_custom_values`    | No       | boolean                    | Whether users can input custom values beyond predefined options. |
+| `options_from_dimension` | No       | Object                     | Get parameter options from a dimension in a model. Requires `model` and `dimension` arguments (see below).|
+
+If using `options_from_dimension`, the object requires the following properties:
+
+| Property    | Required | Value  | Description                         |
+| :---------- | :------- | :----- | :---------------------------------- |
+| `model`     | Yes      | string | The model containing the dimension. |
+| `dimension` | Yes      | string | The dimension to get options from.  |
+
+### Using model-level parameters
+
+Model-level parameters can be referenced in your model's SQL using the syntax `${lightdash.parameters.parameter_name}` or the shorter alias `${ld.parameters.parameter_name}`. 
+
+For example, to reference a parameter named `region` in a dimension:
+
+```yaml
+${lightdash.parameters.region}
+```
+
+Or using the shorter alias:
+
+```yaml
+${ld.parameters.region}
+```
+
+See the [Parameters guide](/guides/using-parameters) for more examples and information on how to use parameters.
 
 ## Explores
 
