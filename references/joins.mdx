@@ -3,8 +3,9 @@ title: "Joins reference"
 description: "Joins let you connect different models to each other so that you can explore more than one model at the same time in Lightdash and see how different parts of your data relate to each other."
 sidebarTitle: "Joins"
 ---
+
 <Info>
-**Performance Best Practice:** For optimal query performance, we recommend using wide tables wherever possible and minimising joins in the BI layer. While we offer advanced features like fanout protection to help with complex relationships, handling data transformations and complex logic directly in your SQL models will generally yield better performance than relying heavily on joins at query time. Consider pre-joining related data during your data modeling process rather than joining tables on-the-fly in dashboards and reports.
+  **Performance Best Practice:** For optimal query performance, we recommend using wide tables wherever possible and minimising joins in the BI layer. While we offer advanced features like fanout protection to help with complex relationships, handling data transformations and complex logic directly in your SQL models will generally yield better performance than relying heavily on joins at query time. Consider pre-joining related data during your data modeling process rather than joining tables on-the-fly in dashboards and reports.
 </Info>
 
 ## Adding joins in your models
@@ -170,11 +171,12 @@ models:
           sql_on: ${users.user_id} = ${orders.user_id}
           relationship: one-to-many
 ```
+
 <Warning>
-Make sure that you consider the direction of the join when defining the relationship. If you incorreclty define the join relationship, your will be affected by fanouts.  
+  Make sure that you consider the direction of the join when defining the relationship. If you incorreclty define the join relationship, your will be affected by fanouts.
 </Warning>
 
-##### The following join relationships are supported: 
+##### The following join relationships are supported:
 
 - `one-to-many` - Starting table has 1 record, joined table has many matches
 - `many-to-one` - Starting table has many records, joined table has 1 match
@@ -182,112 +184,125 @@ Make sure that you consider the direction of the join when defining the relation
 - `many-to-many` - Multiple records in the starting table match multiple records in the joined table
 
 <Accordion title="Helpful Steps for Determining Join Relationships">
-#### Step 1: Identify your starting table
-Which table are you joining FROM? Direction matters: `Accounts` joining to `Users` (one-to-many) is completely different from users joining to accounts (many-to-one), even though it's the same data.
+  #### Step 1: Identify your starting table
 
-#### Step 2: Count the expected matches and name the join relationship
-For any record in your starting table, ask: "How many matching records will I find in the table I'm joining to and vice versa?" Refer to the supported join relationships listed above. 
+  Which table are you joining FROM? Direction matters: `Accounts` joining to `Users` (one-to-many) is completely different from users joining to accounts (many-to-one), even though it's the same data.
 
-The examples below detail some more complex join relationships:
+  #### Step 2: Count the expected matches and name the join relationship
 
-##### Chained Join Example 
-Don't try to figure out `Accounts` → `Users` → `Tracks` all at once. Analyze each join separately:
+  For any record in your starting table, ask: "How many matching records will I find in the table I'm joining to and vice versa?" Refer to the supported join relationships listed above.
 
-- First: `Accounts` → `Users` (one-to-many)
-- Then: `Users` → `Tracks` (one-to-many)
-- Overall result: `Accounts` → `Tracks` (one-to-many)
+  The examples below detail some more complex join relationships:
 
-The `accounts.yml` file will look like this: 
-``` yaml
-version: 2
-models:
-  - name: accounts
-    meta:
-      primary_key: account_id
-      description: List of all customer and prospective customer Accounts pulled from our CRM 
-      joins:
-        - join: users
-          relationship: one-to-many
-          sql_on: ${accounts.account_id} = ${users.account_id}
-          type: left
-        - join: tracks
-          relationship: one-to-many
-          sql_on: ${users.user_id} = ${tracks.user_id} 
-          type: left
-```
-The above setup will consider both `Accounts` and `Users` as being susceptible to fanouts and these would be handled accordingly. When you chain two one-to-many relationships, you get a one-to-many relationship from your starting table to your final table (`Accounts` can have many `Tracks`). 
+  ##### Chained Join Example
 
-Note that if I wanted to join `Users` and `Accounts` onto the `Tracks`, where `Tracks` is the starting model, the direction of the relationship would look different:   
+  Don't try to figure out `Accounts` → `Users` → `Tracks` all at once. Analyze each join separately:
 
-The `tracks.yml` model would look like this:
-```yaml
-version: 2
-models:
-  - name: tracks
-    meta:
-      primary_key: account_id
-      description: List of all customer and prospective customer Accounts pulled from our CRM 
-      joins:
-        - join: users
-          relationship: many-to-one
-          sql_on: ${users.user_id} = ${tracks.user_id} 
-          type: right
-        - join: accounts
-          relationship: many-to-one
-          sql_on: ${users.account_id} = ${accounts.account_id} 
-          type: right
-```
-##### Complex Join Example
-We want to see all Accounts and all Deals, but we only want to see Users (and their associated event tracks) for accounts that have at least one Deal in the 'Won' stage.
+  - First: `Accounts` → `Users` (one-to-many)
+  - Then: `Users` → `Tracks` (one-to-many)
+  - Overall result: `Accounts` → `Tracks` (one-to-many)
 
-This requires a complex join that involves 4 different tables. 
+  The `accounts.yml` file will look like this:
 
-• First: `Accounts` → `Deals` (one-to-many)
-• Next: `Accounts` and `Deals` → `Users` (many-to-many) - each `Account`+ `Deal` combination can be associated with many `Users` and each user can be associated with multiple `Deals`.  
-• Then: `Users` → `Tracks` (one-to-many)
+  ```yaml
+  version: 2
+  models:
+    - name: accounts
+      meta:
+        primary_key: account_id
+        description: List of all customer and prospective customer Accounts pulled from our CRM 
+        joins:
+          - join: users
+            relationship: one-to-many
+            sql_on: ${accounts.account_id} = ${users.account_id}
+            type: left
+          - join: tracks
+            relationship: one-to-many
+            sql_on: ${users.user_id} = ${tracks.user_id} 
+            type: left
+  ```
 
-A normal SQL join that does not account for fanouts would look like this: 
-``` sql
-select 
-  * 
-from  
-  accounts 
-  left join deals on 
-    accounts.account_id = deals.account_id
-  left join users on 
-    accounts.account_id = users.account_id and deals.stage ='Won'
-  left join tracks on 
-    users.user_id = tracks.user_id
-```
+  The above setup will consider both `Accounts` and `Users` as being susceptible to fanouts and these would be handled accordingly. When you chain two one-to-many relationships, you get a one-to-many relationship from your starting table to your final table (`Accounts` can have many `Tracks`).
 
-And the `accounts.yml` would look like this: 
-``` yaml
-models:
-  - name: accounts
-    meta:
-      primary_key: account_id
-      description: List of all customer and prospective customer Accounts pulled from our CRM 
-      joins:
-        - join: deals
-          relationship: one-to-many
-          sql_on: ${accounts.account_id} = ${deals.account_id}
-          type: left
-        - join: users
-          relationship: many-to-many
-          sql_on: ${accounts.account_id} = ${users.account_id} and ${deals.stage} = 'Won'
-          type: left
-        - join: tracks
-          relationship: one-to-many
-          sql_on: ${users.user_id} = ${tracks.user_id}
-          type: left
-```
-In this case, the fanout protection logic will consider metrics from all models to be susceptible to fanouts.  
+  Note that if I wanted to join `Users` and `Accounts` onto the `Tracks`, where `Tracks` is the starting model, the direction of the relationship would look different:
 
-#### Step 3: Check for conditional joins
-Look for any AND conditions in your join logic (like and `${deals.stage} = 'Won'`). These can change your relationship from what you'd expect - a typical one-to-many might become many-to-many when you add conditions.
+  The `tracks.yml` model would look like this:
 
-#### Step 4: Validate with sample data
-Pick one record from your starting table and manually trace through the joins. Count how many final records you get - this helps catch relationship mistakes before they cause problems.
+  ```yaml
+  version: 2
+  models:
+    - name: tracks
+      meta:
+        primary_key: account_id
+        description: List of all customer and prospective customer Accounts pulled from our CRM 
+        joins:
+          - join: users
+            relationship: many-to-one
+            sql_on: ${users.user_id} = ${tracks.user_id} 
+            type: right
+          - join: accounts
+            relationship: many-to-one
+            sql_on: ${users.account_id} = ${accounts.account_id} 
+            type: right
+  ```
+
+  ##### Complex Join Example
+
+  We want to see all Accounts and all Deals, but we only want to see Users (and their associated event tracks) for accounts that have at least one Deal in the 'Won' stage.
+
+  This requires a complex join that involves 4 different tables.
+
+  - First: `Accounts` → `Deals` (one-to-many)\
+  - Next: `Accounts` and `Deals` → `Users` (many-to-many) - each `Account`\+ `Deal` combination can be associated with many `Users` and each user can be associated with multiple `Deals`.\
+  - Then: `Users` → `Tracks` (one-to-many)
+
+  A normal SQL join that does not account for fanouts would look like this:
+
+  ```sql
+  select 
+    * 
+  from  
+    accounts 
+    left join deals on 
+      accounts.account_id = deals.account_id
+    left join users on 
+      accounts.account_id = users.account_id and deals.stage ='Won'
+    left join tracks on 
+      users.user_id = tracks.user_id
+  ```
+
+  And the `accounts.yml` would look like this:
+
+  ```yaml
+  models:
+    - name: accounts
+      meta:
+        primary_key: account_id
+        description: List of all customer and prospective customer Accounts pulled from our CRM 
+        joins:
+          - join: deals
+            relationship: one-to-many
+            sql_on: ${accounts.account_id} = ${deals.account_id}
+            type: left
+          - join: users
+            relationship: many-to-many
+            sql_on: ${accounts.account_id} = ${users.account_id} and ${deals.stage} = 'Won'
+            type: left
+          - join: tracks
+            relationship: one-to-many
+            sql_on: ${users.user_id} = ${tracks.user_id}
+            type: left
+  ```
+
+  In this case, the fanout protection logic will consider metrics from all models to be susceptible to fanouts.
+
+  #### Step 3: Check for conditional joins
+
+  Look for any AND conditions in your join logic (like and `${deals.stage} = 'Won'`). These can change your relationship from what you'd expect - a typical one-to-many might become many-to-many when you add conditions.
+
+  #### Step 4: Validate with sample data
+
+  Pick one record from your starting table and manually trace through the joins. Count how many final records you get - this helps catch relationship mistakes before they cause problems.
 </Accordion>
 
 ## Always join a table
@@ -470,7 +485,6 @@ These metrics can give you the wrong answers:
 
     We cannot sum org_total_users on this joined table because it will be incorrect.
   </Accordion>
-
   <Accordion title="Chained one-to-many joins">
     **Example:** When you create a chain of one-to-many relationships by joining `users` to their `orders`, and then `orders` to their support `tickets`.
 
@@ -535,7 +549,6 @@ These metrics can give you the wrong answers:
       Note that `users` and `orders` are duplicated but `tickets` are not, which means we can only safely apply aggregates to metrics on the `tickets` table.
     </Note>
   </Accordion>
-
   <Accordion title="Multiple one-to-many joins">
     **Example:** When you join `users` → `orders` AND `users` → `tickets` (both `orders` and `tickets` relate to `users`, but not directly to each other)
 
@@ -587,7 +600,6 @@ These metrics can give you the wrong answers:
     <Note>
       Note that there is duplication in `users`, `orders` and `tickets` records. We cannot apply aggregates on any metrics without deduplicating records.
     </Note>
-
     This creates the worst-case scenario where no aggregate metric (`sum`, `count`, `avg`) is safe without explicit deduplication techniques.
   </Accordion>
 </AccordionGroup>
@@ -595,7 +607,7 @@ These metrics can give you the wrong answers:
 ### Handling fanouts
 
 <Info>
-  **Fanout handling is an [early access feature](/references/feature-maturity-levels)** currently only available in Lightdash Cloud. If you would like to use it, [reach out to the Lightdash team](/contact/contact_info).
+  [**Fanout handling is an early access feature**](/references/feature-maturity-levels) currently only available in Lightdash Cloud. If you would like to use it, [reach out to the Lightdash team](/contact/contact_info).
 </Info>
 
 Lightdash can automatically handle deduplicating metrics that are inflated due to fanouts if join relationships are specified in YAML as described [in Defining join relationships, above](#defining-join-relationships).
@@ -631,7 +643,7 @@ Lightdash uses a pattern of Common Table Expressions (CTEs) to solve the fanout 
 
 1. **cte_keys**: Contains dimensions (like payment_method, order_id) that define the grain of your final results and the primary keys. Any field you want to GROUP BY in your final output should be included here.
 2. **cte_metrics**: Performs calculations on metrics while maintaining the correct grain established by the keys CTE. This prevents double-counting when aggregating across related tables.
-3. **cte_unaffected**: Calculates all metrics that are not affected by fanouts. This includes metrics that exclude duplicates by definition (i.e. `MIN()`, `MAX()` and `COUNT(DISTINCT)`) as well as metrics that are calculated on the table that is on the `many` side of an `one-to-many` or `many-to-one` join relationship. For example, if you have joined `accounts` to `deals` using a `one-to-many` join relationship, `SUM(deals.amount)` would be calculated in this unaffected_cte because the `deals` data is not susceptible to fanouts. 
+3. **cte_unaffected**: Calculates all metrics that are not affected by fanouts. This includes metrics that exclude duplicates by definition (i.e. `MIN()`, `MAX()` and `COUNT(DISTINCT)`) as well as metrics that are calculated on the table that is on the `many` side of an `one-to-many` or `many-to-one` join relationship. For example, if you have joined `accounts` to `deals` using a `one-to-many` join relationship, `SUM(deals.amount)` would be calculated in this unaffected_cte because the `deals` data is not susceptible to fanouts.
 4. **final**: Join the metrics CTEs together to create the complete result set.
 
 <Note>
@@ -687,7 +699,6 @@ LIMIT 500
 There are a few situations where Lightdash doesn't currently handle inflated metrics:
 
 <AccordionGroup>
-
   <Accordion title="Metrics that reference a dimension from joined table">
     When a metric in one table references a dimension from a joined table, Lightdash's fanout handling may not correctly deduplicate the results.
 
@@ -723,7 +734,6 @@ There are a few situations where Lightdash doesn't currently handle inflated met
 
     To avoid this limitation, consider moving this logic to your dbt models. By transforming your data in dbt first, you can pre-calculate these dimensions without needing to reference dimensions from joined tables in Lightdash.
   </Accordion>
-
   <Accordion title="Metrics that have a filter with a dimension from joined table">
     Metrics that include filters based on dimensions from joined tables can also cause issues with Lightdash's fanout handling.
 
@@ -741,7 +751,6 @@ There are a few situations where Lightdash doesn't currently handle inflated met
 
     To avoid this limitation, consider moving this logic to your dbt models. By applying these filters in your dbt transformations, you can create pre-filtered metrics that don't require referencing dimensions from joined tables in Lightdash.
   </Accordion>
-
   <Accordion title="Metrics that have multiple levels of references">
     Metrics that involve multiple levels of references or dependencies can be particularly challenging for Lightdash's fanout handling.
 
@@ -753,19 +762,18 @@ There are a few situations where Lightdash doesn't currently handle inflated met
       total_amount:
         type: number
         sql: ${amount}+${expenses.total_amount}
-
+    
     # expenses.yml
     metrics:
       total_amount:
         type: number
         sql: ${amount}+${tariffs.amount}
     ```
-      
+
     **Recommendation**
 
     To avoid this limitation, consider moving this complex logic to your dbt models. By pre-calculating these metrics in dbt, you can flatten the dependency chain and avoid the need for multi-level references between joined tables in Lightdash.
   </Accordion>
-
   <Accordion title="Rolledup metrics">
     Rolledup metrics are pre-aggregated metrics that have already been calculated at a specific granularity in your data warehouse. When these metrics are used in queries that involve joins creating fanouts, they can become inflated because the pre-aggregated values get duplicated across the fanned-out rows.
 
@@ -774,12 +782,14 @@ There are a few situations where Lightdash doesn't currently handle inflated met
     Consider a scenario where you have an orders table with total_amount and a payments table with payment methods. For each order, you can have multiple payments with different methods:
 
     **orders table:**
+
     | order_id | total_amount |
     | :------- | :----------- |
     | 1001     | 100.00       |
     | 1002     | 250.00       |
 
     **payments table:**
+
     | payment_id | order_id | payment_method | amount |
     | :--------- | :------- | :------------- | :----- |
     | 1          | 1001     | cash           | 60.00  |
@@ -792,8 +802,9 @@ There are a few situations where Lightdash doesn't currently handle inflated met
     | :------------- | :-------------- |
     | cash           | 100.00          |
     | card           | 175.00          |
-    
+
     This is incorrect because:
+
     - The cash average should reflect that cash was only used for part of order 1001 (\$100), but the query shows \$100 as if cash paid for the entire order
     - The card average shows \$175 (average of \$100 and \$250), but this doesn't represent the actual relationship between card payments and order totals
 
@@ -804,9 +815,7 @@ There are a few situations where Lightdash doesn't currently handle inflated met
     To avoid issues with rolledup metrics in joins that create fanouts:
 
     - **Avoid rolledup metrics when possible:** Instead of using pre-aggregated values, use the underlying detail-level data. For example, instead of using a pre-calculated `total_amount` at the order level, use individual payment amounts that can be properly aggregated.
-
     - **Name rolledup metrics clearly:** If you must use rolledup metrics, give them descriptive names that indicate their pre-aggregated nature and limitations.
-
     - **Provide clear descriptions:** Always include detailed descriptions in your dbt model's YAML that explain the metric's granularity and any limitations when used with joins.
 
     ```yaml
@@ -821,7 +830,6 @@ There are a few situations where Lightdash doesn't currently handle inflated met
                   description: 'Pre-aggregated total amount per order. Cannot be meaningfully split by payment method or other transaction-level dimensions.'
     ```
   </Accordion>
-
   <Accordion title="Intentional fanouts">
     In some business scenarios, fanouts are actually desired and represent real data relationships. A common example is when you need to calculate per-user fees or charges.
 
@@ -830,12 +838,14 @@ There are a few situations where Lightdash doesn't currently handle inflated met
     Consider a scenario with accounts, users, and per-user fees where different accounts pay different rates:
 
     **accounts table:**
+
     | account_id | account_name |
     | :--------- | :----------- |
     | 1          | TechCorp     |
     | 2          | StartupXYZ   |
 
     **users table:**
+
     | user_id | account_id | user_name |
     | :------ | :--------- | :-------- |
     | 101     | 1          | Alice     |
@@ -843,6 +853,7 @@ There are a few situations where Lightdash doesn't currently handle inflated met
     | 201     | 2          | David     |
 
     **fees table:**
+
     | account_id | fee_type     | per_user_amount |
     | :--------- | :----------- | :-------------- |
     | 1          | Support Fee  | 80.00           |
