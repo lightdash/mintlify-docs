@@ -36,7 +36,9 @@ Parameters can be referenced in many places throughout your Lightdash project:
 
 ## How to reference parameters in SQL
 
-To reference parameters in SQL, use the following syntax:
+### Project-level parameters
+
+To reference project-level parameters in SQL, use the following syntax:
 
 ```sql
 ${lightdash.parameters.parameter_name}
@@ -48,19 +50,41 @@ For example, to reference a parameter named `region`:
 ${lightdash.parameters.region}
 ```
 
-You can also use the shorter alias:
+### Model-level parameters
+
+To reference model-level parameters in SQL, you need to include the model name:
 
 ```sql
+${lightdash.parameters.model_name.parameter_name}
+```
+
+For example, to reference a parameter named `region` from the `orders` model:
+
+```sql
+${lightdash.parameters.orders.region}
+```
+
+### Using the shorter alias
+
+You can also use the shorter alias `ld` instead of `lightdash`:
+
+```sql
+# Project parameter
 ${ld.parameters.parameter_name}
+
+# Model parameter
+${ld.parameters.model_name.parameter_name}
 ```
 
 For example:
 
 ```sql
+# Project parameter
 ${ld.parameters.region}
-```
 
-Both syntaxes are equivalent and can be used interchangeably.
+# Model parameter from orders model
+${ld.parameters.orders.region}
+```
 
 ## How to define parameters
 
@@ -155,7 +179,7 @@ In this example, the `filtered_revenue` dimension will only show revenue for the
 
 ### Example 2: Using parameters in table joins
 
-You can use parameters in the SQL_ON clause of a table join:
+You can use parameters in the SQL_ON clause of a table join. This includes both project-level parameters and model-level parameters from the joined table:
 
 ```yaml
 models:
@@ -168,7 +192,22 @@ models:
             AND ${customers.region} IN (${lightdash.parameters.region})
 ```
 
-This join will only include customers from the regions selected in the `region` parameter.
+This join will only include customers from the regions selected in the project-level `region` parameter.
+
+You can also reference model-level parameters from joined tables:
+
+```yaml
+models:
+  - name: orders
+    meta:
+      joins:
+        - join: customers
+          sql_on: |
+            ${orders.customer_id} = ${customers.customer_id} 
+            AND ${customers.status} = ${lightdash.parameters.customers.customer_status}
+```
+
+In this example, the join uses a model-level parameter `customer_status` defined in the `customers` model. This allows you to dynamically filter the joined data based on parameters specific to the joined table.
 
 ### Example 3: Using parameters in table calculations
 
@@ -205,7 +244,33 @@ models:
 
 This additional dimension will indicate whether an order was placed on or after the date selected in the `date_range` parameter.
 
-## Example 5: Using parameters in SQL Runner
+### Example 5: Using model parameters from joined tables in dimensions
+
+When working with joined tables, you can reference model-level parameters from the joined table in your dimension definitions:
+
+```yaml
+models:
+  - name: orders
+    meta:
+      joins:
+        - join: customers
+          sql_on: ${orders.customer_id} = ${customers.id}
+    columns:
+      - name: filtered_customer_revenue
+        meta:
+          dimension:
+            type: number
+            sql: |
+              CASE 
+                WHEN ${customers.segment} = ${lightdash.parameters.customers.target_segment}
+                THEN ${TABLE}.revenue 
+                ELSE 0 
+              END
+```
+
+In this example, the `filtered_customer_revenue` dimension uses a model-level parameter `target_segment` from the joined `customers` model to conditionally show revenue.
+
+## Example 6: Using parameters in SQL Runner
 
 Parameters can also be used in SQL Runner queries:
 
