@@ -25,7 +25,11 @@ Parameters are variables that you can define once and reference in multiple plac
 - Allow non-technical users to customize queries without writing SQL
 - Save parameter values at the chart and dashboard level
 
-For example, you might define a `region` parameter that users can set to filter data by different geographic regions, or a `date_range` parameter that allows users to select different time periods for analysis.
+For example, you might define a `region` parameter that users can set to filter data by different geographic regions, a `date_range` parameter that allows users to select different time periods for analysis, or a `min_revenue` parameter with numeric values that allows users to set revenue thresholds for analysis.
+
+<Info>
+  **Parameter Types**: Parameters support both string and number values. You can use strings (like `"EMEA"` or `"2023-01-01"`) or numbers (like `1000` or `5000`) as parameter options.
+</Info>
 
 ## Where can you reference parameters?
 
@@ -123,6 +127,16 @@ parameters:
     default: ["EMEA", "AMER"]
     multiple: true
   
+  # Parameter with number type
+  min_revenue:
+    label: "Minimum Revenue"
+    description: "Filter for minimum revenue threshold"
+    options:
+      - 1000
+      - 5000
+      - 10000
+    default: 5000
+  
   # Parameter with options from a dimension
   department:
     label: "Department"
@@ -183,7 +197,24 @@ models:
 
 In this example, the `filtered_revenue` dimension will only show revenue for the regions selected in the `region` parameter.
 
-### Example 2: Using parameters in table joins
+### Example 2: Using numeric parameters in dimension SQL
+
+You can reference numeric parameters directly without casting:
+
+```yaml
+models:
+  - name: orders
+    columns:
+      - name: high_value_orders
+        meta:
+          dimension:
+            type: boolean
+            sql: ${TABLE}.revenue >= ${lightdash.parameters.min_revenue}
+```
+
+In this example, the `high_value_orders` dimension will be true for orders with revenue greater than or equal to the numeric `min_revenue` parameter value.
+
+### Example 3: Using parameters in table joins
 
 You can use parameters in the SQL_ON clause of a table join. This includes both project-level parameters and model-level parameters from the joined table:
 
@@ -288,9 +319,10 @@ SELECT
 FROM orders
 WHERE region IN (${lightdash.parameters.region})
   AND order_date >= ${lightdash.parameters.date_range}
+  AND revenue >= ${lightdash.parameters.min_revenue}
 ```
 
-This query will filter orders by the regions selected in the `region` parameter and by the date selected in the `date_range` parameter.
+This query will filter orders by the regions selected in the `region` parameter, by the date selected in the `date_range` parameter, and by orders with revenue greater than or equal to the numeric `min_revenue` parameter.
 
 ## Saving parameter values at chart and dashboard levels
 
