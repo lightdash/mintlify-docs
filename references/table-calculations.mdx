@@ -13,19 +13,27 @@ Table calculations are built using raw SQL. That means you can use table calcula
 
 ## When to use table calculations
 
-Typically, in your Lightdash project, you'll have one or more Tables that you've pre-defined in your dbt project (this is probably done by the data analysts/engineers/analytics engineers). But sometimes, you'll need particular logic which hasn't been defined as a dimension or metric in your dbt project - maybe because you have a new kind of question or use case.
+The Lightdash semantic layer allows you to define metrics and dimensions that can be reused across your organization. This creates consistency and saves time by establishing standard definitions everyone can rely on. Sometimes the predefined metrics and dimensions aren't quite enough, and you might need to perform additional calculations for specific visualizations, create specialized metrics for particular analyses, or build custom logic to better communicate your insights.
 
-This is when you might need a table calculation.
+### How Table Calculations Help
 
-Watch out: table calculations can be easier to create than regular metrics/dimensions, but they are not as easy to manage. If you find yourself creating the same table calculation over and over again when you're using a Table, then it might be worth adding it in as a more permanent metric in your dbt project! You can read more about [adding metrics to your dbt project here](references/metrics).
+Table calculations work as an additional computational layer that builds on top of:
+
+- Semantic layer metrics and dimensions (your standard definitions)
+- Custom metrics and dimensions (created at the BI layer)
+- Other table calculations (you can even stack them)
+
+<Warning>
+Table calculations are useful for specialized, temporary needs, but if you find yourself repeatedly reusing a table calculation, it's a sign to add it to dbt so it's tracked in the semantic layer. This keeps your organization's metrics centralized and consistently defined. You can read more about [adding metrics to your dbt project here](references/metrics).
+</Warning>
 
 ## Creating table calculations
 
 Before you create a table calculation, you need to add some dimensions and/or metrics to your results table.
 
-Table calculations can only be built using the dimensions + metrics that you've included in your results table. So, to create a table calculation, first, you need to add the dimensions and/or metrics for your table calculation to your results table.
+Table calculations work with whatever data you've already pulled into your results table - they can reference the dimensions and metrics you've selected, as well as other table calculations you've built from those same underlying fields. Think of it like building with blocks: you start with your base dimensions and metrics, then you can stack table calculations on top of those, and even build new calculations that reference the ones you've already created.
 
-### Using Quick Calculations
+### Using quick calculations
 
 Quick calculations are shortcuts to the most common table calculations, these are only available to metrics in the contextual menu in the results table.
 
@@ -35,7 +43,7 @@ Quick calculations are shortcuts to the most common table calculations, these ar
 
 To learn more about what these calculations are doing, check out the docs [here](/guides/table-calculations/sql-templates). Once the table calculation is generated you can edit it to modify the SQL query or update the format.
 
-### Using Custom Table Calculations
+### Using custom table calculations
 
 Once you've got some data in your results table, you can create a table calculation by clicking on the `+ Table calculation` in the `Results` tab of the Explore view:
 
@@ -77,6 +85,25 @@ If you need to edit or delete a table calculation, you can just click on the tog
   ![](/images/references/edit-delete-table-calc-520776c8631697527bf3760000dce88e.jpg)
 </Frame>
 
+
+## Table calculation execution and limitations
+
+The processing order:
+
+1. **Raw data filtering happens first** - Dimension and metric filters are applied to your base data.
+
+2. **All table calculations run** - Using this filtered dataset, all calculations are performed.
+
+3. **Table calculation filters apply last** - Only then are rows hidden based on calculated values.
+
+### Key limitations
+Since all calculations are performed before any filtering, table calculation filters only hide rows without affecting the underlying calculations. 
+
+For example: You use table calculations to calculate the `percentage_of_shipping_method_amount`, then filter to hide rows below 30%. The filtered rows (shown in purple) will disappear but the `percentage_total` calculation still shows 100% even though the visible percentages in the `percentage_of_shipping_method_amount` column no longer add up to 100%.
+
+<Frame>
+![](/images/references/table_calculation_filter_example.jpg)
+</Frame>
 
 ## Table calculation SQL templates
 
