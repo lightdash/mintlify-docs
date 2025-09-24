@@ -31,7 +31,8 @@ For example, you might define a `region` parameter that users can set to filter 
   **Parameter Types**: Parameters support both string and number values. You can use strings (like `"EMEA"` or `"2023-01-01"`) or numbers (like `1000` or `5000`) as parameter options.
 </Info>
 
-## Where can you reference parameters?
+
+## Where can you use parameters?
 
 Parameters can be referenced in many places throughout your Lightdash project:
 
@@ -227,11 +228,13 @@ Model-level parameters offer the same configuration options as project-level par
 
 For a complete reference of model-level parameter properties and options, see the [tables reference](/references/tables#parameters-configuration).
 
+
 ## Examples of using parameters
 
 Let's look at some examples of how to use parameters in different parts of your Lightdash project.
 
-### Example 1: Using parameters in dimension SQL
+
+### In dimension SQL
 
 You can reference parameters in the SQL definition of a dimension:
 
@@ -253,7 +256,8 @@ models:
 
 In this example, the `filtered_revenue` dimension will only show revenue for the regions selected in the `region` parameter.
 
-### Example 2: Using numeric parameters in dimension SQL
+
+### In numeric dimension SQL
 
 You can reference numeric parameters directly without casting:
 
@@ -270,7 +274,31 @@ models:
 
 In this example, the `high_value_orders` dimension will be true for orders with revenue greater than or equal to the numeric `min_revenue` parameter value.
 
-### Example 3: Using parameters in table joins
+
+### In metric SQL
+
+You can reference parameters in the SQL definition of a metric:
+
+```yaml
+models:
+  - name: races
+    meta:
+      metrics:
+        avg_distance_unit_param:
+          type: average
+          sql: |
+            case
+              when ${lightdash.parameters.unit} = 'Miles' 
+                then ${TABLE}.distance_miles
+              when ${lightdash.parameters.unit} = 'Kilometers'
+                then ${TABLE}.distance_km
+            end
+```
+
+In this example, the `avg_distance_unit_param` metric will return an average of the race distance in miles when the `unit` parameter is set to Miles and Kilometers when it gets set to Kilometers.
+
+
+### In table joins
 
 You can use parameters in the SQL_ON clause of a table join. This includes both project-level parameters and model-level parameters from the joined table:
 
@@ -302,7 +330,8 @@ models:
 
 In this example, the join uses a model-level parameter `customer_status` defined in the `customers` model. This allows you to dynamically filter the joined data based on parameters specific to the joined table.
 
-### Example 3: Using parameters in table calculations
+
+### In table calculations
 
 You can reference parameters in table calculations:
 
@@ -317,7 +346,8 @@ END
 
 This table calculation will only include revenue for orders placed on or after the date selected in the `date_range` parameter.
 
-### Example 4: Using parameters in additional dimensions
+
+### In additional dimensions
 
 You can use parameters in custom dimension definitions:
 
@@ -337,7 +367,25 @@ models:
 
 This additional dimension will indicate whether an order was placed on or after the date selected in the `date_range` parameter.
 
-### Example 5: Using model parameters from joined tables in dimensions
+
+### In SQL Runner
+
+Parameters can also be used in SQL Runner queries:
+
+```sql
+SELECT
+  order_id,
+  order_date,
+  revenue
+FROM orders
+WHERE region IN (${lightdash.parameters.region})
+  AND order_date >= ${lightdash.parameters.date_range}
+  AND revenue >= ${lightdash.parameters.min_revenue}
+```
+
+This query will filter orders by the regions selected in the `region` parameter, by the date selected in the `date_range` parameter, and by orders with revenue greater than or equal to the numeric `min_revenue` parameter.
+
+### Model parameters from joined tables in dimensions
 
 When working with joined tables, you can reference model-level parameters from the joined table in your dimension definitions:
 
@@ -363,28 +411,13 @@ models:
 
 In this example, the `filtered_customer_revenue` dimension uses a model-level parameter `target_segment` from the joined `customers` model to conditionally show revenue.
 
-## Example 6: Using parameters in SQL Runner
 
-Parameters can also be used in SQL Runner queries:
-
-```sql
-SELECT
-  order_id,
-  order_date,
-  revenue
-FROM orders
-WHERE region IN (${lightdash.parameters.region})
-  AND order_date >= ${lightdash.parameters.date_range}
-  AND revenue >= ${lightdash.parameters.min_revenue}
-```
-
-This query will filter orders by the regions selected in the `region` parameter, by the date selected in the `date_range` parameter, and by orders with revenue greater than or equal to the numeric `min_revenue` parameter.
-
-## Saving parameter values at chart and dashboard levels
+## Saving parameter values
 
 Parameter values can be saved at both the chart and dashboard levels.
 
-### Saving parameter values in charts
+
+### Saving values in charts
 
 When you create a chart using parameters, you can save the specific parameter values with the chart. This means that when someone views the chart, they'll see the data filtered according to the saved parameter values.
 
@@ -396,7 +429,8 @@ To save parameter values with a chart:
 
 The parameter values will be saved with the chart and will be applied whenever the chart is viewed.
 
-### Saving parameter values in dashboards
+
+### Saving values in dashboards
 
 You can also save parameter values at the dashboard level, which allows you to create dashboards with consistent parameter values across all charts.
 
@@ -408,6 +442,7 @@ To save parameter values in a dashboard:
 4. Save the dashboard
 
 The parameter values will be saved with the dashboard and will be applied to all charts on the dashboard that have parameterized fields.
+
 
 ## Best practices for using parameters
 
