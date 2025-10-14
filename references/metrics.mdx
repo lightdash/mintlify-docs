@@ -72,6 +72,18 @@ Non-aggregate metrics are metric types that, you guessed it, do _not_ perform ag
 
 Numbers and booleans are examples of non-aggregate metrics. These metric types perform a calculation on a single data point, so they can only reference aggregate metrics. They _cannot_ reference dimensions.
 
+### Post calculation metrics
+
+Post calculation metrics are computed after aggregate and non-aggregate metrics in the query. Because they run after the main aggregations, they can use window functions. Post calculation metrics:
+
+- Can only reference aggregate and non-aggregate metrics (they cannot reference dimensions or other post calculation metrics)
+- Can be referenced in table calculations like any other metric
+- Do not support the `filters` YML property
+
+<Info>
+  **Experimental:** Post calculation metrics are currently in the Experimental phase. Learn what this means in our Feature Maturity Levels guide: [Feature Maturity Levels](/references/feature-maturity-levels).
+</Info>
+
 ## Metric configuration
 
 You can customize your metrics in your dbt model's YAML file. Here's an example of the properties used in defining a metric:
@@ -113,36 +125,39 @@ models:
 
 Here are all of the properties you can customize:
 
-| Property                                          | Required | Value                          | Description                                                                                                                                                                                                                                                                                    |
-| :------------------------------------------------ | :------: | :----------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| label                                             | No       | string                         | Custom label. This is what you'll see in Lightdash instead of the metric name.                                                                                                                                                                                                                 |
-| [type](#metric-types)                             | Yes      | metric type                    | Metrics must be one of the supported types.                                                                                                                                                                                                                                                    |
-| [description](#description)                       | No       | string                         | Description of the metric that appears in Lightdash. A default description is created by Lightdash if this isn't included                                                                                                                                                                      |
-| [sql](#custom-sql-in-aggregate-metrics)           | No       | string                         | Custom SQL used to define the metric.                                                                                                                                                                                                                                                          |
-| hidden                                            | No       | boolean                        | If set to true, the metric is hidden from Lightdash. By default, this is set to false if you don't include this property.                                                                                                                                                                      |
-| [compact](#compact)                               | No       | string                         | This option will compact the number value (e.g. 1,500 to 1.50K). Currently supports one of the following: ['thousands', 'millions', 'billions', 'trillions', 'kilobytes', 'megabytes', 'gigabytes', 'terabytes', 'petabytes', 'kibibytes', 'mebibytes', 'gibibytes', 'tebibytes', 'pebibytes'] |
-| [format](#format)                                 | No       | string                         | This option will format the output value on the results table and CSV export. Supports spreadsheet-style formatting (e.g. #,##0.00). Use [this website](https://customformats.com/) to help build your custom format.                                                                          |
-| [groups](#groups)                                 | No       | string or string[]             | If you set this property, the metric will be grouped in the sidebar with other metrics with the same group label.                                                                                                                                                                              |
-| [urls](/references/dimensions#urls)               | No       | array       | Adding urls to a metric allows your users to click metric values in the UI and take actions, like opening an external tool with a url, or open at a website. You can use liquid templates to customise the link based on the value of the dimension.                                           |
-| [show_underlying_values](#show-underlying-values) | No       | Array of dimension names       | You can limit which dimensions are shown for a field when a user clicks View underlying data. The list must only include dimension names from the base model or from any joined models.                                                                                                        |
-| [filters](#filters)                               | No       | array | You can add filter logic to limit the values included in the metric calculation. You can add many filters. See which filter types are supported [here](#filters).                                                                                                                              |
+| Property                                          | Required | Value                    | Description                                                                                                                                                                                                                                                                                    |
+|:--------------------------------------------------|:--------:|:-------------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| label                                             |    No    | string                   | Custom label. This is what you'll see in Lightdash instead of the metric name.                                                                                                                                                                                                                 |
+| [type](#metric-types)                             |   Yes    | metric type              | Metrics must be one of the supported types.                                                                                                                                                                                                                                                    |
+| [description](#description)                       |    No    | string                   | Description of the metric that appears in Lightdash. A default description is created by Lightdash if this isn't included                                                                                                                                                                      |
+| [sql](#custom-sql-in-aggregate-metrics)           |    No    | string                   | Custom SQL used to define the metric.                                                                                                                                                                                                                                                          |
+| hidden                                            |    No    | boolean                  | If set to true, the metric is hidden from Lightdash. By default, this is set to false if you don't include this property.                                                                                                                                                                      |
+| [compact](#compact)                               |    No    | string                   | This option will compact the number value (e.g. 1,500 to 1.50K). Currently supports one of the following: ['thousands', 'millions', 'billions', 'trillions', 'kilobytes', 'megabytes', 'gigabytes', 'terabytes', 'petabytes', 'kibibytes', 'mebibytes', 'gibibytes', 'tebibytes', 'pebibytes'] |
+| [format](#format)                                 |    No    | string                   | This option will format the output value on the results table and CSV export. Supports spreadsheet-style formatting (e.g. #,##0.00). Use [this website](https://customformats.com/) to help build your custom format.                                                                          |
+| [groups](#groups)                                 |    No    | string or string[]       | If you set this property, the metric will be grouped in the sidebar with other metrics with the same group label.                                                                                                                                                                              |
+| [urls](/references/dimensions#urls)               |    No    | array                    | Adding urls to a metric allows your users to click metric values in the UI and take actions, like opening an external tool with a url, or open at a website. You can use liquid templates to customise the link based on the value of the dimension.                                           |
+| [show_underlying_values](#show-underlying-values) |    No    | Array of dimension names | You can limit which dimensions are shown for a field when a user clicks View underlying data. The list must only include dimension names from the base model or from any joined models.                                                                                                        |
+| [filters](#filters)                               |    No    | array                    | You can add filter logic to limit the values included in the metric calculation. You can add many filters. See which filter types are supported [here](#filters).                                                                                                                              |
 
 ## Metric types
 
-| Type                                | Category      | Description                                               |
-| :---------------------------------- | :------------ | :-------------------------------------------------------- |
-| [percentile](#percentile)           | Aggregate     | Generates a percentile of values within a column          |
-| [median](#median)                   | Aggregate     | Generates the 50th percentile of values within a column   |
-| [average](#average)                 | Aggregate     | Generates an average (mean) of values within a column     |
-| [boolean](#boolean)                 | Non-aggregate | For fields that will show if something is true or false   |
-| [count](#count)                     | Aggregate     | Counts the total number of values in the dimension        |
-| [count_distinct](#count%5Fdistinct) | Aggregate     | Counts the total unique number of values in the dimension |
-| [date](#date)                       | Non-aggregate | For adding calculations to metrics that return dates.     |
-| [max](#max)                         | Aggregate     | Generates the maximum value within a numeric column       |
-| [min](#min)                         | Aggregate     | Generates the minimum value within a numeric column       |
-| [number](#number)                   | Non-aggregate | For adding calculations to metrics that return numbers.   |
-| [string](#string)                   | Non-aggregate | For metrics that contain letters or special characters    |
-| [sum](#sum)                         | Aggregate     | Generates a sum of values within a column                 |
+| Type                                        | Category                        | Description                                                                     |
+|:--------------------------------------------|:--------------------------------|:--------------------------------------------------------------------------------|
+| [percentile](#percentile)                   | Aggregate                       | Generates a percentile of values within a column                                |
+| [median](#median)                           | Aggregate                       | Generates the 50th percentile of values within a column                         |
+| [average](#average)                         | Aggregate                       | Generates an average (mean) of values within a column                           |
+| [boolean](#boolean)                         | Non-aggregate                   | For fields that will show if something is true or false                         |
+| [count](#count)                             | Aggregate                       | Counts the total number of values in the dimension                              |
+| [count_distinct](#count%5Fdistinct)         | Aggregate                       | Counts the total unique number of values in the dimension                       |
+| [date](#date)                               | Non-aggregate                   | For adding calculations to metrics that return dates.                           |
+| [max](#max)                                 | Aggregate                       | Generates the maximum value within a numeric column                             |
+| [min](#min)                                 | Aggregate                       | Generates the minimum value within a numeric column                             |
+| [number](#number)                           | Non-aggregate                   | For adding calculations to metrics that return numbers.                         |
+| [string](#string)                           | Non-aggregate                   | For metrics that contain letters or special characters                          |
+| [sum](#sum)                                 | Aggregate                       | Generates a sum of values within a column                                       |
+| [percent_of_previous](#percent_of_previous) | Post calculation (Experimental) | Current value as a percentage of the previous row's value                       |
+| [percent_of_total](#percent_of_total)       | Post calculation (Experimental) | Current value as a percentage of the total across the result set (or partition) |
+| [running_total](#running_total)             | Post calculation (Experimental) | Cumulative total                                                                |
 
 ### percentile
 
@@ -263,7 +278,8 @@ The `date` metric can be used on any valid SQL expression that gives you a date 
 If you want to create a metric of a maximum or minimum date, you can't use `type: max` or of `type: min` metrics because these are only compatible with numeric type fields. Instead, you can calculate a maximum or minimum date by defining a metric of `type: date` and using some custom sql, like this:
 
 ```yaml
-- name: created_at_date
+columns:
+  - name: created_at_date
     meta:
       dimension:
         type: date
@@ -373,6 +389,64 @@ columns:
         product_name_group:
           type: string
           sql: 'GROUP_CONCAT(${TABLE}.product_name)'
+```
+
+### percent_of_previous
+
+Returns the current value as a percentage of the previous row's value for a referenced metric.
+
+For example, to calculate the percent of the previous value of total revenue:
+
+```yaml
+models:
+  - name: orders_model
+    meta:
+      metrics:
+        total_revenue:
+          type: sum
+        revenue_percent_of_previous:
+          type: percent_of_previous
+          sql: ${total_revenue}
+          format: '0.00%'
+```
+
+Note: If the previous value is 0 or NULL, the result will be NULL to avoid division-by-zero.
+
+### percent_of_total
+
+Returns the current value as a percentage of the total across the result set (or partition) for a referenced metric.
+
+For example, to calculate each row's percent of total revenue:
+
+```yaml
+models:
+  - name: orders_model
+    meta:
+      metrics:
+        total_revenue:
+          type: sum
+        revenue_percent_of_total:
+          type: percent_of_total
+          sql: ${total_revenue}
+          format: '0.00%'
+```
+
+### running_total
+
+Returns the cumulative total of a referenced metric according to the query's grouping and sort order.
+
+For example, to calculate a running total of revenue:
+
+```yaml
+models:
+  - name: orders_model
+    meta:
+      metrics:
+        total_revenue:
+          type: sum
+        running_total_revenue:
+          type: running_total
+          sql: ${total_revenue}
 ```
 
 ## Description
