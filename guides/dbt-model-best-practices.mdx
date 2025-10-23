@@ -1,0 +1,70 @@
+---
+title: dbt model best practices for Lightdash
+description: Learn how to structure your dbt models for optimal performance and usability in Lightdash.
+---
+
+When building your semantic layer in dbt for Lightdash, following these best practices will help you create a better experience for your end users and improve query performance.
+
+## Use wide, flat tables in the BI layer
+
+We recommend using **wide, flat tables** in the BI layer because this minimizes complex joins that need to be handled at runtime.
+
+### Why wide tables work better
+
+Modern columnar data warehouses (like Snowflake, BigQuery, and Redshift) are optimized for wide table formats. The star schema was initially introduced to optimize performance for row-based data warehouses, but with today's columnar warehouses, wide and flat is the way to go.
+
+Wide tables offer several advantages:
+
+- **Faster query performance**: Fewer joins mean faster queries at runtime
+- **Better user experience**: All related fields appear together in a single section in the Lightdash sidebar, making it easier for business users to find what they need
+- **Simpler to understand**: End users don't need to understand complex relationships between multiple tables
+
+### How to implement wide tables
+
+If your data is already modeled in a star schema upstream, you can maintain that structure in your transformation layer, then combine the models into wide tables that you surface in the BI layer.
+
+Build these wider tables for key business areas where you might want specialized analysis or AI Analyst capabilities, such as:
+
+- Revenue and sales
+- Marketing and campaigns  
+- Operations and logistics
+- Customer behavior
+
+For example, instead of having separate `orders`, `customers`, and `products` tables that need to be joined, create a wide `orders_enriched` table that includes all the relevant customer and product information alongside the order data.
+
+## One schema.yml file per dbt model
+
+We recommend structuring your dbt project with **one `.yml` file per model** (or `.sql` file).
+
+This approach makes it easier to:
+
+- Navigate through your YAML files as your project grows
+- Manage and maintain individual models
+- Avoid cluttered shared schema files
+- Keep related configuration together
+
+Here's an example structure:
+
+```
+models/
+  orders.sql
+  orders.yml
+  customers.sql
+  customers.yml
+  products.sql
+  products.yml
+```
+
+While Lightdash supports having all model definitions in a single `schema.yml` file at the directory level, we've found that separate files per model scales better as your project grows.
+
+## What about star schema?
+
+While we recommend wide flat tables, **we do support joins in Lightdash** and via AI Analysts, so you have the flexibility to build out your semantic layer in a way that works best for your team.
+
+If you're using a star schema, keep in mind:
+
+- Fields get split into multiple sections in the Lightdash sidebar, which can be less intuitive for business users
+- Cross-model references in underlying values become more complex to manage
+- Now that Lightdash has fanout protection, the main performance concern with joins is mitigated
+
+One approach is to maintain your star schema upstream for data modeling purposes, then materialize wide summary tables for specific business use cases as needed. This gives you the best of both worlds: clean data modeling practices upstream and optimized tables for BI consumption.
