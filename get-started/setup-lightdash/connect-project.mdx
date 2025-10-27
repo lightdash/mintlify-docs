@@ -5,7 +5,8 @@ title: "Update your project connection"
 To setup your Lightdash connection you'll need to:
 
 1. [Connect to your data warehouse](/get-started/setup-lightdash/connect-project#1-connect-to-a-warehouse)
-2. [Connect to your dbt project](/get-started/setup-lightdash/connect-project#2-import-a-dbt-project)
+2. [How dbt configuration macros resolve in Lightdash](/get-started/setup-lightdash/connect-project#2-how-dbt-configuration-macros-resolve-in-lightdash)
+3. [Connect to your dbt project](/get-started/setup-lightdash/connect-project#3-import-a-dbt-project)
 
 
 ## Open up your Lightdash instance to get started.
@@ -654,7 +655,131 @@ This controls what day is the start of the week in Lightdash. `Auto` sets it to 
 
 ***
 
-## 2. Import a dbt project
+## 2. How dbt configuration macros resolve in Lightdash
+
+When Lightdash connects to your dbt project, it compiles a `profiles.yml` file based on the connection settings you configure in the Lightdash UI. This means that any dbt macros in your project that use target settings or environment variables will be executed by Lightdash and resolved according to those settings.
+
+In other words, if you're using macros to dynamically configure aspects of your dbt project based on the environment, Lightdash will respect that same logic when it compiles your dbt project and runs queries.
+
+### Understanding dbt targets
+
+A **dbt target** is an environment configuration in your dbt project that defines where and how dbt should run. In dbt Core, targets are defined in your `profiles.yml` file and typically include settings like:
+
+- Database connection details
+- Schema/dataset names
+- Warehouse specifications
+- Other environment-specific configurations
+
+Most teams have multiple targets for different environments:
+
+- `dev` - for development work
+- `prod` - for production deployments
+- `staging` - for testing before production
+
+<Note>
+**dbt Core vs dbt Cloud:** In dbt Core, teams commonly use targets to manage different environments. In dbt Cloud, environment variables are more commonly used for the same purpose.
+</Note>
+
+### Environment variables in dbt and Lightdash
+
+Environment variables allow you to set dynamic values that your dbt macros can reference. This is particularly useful if your dbt project uses environment variables to control behavior (common in dbt Cloud setups).
+
+You can configure environment variables in your Lightdash project's dbt connection settings. Any environment variables you set will be available to your dbt macros when Lightdash compiles your project.
+
+For example, if you have a macro that checks an environment variable:
+
+```sql
+{% macro get_schema() %}
+  {% if env_var('DBT_ENV') == 'production' %}
+    {{ return('prod_analytics') }}
+  {% else %}
+    {{ return('dev_analytics') }}
+  {% endif %}
+{% endmacro %}
+```
+
+You would set `DBT_ENV=production` as an environment variable in your Lightdash connection settings to ensure the macro resolves to `prod_analytics`.
+
+**Key points about environment variables:**
+
+- They're available to all macros in your dbt project via the `env_var()` function
+- They're particularly important if your dbt project was built for dbt Cloud, which relies heavily on environment variables
+- Make sure to set any environment variables your macros depend on in Lightdash to match your production dbt environment
+
+### How macros resolve in Lightdash
+
+dbt macros often use the target name or environment variables to determine their behavior. Common examples include macros that set schemas, datasets, warehouses, or other configuration. Lightdash respects this logic when compiling your dbt project.
+
+#### Example: Schema configuration
+
+Let's look at dbt's default `generate_schema_name` macro:
+
+```sql
+{% macro generate_schema_name(custom_schema_name, node) -%}
+    {%- set default_schema = target.schema -%}
+    {%- if custom_schema_name is none -%}
+        {{ default_schema }}
+    {%- elif target.name == 'prod' -%}
+        {{ custom_schema_name | trim }}
+    {%- else -%}
+        {{ default_schema }}_{{ custom_schema_name | trim }}
+    {%- endif -%}
+{%- endmacro %}
+```
+
+If your Lightdash connection settings specify:
+
+- **Target name:** `prod`
+- **Dataset/Schema:** `analytics`
+
+And you have a model configured with:
+
+```sql
+{{ config(schema='staging') }}
+```
+
+Then Lightdash will create/query this model in the `staging` schema - not `analytics_staging` - because `target.name == 'prod'`.
+
+<Tip>
+The `generate_schema_name` macro is a default dbt macro and its behaviour can be overridden by adding a macro to dbt with the same name. If this macro is not showing up in your dbt project, it means that your project is using the default macro. 
+It is a good idea to check your project for custommacros which can alter your project's configurations.  
+</Tip>
+
+#### Example: Warehouse configuration
+
+Similarly, if you have a macro that dynamically configures settings:
+
+```sql
+{% macro get_warehouse() %}
+  {% if target.name == 'prod' %}
+    {{ return('LARGE_WAREHOUSE') }}
+  {% elif target.name == 'dev' %}
+    {{ return('SMALL_WAREHOUSE') }}
+  {% endif %}
+{% endmacro %}
+```
+
+And use it in your models:
+
+```sql
+{{ config(snowflake_warehouse=get_warehouse()) }}
+```
+
+Lightdash will use the configuration that corresponds to the target name you've configured in your Lightdash connection settings.
+
+### Key takeaways
+
+- Lightdash compiles your dbt project using the target name and other settings you configure in the connection settings
+- Any macros that use `target.name`, environment variables, or other profile settings will resolve according to your Lightdash configuration
+- Make sure your Lightdash target name matches the target you use for your production dbt runs to ensure Lightdash behaves consistently with your dbt project
+- If you have custom macros that depend on target settings or environment variables, ensure those settings are configured correctly in your Lightdash connection settings
+
+<Tip>
+If you're experiencing unexpected behavior with how Lightdash compiles your dbt project, check that your target name in Lightdash matches what your dbt macros expect, and verify any environment variables your macros depend on are properly set.
+</Tip>
+
+
+## 3. Import a dbt project
 
 Connecting Lightdash to a hosted dbt project means that you'll be able to keep your Lightdash instance in sync with the changes in your dbt project.
 
