@@ -48,6 +48,20 @@ These Lightdash features DO NOT use caching:
 
 The cache is stored in S3 and the cache identifier is based on the project ID and the generated SQL. This means that any change to the selected columns, filters, joins, user attributes, etc. will trigger a new query to the warehouse and add a new cache entry for that query.
 
+### Filtering with time values and caching
+
+When using filters with datetime values, the specificity of the time component affects caching behavior:
+
+- **Dynamic datetime values with seconds** (e.g., `12:11:25`) will generally not benefit from caching because each query generates a unique timestamp, creating a new cache entry every time.
+- **Definite times** (e.g., `12:00:00`) or **dates without time components** will cache effectively because they produce consistent SQL queries that can be reused.
+
+**Best practices for cacheable time filters:**
+- Use date-only filters when possible (e.g., `2024-01-15` instead of `2024-01-15 12:11:25`)
+- Round times to the nearest hour or fixed interval (e.g., `12:00:00` instead of `12:11:25`)
+- Avoid filters that use dynamic "current time" functions with second precision
+
+This ensures your queries can leverage cached results and reduce warehouse load.
+
 ### Cache Expiry and Invalidation
 
 Cached results automatically expire after 24 hours. The expiry time is configurable at the organization level, but you'll need to reach out to the Lightdash team.
