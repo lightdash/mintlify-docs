@@ -51,7 +51,7 @@ This document describes the steps required to integrate Azure or Okta SCIM proto
 </Frame>
 
 
-## Integrations
+## Integration guides
 
 <AccordionGroup>
     <Accordion title="Okta">
@@ -183,17 +183,88 @@ This document describes the steps required to integrate Azure or Okta SCIM proto
     </Accordion>
 </AccordionGroup>
 
+## API docs
+
+You can find the full API docs and examples for SCIM [here](https://docs.lightdash.com/api-reference/scim/list-users).
+
 ## SCIM behavior and implementation details
 
 - `userName` is mapped to the user's primary email in Lightdash. Make sure your identity provider sets `userName` to the user's primary email (and, if sending an `emails` array, the primary email should match).
 - When a user is updated to be inactive (`active: false`) via SCIM, Lightdash will mark the user as inactive, lower their organization role to `member`, and remove their access from all projects and groups. If you later reactivate the user, you'll need to re-assign their group and project access via SCIM or in Lightdash.
 - An organization must always have at least one `admin`. Any SCIM request that would leave the organization with no admins (for example, demoting or deactivating the sole remaining admin) will be rejected with an error.
+- A user can only have one role per organization and per project.
+- A user must have an organization role.
+- On creation, if no `roles` are provided, the organization role will default to `member`.
+- On edit (PUT/PATCH), if no `roles` are provided, no changes are made to the user's roles.
 
 ## User Role Provisioning
 
 Lightdash supports provisioning user roles through SCIM, allowing identity providers to specify and manage user roles (admin, member, etc.) when provisioning users. This makes it easier to manage user permissions directly from your identity provider without requiring additional steps in Lightdash.
 
-### Lightdash Extension Schema
+We support the standard SCIM 2.0 `roles` attribute as defined in [RFC 7643](https://datatracker.ietf.org/doc/html/rfc7643#section-7). Use this to provision a user's organization and project roles.
+
+### Role types
+
+Lightdash defines two role scopes: Organization and Project. Organization roles can be set to member, viewer, interactive viewer, editor, developer, or admin. Project roles can be viewer, interactive viewer, editor, developer, admin, or a [custom role](./custom-roles.mdx).
+
+<Info>
+    The project role values are a combination of the project id and the role identifier.
+</Info>
+
+Examples:
+```
+[
+   {
+        schemas: [ScimSchemaType.ROLE],
+        id: 'member',
+        value: 'member',
+        display: 'Member',
+        type: 'Organization',
+        supported: true,
+    },
+    {
+        schemas: [ScimSchemaType.ROLE],
+        id: '3675b69e-8324-4110-bdca-059031aa8da3:viewer',
+        value: '3675b69e-8324-4110-bdca-059031aa8da3:viewer',
+        display: 'Jaffle shop - Viewer',
+        type: 'Project - Jaffle shop',
+        supported: true,
+    },
+    {
+        schemas: [ScimSchemaType.ROLE],
+        id: '3675b69e-8324-4110-bdca-059031aa8da3:da116e0f-2b96-4af4-93b7-b2636a26853d',
+        value:
+            '3675b69e-8324-4110-bdca-059031aa8da3:da116e0f-2b96-4af4-93b7-b2636a26853d',
+        display: 'Jaffle shop - my custom role',
+        type: 'Project - Jaffle shop',
+        supported: true,
+    },
+]
+```
+
+### Configuring available roles in your Identity Provider (IdP)
+
+The SCIM roles model is currently an [IETF draft](https://datatracker.ietf.org/doc/draft-ietf-scim-roles-entitlements/), so native support to auto-discover roles via a `/Roles` endpoint varies by provider and connector.
+
+- Okta: Does not natively auto-populate role picklists by consuming a SCIM `/Roles` endpoint. You can still provision `roles` [manually](https://help.okta.com/en-us/content/topics/users-groups-profiles/usgp-add-custom-user-attributes.htm) or implement custom sync using [Okta Workflows](https://help.okta.com/wf/en-us/content/topics/workflows/workflows-main.htm) or a [custom app](https://help.okta.com/en-us/content/topics/apps/apps_app_integration_wizard.htm).
+- Microsoft Entra ID (Azure AD): Does not currently auto-discover roles from `/Roles`. Use [manual configuration](https://learn.microsoft.com/azure/active-directory/app-provisioning/customize-application-attributes) of allowed roles.
+- Google Cloud Identity / Workspace: No native auto-consumption of `/Roles`. Use [manual configuration](https://support.google.com/cloudidentity/answer/6208725) of allowed roles.
+- SailPoint (IdentityNow/IdentityIQ): Supports SCIM roles harvesting; with the right connector configuration, it can ingest roles from custom endpoints like `/Roles`.
+- Other IGA/IM tools (e.g., OneLogin): Some support importing roles from SCIM apps; use depends on the specific connector.
+
+How to tell if your IdP supports it:
+- Check your IdP/connector documentation for SCIM “roles” or explicit mention of the roles draft.
+- Inspect provisioning or discovery logs: if the IdP issues `GET /Roles` during discovery, it likely supports it.
+- If the connector supports custom discovery endpoints or schema extensions, you may be able to add `/Roles` even if it’s not built-in.
+
+If your IdP doesn’t support `/Roles`, use the manual configuration documented in your IdP. Remember: only the `value` is required by Lightdash.
+
+### Lightdash Extension Schema (deprecated)
+
+<Warning>
+    This section describes a legacy Lightdash-specific SCIM extension and is deprecated. New integrations should
+    use the standard SCIM `roles` attribute [RFC 7643](https://datatracker.ietf.org/doc/html/rfc7643#section-7). The extension will be removed in a future release.
+</Warning>
 
 To set user roles, Lightdash provides an extension schema that can be included in SCIM requests:
 
@@ -204,123 +275,11 @@ urn:lightdash:params:scim:schemas:extension:2.0:User
 The extension schema supports the following properties:
 
 | Property | Description | Required | Default |
-|:---------|:------------|:--------:|:-------:|
-| `role`   | The user's role in the organization | No | `member` [1] |
+| `role` | The user's role in the organization | No | `member` [1] |
 
-<Info>
-    [1] If the role property is missing when creating a user, the user will be created with the role `member`.
-</Info>
-
-<Warning>
-    **Important:** When mapping attributes in Azure or Okta, you must prefix the property with the complete schema name.
-    For example, to set the `role` property, you must use `urn:lightdash:params:scim:schemas:extension:2.0:User:role` as
-    the attribute path.
-</Warning>
-
-### Valid Roles
-
-The following roles are supported:
-- `member`
-- `viewer`
-- `interactive_viewer`
-- `editor`
-- `developer`
-- `admin`
-
-### SCIM API examples
-
-Here are curl commands for user creation and role updates using the SCIM API in Lightdash.
-
-#### Prerequisites
-```bash
-# Set these variables before running the commands
-SCIM_TOKEN="your-scim-token-here"
-LIGHTDASH_URL="https://your-lightdash-instance.com"  # No trailing slash
-USER_ID="existing-user-id"  # Only needed for update operations
-```
-
-#### Create a New User with Role
-
-```bash
-curl -X POST "${LIGHTDASH_URL}/api/v1/scim/v2/Users" \
-  -H "Authorization: Bearer ${SCIM_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "schemas": [
-      "urn:ietf:params:scim:schemas:core:2.0:User",
-      "urn:lightdash:params:scim:schemas:extension:2.0:User"
-    ],
-    "userName": "newuser@example.com",
-    "name": {
-      "givenName": "New",
-      "familyName": "User"
-    },
-    "active": true,
-    "emails": [
-      {
-        "value": "newuser@example.com",
-        "primary": true
-      }
-    ],
-    "urn:lightdash:params:scim:schemas:extension:2.0:User": {
-      "role": "admin"
-    }
-  }'
-```
-
-#### Update User Role with PUT
-
-```bash
-curl -X PUT "${LIGHTDASH_URL}/api/v1/scim/v2/Users/${USER_ID}" \
-  -H "Authorization: Bearer ${SCIM_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "schemas": [
-      "urn:ietf:params:scim:schemas:core:2.0:User",
-      "urn:lightdash:params:scim:schemas:extension:2.0:User"
-    ],
-    "userName": "existinguser@example.com",
-    "name": {
-      "givenName": "Existing",
-      "familyName": "User"
-    },
-    "active": true,
-    "emails": [
-      {
-        "value": "existinguser@example.com",
-        "primary": true
-      }
-    ],
-    "urn:lightdash:params:scim:schemas:extension:2.0:User": {
-      "role": "editor"
-    }
-  }'
-```
-
-#### Update User Role with PATCH
-
-```bash
-curl -X PATCH "${LIGHTDASH_URL}/api/v1/scim/v2/Users/${USER_ID}" \
-  -H "Authorization: Bearer ${SCIM_TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
-    "Operations": [
-      {
-        "op": "Add",
-        "path": "urn:lightdash:params:scim:schemas:extension:2.0:User:role",
-        "value": "viewer"
-      }
-    ]
-  }'
-```
-
-#### Get User to Verify Role
-
-```bash
-curl -X GET "${LIGHTDASH_URL}/api/v1/scim/v2/Users/${USER_ID}" \
-  -H "Authorization: Bearer ${SCIM_TOKEN}"
-```
+When mapping attributes in Azure or Okta, you must prefix the property with the complete schema name.
+For example, to set the `role` property, you must use
+`urn:lightdash:params:scim:schemas:extension:2.0:User:role` as the attribute path.
 
 ## Rotating a SCIM access token
 
