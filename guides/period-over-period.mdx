@@ -1,7 +1,7 @@
 ---
-title: How to do period over period analysis in Lightdash
+title: How to do period-over-period analysis in Lightdash
 sidebarTitle: Period over period
-descritpion: Learn how to do period over period analysis in Lightdash with examples and best practices.
+description: Learn how to do period-over-period analysis in Lightdash with examples and best practices.
 ---
 
 
@@ -199,3 +199,145 @@ lag(${event_count}, 12)
 4. Filter out rows where `previous_year_value` is `null`.
 
 Check minute 3:45 in the Loom video for an example.
+
+## Using parameters for period-over-period analysis
+
+Parameters let you create dynamic period-over-period comparisons in your charts and dashboards.
+
+Users can easily toggle between different date ranges to see how metrics are tracking over time — no need to rebuild charts or manually adjust filters. For more on working with parameters, check out our [parameters reference guide](/guides/using-parameters). 
+
+This guide walks through an example of how to do period-over-period analysis in Lightdash using parameters, alternatively you can watch our demo tutorial below. 
+
+<div
+  style={{
+    position: 'relative',
+    paddingBottom: '51%',
+    height: 0,
+  }}
+>
+  <iframe
+    src="https://www.loom.com/embed/048e5b84f44e495dba6a3664e98ff037"
+    frameborder="0"
+    webkitallowfullscreen
+    mozallowfullscreen
+    allowfullscreen
+    style={{
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      width: '100%',
+      height: '100%',
+    }}
+  ></iframe>
+</div>
+
+Say you want users to select a time period like yesterday, last 7 days, or last 30 days, and then compare the current period to both the previous period and the same period a year ago.
+
+To do this, you:
+
+1. **Set up your date range / period parameter**
+
+    <Accordion title="Date range period parameter syntax">
+    ``` yaml
+    models:
+      - name: dbt_orders
+        description: 'This table contains information on all the confirmed orders and their status'
+        meta:
+          parameters:
+            date_range:
+              label: "Date Range"
+              description: "Choose a date range"
+              options:
+                - "yesterday"
+                - "last 7 days"
+                - "last 30 days"
+              default: "last 7 days"
+    ```
+    </Accordion>
+
+    You can also take a look at the `Date Range` parameter setup in our demo dbt project [here](https://github.com/lightdash/lightdash-demo-data-gardening/blob/06ec6e4a87286ec7504d20b10f4b919bd267ebae/dbt-bigquery/models/dbt_orders.yml#L15-L22). 
+
+2. **Create a dimension to categorize date periods**
+
+   Next, you need to create an additional dimension inside the `dbt_orders` model that calculates the period selected in the `date_range` parameter using conditional case statements. 
+    <Accordion title="Additional dimension syntax">
+    ``` yaml
+    models:
+     - name: dbt_orders
+       description: 'This table contains information on all the confirmed orders and their status'
+       meta:
+         parameters:
+           date_range:
+             label: "Date Range"
+             description: "Choose a date range"
+             options:
+               - "yesterday"
+               - "last 7 days"
+               - "last 30 days"
+             default: "last 7 days"
+         label: Orders
+       columns:
+         - name: order_date
+           description: 'Timestamp of order placement by user.'
+           meta:
+             dimension:
+               time_intervals: [
+                 'HOUR', 'MINUTE_OF_HOUR_NUM', 'HOUR_OF_DAY_NUM',
+                 'DAY', 'DAY_OF_WEEK_INDEX', 'DAY_OF_MONTH_NUM', 'DAY_OF_YEAR_NUM', 
+                 'DAY_OF_WEEK_NAME', 'WEEK', 'WEEK_NUM', 
+                 'MONTH', 'MONTH_NUM', 'MONTH_NAME',
+                 'QUARTER', 'QUARTER_NUM', 'QUARTER_NAME',
+                 'YEAR' ]
+               type: timestamp
+             additional_dimensions:
+               order_date_period:
+                 description: Date period (current period or previous period or previous year or out of range) chosen by the date_range parameter
+                 type: string
+                 sql: >
+                   case
+                     -- current period
+                     when (
+                       (${lightdash.parameters.dbt_orders.date_range} = 'yesterday' and date(${order_date}) = date_sub(current_date(), interval 1 day)) or
+                       (${lightdash.parameters.dbt_orders.date_range} = 'last 7 days' and date(${order_date}) between date_sub(current_date(), interval 7 day) and date_sub(current_date(), interval 1 day)) or
+                       (${lightdash.parameters.dbt_orders.date_range} = 'last 30 days' and date(${order_date}) between date_sub(current_date(), interval 30 day) and date_sub(current_date(), interval 1 day))
+                     )
+                     then 'current period'
+
+                     -- previous period
+                     when (
+                       (${lightdash.parameters.dbt_orders.date_range} = 'yesterday' and date(${order_date}) = date_sub(current_date(), interval 2 day)) or
+                       (${lightdash.parameters.dbt_orders.date_range} = 'last 7 days' and date(${order_date}) between date_sub(current_date(), interval 14 day) and date_sub(current_date(), interval 8 day)) or
+                       (${lightdash.parameters.dbt_orders.date_range} = 'last 30 days' and date(${order_date}) between date_sub(current_date(), interval 60 day) and date_sub(current_date(), interval 31 day))
+                     )
+                     then 'previous period'
+
+                     -- previous year
+                     when (
+                       (${lightdash.parameters.dbt_orders.date_range} = 'yesterday' and date(${order_date}) = date_sub(date_sub(current_date(), interval 1 year), interval 1 day)) or
+                       (${lightdash.parameters.dbt_orders.date_range} = 'last 7 days' and date(${order_date}) between date_sub(date_sub(current_date(), interval 1 year), interval 7 day) and date_sub(date_sub(current_date(), interval 1 year), interval 1 day)) or
+                       (${lightdash.parameters.dbt_orders.date_range} = 'last 30 days' and date(${order_date}) between date_sub(date_sub(current_date(), interval 1 year), interval 30 day) and date_sub(date_sub(current_date(), interval 1 year), interval 1 day))
+                     )
+                     then 'previous year'
+
+                     else 'out of range'
+                   end
+    ```
+    </Accordion>
+   You can also take a look at the `order_date_period` dimension setup in our demo dbt project [here](https://github.com/lightdash/lightdash-demo-data-gardening/blob/06ec6e4a87286ec7504d20b10f4b919bd267ebae/dbt-bigquery/models/dbt_orders.yml#L57-L87). 
+
+3. **Build your chart with the period dimension**
+
+   To create a chart that uses your period parameter, you would need to: 
+   - select the `Order date period` additional dimension and the `Order count` metric
+   - specify that `order_date_period` is not `out of range`
+   - you can optionally filter out other date range groups e.g. you might want to filter out `previous year` if you want to create a big value chart that compares current period to previous period. 
+
+   <Frame>
+     <img src="/images/guides/period-over-period-example.jpg" alt=""/>
+   </Frame>
+
+4. **Add your chart to a dashboard**
+
+   You can then add this chart to a dashboard. Users can select an option from the `Date Range` parameter and the charts will automatically update to display the selected period. 
+
+   Take a look at our example dashboard in our demo site [here](https://demo.lightdash.com/projects/2014e038-ff4b-4761-ae6f-fbf551e7b468/dashboards/8813b2bf-3983-48b0-aff7-088b59490cfa/view). 
