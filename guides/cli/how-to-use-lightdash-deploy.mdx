@@ -5,23 +5,77 @@ icon: "ship"
 ---
 
 <Callout icon="ship" color="#30CF87">
-### `lightdash deploy` pushes your dbt project to Lightdash
+### `lightdash deploy`pushes your dbt project to Lightdash
 </Callout>
 
-If you've made some changes to your dbt project and you'd like to make them available in your Lightdash project, you can easily do this using the `lightdash deploy` command in the Lightdash CLI tool.
+Once you've made updates to your dbt project and you're ready to make those changes available in your Lightdash production project, you have a few options for deploying from the CLI or the Lightdash UI. 
+This guide will walk you through how it works, when to use each option, and what to keep in mind for a safe and scalable workflow.
 
+## Before you deploy: A quick word of caution
+
+<Warning>
+Running `lightdash deploy` uses your local dbt profile (from your `profiles.yml`). If your local profile isn't pointing to production, you could deploy to the wrong environment. 
+This works in simple setups, but can introduce risk when using multiple environments or working in a team.
+</Warning>
+
+For a safer, scalable approach to deploying and previewing changes, use CI/CD. This allows you to:
+
+* Spin up Lightdash preview environments for each PR
+
+* Deploy production changes consistently using shared, secure credentials
+
+* Avoid accidentally pointing to the wrong target in your local profile
+
+Check out our [**guide to setting up CI/CD workflow**](/guides/cli/automate-cli-workflow)
+
+## Option 1: Deploy via the CLI
+
+Basic usage:
 ```bash
 git checkout main # checkout main or master - or whatever your production branch name is where you've merged your changes
 git pull
 lightdash deploy # --target prod. If you use developer profiles in your dbt project, you might need this flag. See below.
 ```
 
-This will deploy the changes in your dbt project to the Lightdash project you set up on your CLI tool earlier.
+By default, this will:
 
-<Info>
-**Lightdash's deploy command will deploy using your **default dbt profile** unless you specify to use a different target.**
-  
-  For example, if you've set up a developer profile where it targets a dev dataset (like `dbt_khindson.my_model_names`), then you'll need to pass the production target in your `lightdash deploy` command. Something like: `lightdash deploy --profile prod`.
-</Info>
+* Use your local dbt profile for the connection
 
-And voilà! Once it's completed click the URL to head straight to your project where your changes will be ready to be explored.
+* Push the current state of your local dbt project files (including uncommitted changes or code from your active branch) to the authenticated Lightdash project
+
+* Trigger a re-compile and refresh of your Lightdash project
+
+If your dbt project uses different profiles or targets for dev and prod, you can specify which profile to use:
+
+```bash
+lightdash deploy --profile prod
+```
+<Warning>
+Be careful — if your local prod profile isn't properly pointing to your production database, 
+this can result in incorrect connections (e.g. accidentally deploying to a dev dataset).
+</Warning>
+
+## Option 2: Safely refresh metadata using `lightdash refresh`
+
+If you only need to refresh your Lightdash project to reflect upstream dbt changes (like updated models or docs), but don’t want to deploy your local dbt setup, you can use:
+
+```bash
+lightdash refresh
+```
+
+Unlike deploy, this:
+
+* Uses the saved dbt credentials from Lightdash, not your local profile
+
+* Simply re-runs the metadata sync and model parsing
+
+* Makes it safe to trigger from anywhere without risk of pointing to the wrong target
+
+You can also do this directly from the Lightdash UI:
+
+Go to your project → "Manage project" → Refresh dbt. 
+This gives the same result as running `lightdash refresh`.
+
+<Frame>
+  <img src="/images/guides/refresh-dbt.png" alt=""/>
+</Frame>
