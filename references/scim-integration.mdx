@@ -189,6 +189,45 @@ You can find the full API docs and examples for SCIM [here](https://docs.lightda
 - A user must have an organization role.
 - On creation, if no `roles` are provided, the organization role will default to `member`.
 - On edit (PUT/PATCH), if no `roles` are provided, no changes are made to the user's roles.
+- To reduce data pollution, roles for preview projects cannot be managed via SCIM, as those projects are intended to be short‑lived.
+
+### Can the IdP-provided SCIM email be trusted?
+
+In most cases, the email attribute sent via SCIM is trustworthy. However, confirm this with your IdP as some allow users to change their email address. If reliability isn’t guaranteed, use a stable, non-user-editable identifier instead (e.g., OIDC sub, SAML NameID, or Microsoft Entra ID UPN).
+
+See provider‑specific guidance below.
+
+#### Microsoft / Azure AD / Entra ID
+
+The `email` field is not trusted. Users with Microsoft have a UPN (userPrincipalName) which is their immutable sign-in identifier. However, the `email` field is just a contact email that users can freely change themselves.
+
+**References**:
+
+- https://www.reddit.com/r/AZURE/comments/184w8i0/comment/kay91kz/?utm_source=share&utm_medium=web3x&utm_name=web3xcss&utm_term=1&utm_content=share_button
+- https://www.crowdstrike.com/en-us/blog/noauth-microsoft-azure-ad-vulnerability/
+- https://learn.microsoft.com/en-us/entra/identity-platform/migrate-off-email-claim-authorization
+- https://www.bleepingcomputer.com/news/security/microsoft-fixes-azure-ad-auth-flaw-enabling-account-takeover/
+
+#### Using UPN as email claim in OIDC
+
+1. Navigate to App Registrations: In the left-hand navigation pane, select "Azure Active Directory," then "App registrations."
+2. Select Your Application: Find and select the application you want to update.
+3. Open the Manifest: In the application settings, select "Manifest" to open the JSON editor for the application manifest.
+4. Edit the Manifest: Make the necessary changes to the manifest. For example, to map the UPN to the email claim, you can add the following to the optionalClaims section:
+
+```json
+{
+  "optionalClaims": {
+    "idToken": [
+      {
+        "name": "email",
+        "source": "userPrincipalName",
+        "essential": true
+      }
+    ]
+  }
+}
+```
 
 ## User Role Provisioning
 
