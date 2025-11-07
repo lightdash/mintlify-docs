@@ -313,24 +313,93 @@ Using a properly defined primary key helps Lightdash optimize queries and provid
 
 ## Available filter types
 
-| Type                          | Example (in English)                           | Example (as code)           |
-| :---------------------------- | :--------------------------------------------- | :-------------------------- |
-| is                            | User name is equal to katie                    | user_name: "katie"          |
-| is not                        | User name is not equal to katie                | user_name: "\!katie"        |
-| contains                      | User name contains katie                       | user_name: "%katie%"        |
-| does not contain              | User name does not contain katie               | user_name: "\!%katie%"      |
-| starts with                   | User name starts with katie                    | user_name: "katie%"         |
-| ends with                     | User name ends with katie                      | user_name: "%katie"         |
-| is greater than (number)      | Number of orders is greater than 4             | num_orders: "\> 4"          |
-| in the past (date) (interval) | Date is before x (days / months / years)       | date: "inThePast 14 months" |
-| in the next (date) (interval) | Date is after x (days / months / years)        | date: "inTheNext 14 days"   |
-| is greater than or equal to   | Number of orders is greater than or equal to 4 | num_orders: "\>= 4"         |
-| is less than                  | Number of orders is less than 4                | num_orders: "\< 4"          |
-| is less than or equal to      | Number of orders is less than or equal to 4    | num_orders: "\<= 4"         |
-| is null                       | Status is NULL                                 | status: "null"              |
-| is not null                   | Status is not NULL                             | status: "\!null"            |
-| is [boolean]                  | Is complete is true                            | is_complete: "true"         |
-| is not [boolean]              | Is complete is false or null                   | is_complete: "\!true"       |
+| Operator                      | Description                                    | Example (as code)                                  | Supported Types       |
+| :---------------------------- | :--------------------------------------------- | :------------------------------------------------- | :-------------------- |
+| is                            | Value is equal to                              | `user_name: "katie"`                               | String, Number, Date  |
+| is not                        | Value is not equal to                          | `user_name: "\!katie"`                             | String, Number, Date  |
+| between                       | Value is between two values (inclusive)        | `age: "between 18 and 65"`                         | Number, Date          |
+|                               |                                                | `order_date: "between 2024-01-01 and 2024-12-31"`  | Number, Date          |
+| contains                      | String contains value                          | `user_name: "%katie%"`                             | String                |
+| does not contain              | String does not contain value                  | `user_name: "\!%katie%"`                           | String                |
+| starts with                   | String starts with value                       | `user_name: "katie%"`                              | String                |
+| ends with                     | String ends with value                         | `user_name: "%katie"`                              | String                |
+| is greater than               | Number is greater than value                   | `num_orders: "\> 4"`                               | Number                |
+| is greater than or equal to   | Number is greater than or equal to value       | `num_orders: "\>= 4"`                              | Number                |
+| is less than                  | Number is less than value                      | `num_orders: "\< 4"`                               | Number                |
+| is less than or equal to      | Number is less than or equal to value          | `num_orders: "\<= 4"`                              | Number                |
+| in the past                   | Date is before x (days / months / years)       | `date: "inThePast 14 days"`                        | Date                  |
+| in the next                   | Date is after x (days / months / years)        | `date: "inTheNext 30 days"`                        | Date                  |
+| is null                       | Value is NULL                                  | `status: "null"`                                   | All                   |
+| is not null                   | Value is not NULL                              | `status: "\!null"`                                 | All                   |
+| is empty                      | Value is empty string                          | `notes: "empty"`                                   | String                |
+| is not empty                  | Value is not empty string                      | `notes: "\!empty"`                                 | String                |
+| is [boolean]                  | Boolean value is true                          | `is_complete: "true"`                              | Boolean               |
+| is not [boolean]              | Boolean value is false or null                 | `is_complete: "\!true"`                            | Boolean               |
+| in list                       | Value is in comma-separated list               | `status: "active,pending,approved"`                | String, Number        |
+
+### Filter examples
+
+**Between operator (numeric):**
+```yaml
+default_filters:
+  - age: 'between 18 and 65'
+  - price: 'between 0.5 and 99.9'
+  - temperature: 'between -10 and 10'
+```
+
+**Between operator (dates):**
+```yaml
+default_filters:
+  - order_date: 'between 2024-01-01 and 2024-12-31'
+  - created_at: 'between 2024-01-01T00:00:00 and 2024-12-31T23:59:59'
+```
+
+**Multiple values (comma-separated list):**
+```yaml
+default_filters:
+  - status: 'active,pending,approved'
+  - country: 'US,CA,UK'
+```
+
+**Pattern matching:**
+```yaml
+default_filters:
+  - product_name: '%shirt%'        # Contains "shirt"
+  - email: 'admin%'                # Starts with "admin"
+  - domain: '%@gmail.com'          # Ends with "@gmail.com"
+  - product_name: '!%test%'        # Does not contain "test"
+```
+
+**Date intervals:**
+```yaml
+default_filters:
+  - created_date: 'inThePast 7 days'
+  - expiry_date: 'inTheNext 30 days'
+  - signup_date: 'inThePast 1 years'
+```
+
+Available intervals: `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `weeks`, `months`, `years`
+
+**Complex example with multiple filters:**
+```yaml
+models:
+  - name: orders
+    meta:
+      default_filters:
+        - status: 'completed,shipped'
+        - order_date: 'between 2024-01-01 and 2024-12-31'
+        - revenue: '>= 100'
+        - country: '!test'
+        - customer_email: '!%@test.com%'
+```
+
+### Filter notes
+
+- **Case insensitivity**: Keywords like `between`, `AND`, `null`, `empty` are case-insensitive
+- **Quotes**: Use quotes for strings with spaces or special characters
+- **Escaping**: Use `^` to escape special characters (`%`, `_`, `,`, `!`, `^`)
+- **AND logic**: Multiple filters are automatically joined with AND
+- **Priority**: Default filters only apply when no user-specified filter exists for that dimension
 
 ## Parameters configuration
 
