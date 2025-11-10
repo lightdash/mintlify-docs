@@ -331,6 +331,131 @@ models:
 To see which format types are available for metrics, [check the reference docs here.](/references/metrics#format)Check out [this doc](/references/metrics#metric-configuration) to see all of the other properties you can customize for metrics.
 
 
+### Conditional formatting using parameters
+
+You can make your field formatting dynamic by using [parameters](/guides/using-parameters) in your format strings. This allows the format to change based on user selections without needing to reconfigure your charts.
+
+#### Simple parameter substitution
+
+You can reference parameter values directly in your format strings using the syntax `${ld.parameters.parameterName}`.
+
+For example, if you have a parameter called `currency_symbol`, you can use it in your format like this:
+
+**Step 1: Define your parameter**
+
+In your `lightdash.config.yml` file:
+
+```yaml
+parameters:
+  currency_symbol:
+    label: "Currency symbol"
+    description: "Conditional formatting for currency symbol"
+    default: "$"
+    options:
+      - "$"
+      - "€"
+```
+
+**Step 2: Use the parameter in your format string**
+
+In your model YAML file:
+
+```yaml
+models:
+  - name: sales
+    columns:
+      - name: revenue
+        meta:
+          metrics:
+            total_revenue:
+              type: sum
+              format: '${ld.parameters.currency_symbol}0,0.00'
+```
+
+The format `'${ld.parameters.currency_symbol}0,0.00'` will substitute the selected currency symbol value directly into the format.
+
+When users select `$` from the parameter dropdown, numbers will display as `$1,234.56`. When they select `€`, numbers will display as `€1,234.56`.
+
+#### Conditional formatting with ternary expressions
+
+For more complex formatting logic, you can use ternary expressions in your format strings. The syntax is:
+
+```
+${ld.parameters.parameterName=="value"?"format_if_true":"format_if_false"}
+```
+
+Here's an example that displays different currency symbols based on a `currency` parameter:
+
+**Step 1: Define your parameter**
+
+In your `lightdash.config.yml` file:
+
+```yaml
+parameters:
+  currency:
+    label: "Currency"
+    description: "Conditional formatting for currency"
+    default: "usd"
+    options:
+      - "usd"
+      - "eur"
+      - "gbp"
+```
+
+**Step 2: Use the parameter in your format string with conditional logic**
+
+In your model YAML file:
+
+```yaml
+models:
+  - name: sales
+    columns:
+      - name: revenue
+        meta:
+          metrics:
+            total_revenue:
+              type: sum
+              format: '${ld.parameters.currency=="usd"?"$":""}${ld.parameters.currency=="eur"?"€":""}${ld.parameters.currency=="eur"?"£":""}0,0.00'
+```
+
+The format uses multiple ternary expressions to check the parameter value:
+- When `currency` is `"usd"`, displays `$1,234.56`
+- When `currency` is `"eur"`, displays `€1,234.56`
+- When `currency` is `"gbp"`, displays `£1,234.56`
+
+**Another example: Controlling decimal places**
+
+You can use conditional formatting to toggle between different precision levels.
+
+Define your parameter in `lightdash.config.yml`:
+
+```yaml
+parameters:
+  decimals:
+    label: "Decimals"
+    description: "Conditional formatting for decimals"
+    default: "true"
+    options:
+      - "true"
+      - "false"
+```
+
+Then use it in your model YAML file:
+
+```yaml
+models:
+  - name: sales
+    columns:
+      - name: revenue
+        meta:
+          metrics:
+            total_revenue:
+              type: sum
+              format: '0,0${ld.parameters.decimals=="true"?".00":""}'
+```
+
+When `decimals` is `"true"`, numbers display as `$1,234.56`. When `decimals` is `"false"`, numbers display as `$1,235`.
+
 ## Formatting your fields in the Lightdash UI
 
 You can also format your fields in the Lightdash UI. This is useful if you want to format your fields quickly without having to change your YAML files.
