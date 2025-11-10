@@ -1,0 +1,121 @@
+---
+title: Data access control
+description: Understand how AI agents access and use your data
+---
+
+AI agents offer flexible data access control to balance insights with privacy and security. By default, agents work with metadata only, but you can optionally enable data access for deeper analysis.
+
+## Data access modes
+
+**Metadata-only mode (default):**
+
+- Agents can see your data structure, field names, and model definitions
+- They can generate appropriate queries and visualizations
+- No actual data values (except for one-row query results) are shared with the agent
+- Perfect for exploring data structure and creating initial analyses
+
+**Data access enabled:**
+
+- Agents receive actual query results in addition to metadata
+- Can provide specific insights, identify trends, and analyze patterns in your data
+- Offers detailed summaries and data-driven recommendations
+- Can search for actual field values to ensure accurate filters when building visualizations
+- Only shares data when explicitly enabled per agent
+
+<Info>
+  Data access is optional and controlled per agent. When disabled, agents only
+  work with your data model structure and cannot see actual data values. This
+  ensures sensitive information is only shared when you explicitly choose to
+  enable this capability.
+</Info>
+
+<Accordion title="How to enable data access">
+  To enable data access, go to your agent settings and toggle the "Data Access"
+  option.
+  <Frame>
+    <img
+      src="/images/guides/ai-agents/enable-data-access.png"
+      alt="How to enable data access for AI agents"
+    />
+  </Frame>
+</Accordion>
+
+## User attributes and permissions
+
+AI agents automatically respect all data access controls configured through [user attributes](/references/user-attributes). This ensures that agents only access data that the user is authorized to see, maintaining your existing security policies.
+
+### How user attributes flow through AI queries
+
+When an AI agent generates and executes queries on behalf of a user, it inherits that user's attribute values and applies them to all data access:
+
+**Row-level security:**
+- Agents automatically apply `sql_filter` rules defined in your models
+- Only rows matching the user's attribute values are included in query results
+- Example: If a user has `sales_region: 'EMEA'`, the agent will only query data for that region
+
+**Column-level security:**
+- Agents respect `required_attributes` on dimensions
+- Columns the user cannot access are invisible to the agent
+- Metrics derived from restricted columns are also unavailable
+- Example: If `salary` requires `is_admin: 'true'`, non-admin users' agents cannot query salary data
+
+**Table-level security:**
+- Agents respect `required_attributes` on models
+- Tables the user cannot access are completely hidden from the agent
+- The agent cannot reference or join restricted tables
+- Example: If `payments` requires `is_admin: 'true'`, non-admin users' agents cannot query the payments table
+
+### Default behavior
+
+<Info>
+**In the Lightdash app:** AI agents automatically use the logged-in user's attributes for all queries.
+
+**In Slack:** AI agents currently use the attributes of the user who created the agent. We plan to respect user attributes based on Slack user email in the future—reach out if you need this feature!
+</Info>
+
+### How this works behind the scenes
+
+When an agent generates a query:
+
+1. The agent receives the user's complete attribute profile (both direct user attributes and group attributes)
+2. All `sql_filter` rules are automatically applied to the generated SQL
+3. Dimensions and tables with `required_attributes` are filtered from the available schema
+4. The agent only sees and can query data within the user's permissions
+
+This happens transparently—the agent doesn't need special configuration. Your existing user attribute rules automatically protect AI-generated queries just like they protect manual queries.
+
+### Example: Regional sales access
+
+Consider this model configuration:
+
+```yaml
+models:
+  - name: sales
+    meta:
+      sql_filter: ${TABLE}.region IN (${lightdash.attributes.sales_region})
+    columns:
+      - name: revenue
+      - name: customer_name
+        meta:
+          dimension:
+            required_attributes:
+              can_view_pii: "true"
+```
+
+For a user with `sales_region: 'EMEA'` and no `can_view_pii` attribute:
+
+- The agent can query `revenue` data, but only for EMEA region
+- The agent cannot see or query `customer_name` (PII restriction)
+- If the agent tries to analyze customer names, it will fail with a permissions error
+- All generated queries automatically include `WHERE region IN ('EMEA')`
+
+### Security considerations
+
+- **Metadata mode:** Even in metadata-only mode, agents respect user attributes when showing available fields
+- **Data access mode:** When data access is enabled, query results are filtered by user attributes
+- **Query generation:** Agents cannot generate queries that bypass user attribute restrictions
+- **Error handling:** If an agent attempts to access restricted data, the query fails with a permissions error
+
+<Warning>
+Custom SQL in table calculations or SQL Runner can potentially bypass user attribute filters. AI agents use the standard query interface and cannot bypass these restrictions.
+</Warning>
