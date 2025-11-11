@@ -48,9 +48,39 @@ You can create multiple AI agents, each configured for different tasks, tones, l
 
 ## Limiting access to specific explores and fields
 
-For each AI agent, you can configure which fields are used to answer questions using the tags you've defined in your YAML files. You can add one or many tags - fields with **any** of the tags in the list will be considered by the AI agent.
+You can control which explores and fields your AI agent can access using tags from your dbt models. When you configure tags in your agent settings, the agent will only see explores and fields that have matching tags.
 
-Use tags to control which metrics and dimensions each AI agent can access. This helps focus the AI on the most relevant data for analysis and ensures agents only work with appropriate datasets. You can add tags at the model level to give access to entire explores, or at the individual metric and dimension level for more granular control.
+**How tag matching works:**
+- Add one or more tags to your agent settings
+- Fields or explores with **any** of those tags will be accessible to the agent
+- If no tags are configured, the agent can access everything
+
+**Two levels of tagging:**
+1. **Explore-level tags** - Tag the model to control access to entire explores
+2. **Field-level tags** - Tag individual metrics and dimensions for granular control
+
+### How filtering works
+
+The filtering behavior depends on how you've tagged your models:
+
+**Explore visibility:**
+- An explore is only visible if its **base table** has matching tags at either:
+  - Explore level (model tags match agent tags), OR
+  - Field level (at least one base table field has matching tags)
+- If only joined tables have matching tags but the base table doesn't, the explore will be hidden
+
+**Field visibility per table:**
+
+Each table in an explore is filtered independently using one of two modes:
+
+1. **Field-level mode** (when ANY field in the table has tags defined):
+   - Only fields with matching tags are visible
+   - Other fields are hidden, even if the explore is tagged
+   - Note: An empty tags array (`tags: []`) activates field-level mode but matches nothing
+
+2. **Explore-level mode** (when NO fields in the table have tags):
+   - If explore tags match: ALL fields in the table are visible
+   - If explore tags don't match: NO fields are visible
 
 ### Adding tags at the model level
 
@@ -152,3 +182,79 @@ models:
 ```
 
 </CodeGroup>
+
+### Common scenarios
+
+Here are some common tagging scenarios and their results:
+
+**Scenario 1: Explore-level only (no field tags)**
+```yaml
+models:
+  - name: customers
+    config:
+      meta:
+        tags: ["ai-enabled"]
+    columns:
+      - name: customer_name
+      - name: email
+```
+Result: If agent has `["ai-enabled"]` tag, ALL fields in the customers explore are visible.
+
+**Scenario 2: Field-level only (no explore tags)**
+```yaml
+models:
+  - name: customers
+    columns:
+      - name: customer_name
+        config:
+          meta:
+            dimension:
+              tags: ["ai-enabled"]
+      - name: email
+        config:
+          meta:
+            dimension:
+              tags: ["pii"]
+```
+Result: If agent has `["ai-enabled"]` tag, only `customer_name` is visible. The `email` field is hidden.
+
+**Scenario 3: Mixed - explore tagged + some fields tagged**
+```yaml
+models:
+  - name: orders
+    config:
+      meta:
+        tags: ["ai-enabled"]
+    tables:
+      orders: # base table - no field tags
+        - name: order_id
+        - name: status
+      customers: # joined table - has field tags
+        - name: email
+          config:
+            meta:
+              dimension:
+                tags: ["ai-enabled"]
+        - name: phone
+```
+Result: Base table (`orders`) shows ALL fields (explore-level mode). Joined table (`customers`) shows only `email` (field-level mode).
+
+**Scenario 4: Only joined table has matching tags**
+```yaml
+models:
+  - name: orders
+    columns:
+      - name: order_id # no tags
+    tables:
+      customers: # joined table
+        - name: email
+          config:
+            meta:
+              dimension:
+                tags: ["ai-enabled"]
+```
+Result: The entire explore is HIDDEN because the base table (`orders`) has no matching tags.
+
+<Warning>
+  An explore is only visible if the **base table** has matching tags (either at explore level or field level). Having matching tags only in joined tables is not enough.
+</Warning>
