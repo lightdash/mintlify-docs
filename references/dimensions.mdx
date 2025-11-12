@@ -81,6 +81,7 @@ All the properties you can customize:
 | [urls](#urls) | No       | Array of  `url`, `label`  | Adding urls to a dimension allows your users to click dimension values in the UI and take actions, like opening an external tool with a url, or open at a website. You can use liquid templates to customise the link based on the value of the dimension. |
 | [required_attributes](#required-attributes) | No    | Object with `user_attribute`, `value`  | Limits access to users with those attributes |
 | [colors](#color)  | No       | Object with `value`, `color`  | Color for the values in the chart |
+| [image](#image-display)  | No       | Object with `url`  | **[WIP]** Display images in table cells using URL templates. Supports LiquidJS templating for dynamic URLs. |
 
 
 ## Type
@@ -611,6 +612,129 @@ You can predefine colors for your string type dimensions, these colors will be u
 
   These colors will also take precedence over the organization color palette.
 </Info>
+
+## Image Display
+
+<Warning>
+  **Work in Progress**: This feature is currently in development and may be subject to changes.
+</Warning>
+
+You can configure dimensions to display images in table cells using URL templates. Images are rendered as thumbnails with hover tooltips showing larger previews, perfect for visualizing product images, user avatars, or any other image-based data.
+
+### How it works
+
+To display images, you define an `image` property with a URL template in your dimension or additional dimension configuration. The URL can be dynamic, using LiquidJS templating to construct URLs based on row data and field values.
+
+**Simplest example - column already contains image URLs:**
+
+If your column already contains complete image URLs, you can simply configure it to display as an image:
+
+```yaml
+columns:
+  - name: image_url
+    description: "Image URL for the event"
+    meta:
+      dimension:
+        type: string
+        image:
+          url: "${value.raw}"
+```
+
+**Basic example with URL template:**
+
+```yaml
+columns:
+  - name: product_id
+    meta:
+      additional_dimensions:
+        product_image:
+          type: string
+          label: "Product Image"
+          description: "Product thumbnail image"
+          image:
+            url: "https://example.com/images/${value.raw}.jpg"
+```
+
+**Advanced example with dynamic URLs:**
+
+```yaml
+columns:
+  - name: event_type
+    meta:
+      additional_dimensions:
+        event_image:
+          type: string
+          label: "Event Image"
+          description: "Event banner image"
+          image:
+            url: "https://cdn.example.com/${value.raw}-${row.events.event_id.raw | upcase}.png"
+```
+
+### Display behavior
+
+- **Thumbnails**: Images display as 32px thumbnails in table cells
+- **Hover preview**: Hovering over a thumbnail reveals a larger preview via tooltip
+- **Error handling**: Failed image loads show a photo-off icon with error details in the tooltip
+- **Validation**: Invalid URL syntax is caught and displays an error state
+
+### URL Templating
+
+The `image.url` property supports LiquidJS templating with the same tags and filters available for [dimension URLs](#urls):
+
+**Available liquid tags:**
+
+| Tag                                         | Description                                                                                 |
+| :------------------------------------------ | :------------------------------------------------------------------------------------------ |
+| `${ value.formatted }`                      | The exact value of the dimension as seen in the Lightdash UI                                |
+| `${ value.raw }`                            | The raw value of the dimension returned from the underlying SQL query                       |
+| `${ row.table_name.column_name.formatted }` | The exact value of another column as seen in the Lightdash UI                               |
+| `${ row.table_name.column_name.raw }`       | The raw value of another dimension returned from the underlying SQL query                   |
+
+**Available liquid filters:**
+
+You can use [liquid filters](https://liquidjs.com/filters/overview.html) to transform values:
+
+```yaml
+image:
+  url: "https://example.com/${value.raw | downcase}.jpg"
+```
+
+### Current limitations
+
+- **Dimensions only**: Image display is currently supported for dimensions and additional dimensions only (not metrics or table calculations)
+- **Referenced columns**: When using `${ row.table_name.column_name }` templates, the referenced column must be included in your results table for the image to display
+
+### Example: Product catalog with images
+
+```yaml
+models:
+  - name: products
+    columns:
+      - name: sku
+        description: "Product SKU code"
+        meta:
+          dimension:
+            type: string
+          additional_dimensions:
+            product_thumbnail:
+              type: string
+              label: "Product Image"
+              description: "Product catalog image"
+              image:
+                url: "https://cdn.mystore.com/products/${value.raw}/thumbnail.jpg"
+      - name: category
+        description: "Product category"
+        meta:
+          dimension:
+            type: string
+          additional_dimensions:
+            category_icon:
+              type: string
+              label: "Category Icon"
+              description: "Category icon image"
+              image:
+                url: "https://cdn.mystore.com/icons/${value.raw | downcase}.png"
+```
 
 ## Using special characters or capital letters in your column names
 
