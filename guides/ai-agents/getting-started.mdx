@@ -54,6 +54,14 @@ You can control which explores and fields your AI agent can access using tags fr
 - Add one or more tags to your agent settings
 - Fields or explores with **any** of those tags will be accessible to the agent
 - If no tags are configured, the agent can access everything
+- As you add tags, you can interactively explore which explores and fields will be available in the agent settings interface
+
+<Frame caption="Preview available explores and fields as you add tags">
+  <img
+    src="/images/guides/ai-agents/agent-tags-preview.gif"
+    alt="Interactive preview of explores and fields filtered by tags in agent settings"
+  />
+</Frame>
 
 **Two levels of tagging:**
 1. **Explore-level tags** - Tag the model to control access to entire explores
@@ -218,41 +226,101 @@ models:
 ```
 Result: If agent has `["ai-enabled"]` tag, only `customer_name` is visible. The `email` field is hidden.
 
-**Scenario 3: Mixed - explore tagged + some fields tagged**
+**Scenario 3: Mixed - explore tagged with fields that have different tags**
 ```yaml
 models:
   - name: orders
     config:
       meta:
         tags: ["ai-enabled"]
-    tables:
-      orders: # base table - no field tags
-        - name: order_id
-        - name: status
-      customers: # joined table - has field tags
-        - name: email
-          config:
-            meta:
-              dimension:
-                tags: ["ai-enabled"]
-        - name: phone
+    columns:
+      - name: order_id
+        config:
+          meta:
+            dimension:
+              tags: ["pii"]
+      - name: status
+        config:
+          meta:
+            dimension:
+              tags: ["internal"]
 ```
-Result: Base table (`orders`) shows ALL fields (explore-level mode). Joined table (`customers`) shows only `email` (field-level mode).
+Result: If agent has `["ai-enabled"]` tag, NO fields are visible. Field-level mode is active (because fields have tags), and none of the field tags match "ai-enabled".
 
-**Scenario 4: Only joined table has matching tags**
+**Scenario 4: Mixed mode - base model with explore tags, joined model with field tags**
+
+<Tabs>
+  <Tab title="orders.yml (base model)">
 ```yaml
 models:
   - name: orders
+    config:
+      meta:
+        tags: ["ai-enabled"]
+        joins:
+          - join: customers
+            sql_on: ${customers.customer_id} = ${orders.customer_id}
+    columns:
+      - name: order_id
+      - name: status
+      - name: customer_id
+```
+  </Tab>
+  <Tab title="customers.yml (joined model)">
+```yaml
+models:
+  - name: customers
+    columns:
+      - name: customer_id
+      - name: email
+        config:
+          meta:
+            dimension:
+              tags: ["ai-enabled"]
+      - name: phone
+        config:
+          meta:
+            dimension:
+              tags: ["pii"]
+```
+  </Tab>
+</Tabs>
+
+Result: If agent has `["ai-enabled"]` tag:
+- `orders` table: ALL fields visible (explore-level mode - no field tags defined)
+- `customers` table: Only `email` visible (field-level mode - has field tags, only `email` matches)
+
+**Scenario 5: Only joined table has matching tags**
+
+<Tabs>
+  <Tab title="orders.yml (base model)">
+```yaml
+models:
+  - name: orders
+    config:
+      meta:
+        joins:
+          - join: customers
+            sql_on: ${customers.customer_id} = ${orders.customer_id}
     columns:
       - name: order_id # no tags
-    tables:
-      customers: # joined table
-        - name: email
-          config:
-            meta:
-              dimension:
-                tags: ["ai-enabled"]
+      - name: status # no tags
 ```
+  </Tab>
+  <Tab title="customers.yml (joined model)">
+```yaml
+models:
+  - name: customers
+    columns:
+      - name: email
+        config:
+          meta:
+            dimension:
+              tags: ["ai-enabled"]
+```
+  </Tab>
+</Tabs>
+
 Result: The entire explore is HIDDEN because the base table (`orders`) has no matching tags.
 
 <Warning>
