@@ -85,6 +85,20 @@ LIMIT 500"
 }
 ```
 
+### One-Step Solution (pipeline version)
+
+```
+curl -s -H "Authorization: ApiKey ldpat_{{your_PAT_token}}" \
+  https://analytics.lightdash.cloud/api/v1/saved/{{your_chart_uuid}} \
+  | jq '.results.metricQuery' \
+  | curl -s -X POST \
+      -H "Authorization: ApiKey ldpat_{{your_PAT_token}}" \
+      -H "Content-Type: application/json" \
+      -d @- \
+      https://analytics.lightdash.cloud/api/v1/projects/{{your_project_uuid}}/explores/{{your_explore_name}}/compileQuery \
+  | jq '.results.query'
+```
+
 ## Run a Metric Query and Fetch Results Using the API
 
 This recipe shows how to programmatically execute a Lightdash metric query and retrieve the results table by:
@@ -160,4 +174,25 @@ curl -s -X POST \
   -d @metricQuery.json \
   https://analytics.lightdash.cloud/api/v1/projects/{{your_project_uuid}}/explores/{{your_explore_name}}/compileQuery \
   | jq '.results.query'
+```
+
+### One-Step Solution (execute + fetch first page of results)
+
+This version **runs the query and immediately retrieves the first page** of results.
+
+```
+queryUuid=$(curl -s -X POST \
+  -H "Authorization: ApiKey ldpat_{{your_PAT_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "metrics": ["{{your_metric_name}}"],
+    "dimensions": ["{{your_dimension_name}}"],
+    "filters": [],
+    "sorts": []
+  }' \
+  https://analytics.lightdash.cloud/api/v1/projects/{{your_project_uuid}}/query/executeMetricQuery \
+  | jq -r '.results.queryUuid')
+
+curl -s -H "Authorization: ApiKey ldpat_{{your_PAT_token}}" \
+  "https://analytics.lightdash.cloud/api/v1/projects/{{your_project_uuid}}/query/results?queryUuid=$queryUuid&page=1&pageSize=500"
 ```
