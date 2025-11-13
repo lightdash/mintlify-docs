@@ -99,105 +99,7 @@ curl -s -H "Authorization: ApiKey ldpat_{{your_PAT_token}}" \
   | jq '.results.query'
 ```
 
-## Run a Metric Query and Fetch Results Using the API
-
-This recipe shows how to programmatically execute a Lightdash metric query and retrieve the results table by:
-
-1. Executing a `metricQuery`
-2. Getting a `queryUuid` from the response
-3. Fetching the paginated results using that UUID
-4. _(Optional)_ Compiling the SQL for the query
-
-### Step 1: Execute the metricQuery
-
-(You must first create a Personal Access Token (PAT))
-
-```
-curl -X POST \
-  -H "Authorization: ApiKey ldpat_{{your_PAT_token}}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "metrics": ["{{your_metric_name}}"],
-    "dimensions": ["{{your_dimension_name}}"],
-    "filters": [],
-    "sorts": []
-  }' \
-  https://analytics.lightdash.cloud/api/v1/projects/{{your_project_uuid}}/query/executeMetricQuery
-```
-
-### Example response (truncated)
-
-```
-{
-  "status": "ok",
-  "results": {
-    "queryUuid": "b3cc9c58-0c73-4f3c-a8f8-1f21d88de1ae",
-    "metricQuery": { ... }
-  }
-}
-```
-
-You now have the `queryUuid` that is required for Step 2.
-
-### Step 2: Fetch the query results (paginated)
-
-Use the `queryUuid` from Step 1.
-
-```
-curl -X GET \
-  -H "Authorization: ApiKey ldpat_{{your_PAT_token}}" \
-  "https://analytics.lightdash.cloud/api/v1/projects/{{your_project_uuid}}/query/results?queryUuid={{your_queryUuid}}&page=1&pageSize=500"
-```
-
-`page` and `pageSize` let you control pagination of large result sets.
-
-### Step 3: Compile the query to SQL
-
-The `executeMetricQuery` endpoint does **not** currently return the compiled SQL.\
-You can compile the `metricQuery` using the `compileQuery` endpoint.
-
-First, save the metricQuery to a file:
-
-```
-curl -s \
-  -H "Authorization: ApiKey ldpat_{{your_PAT_token}}" \
-  https://analytics.lightdash.cloud/api/v1/saved/{{your_chart_uuid}} \
-  | jq '.results.metricQuery' > metricQuery.json
-```
-
-Then compile it:
-
-```
-curl -s -X POST \
-  -H "Authorization: ApiKey ldpat_{{your_PAT_token}}" \
-  -H "Content-Type: application/json" \
-  -d @metricQuery.json \
-  https://analytics.lightdash.cloud/api/v1/projects/{{your_project_uuid}}/explores/{{your_explore_name}}/compileQuery \
-  | jq '.results.query'
-```
-
-### One-Step Solution (execute + fetch first page of results)
-
-This version **runs the query and immediately retrieves the first page** of results.
-
-```
-queryUuid=$(curl -s -X POST \
-  -H "Authorization: ApiKey ldpat_{{your_PAT_token}}" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "metrics": ["{{your_metric_name}}"],
-    "dimensions": ["{{your_dimension_name}}"],
-    "filters": [],
-    "sorts": []
-  }' \
-  https://analytics.lightdash.cloud/api/v1/projects/{{your_project_uuid}}/query/executeMetricQuery \
-  | jq -r '.results.queryUuid')
-
-curl -s -H "Authorization: ApiKey ldpat_{{your_PAT_token}}" \
-  "https://analytics.lightdash.cloud/api/v1/projects/{{your_project_uuid}}/query/results?queryUuid=$queryUuid&page=1&pageSize=500"
-```
-
-## Rename Models Inside Saved Charts (Utility Script)
+## Rename Models Inside Saved Charts
 
 This script updates model names inside all saved charts in a Lightdash project.\
 It renames occurrences of a model across:
@@ -213,7 +115,7 @@ It renames occurrences of a model across:
 ⚠️ **Does not update:**\
 conditional formatting, reference lines, dashboards, dashboard filters, or charts inside dashboards.
 
-## Before You Run This Script
+### Before You Run This Script
 
 You will need:
 
@@ -223,7 +125,7 @@ You will need:
 4. The old and new model names
 5. A copy of [rename_models_in_charts.js](https://github.com/lightdash/lightdash-api-examples/blob/main/javascript/rename_models_in_charts.js)
 
-## Step 1: Install dependencies
+### Step 1: Install dependencies
 
 ```
 yarn
@@ -231,7 +133,7 @@ yarn
 npm i
 ```
 
-## Step 2: Update rename_models_in_charts.js script variables
+### Step 2: Update rename_models_in_charts.js script variables
 
 In the script, replace:
 
@@ -244,7 +146,7 @@ const testing = true   // set to false to actually update
 const debug = false    // set to true to see detailed logs
 ```
 
-## Step 3: Run the script
+### Step 3: Run the script
 
 If you want a dry run (no changes), keep:
 
@@ -262,4 +164,104 @@ Then run [rename_models_in_charts.js](https://github.com/lightdash/lightdash-api
 
 ```
 node rename_models_in_charts.js
+```
+
+## Dashboard Cleanup & Usage Audit for a Project (Python Utility Script)
+
+This Python script helps you **clean up dashboards** in a specific Lightdash project. It uses the v2 Content API and can export results to CSV, Excel, or JSON for deeper analysis. This script provides:
+
+- A complete list of all dashboards with metadata for that project
+- View counts and first viewed dates
+- Creation and last modification dates
+- Dashboard organization by spaces
+- Cleanup recommendations based on usage patterns (never viewed, low engagement, stale, no description, etc.)
+
+### Before You Run This Script
+
+You will need:
+
+- Python 3.9+ installed
+- A [Personal Access Token (PAT)](https://docs.lightdash.com/references/personal_tokens)
+- Your Lightdash instance URL
+- The project UUID you want to analyze
+- A copy of [find_dashboards.py](https://github.com/lightdash/lightdash-api-examples/blob/main/python/find_dashboards.py)
+
+### Step 1: Install dependencies
+
+You can run this script with **poetry** or plain Python:
+
+```
+poetry install
+# OR
+pip install -r requirements.txt
+```
+
+(Dependencies include `requests` and `pandas`.)
+
+### Step 2: Update script configuration
+
+Open the script and update these fields:
+
+```
+API_URL = 'https://{YOUR_INSTANCE_URL}.lightdash.cloud'  # Your Lightdash instance
+API_KEY = ''                                             # Your Personal Access Token
+PROJECT_UUID = ''                                        # Project you want to analyze (REQUIRED)
+EXPORT_METHOD = 'csv'                                    # 'csv', 'excel', or 'json'
+```
+
+### Step 3: Run the script
+
+Using poetry:
+
+```
+poetry run python find_dashboards.py
+```
+
+Or directly:
+
+```
+python find_dashboards.py
+```
+
+## Export All Users in Your Organization
+
+This Python script fetches **all users in your Lightdash organization** using the `/api/v1/org/users` endpoint. This is useful for **audits**, **access reviews**, and **governance**. It returns:
+
+- Full name
+- Email
+- Role
+- Group membership
+- Optional Excel or CSV export
+
+### Before You Run This Script
+
+You will need:
+
+- Python 3.9+ installed
+- A [Personal Access Token (PAT)](https://docs.lightdash.com/references/personal_tokens#personal-access-tokens)
+- Your Lightdash instance URL
+- A copy of [get_all_organization_users.py](https://github.com/lightdash/lightdash-api-examples/blob/main/python/get_all_organization_users.py)
+
+### Step 1: Install dependencies
+
+```
+pip install requests pandas
+```
+
+(or add them to your environment of choice)
+
+### Step 2: Update script configuration
+
+Open the script and replace:
+
+```
+API_URL = 'https://<yourinstance>.lightdash.cloud/api/v1/org/users'
+API_KEY = '<yourkey>'
+EXPORT_METHOD = 'excel'  # or 'csv'
+```
+
+### Step 3: Run the script
+
+```
+python get_all_organization_users.py
 ```
