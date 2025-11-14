@@ -1,0 +1,240 @@
+---
+title: "Recipes"
+description: "A collection of practical, copy-paste examples showing how to combine Lightdash API endpoints to achieve common workflows."
+---
+
+## What are API recipes?
+
+The Lightdash API is intentionally modular: most endpoints return small, focused pieces of information. While this keeps the API flexible, some real-world tasks require calling multiple endpoints together or assembling responses in a certain order.
+
+For example, Lightdash doesn’t provide a single endpoint that returns “SQL for every chart,” but you _can_ accomplish this by combining the chart-listing endpoint with the metric-query endpoint. Follow the recipes below.
+
+**API recipes** are short guides that show you _how to do exactly that_. Each recipe walks through:
+
+- **What you’re trying to accomplish** (e.g., fetch SQL for all charts in a project)
+- **Which endpoints to call and in what order**
+- **Example requests** in `curl`
+- **Optional scripts** in JS/Python when useful
+
+## When should you use recipes?
+
+Use a recipe when:
+
+- You want to automate a workflow that spans multiple endpoints
+- You need to query Lightdash programmatically but aren’t sure which calls to chain
+- You want real examples of authentication, pagination, or interpreting metric queries
+- You’re building internal tooling or dashboards powered by the Lightdash API
+
+<Warning>
+  This page includes a few of the most common API recipes, but it’s not a complete list. For all available recipes, see the full collection [here](https://github.com/lightdash/lightdash-api-examples).
+</Warning>
+
+## Before you run any recipe
+
+You will need:
+
+- Python 3.9+ installed
+- A [Personal Access Token (PAT)](https://docs.lightdash.com/references/personal_tokens#personal-access-tokens)
+- Your Lightdash instance URL
+- The project UUID you want to modify
+
+## Extract SQL from a saved Lightdash chart using the API
+
+This recipe shows how to fetch the underlying SQL for any saved chart. You can use this to debug queries, run them directly in your warehouse, or automate data pulls outside of Lightdash.
+
+### Step 1: Fetch the saved chart
+
+(You must first create a Personal Access Token (PAT))
+
+```
+curl -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+  https://{{your.lightdash.instance}}/api/v1/saved/{{your_chart_uuid}}
+```
+
+### Step 2: Extract the `metricQuery` JSON
+
+```
+curl -s \
+  -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+  https://{{your.lightdash.instance}}/api/v1/saved/{{your_chart_uuid}} \
+  | jq '.results.metricQuery' > metricQuery.json
+```
+
+This writes the chart’s semantic query definition to `metricQuery.json`.
+
+### Step 3: Compile the `metricQuery` into SQL
+
+```
+curl -s -X POST \
+  -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+  -H "Content-Type: application/json" \
+  -d @metricQuery.json \
+  https://{{your.lightdash.instance}}/api/v1/projects/{{your_project_uuid}}/explores/{{your_explore_name}}/compileQuery \
+  | jq '.results.query'
+```
+
+### One-Step Solution
+
+```
+curl -s -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+  https://{{your.lightdash.instance}}/api/v1/savedc/{{your_chart_uuid}} \
+  | jq '.results.metricQuery' \
+  | curl -s -X POST \
+      -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+      -H "Content-Type: application/json" \
+      -d @- \
+      https://{{your.lightdash.instance}}/api/v1/projects/{{your_project_uuid}}/explores/{{your_explore_name}}/compileQuery \
+  | jq '.results.query'
+```
+
+## Dashboard cleanup & usage audit for a project
+
+This Python script helps you **clean up dashboards** in a specific Lightdash project. It uses the v2 Content API and can export results to CSV, Excel, or JSON for deeper analysis. This script provides:
+
+- A complete list of all dashboards with metadata for that project
+- View counts and first viewed dates
+- Creation and last modification dates
+- Dashboard organization by spaces
+- Cleanup recommendations based on usage patterns (never viewed, low engagement, stale, no description, etc.)
+
+### Before you run this script
+
+You will need:
+
+- A copy of [find_dashboards.py](https://github.com/lightdash/lightdash-api-examples/blob/main/python/find_dashboards.py)
+
+### Step 1: Install dependencies
+
+You can run this script with **poetry** or plain Python:
+
+```
+poetry install
+# OR
+pip install -r requirements.txt
+```
+
+(Dependencies include `requests` and `pandas`.)
+
+### Step 2: Update script configuration
+
+Open the script and update these fields:
+
+```
+API_URL = 'https://{YOUR_INSTANCE_URL}.lightdash.cloud'  # Your Lightdash instance
+API_KEY = ''                                             # Your Personal Access Token
+PROJECT_UUID = ''                                        # Project you want to analyze (REQUIRED)
+EXPORT_METHOD = 'csv'                                    # 'csv', 'excel', or 'json'
+```
+
+### Step 3: Run the script
+
+Using poetry:
+
+```
+poetry run python find_dashboards.py
+```
+
+Or directly:
+
+```
+python find_dashboards.py
+```
+
+## Export all users in your organization
+
+This Python script fetches **all users in your Lightdash organization** using the `/api/v1/org/users` endpoint. This is useful for **audits**, **access reviews**, and **governance**. It returns:
+
+- Full name
+- Email
+- Role
+- Group membership
+- Optional Excel or CSV export
+
+### Before you run this script
+
+You will need:
+
+- A copy of [get_all_organization_users.py](https://github.com/lightdash/lightdash-api-examples/blob/main/python/get_all_organization_users.py)
+
+### Step 1: Install dependencies
+
+```
+pip install requests pandas
+```
+
+(or add them to your environment of choice)
+
+### Step 2: Update script configuration
+
+Open the script and replace:
+
+```
+API_URL = 'https://<yourinstance>.lightdash.cloud/api/v1/org/users'
+API_KEY = '<yourkey>'
+EXPORT_METHOD = 'excel'  # or 'csv'
+```
+
+### Step 3: Run the script
+
+```
+python get_all_organization_users.py
+```
+
+## Assign or update project access for a list of users
+
+This Python script assigns Lightdash **project roles** to a list of users from a CSV file, and upgrades roles when needed. This is useful for **large-scale onboarding**, **role synchronization**, or **managing customer/partner access**. This script handles:
+
+- Bulk granting of project access
+- Automatic role upgrades (e.g., viewer → editor)
+- Skipping users who already have equal or higher access
+- Checking whether users exist in the organization
+- Merging org users, project access, and your CSV into one unified dataset
+
+### Before you run this script
+
+You will need:
+
+- A CSV file of users with desired roles
+- A copy of [assign_project_access_to_user_list.py](https://github.com/lightdash/lightdash-api-examples/blob/main/python/assign_project_access_to_user_list.py)
+
+### Step 1: Prepare your CSV file
+
+Your CSV should contain **two columns**:
+
+```
+email,role
+user1@example.com,viewer
+user2@example.com,editor
+user3@example.com,developer
+```
+
+Valid roles:
+
+```
+viewer, interactive_viewer, editor, developer, admin
+```
+
+### Step 2: Install dependencies
+
+```
+pip install pandas lightdash-api-client
+```
+
+(or via poetry)
+
+### Step 3: Update script configuration
+
+Open the script and update:
+
+```
+TARGET_URL = 'https://app.lightdash.cloud/api/v1/'
+TARGET_API_KEY = ''
+TARGET_PROJECT_ID = ''
+USER_PERMS_FILEPATH = '~/Documents/user_permission_list.csv'
+```
+
+### Step 4: Run the script
+
+```
+python assign_project_access_to_user_list.py
+```
