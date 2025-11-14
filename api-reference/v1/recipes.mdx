@@ -7,6 +7,8 @@ description: "A collection of practical, copy-paste examples showing how to comb
 
 The Lightdash API is intentionally modular: most endpoints return small, focused pieces of information. While this keeps the API flexible, some real-world tasks require calling multiple endpoints together or assembling responses in a certain order.
 
+For example, Lightdash doesn’t provide a single endpoint that returns “SQL for every chart,” but you _can_ accomplish this by combining the chart-listing endpoint with the metric-query endpoint. Follow the recipes below.
+
 **API recipes** are short guides that show you _how to do exactly that_. Each recipe walks through:
 
 - **What you’re trying to accomplish** (e.g., fetch SQL for all charts in a project)
@@ -23,11 +25,8 @@ Use a recipe when:
 - You want real examples of authentication, pagination, or interpreting metric queries
 - You’re building internal tooling or dashboards powered by the Lightdash API
 
-For example, Lightdash doesn’t provide a single endpoint that returns “SQL for every chart,” but you _can_ accomplish this by combining the chart-listing endpoint with the metric-query endpoint. Follow the recipes below.
-
 <Warning>
-  This page includes a few of the most common API recipes, but it’s not a complete list.\
-  For all available recipes, see the full collection [here](https://github.com/lightdash/lightdash-api-examples).
+  This page includes a few of the most common API recipes, but it’s not a complete list. For all available recipes, see the full collection [here](https://github.com/lightdash/lightdash-api-examples).
 </Warning>
 
 ## Before you run any recipe
@@ -35,7 +34,7 @@ For example, Lightdash doesn’t provide a single endpoint that returns “SQL f
 You will need:
 
 - Python 3.9+ installed
-- A Personal Access Token (PAT)
+- A [Personal Access Token (PAT)](https://docs.lightdash.com/references/personal_tokens#personal-access-tokens)
 - Your Lightdash instance URL
 - The project UUID you want to modify
 
@@ -48,16 +47,16 @@ This recipe shows how to fetch the underlying SQL for any saved chart. You can u
 (You must first create a Personal Access Token (PAT))
 
 ```
-curl -H "Authorization: ApiKey ldpat_{{your_PAT_token}}" \
-  https://analytics.lightdash.cloud/api/v1/saved/{{your_chart_uuid}}
+curl -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+  https://{{your.lightdash.instance}}/api/v1/saved/{{your_chart_uuid}}
 ```
 
 ### Step 2: Extract the `metricQuery` JSON
 
 ```
 curl -s \
-  -H "Authorization: ApiKey ldpat_{{your_PAT_token}}" \
-  https://analytics.lightdash.cloud/api/v1/saved/{{your_chart_uuid}} \
+  -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+  https://{{your.lightdash.instance}}/api/v1/saved/{{your_chart_uuid}} \
   | jq '.results.metricQuery' > metricQuery.json
 ```
 
@@ -67,89 +66,25 @@ This writes the chart’s semantic query definition to `metricQuery.json`.
 
 ```
 curl -s -X POST \
-  -H "Authorization: ApiKey ldpat_{{your_PAT_token}}" \
+  -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
   -H "Content-Type: application/json" \
   -d @metricQuery.json \
-  https://analytics.lightdash.cloud/api/v1/projects/{{your_project_uuid}}/explores/{{your_explore_name}}/compileQuery \
+  https://{{your.lightdash.instance}}/api/v1/projects/{{your_project_uuid}}/explores/{{your_explore_name}}/compileQuery \
   | jq '.results.query'
 ```
 
 ### One-Step Solution
 
 ```
-curl -s -H "Authorization: ApiKey ldpat_{{your_PAT_token}}" \
-  https://analytics.lightdash.cloud/api/v1/saved/{{your_chart_uuid}} \
+curl -s -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+  https://{{your.lightdash.instance}}/api/v1/savedc/{{your_chart_uuid}} \
   | jq '.results.metricQuery' \
   | curl -s -X POST \
-      -H "Authorization: ApiKey ldpat_{{your_PAT_token}}" \
+      -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
       -H "Content-Type: application/json" \
       -d @- \
-      https://analytics.lightdash.cloud/api/v1/projects/{{your_project_uuid}}/explores/{{your_explore_name}}/compileQuery \
+      https://{{your.lightdash.instance}}/api/v1/projects/{{your_project_uuid}}/explores/{{your_explore_name}}/compileQuery \
   | jq '.results.query'
-```
-
-## Rename models inside saved charts
-
-This script updates model names inside all saved charts in a Lightdash project.\
-It renames occurrences of a model across:
-
-- dimensions
-- metrics
-- filters
-- sorts
-- tableConfig
-- chartConfig
-- table calculations
-
-This does not update conditional formatting, reference lines, dashboards, dashboard filters, or charts inside dashboards.
-
-### Before you run this script
-
-You will need:
-
-- **Node.js** installed
-- The old and new model names
-- A copy of [rename_models_in_charts.js](https://github.com/lightdash/lightdash-api-examples/blob/main/javascript/rename_models_in_charts.js)
-
-### Step 1: Install dependencies
-
-```
-yarn
-# or
-npm i
-```
-
-### Step 2: Update rename_models_in_charts.js script variables
-
-In the script, replace:
-
-```
-const projectUuid = `3675b69e-8324-4110-bdca-059031aa8da3`
-const apiKey = '<my-api-key>'
-const oldModel = 'customers'
-const newModel = 'users'
-const testing = true   // set to false to actually update
-const debug = false    // set to true to see detailed logs
-```
-
-### Step 3: Run the script
-
-If you want a dry run (no changes), keep:
-
-```
-const testing = true
-```
-
-When you are ready to apply updates:
-
-```
-const testing = false
-```
-
-Then run [rename_models_in_charts.js](https://github.com/lightdash/lightdash-api-examples/blob/main/javascript/rename_models_in_charts.js):
-
-```
-node rename_models_in_charts.js
 ```
 
 ## Dashboard cleanup & usage audit for a project
