@@ -215,6 +215,38 @@ models:
 
 If a user without access to this table runs a query that contains this table, they will get a `Forbidden` error.
 
+
+## Defining primary keys
+
+You can specify a primary key for your model to uniquely identify each row. This is important for tables as it helps Lightdash understand the relationships between tables and prevent data duplication, especially when dealing with SQL fanouts in joins.
+
+The primary key can be defined in two ways:
+
+### Single column primary key
+
+If your table has a single column that uniquely identifies each row, you can define it as a string:
+
+```yaml
+models:
+  - name: users
+    meta:
+      primary_key: user_id
+```
+
+### Complex primary key
+
+If your table requires multiple columns to uniquely identify each row, you can define the primary key as an array of strings:
+
+```yaml
+models:
+  - name: order_items
+    meta:
+      primary_key: [order_id, item_id]
+```
+
+Using a properly defined primary key helps Lightdash optimize queries and provide accurate results when working with joined tables. It's especially important for preventing metric inflation in SQL joins where duplicate rows can lead to incorrect aggregations.
+
+
 ## Default filters
 
 Use `default_filters` to define filters on Dimensions that will be applied when no other user-defined filter on those Dimensions exists. Default filters will show apply to tables on load and can be populated with a pre-determined value. User them to suggest to users the kind of filters they might want to consider, or provide a default filtered view of a table that can be changed if needed.
@@ -281,61 +313,33 @@ models:
             type: date
 ```
 
-## Defining primary keys
 
-You can specify a primary key for your model to uniquely identify each row. This is important for tables as it helps Lightdash understand the relationships between tables and prevent data duplication, especially when dealing with SQL fanouts in joins.
+### Available filter types
 
-The primary key can be defined in two ways:
+| Operator | Description | Example (as code) | Supported Types |
+| :------- | :---------- | :---------------- | :-------------- |
+| is        | Value is equal to  | `user_name: "katie"`       | String, Number, Date  |
+| is not     | Value is not equal to           | `user_name: "!katie"`                  | String, Number, Date  |
+| between     | Value is between two values (inclusive)        | `age: "between 18 and 65"`           | Number, Date          |
+|              |                                                | `order_date: "between 2024-01-01 and 2024-12-31"`  | Number, Date          |
+| contains     | String contains value                          | `user_name: "%katie%"`                            | String                |
+| does not contain | String does not contain value                  | `user_name: "!%katie%"`                      | String                |
+| starts with     | String starts with value                       | `user_name: "katie%"`                       | String                |
+| ends with       | String ends with value                         | `user_name: "%katie"`                     | String                |
+| is greater than | Number is greater than value                   | `num_orders: "> 4"`                     | Number                |
+| is greater than or equal to   | Number is greater than or equal to value       | `num_orders: ">= 4"` | Number                |
+| is less than    | Number is less than value                      | `num_orders: "< 4"`                | Number                |
+| is less than or equal to      | Number is less than or equal to value          | `num_orders: "<= 4"` | Number                |
+| in the past     | Date is before x (days / months / years)       | `date: "inThePast 14 days"`         | Date                  |
+| in the next     | Date is after x (days / months / years)        | `date: "inTheNext 30 days"`         | Date                  |
+| is null         | Value is NULL                                  | `status: "null"`                    | All                   |
+| is not null     | Value is not NULL                              | `status: "!null"`                  | All             |
+| is empty        | Value is empty string                          | `notes: "empty"`                    | String          |
+| is not empty    | Value is not empty string                      | `notes: "!empty"`                  | String          |
+| is [boolean]    | Boolean value is true                          | `is_complete: "true"`               | Boolean         |
+| is not [boolean] | Boolean value is false or null                 | `is_complete: "!true"`            | Boolean         |
+| in list          | Value is in comma-separated list               | `status: "active,pending,approved"` | String, Number  |
 
-### Single column primary key
-
-If your table has a single column that uniquely identifies each row, you can define it as a string:
-
-```yaml
-models:
-  - name: users
-    meta:
-      primary_key: user_id
-```
-
-### Complex primary key
-
-If your table requires multiple columns to uniquely identify each row, you can define the primary key as an array of strings:
-
-```yaml
-models:
-  - name: order_items
-    meta:
-      primary_key: [order_id, item_id]
-```
-
-Using a properly defined primary key helps Lightdash optimize queries and provide accurate results when working with joined tables. It's especially important for preventing metric inflation in SQL joins where duplicate rows can lead to incorrect aggregations.
-
-## Available filter types
-
-| Operator                      | Description                                    | Example (as code)                                  | Supported Types       |
-| :---------------------------- | :--------------------------------------------- | :------------------------------------------------- | :-------------------- |
-| is                            | Value is equal to                              | `user_name: "katie"`                               | String, Number, Date  |
-| is not                        | Value is not equal to                          | `user_name: "\!katie"`                             | String, Number, Date  |
-| between                       | Value is between two values (inclusive)        | `age: "between 18 and 65"`                         | Number, Date          |
-|                               |                                                | `order_date: "between 2024-01-01 and 2024-12-31"`  | Number, Date          |
-| contains                      | String contains value                          | `user_name: "%katie%"`                             | String                |
-| does not contain              | String does not contain value                  | `user_name: "\!%katie%"`                           | String                |
-| starts with                   | String starts with value                       | `user_name: "katie%"`                              | String                |
-| ends with                     | String ends with value                         | `user_name: "%katie"`                              | String                |
-| is greater than               | Number is greater than value                   | `num_orders: "\> 4"`                               | Number                |
-| is greater than or equal to   | Number is greater than or equal to value       | `num_orders: "\>= 4"`                              | Number                |
-| is less than                  | Number is less than value                      | `num_orders: "\< 4"`                               | Number                |
-| is less than or equal to      | Number is less than or equal to value          | `num_orders: "\<= 4"`                              | Number                |
-| in the past                   | Date is before x (days / months / years)       | `date: "inThePast 14 days"`                        | Date                  |
-| in the next                   | Date is after x (days / months / years)        | `date: "inTheNext 30 days"`                        | Date                  |
-| is null                       | Value is NULL                                  | `status: "null"`                                   | All                   |
-| is not null                   | Value is not NULL                              | `status: "\!null"`                                 | All                   |
-| is empty                      | Value is empty string                          | `notes: "empty"`                                   | String                |
-| is not empty                  | Value is not empty string                      | `notes: "\!empty"`                                 | String                |
-| is [boolean]                  | Boolean value is true                          | `is_complete: "true"`                              | Boolean               |
-| is not [boolean]              | Boolean value is false or null                 | `is_complete: "\!true"`                            | Boolean               |
-| in list                       | Value is in comma-separated list               | `status: "active,pending,approved"`                | String, Number        |
 
 ### Filter examples
 
