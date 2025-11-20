@@ -119,3 +119,285 @@ For a user with `sales_region: 'EMEA'` and no `can_view_pii` attribute:
 <Warning>
 Custom SQL in table calculations or SQL Runner can potentially bypass user attribute filters. AI agents use the standard query interface and cannot bypass these restrictions.
 </Warning>
+
+## Limiting access to specific explores and fields
+
+You can control which explores and fields your AI agent can access using tags from your dbt models. When you configure tags in your agent settings, the agent will only see explores and fields that have matching tags.
+
+**How tag matching works:**
+- Add one or more tags to your agent settings
+- Fields or explores with **any** of those tags will be accessible to the agent
+- If no tags are configured, the agent can access everything
+- As you add tags, you can interactively explore which explores and fields will be available in the agent settings interface
+
+<Frame caption="Preview available explores and fields as you add tags">
+  <img
+    src="/images/guides/ai-agents/agent-tags-preview.gif"
+    alt="Interactive preview of explores and fields filtered by tags in agent settings"
+  />
+</Frame>
+
+**Two levels of tagging:**
+1. **Explore-level tags** - Tag the model to control access to entire explores
+2. **Field-level tags** - Tag individual metrics and dimensions for granular control
+
+### How filtering works
+
+The filtering behavior depends on how you've tagged your models:
+
+**Explore visibility:**
+- An explore is only visible if its **base table** has matching tags at either:
+  - Explore level (model tags match agent tags), OR
+  - Field level (at least one base table field has matching tags)
+- If only joined tables have matching tags but the base table doesn't, the explore will be hidden
+
+**Field visibility per table:**
+
+Each table in an explore is filtered independently using one of two modes:
+
+1. **Field-level mode** (when ANY field in the table has tags defined):
+   - Only fields with matching tags are visible
+   - Other fields are hidden, even if the explore is tagged
+   - Note: An empty tags array (`tags: []`) activates field-level mode but matches nothing
+
+2. **Explore-level mode** (when NO fields in the table have tags):
+   - If explore tags match: ALL fields in the table are visible
+   - If explore tags don't match: NO fields are visible
+
+### Adding tags at the model level
+
+Tag entire models to give your AI agent access to all metrics and dimensions within that explore:
+
+<CodeGroup>
+
+```yaml dbt 1.10+
+models:
+  - name: marketing_campaigns
+    config:
+      meta:
+        tags: ["marketing", "ai"] #    <--------- tagging the entire model
+    columns:
+      - name: campaign_name
+        config:
+          meta:
+            dimension:
+              type: string
+      - name: impressions
+        config:
+          meta:
+            metrics:
+              total_impressions:
+                type: sum
+```
+
+```yaml dbt <=1.9
+models:
+  - name: marketing_campaigns
+    meta:
+      tags: ["marketing", "ai"] #    <--------- tagging the entire model
+    columns:
+      - name: campaign_name
+        meta:
+          dimension:
+            type: string
+      - name: impressions
+        meta:
+          metrics:
+            total_impressions:
+              type: sum
+```
+
+</CodeGroup>
+
+### Adding tags to individual metrics & dimensions
+
+For more granular control, tag specific metrics and dimensions:
+
+<CodeGroup>
+
+```yaml dbt 1.10+
+models:
+  - name: orders
+    columns:
+      - name: status
+        config:
+          meta:
+            dimension:
+              tags: ["ai", "sales"] # <--------- tagging the dimension
+      - name: location
+        config:
+          meta:
+            dimension:
+              tags: ["ai", "operations"] # <--------- tagging the dimension
+      - name: amount
+        description: Total amount of the order
+        config:
+          meta:
+            metrics:
+              total_order_amount:
+                type: sum
+                format: usd
+                round: 2
+                tags: ["ai", "finance"] # <--------- tagging the metric
+```
+
+```yaml dbt <=1.9
+- name: orders
+  columns:
+    - name: status
+      meta:
+        dimension:
+          tags: ['ai', 'sales'] #    <--------- tagging the dimension
+     - name: location
+      meta:
+        dimension:
+          tags: ['ai', 'operations'] #    <--------- tagging the dimension
+    - name: amount
+      description: Total amount of the order
+      meta:
+        metrics:
+          total_order_amount:
+            type: sum
+            format: usd
+            round: 2
+            tags: ['ai', 'finance'] #    <--------- tagging the metric
+```
+
+</CodeGroup>
+
+### Common scenarios
+
+Here are some common tagging scenarios and their results:
+
+**Scenario 1: Explore-level only (no field tags)**
+```yaml
+models:
+  - name: customers
+    config:
+      meta:
+        tags: ["ai-enabled"]
+    columns:
+      - name: customer_name
+      - name: email
+```
+Result: If agent has `["ai-enabled"]` tag, ALL fields in the customers explore are visible.
+
+**Scenario 2: Field-level only (no explore tags)**
+```yaml
+models:
+  - name: customers
+    columns:
+      - name: customer_name
+        config:
+          meta:
+            dimension:
+              tags: ["ai-enabled"]
+      - name: email
+        config:
+          meta:
+            dimension:
+              tags: ["pii"]
+```
+Result: If agent has `["ai-enabled"]` tag, only `customer_name` is visible. The `email` field is hidden.
+
+**Scenario 3: Mixed - explore tagged with fields that have different tags**
+```yaml
+models:
+  - name: orders
+    config:
+      meta:
+        tags: ["ai-enabled"]
+    columns:
+      - name: order_id
+        config:
+          meta:
+            dimension:
+              tags: ["pii"]
+      - name: status
+        config:
+          meta:
+            dimension:
+              tags: ["internal"]
+```
+Result: If agent has `["ai-enabled"]` tag, NO fields are visible. Field-level mode is active (because fields have tags), and none of the field tags match "ai-enabled".
+
+**Scenario 4: Mixed mode - base model with explore tags, joined model with field tags**
+
+<Tabs>
+  <Tab title="orders.yml (base model)">
+```yaml
+models:
+  - name: orders
+    config:
+      meta:
+        tags: ["ai-enabled"]
+        joins:
+          - join: customers
+            sql_on: ${customers.customer_id} = ${orders.customer_id}
+    columns:
+      - name: order_id
+      - name: status
+      - name: customer_id
+```
+  </Tab>
+  <Tab title="customers.yml (joined model)">
+```yaml
+models:
+  - name: customers
+    columns:
+      - name: customer_id
+      - name: email
+        config:
+          meta:
+            dimension:
+              tags: ["ai-enabled"]
+      - name: phone
+        config:
+          meta:
+            dimension:
+              tags: ["pii"]
+```
+  </Tab>
+</Tabs>
+
+Result: If agent has `["ai-enabled"]` tag:
+- `orders` table: ALL fields visible (explore-level mode - no field tags defined)
+- `customers` table: Only `email` visible (field-level mode - has field tags, only `email` matches)
+
+**Scenario 5: Only joined table has matching tags**
+
+<Tabs>
+  <Tab title="orders.yml (base model)">
+```yaml
+models:
+  - name: orders
+    config:
+      meta:
+        joins:
+          - join: customers
+            sql_on: ${customers.customer_id} = ${orders.customer_id}
+    columns:
+      - name: order_id # no tags
+      - name: status # no tags
+```
+  </Tab>
+  <Tab title="customers.yml (joined model)">
+```yaml
+models:
+  - name: customers
+    columns:
+      - name: email
+        config:
+          meta:
+            dimension:
+              tags: ["ai-enabled"]
+```
+  </Tab>
+</Tabs>
+
+Result: The entire explore is HIDDEN because the base table (`orders`) has no matching tags.
+
+<Warning>
+  An explore is only visible if the **base table** has matching tags (either at explore level or field level). Having matching tags only in joined tables is not enough.
+</Warning>
+
