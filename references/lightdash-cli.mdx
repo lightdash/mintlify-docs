@@ -105,6 +105,7 @@ For examples and command-specific options, click through the command in the tabl
 |[`lightdash download`](/references/lightdash-cli#lightdash-download)                     | Download all charts and dashboards from your Lightdash project as code             |
 |[`lightdash upload`](/references/lightdash-cli#lightdash-upload)                         | Upload charts and dashboards as code to your Lightdash project                     |
 |[`lightdash rename`](/references/lightdash-cli#lightdash-rename)                         | Rename model or field names across all your Lightdash content                      |
+|[`lightdash diagnostics`](/references/lightdash-cli#lightdash-diagnostics)               | Show diagnostic information about the CLI environment                              |
 ---
 
 ### `lightdash login`
@@ -122,12 +123,14 @@ lightdash login [URL]
 
 **Options:**
 
-- `--token`
+- `--token <token>`
   - For logging in with an access token (common for SSO users)
   - Exclude this to log in with email and password
 - `--oauth`
   - (default: false)
-  - Login using OAuth2 flow (opens browser for authentication) 
+  - Login using OAuth2 flow (opens browser for authentication)
+- `--project <project uuid>`
+  - Select a project by UUID after login (must be valid UUID) 
 
 
 **Examples:**
@@ -582,7 +585,10 @@ If there have been changes made to a chart or dashboard in the application that 
   - upload all charts and dashboards from a specific project. You can find the project UUID for a project from a Lightdash URL. E.g. here, the project UUID is `123-project-uuid` `https://app.lightdash.cloud/projects/123-project-uuid/`
 - `--skip-space-create`
   - (default: false)
-  - Skip space creation if it does not exist 
+  - Skip space creation if it does not exist
+- `--include-charts`
+  - (default: false)
+  - Include charts updates when uploading dashboards 
 
 **Examples:**
 
@@ -596,6 +602,12 @@ Upload a specific dashboard to your Lightdash project.
 
 ```bash
 lightdash upload -d my-dashboard-slug
+```
+
+Upload a specific dashboard and include any chart changes referenced by that dashboard.
+
+```bash
+lightdash upload -d my-dashboard-slug --include-charts
 ```
 
 Upload content from the directory `/Users/katiehindson/lightdash/lightdash-analytics/`
@@ -670,6 +682,53 @@ Rename the field `count` to `count_distinct_order_id` in the `orders` model and 
 lightdash rename --type field --model orders --from count --to count_distinct_order_id --list
 ```
 
+### `lightdash diagnostics`
+
+Shows diagnostic information about the CLI environment. This is useful for debugging issues with the CLI or sharing information with the Lightdash support team.
+
+```console
+lightdash diagnostics
+```
+
+**Options:**
+
+- `--dbt`
+  - Include dbt debug information in the output
+- `--project-dir <path>`
+  - dbt project directory (used with --dbt flag)
+- `--profiles-dir <path>`
+  - dbt profiles directory (used with --dbt flag)
+- `--defer`
+  - dbt defer option (used with --dbt flag)
+- `--no-defer`
+  - dbt no-defer option (used with --dbt flag)
+
+**Information displayed:**
+- CLI version
+- Node.js version and optimization status
+- Authentication status (API key, server URL, organization, project)
+- dbt debug output (if --dbt flag provided)
+
+**Examples:**
+
+Show basic diagnostic information:
+
+```bash
+lightdash diagnostics
+```
+
+Show diagnostic information including dbt debug output:
+
+```bash
+lightdash diagnostics --dbt
+```
+
+Show diagnostic information with dbt debug for a specific project directory:
+
+```bash
+lightdash diagnostics --dbt --project-dir ./my-dbt-project
+```
+
 ---
 
 ## dbt options
@@ -713,3 +772,95 @@ You can set dbt project variables in Lightdash commands that support dbt options
 You can set the number of threads for dbt in Lightdash commands that support dbt options. [Read the dbt docs on threads](https://docs.getdbt.com/docs/running-a-dbt-project/using-threads) for details.
 
 `--threads [number]`
+
+---
+
+## Environment Variables
+
+The Lightdash CLI supports various environment variables that can be used to configure its behavior. These are especially useful in CI/CD environments where you want to avoid interactive prompts or need to set credentials programmatically.
+
+### Core Lightdash Configuration
+
+- **`LIGHTDASH_API_KEY`**
+  - API access token for authentication
+  - Overrides the API key stored in the config file (`~/.config/lightdash/config.yaml`)
+  - Useful for CI/CD pipelines where you don't want to store credentials in files
+
+- **`LIGHTDASH_URL`**
+  - Lightdash server URL (e.g., `https://app.lightdash.cloud`)
+  - Overrides the server URL in the config file
+
+- **`LIGHTDASH_PROJECT`**
+  - Project UUID to use for CLI commands
+  - Overrides the project UUID in the config file
+  - Useful when you want to target a specific project without using `--project` flag
+
+- **`LIGHTDASH_PROXY_AUTHORIZATION`**
+  - Proxy authorization header for proxied access
+  - Use this if your Lightdash instance is behind a proxy that requires authentication
+
+### CI/CD Environment
+
+- **`CI`**
+  - Set to `CI=true` to disable interactive prompts and run commands non-interactively in CI/CD environments
+  - When enabled, the CLI will:
+    - Silence all interactive prompts (including confirmation dialogs)
+    - Assume default values or fail if required input is missing
+    - Skip certain version checks
+    - Adjust behavior for non-interactive execution
+  - Automatically detected by most CI/CD platforms (GitHub Actions, GitLab CI, CircleCI, etc.)
+  - **Usage:** Prefix any Lightdash command with `CI=true` to silence prompts:
+    ```bash
+    CI=true lightdash deploy
+    CI=true lightdash preview
+    CI=true lightdash generate -s mymodel
+    ```
+
+### dbt Configuration
+
+These environment variables are passed through to dbt and can be used to configure dbt behavior:
+
+- **`DBT_PROJECT_DIR`**
+  - Directory of dbt project
+  - Default: current directory (`.`)
+  - Can also be set using `--project-dir` flag
+
+- **`DBT_PROFILES_DIR`**
+  - Directory of dbt profiles
+  - Default: `~/.dbt`
+  - Can also be set using `--profiles-dir` flag
+
+### Example: Using Environment Variables in CI/CD
+
+Here's an example of how to use environment variables in a GitHub Actions workflow:
+
+```yaml
+name: Deploy to Lightdash
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Lightdash CLI
+        run: npm install -g @lightdash/cli
+
+      - name: Deploy to Lightdash
+        env:
+          LIGHTDASH_API_KEY: ${{ secrets.LIGHTDASH_API_KEY }}
+          LIGHTDASH_URL: https://app.lightdash.cloud
+          LIGHTDASH_PROJECT: ${{ secrets.LIGHTDASH_PROJECT_UUID }}
+          CI: true
+        run: lightdash deploy
+```
+
+In this example:
+- `LIGHTDASH_API_KEY` is stored as a GitHub secret and passed to the CLI
+- `LIGHTDASH_URL` specifies which Lightdash instance to connect to
+- `LIGHTDASH_PROJECT` specifies which project to deploy to
+- `CI=true` ensures the CLI runs in non-interactive mode

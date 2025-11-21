@@ -3,10 +3,16 @@ title: "Caching"
 description: "Caching can reduce the overall number of queries that Lightdash executes against your data warehouse. Learn more about the types of caching and how to enable caching in this doc."
 ---
 
+:::info Availability
+Caching features are only available to:
+- **Lightdash Cloud customers** (all plans)
+- **On-premise customers with a valid License key**
+:::
+
 Lightdash supports two types of caching:
 
-1. [Cached Filter values](#filter-value-caching) - enabled for every cloud user without requiring any configuration.
-2. [Cached results for Charts and Dashboards](#chart-and-dashboard-results-caching) - must be enabled by the Lightdash team. This feature is only available for Pro, Enterprise, and on-prem users since it requires a dedicated Lightdash instance.
+1. **[Cached Filter values](#filter-value-caching)** - enabled for every cloud user without requiring any configuration.
+2. **[Cached results for Charts and Dashboards](#chart-and-dashboard-results-caching)** - only available for Cloud Pro or above and must be enabled by the Lightdash team.
 
 ## Filter value caching
 
@@ -41,6 +47,20 @@ These Lightdash features DO NOT use caching:
 ### Cache Mechanism
 
 The cache is stored in S3 and the cache identifier is based on the project ID and the generated SQL. This means that any change to the selected columns, filters, joins, user attributes, etc. will trigger a new query to the warehouse and add a new cache entry for that query.
+
+### Filtering with time values and caching
+
+When using filters with datetime values, the specificity of the time component affects caching behavior:
+
+- **Dynamic datetime values with seconds** (e.g., `12:11:25`) will generally not benefit from caching because each query generates a unique timestamp, creating a new cache entry every time.
+- **Definite times** (e.g., `12:00:00`) or **dates without time components** will cache effectively because they produce consistent SQL queries that can be reused.
+
+**Best practices for cacheable time filters:**
+- Use date-only filters when possible (e.g., `2024-01-15` instead of `2024-01-15 12:11:25`)
+- Round times to the nearest hour or fixed interval (e.g., `12:00:00` instead of `12:11:25`)
+- Avoid filters that use dynamic "current time" functions with second precision
+
+This ensures your queries can leverage cached results and reduce warehouse load.
 
 ### Cache Expiry and Invalidation
 

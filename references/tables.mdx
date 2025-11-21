@@ -6,7 +6,6 @@ sidebarTitle: "Tables"
 
 Tables in Lightdash are built from dbt models (either one, or many joined together).
 
-
 ## Adding Tables to your project
 
 Tables come from dbt models that have been defined in your dbt project's `schema.yml` files.
@@ -25,7 +24,6 @@ models:
 
 You can read more about [adding Tables to Lightdash here](/guides/adding-tables-to-lightdash).
 
-
 ## Table configuration
 
 You can customize how Tables look in Lightdash by adding configuration to your YAML file. Here's an example of most the properties you can use when defining a Table:
@@ -39,9 +37,15 @@ models:
       group_label: 'Mobile App'
       sql_filter: ${date_dimension} >= '2025-01-01'
       primary_key: user_id
+      sets:
+  	    event_fields: 
+    	  fields:
+            - user_id
+            - event_type
       joins:
         - join: events
           sql_on: ${users.user_id} = ${events.user_id}
+          fields: [event_fields*]
           relationship: one-to-many
       required_attributes:
         product_team: 'Mobile'
@@ -57,26 +61,26 @@ models:
 
 ### Table properties
 
-| Property | Value | Note |
-| :----- | :----------- | :----------------- |
-| label | string | Custom label. This is what you'll see in Lightdash instead of the Table name. |
-| [order_fields_by](#order-fields-by) | `index` or `label` | How the fields will be sorted in the sidebar. [Read about the order rules.](#order-fields-by) |
-| [joins](/references/joins) | array | Join logic to join other data models to the Table. [Read about joins.](/references/joins) |
-| [metrics](/references/metrics#2-using-the-model-meta-tag) | object | Model metrics. [Read about model metrics](/references/metrics#2-using-the-model-meta-tag) |
-| [group_label](#group-label) | string | Group tables in the sidebar. [Read about the group label.](#group-label) |
-| [sql_from](#sql-from) | string | Overrides dbt model relation_name |
-| [sql_filter](#sql-filter-row-level-security) | string | A permanent filter that will always be applied when querying this table directly. [Read about `sql_filter`.](#sql-filter) |
-| [sql_where](#sql-filter-row-level-security) | string | Alias for `sql_filter` |
-| [required_attributes](#required-attributes) | object | Limits access to users with those attributes. [Read about user attributes](/references/user-attributes) |
-| group_details | object | Describes the groups for dimensions and metrics |
-| [default_filters](#default-filters) | array | Dimension filters that will be applied when no other filter on those dimension exists. [Read about `default_filters`](#default-filters) |
-| [explores](#explores) | object | Allows you to define multiple table explores in Lightdash from a single dbt model. |
-| [parameters](#parameters-configuration) | object | Model-level parameters that can be referenced in SQL properties. [Read about parameters](#parameters-configuration) |
+| Property                                                  | Value              | Note                                                                                                                                    |
+| :-------------------------------------------------------- | :----------------- | :-------------------------------------------------------------------------------------------------------------------------------------- |
+| label                                                     | string             | Custom label. This is what you'll see in Lightdash instead of the Table name.                                                           |
+| [order_fields_by](#order-fields-by)                       | `index` or `label` | How the fields will be sorted in the sidebar. [Read about the order rules.](#order-fields-by)                                           |
+| [joins](/references/joins)                                | array              | Join logic to join other data models to the Table. [Read about joins.](/references/joins)                                               |
+| [metrics](/references/metrics#2-using-the-model-meta-tag) | object             | Model metrics. [Read about model metrics](/references/metrics#2-using-the-model-meta-tag)                                               |
+| [group_label](#group-label)                               | string             | Group tables in the sidebar. [Read about the group label.](#group-label)                                                                |
+| [sql_from](#sql-from)                                     | string             | Overrides dbt model relation_name                                                                                                       |
+| [sql_filter](#sql-filter-row-level-security)              | string             | A permanent filter that will always be applied when querying this table directly. [`Read about sql_filter.`](#sql-filter)               |
+| [sql_where](#sql-filter-row-level-security)               | string             | Alias for `sql_filter`                                                                                                                  |
+| [required_attributes](#required-attributes)               | object             | Limits access to users with those attributes. [Read about user attributes](/references/user-attributes)                                 |
+| group_details                                             | object             | Describes the groups for dimensions and metrics                                                                                         |
+| [default_filters](#default-filters)                       | array              | Dimension filters that will be applied when no other filter on those dimension exists. [`Read about default_filters`](#default-filters) |
+| [explores](#explores)                                     | object             | Allows you to define multiple table explores in Lightdash from a single dbt model.                                                      |
+| [parameters](#parameters-configuration)                   | object             | Model-level parameters that can be referenced in SQL properties. [Read about parameters](#parameters-configuration)                     |
+| [sets](#sets)                                             | object             | Allows you to define a reference to a collection of fields. This reference can be re-used throughout the model.                         |
 
+### Adding a new dbt model
 
-### Adding a new dbt model 
-
-If you've added a new dbt model to your project, you need to do `dbt run` \+ `dbt refresh` before it will appear in Lightdash.
+If you've added a new dbt model to your project, you need to do `dbt run` + `dbt refresh` before it will appear in Lightdash.
 
 Lightdash gets information about your data models from dbt. But it gets information about the data **_generated_** by those data models from your data warehouse.
 
@@ -84,7 +88,6 @@ This means that if you add a new dbt model to your project or update a model so 
 
 1. **Materialize the new table or changes using dbt run.** You want the data in your data warehouse to be the new table you're expecting. So you need to do `dbt run` to update the table from the data model you just changed.
 2. **Click Refresh dbt in Lightdash or run `lightdash refresh` in the CLI.** This will re-sync your dbt project in Lightdash so that changes you made to your dbt models are shown in Lightdash (e.g. adding a new table or column).
-
 
 ### Order fields by
 
@@ -117,7 +120,6 @@ Here are some other things worth mentioning about the `order_fields_by` paramete
   - then, metrics defined in the model's `meta`
   - then, metrics defined in the dimensions' `meta`
 - Group labels inherit the index of the first dimension that use them.
-
 
 ### Group label
 
@@ -167,7 +169,6 @@ from lightdash.prod.sales
 where sales_region = 'EMEA'
 ```
 
-
 ##### Row-level security using user attributes
 
 Using `sql_filter` with [user attributes](/references/user-attributes) allows you to set up [row-level security in your tables](/references/user-attributes#row-filtering-with-sql%5Ffilter). You can reference user attributes in your `sql_filter` using `${lightdash.attributes.my_attribute_name}`
@@ -181,7 +182,6 @@ models:
       sql_filter: ${TABLE}.sales_region IN (${lightdash.attributes.sales_region})
 ```
 
-
 ##### `sql_filter` will only be applied when querying tables directly.
 
 For example:
@@ -191,7 +191,6 @@ For example:
 - A user queries Table A and adds a field from the joined table (Table B) to their query
 - the `sql_filter` from Table B will **not** be applied to the query (you would need to add this as a `sql_filter` to Table A directly for it to apply)
 
-
 ##### If you reference a dimension from a joined table in your `sql_filter`, the referenced table will always be joined in your queries.
 
 For example:
@@ -199,7 +198,6 @@ For example:
 - You have Table A which is joined to Table B
 - In Table A, you've added a `sql_filter: ${TABLE}.sales_region = 'EMEA' OR ${table_b}.sales_region IS NULL`
 - Table B will always be joined to Table A in your queries (even if there are no fields from Table B selected in your results table)
-
 
 ### Required attributes
 
@@ -216,6 +214,37 @@ models:
 ```
 
 If a user without access to this table runs a query that contains this table, they will get a `Forbidden` error.
+
+
+## Defining primary keys
+
+You can specify a primary key for your model to uniquely identify each row. This is important for tables as it helps Lightdash understand the relationships between tables and prevent data duplication, especially when dealing with SQL fanouts in joins.
+
+The primary key can be defined in two ways:
+
+### Single column primary key
+
+If your table has a single column that uniquely identifies each row, you can define it as a string:
+
+```yaml
+models:
+  - name: users
+    meta:
+      primary_key: user_id
+```
+
+### Complex primary key
+
+If your table requires multiple columns to uniquely identify each row, you can define the primary key as an array of strings:
+
+```yaml
+models:
+  - name: order_items
+    meta:
+      primary_key: [order_id, item_id]
+```
+
+Using a properly defined primary key helps Lightdash optimize queries and provide accurate results when working with joined tables. It's especially important for preventing metric inflation in SQL joins where duplicate rows can lead to incorrect aggregations.
 
 
 ## Default filters
@@ -244,7 +273,6 @@ models:
 <Info>
   A _required_ filter's field reference can't be changed, but its operator (is, is not, etc.) and value can be changed when querying the table from the UI.
 </Info>
-
 
 ### If you have many filters in your list, they will be joined using `AND`
 
@@ -286,58 +314,96 @@ models:
 ```
 
 
-## Defining primary keys
+### Available filter types
 
-You can specify a primary key for your model to uniquely identify each row. This is important for tables as it helps Lightdash understand the relationships between tables and prevent data duplication, especially when dealing with SQL fanouts in joins.
+| Operator | Description | Example (as code) | Supported Types |
+| :------- | :---------- | :---------------- | :-------------- |
+| is        | Value is equal to  | `user_name: "katie"`       | String, Number, Date  |
+| is not     | Value is not equal to           | `user_name: "!katie"`                  | String, Number, Date  |
+| between     | Value is between two values (inclusive)        | `age: "between 18 and 65"`           | Number, Date          |
+|              |                                                | `order_date: "between 2024-01-01 and 2024-12-31"`  | Number, Date          |
+| contains     | String contains value                          | `user_name: "%katie%"`                            | String                |
+| does not contain | String does not contain value                  | `user_name: "!%katie%"`                      | String                |
+| starts with     | String starts with value                       | `user_name: "katie%"`                       | String                |
+| ends with       | String ends with value                         | `user_name: "%katie"`                     | String                |
+| is greater than | Number is greater than value                   | `num_orders: "> 4"`                     | Number                |
+| is greater than or equal to   | Number is greater than or equal to value       | `num_orders: ">= 4"` | Number                |
+| is less than    | Number is less than value                      | `num_orders: "< 4"`                | Number                |
+| is less than or equal to      | Number is less than or equal to value          | `num_orders: "<= 4"` | Number                |
+| in the past     | Date is before x (days / months / years)       | `date: "inThePast 14 days"`         | Date                  |
+| in the next     | Date is after x (days / months / years)        | `date: "inTheNext 30 days"`         | Date                  |
+| is null         | Value is NULL                                  | `status: "null"`                    | All                   |
+| is not null     | Value is not NULL                              | `status: "!null"`                  | All             |
+| is empty        | Value is empty string                          | `notes: "empty"`                    | String          |
+| is not empty    | Value is not empty string                      | `notes: "!empty"`                  | String          |
+| is [boolean]    | Boolean value is true                          | `is_complete: "true"`               | Boolean         |
+| is not [boolean] | Boolean value is false or null                 | `is_complete: "!true"`            | Boolean         |
+| in list          | Value is in comma-separated list               | `status: "active,pending,approved"` | String, Number  |
 
-The primary key can be defined in two ways:
 
+### Filter examples
 
-### Single column primary key
-
-If your table has a single column that uniquely identifies each row, you can define it as a string:
-
+**Between operator (numeric):**
 ```yaml
-models:
-  - name: users
-    meta:
-      primary_key: user_id
+default_filters:
+  - age: 'between 18 and 65'
+  - price: 'between 0.5 and 99.9'
+  - temperature: 'between -10 and 10'
 ```
 
-### Complex primary key
-
-If your table requires multiple columns to uniquely identify each row, you can define the primary key as an array of strings:
-
+**Between operator (dates):**
 ```yaml
-models:
-  - name: order_items
-    meta:
-      primary_key: [order_id, item_id]
+default_filters:
+  - order_date: 'between 2024-01-01 and 2024-12-31'
+  - created_at: 'between 2024-01-01T00:00:00 and 2024-12-31T23:59:59'
 ```
 
-Using a properly defined primary key helps Lightdash optimize queries and provide accurate results when working with joined tables. It's especially important for preventing metric inflation in SQL joins where duplicate rows can lead to incorrect aggregations.
+**Multiple values (comma-separated list):**
+```yaml
+default_filters:
+  - status: 'active,pending,approved'
+  - country: 'US,CA,UK'
+```
 
+**Pattern matching:**
+```yaml
+default_filters:
+  - product_name: '%shirt%'        # Contains "shirt"
+  - email: 'admin%'                # Starts with "admin"
+  - domain: '%@gmail.com'          # Ends with "@gmail.com"
+  - product_name: '!%test%'        # Does not contain "test"
+```
 
-## Available filter types
+**Date intervals:**
+```yaml
+default_filters:
+  - created_date: 'inThePast 7 days'
+  - expiry_date: 'inTheNext 30 days'
+  - signup_date: 'inThePast 1 years'
+```
 
-| Type                          | Example (in English)                           | Example (as code)           |
-| :---------------------------- | :--------------------------------------------- | :-------------------------- |
-| is                            | User name is equal to katie                    | user_name: "katie"          |
-| is not                        | User name is not equal to katie                | user_name: "\!katie"        |
-| contains                      | User name contains katie                       | user_name: "%katie%"        |
-| does not contain              | User name does not contain katie               | user_name: "\!%katie%"      |
-| starts with                   | User name starts with katie                    | user_name: "katie%"         |
-| ends with                     | User name ends with katie                      | user_name: "%katie"         |
-| is greater than (number)      | Number of orders is greater than 4             | num_orders: "\> 4"          |
-| in the past (date) (interval) | Date is before x (days / months / years)       | date: "inThePast 14 months" |
-| in the next (date) (interval) | Date is after x (days / months / years)        | date: "inTheNext 14 days"   |
-| is greater than or equal to   | Number of orders is greater than or equal to 4 | num_orders: "\>= 4"         |
-| is less than                  | Number of orders is less than 4                | num_orders: "\< 4"          |
-| is less than or equal to      | Number of orders is less than or equal to 4    | num_orders: "\<= 4"         |
-| is null                       | Status is NULL                                 | status: "null"              |
-| is not null                   | Status is not NULL                             | status: "\!null"            |
-| is [boolean]                  | Is complete is true                            | is_complete: "true"         |
-| is not [boolean]              | Is complete is false or null                   | is_complete: "\!true"       |
+Available intervals: `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `weeks`, `months`, `years`
+
+**Complex example with multiple filters:**
+```yaml
+models:
+  - name: orders
+    meta:
+      default_filters:
+        - status: 'completed,shipped'
+        - order_date: 'between 2024-01-01 and 2024-12-31'
+        - revenue: '>= 100'
+        - country: '!test'
+        - customer_email: '!%@test.com%'
+```
+
+### Filter notes
+
+- **Case insensitivity**: Keywords like `between`, `AND`, `null`, `empty` are case-insensitive
+- **Quotes**: Use quotes for strings with spaces or special characters
+- **Escaping**: Use `^` to escape special characters (`%`, `_`, `,`, `!`, `^`)
+- **AND logic**: Multiple filters are automatically joined with AND
+- **Priority**: Default filters only apply when no user-specified filter exists for that dimension
 
 ## Parameters configuration
 
@@ -357,6 +423,15 @@ models:
             - "APAC"
           default: ["EMEA", "AMER"]
           multiple: true
+        min_order_value:
+          label: "Minimum Order Value"
+          description: "Filter for minimum order value"
+          type: "number"
+          options:
+            - 100
+            - 500
+            - 1000
+          default: 500
         department:
           label: "Department"
           description: "Filter data by department"
@@ -367,15 +442,16 @@ models:
 
 Each parameter is defined as a key-value pair where the key is the parameter name (must be alphanumeric with underscores or hyphens) and the value is an object with the following properties:
 
-| Property                 | Required | Value                      | Description |
-| :----------------------- | :------- | :------------------------- | :---------- |
-| `label`                  | Yes      | string                     | A user-friendly label for the parameter as it will be displayed in the UI. |
-| `description`            | No       | string                     | A description of the parameter. |
-| `options`                | No       | Array of strings           | A list of possible values for the parameter. |
-| `default`                | No       | string or Array of strings | The default value(s) for the parameter. |
-| `multiple`               | No       | boolean                    | Whether the parameter input will be a multi-select. |
-| `allow_custom_values`    | No       | boolean                    | Whether users can input custom values beyond predefined options. |
-| `options_from_dimension` | No       | Object                     | Get parameter options from a dimension in a model. Requires `model` and `dimension` arguments (see below).|
+| Property                 | Required | Value                                       | Description                                                                                                |
+| :----------------------- | :------- | :------------------------------------------ | :--------------------------------------------------------------------------------------------------------- |
+| `label`                  | Yes      | string                                      | A user-friendly label for the parameter as it will be displayed in the UI.                                 |
+| `description`            | No       | string                                      | A description of the parameter.                                                                            |
+| `type`                   | No       | "string" or "number"                        | The type of the parameter. Defaults to "string" if not specified.                                          |
+| `options`                | No       | Array of strings or numbers                 | A list of possible values for the parameter.                                                               |
+| `default`                | No       | string, number, or Array of strings/numbers | The default value(s) for the parameter.                                                                    |
+| `multiple`               | No       | boolean                                     | Whether the parameter input will be a multi-select.                                                        |
+| `allow_custom_values`    | No       | boolean                                     | Whether users can input custom values beyond predefined options.                                           |
+| `options_from_dimension` | No       | Object                                      | Get parameter options from a dimension in a model. Requires `model` and `dimension` arguments (see below). |
 
 If using `options_from_dimension`, the object requires the following properties:
 
@@ -423,9 +499,9 @@ See the [Parameters guide](/guides/using-parameters) for more examples and infor
 
 You can define multiple table explores from a single table using the `explores` config. This will allow you to list the same dbt model multiple times in the list of Tables in Lightdash. You can use it to show different versions of a table, join different tables to the base table, customize table visibility, etc.
 
-Below is an advanced example of using Explores. This will result in three total tables using the `deals` model at the base. 
+Below is an advanced example of using Explores. This will result in three total tables using the `deals` model at the base.
 
-- **Deals** will not have any joins or limitations 
+- **Deals** will not have any joins or limitations
 - **Deals w/Accounts** will join to the `accounts` table and show all Accounts fields, but only people with the `is_exec` user attribute can see it
 - **Deals w/Accounts (no Names)** will join to the `accounts` table and only show Industry and Segment dimensions, it has no access restrictions
 
@@ -457,3 +533,98 @@ models:
 All the [table configuration options](#table-configuration) can be used under the `explores` tag.
 
 [Read this guide to learn more about explores](https://docs.lightdash.com/guides/explores)
+
+## Sets
+
+Sometimes you may find that you're redeclaring the same set of fields for things like joins and show_underlying_values. In this case, you can define a `set`.  A `set` allows you to associate those fields to a single value. That reference can then be used any place you would normally define fields.
+
+```yaml
+# Define a set
+sets: 
+  my_set:
+    fields: 
+      - user_id
+      - user_name
+      - created_at
+
+# Referencing the set
+fields: [my_set*]
+
+# Lightdash resolves to
+fields: [user_id, user_name, created_at]
+```
+
+### Expand
+
+The expand operator (ex. `my_set*`) tells Lightdash to look up the set being referenced and resolve it to the associated collection of fields. When Lightdash compiles your model, it will replace set reference names with the actual fields.
+
+```yaml
+models:
+  - name: orders_model
+    meta:
+      sets:
+        my_user_fields:
+          fields:
+            - user_id
+            - user_name
+    columns:
+      - name: revenue
+        meta:
+          metrics:
+            sum_revenue:
+              type: sum
+              show_underlying_values:
+                - my_user_fields* # Reference to the set we defined
+```
+
+### Exclusions
+
+In the instance where you want to leverage some, but not all fields in a `set`, you can use the excludes operator (ex. `-field_name`). The exclusion needs to be used in conjunction with an expand operator. This tells Lightdash to expand a given `set` while omitting any field name using the exclusion operator.
+
+```yaml
+models:
+  - name: orders_model
+    meta:
+      sets:
+        my_user_fields:
+          fields:
+            - user_id
+            - user_name
+    columns:
+      - name: revenue
+        meta:
+          metrics:
+            sum_revenue:
+              type: sum
+              show_underlying_values:
+                - my_user_fields* 
+                - -user_id # Expand `my_user_fields` and exclude `user_id`
+```
+
+### Joins
+
+Within a model, you may join with other model tables. The sets you define can reference those joined fields as well! Use dot notation to reference a joined table:
+
+```yaml
+models:
+  - name: purchases
+    columns: <...>
+    meta:
+      sets:
+  	    revenue_fields: 
+    	  fields:
+            - purchase_date
+            - purchase_amount
+            - user.user_name # Referencing the joined table
+      joins:
+        - join: user
+          sql_on: ${users.user_id} = ${purchases.user_id}
+          relationship: one-to-many
+      metrics: 
+        revenue:
+          type: sum
+          show_underlying_values:
+            - revenue_fields*
+```
+
+Remember, to use a fields from another table in your set, you need ensure it is joined with the model defining the `set`. 

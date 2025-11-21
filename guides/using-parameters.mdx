@@ -1,5 +1,6 @@
 ---
 title: "How to use parameters"
+sidebarTitle: Parameters
 ---
 
 **Parameters** are variables that allow you to create **dynamic, reusable queries** in Lightdash. They enable users to interact with and customize queries without needing to write SQL.
@@ -10,6 +11,11 @@ Parameters are defined in your `lightdash.config.yml` file and can be referenced
   If you're new to lightdash.config.yml, check out our [getting started guide](/references/lightdash-config-yml#getting-started-with-lightdashconfigyml) to learn how to create and set up this file.
 </Info>
 
+Watch this video to see Parameters in action! You can also [try it out in our live demo](https://demo.lightdash.com/projects/2014e038-ff4b-4761-ae6f-fbf551e7b468/dashboards/15ac84ff-2e46-4d1a-b2f7-1a5e643e9b88/view).
+
+<iframe src="https://www.loom.com/embed/84c7e03d0cf4470eabb2f48f3e70c5ac?sid=aab458f9-f83a-4cbf-959b-1b62c48636b7" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen style={{ width: '100%', height: '450px' }} ></iframe>
+
+
 ## What are parameters?
 
 Parameters are variables that you can define once and reference in multiple places throughout your Lightdash project. They allow you to:
@@ -19,9 +25,14 @@ Parameters are variables that you can define once and reference in multiple plac
 - Allow non-technical users to customize queries without writing SQL
 - Save parameter values at the chart and dashboard level
 
-For example, you might define a `region` parameter that users can set to filter data by different geographic regions, or a `date_range` parameter that allows users to select different time periods for analysis.
+For example, you might define a `region` parameter that users can set to filter data by different geographic regions, a `date_range` parameter that allows users to select different time periods for analysis, or a `min_revenue` parameter with numeric values that allows users to set revenue thresholds for analysis.
 
-## Where can you reference parameters?
+<Info>
+  **Parameter Types**: Parameters support both string and number values. You can use strings (like `"EMEA"` or `"2023-01-01"`) or numbers (like `1000` or `5000`) as parameter options.
+</Info>
+
+
+## Where can you use parameters?
 
 Parameters can be referenced in many places throughout your Lightdash project:
 
@@ -33,6 +44,61 @@ Parameters can be referenced in many places throughout your Lightdash project:
 6. **Table Calculations**: Use parameters in [table calculations](/references/table-calculations)
 7. **Additional Dimensions**: Use parameters in the SQL definition of an [additional dimension](/references/dimensions#additional-dimensions)
 8. **Custom Dimensions**: Use parameters in [custom dimension](/references/custom-fields#custom-sql) definitions
+
+## Parameter types
+
+Parameters in Lightdash support different data types to help you work with various kinds of data. By default, all parameters are treated as strings, but you can convert them to other types as needed.
+
+### Supported parameter types
+
+Lightdash officially supports the following parameter types:
+
+- **String** (default): Text values
+- **Number**: Numeric values (integers and decimals)
+
+### Type conversion workarounds
+
+While not officially supported yet, you can work around for other data types via SQL type casting.
+To convert a parameter to a specific type, use the `::` syntax followed by the type name:
+
+```sql
+${lightdash.parameters.parameter_name}::type
+```
+
+<Note>
+    The type conversion happens at the SQL level, so the available types depend on your database system (PostgreSQL, BigQuery, Snowflake, etc.). Common types like `integer`, `numeric`, `date`, `timestamp`, and `boolean` are supported across most databases.
+</Note>
+
+#### Date conversion
+
+As a workaround, you can use `::date` for dates or `::timestamp` for datetime values:
+
+```sql
+-- Convert to date (workaround)
+WHERE ${TABLE}.order_date >= ${lightdash.parameters.start_date}::date
+
+-- Convert to timestamp (workaround)
+WHERE ${TABLE}.created_at >= ${lightdash.parameters.start_datetime}::timestamp
+```
+
+#### Boolean conversion
+
+As a workaround, you can use `::boolean` to convert string values like "true"/"false" to boolean:
+
+```sql
+-- Convert to boolean (workaround)
+WHERE ${TABLE}.is_active = ${lightdash.parameters.active_only}::boolean
+```
+
+#### Other type conversions
+
+You can use any SQL type conversion that your database supports:
+
+```sql
+-- Convert to specific database types
+WHERE ${TABLE}.category_id = ${lightdash.parameters.category}::uuid
+WHERE ${TABLE}.amount = ${lightdash.parameters.amount}::decimal(10,2)
+```
 
 ## How to reference parameters in SQL
 
@@ -117,6 +183,17 @@ parameters:
     default: ["EMEA", "AMER"]
     multiple: true
   
+  # Parameter with number type
+  min_revenue:
+    label: "Minimum Revenue"
+    description: "Filter for minimum revenue threshold"
+    type: "number"
+    options:
+      - 1000
+      - 5000
+      - 10000
+    default: 5000
+  
   # Parameter with options from a dimension
   department:
     label: "Department"
@@ -151,11 +228,12 @@ Model-level parameters offer the same configuration options as project-level par
 
 For a complete reference of model-level parameter properties and options, see the [tables reference](/references/tables#parameters-configuration).
 
+
 ## Examples of using parameters
 
 Let's look at some examples of how to use parameters in different parts of your Lightdash project.
 
-### Example 1: Using parameters in dimension SQL
+### In dimension SQL
 
 You can reference parameters in the SQL definition of a dimension:
 
@@ -177,7 +255,49 @@ models:
 
 In this example, the `filtered_revenue` dimension will only show revenue for the regions selected in the `region` parameter.
 
-### Example 2: Using parameters in table joins
+
+### In numeric dimension SQL
+
+You can reference numeric parameters directly without casting:
+
+```yaml
+models:
+  - name: orders
+    columns:
+      - name: high_value_orders
+        meta:
+          dimension:
+            type: boolean
+            sql: ${TABLE}.revenue >= ${lightdash.parameters.min_revenue}
+```
+
+In this example, the `high_value_orders` dimension will be true for orders with revenue greater than or equal to the numeric `min_revenue` parameter value.
+
+
+### In metric SQL
+
+You can reference parameters in the SQL definition of a metric:
+
+```yaml
+models:
+  - name: races
+    meta:
+      metrics:
+        avg_distance_unit_param:
+          type: average
+          sql: |
+            case
+              when ${lightdash.parameters.unit} = 'Miles' 
+                then ${TABLE}.distance_miles
+              when ${lightdash.parameters.unit} = 'Kilometers'
+                then ${TABLE}.distance_km
+            end
+```
+
+In this example, the `avg_distance_unit_param` metric will return an average of the race distance in miles when the `unit` parameter is set to Miles and Kilometers when it gets set to Kilometers.
+
+
+### In table joins
 
 You can use parameters in the SQL_ON clause of a table join. This includes both project-level parameters and model-level parameters from the joined table:
 
@@ -209,7 +329,8 @@ models:
 
 In this example, the join uses a model-level parameter `customer_status` defined in the `customers` model. This allows you to dynamically filter the joined data based on parameters specific to the joined table.
 
-### Example 3: Using parameters in table calculations
+
+### In table calculations
 
 You can reference parameters in table calculations:
 
@@ -224,7 +345,8 @@ END
 
 This table calculation will only include revenue for orders placed on or after the date selected in the `date_range` parameter.
 
-### Example 4: Using parameters in additional dimensions
+
+### In additional dimensions
 
 You can use parameters in custom dimension definitions:
 
@@ -244,7 +366,25 @@ models:
 
 This additional dimension will indicate whether an order was placed on or after the date selected in the `date_range` parameter.
 
-### Example 5: Using model parameters from joined tables in dimensions
+
+### In SQL Runner
+
+Parameters can also be used in SQL Runner queries:
+
+```sql
+SELECT
+  order_id,
+  order_date,
+  revenue
+FROM orders
+WHERE region IN (${lightdash.parameters.region})
+  AND order_date >= ${lightdash.parameters.date_range}
+  AND revenue >= ${lightdash.parameters.min_revenue}
+```
+
+This query will filter orders by the regions selected in the `region` parameter, by the date selected in the `date_range` parameter, and by orders with revenue greater than or equal to the numeric `min_revenue` parameter.
+
+### Model parameters from joined tables in dimensions
 
 When working with joined tables, you can reference model-level parameters from the joined table in your dimension definitions:
 
@@ -270,27 +410,13 @@ models:
 
 In this example, the `filtered_customer_revenue` dimension uses a model-level parameter `target_segment` from the joined `customers` model to conditionally show revenue.
 
-## Example 6: Using parameters in SQL Runner
 
-Parameters can also be used in SQL Runner queries:
-
-```sql
-SELECT
-  order_id,
-  order_date,
-  revenue
-FROM orders
-WHERE region IN (${lightdash.parameters.region})
-  AND order_date >= ${lightdash.parameters.date_range}
-```
-
-This query will filter orders by the regions selected in the `region` parameter and by the date selected in the `date_range` parameter.
-
-## Saving parameter values at chart and dashboard levels
+## Saving parameter values
 
 Parameter values can be saved at both the chart and dashboard levels.
 
-### Saving parameter values in charts
+
+### Saving values in charts
 
 When you create a chart using parameters, you can save the specific parameter values with the chart. This means that when someone views the chart, they'll see the data filtered according to the saved parameter values.
 
@@ -302,7 +428,8 @@ To save parameter values with a chart:
 
 The parameter values will be saved with the chart and will be applied whenever the chart is viewed.
 
-### Saving parameter values in dashboards
+
+### Saving values in dashboards
 
 You can also save parameter values at the dashboard level, which allows you to create dashboards with consistent parameter values across all charts.
 
@@ -314,6 +441,7 @@ To save parameter values in a dashboard:
 4. Save the dashboard
 
 The parameter values will be saved with the dashboard and will be applied to all charts on the dashboard that have parameterized fields.
+
 
 ## Best practices for using parameters
 
