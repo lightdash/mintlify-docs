@@ -92,5 +92,62 @@ Inside each explore definition, you can use any of the existing table config opt
 - `description`
 - `default_filters`
 - `required_attributes`
+- `additional_dimensions`
 
 [📚 Read the Tables reference docs for all configuration options](/references/tables#table-properties)
+
+---
+
+## Adding custom dimensions to an explore
+
+Use `additional_dimensions` to define dimensions that are scoped only to a specific explore. This is useful when you need custom dimensions that reference joined tables, which wouldn't make sense at the model level.
+
+### When to use explore-scoped dimensions
+
+- You have multiple explores from the same model with different joins
+- You need dimensions that combine fields from the base model and joined tables
+- You want to keep explore-specific logic out of the base model
+
+### Example
+
+```yaml
+models:
+  - name: orders
+    meta:
+      primary_key: order_id
+      explores:
+        orders_with_custom_dims:
+          label: Orders with Custom Dimensions
+          joins:
+            - join: customers
+              sql_on: ${orders.customer_id} = ${customers.customer_id}
+          additional_dimensions:
+            full_name:
+              type: string
+              sql: "CONCAT(${customers.first_name}, ' ', ${customers.last_name})"
+              label: Customer Full Name
+            order_value_category:
+              type: string
+              sql: "CASE WHEN ${orders.amount} > 100 THEN 'high' ELSE 'low' END"
+              label: Order Value Category
+            order_month:
+              type: date
+              sql: DATE(${orders.order_date})
+              time_intervals: [MONTH]
+```
+
+### Available properties
+
+Explore-scoped `additional_dimensions` support the same properties as [column-level additional dimensions](/references/dimensions#additional-dimensions):
+
+| Property | Required | Description |
+| :------- | :------- | :---------- |
+| type | Yes | Dimension type: `string`, `number`, `date`, `timestamp`, or `boolean` |
+| sql | Yes | SQL expression for the dimension. Can reference fields from the base model and joined tables using `${table.field}` syntax |
+| label | No | Display name in Lightdash |
+| description | No | Description shown on hover |
+| hidden | No | Set to `true` to hide from the UI |
+| format | No | Spreadsheet-style format expression |
+| time_intervals | No | For date/timestamp types, specify which intervals to generate |
+| groups | No | Group the dimension in the sidebar |
+| required_attributes | No | Limit access based on user attributes |
