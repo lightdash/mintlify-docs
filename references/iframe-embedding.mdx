@@ -1,0 +1,568 @@
+---
+title: "Embedding with iframe"
+sidebarTitle: "iframe"
+description: "Complete reference for embedding Lightdash content using iframes with JWT tokens in URL hash fragments"
+---
+
+import EmbedAvailability from '/snippets/embedding-availability.mdx';
+
+<EmbedAvailability />
+
+## Overview
+
+iframe embedding is the simplest way to embed Lightdash **dashboards** in your application. It requires no special libraries, dependencies, or CORS configuration—just generate a JWT token and construct an embed URL.
+
+<Warning>
+iframe embedding is **only available for dashboards**. Chart embedding requires the [React SDK](/references/react-sdk).
+</Warning>
+
+### Benefits of iframe embedding
+
+- **Simple integration** - Standard HTML iframe element, works anywhere
+- **No dependencies** - No JavaScript libraries or SDK installation required
+- **No CORS configuration** - Unlike the React SDK, iframes don't require CORS setup
+- **Universal compatibility** - Works in any web environment (React, Vue, Angular, vanilla HTML)
+- **Secure** - JWT token in URL hash fragment isn't sent to server or logged
+
+### When to use iframe embedding
+
+- Quick integration without adding dependencies
+- Non-React applications
+- Content management systems (WordPress, Webflow, etc.)
+- Simple HTML pages or static sites
+- When you don't need programmatic control (filters, callbacks)
+
+### When to use React SDK instead
+
+Consider the [React SDK](/references/react-sdk) if you need:
+- Programmatic filters (apply filters via props)
+- Callbacks (e.g., onExplore for analytics)
+- Seamless React integration
+- TypeScript type definitions
+
+For JWT token structure and configuration options, see the [embedding reference](/references/embedding).
+
+## iframe URL patterns
+
+All embed URLs follow this pattern: `https://your-instance.lightdash.cloud/embed/{projectUuid}/{contentType}/{contentId}#{jwtToken}`
+
+The JWT token is passed in the URL **hash fragment** (`#token`) for security—it's not sent to the server in requests or logged in browser history.
+
+### Dashboard URL
+
+```
+https://your-instance.lightdash.cloud/embed/{projectUuid}/dashboard/{dashboardUuid}#{jwtToken}
+```
+
+Using dashboard slug instead of UUID:
+
+```
+https://your-instance.lightdash.cloud/embed/{projectUuid}/dashboard/{dashboardSlug}#{jwtToken}
+```
+
+**Example:**
+```
+https://app.lightdash.cloud/embed/abc-123-def-456/dashboard/my-sales-dashboard#eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+<Info>
+The JWT token in the hash fragment is NOT sent to the server with HTTP requests and does NOT appear in server logs or browser history, providing an additional security layer.
+</Info>
+
+<Warning>
+**Chart embedding via iframe is not currently supported.** Charts can only be embedded using the [React SDK](/references/react-sdk).
+</Warning>
+
+## URL construction
+
+### Building the embed URL
+
+1. **Get your project UUID** - Found in Lightdash project settings
+2. **Get dashboard ID** - Dashboard UUID or slug
+3. **Generate JWT token** - See [embedding reference](/references/embedding#jwt-token-structure) for token structure
+4. **Construct URL** - Combine parts with hash fragment
+
+<CodeGroup>
+
+```javascript Node.js
+import jwt from 'jsonwebtoken';
+
+const LIGHTDASH_EMBED_SECRET = process.env.LIGHTDASH_EMBED_SECRET;
+const instanceUrl = 'https://app.lightdash.cloud';
+const projectUuid = 'your-project-uuid';
+const dashboardUuid = 'your-dashboard-uuid';
+
+// Generate JWT token
+const token = jwt.sign({
+  content: {
+    type: 'dashboard',
+    dashboardUuid: dashboardUuid,
+    canExportCsv: true,
+  },
+}, LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
+
+// Build embed URL
+const embedUrl = `${instanceUrl}/embed/${projectUuid}/dashboard/${dashboardUuid}#${token}`;
+
+console.log(embedUrl);
+```
+
+```python Python
+import jwt
+import datetime
+
+LIGHTDASH_EMBED_SECRET = os.getenv('LIGHTDASH_EMBED_SECRET')
+instance_url = 'https://app.lightdash.cloud'
+project_uuid = 'your-project-uuid'
+dashboard_uuid = 'your-dashboard-uuid'
+
+# Generate JWT token
+payload = {
+    'content': {
+        'type': 'dashboard',
+        'dashboardUuid': dashboard_uuid,
+        'canExportCsv': True,
+    },
+    'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+}
+
+token = jwt.encode(payload, LIGHTDASH_EMBED_SECRET, algorithm='HS256')
+
+# Build embed URL
+embed_url = f"{instance_url}/embed/{project_uuid}/dashboard/{dashboard_uuid}#{token}"
+
+print(embed_url)
+```
+
+```ruby Ruby
+require 'jwt'
+
+lightdash_embed_secret = ENV['LIGHTDASH_EMBED_SECRET']
+instance_url = 'https://app.lightdash.cloud'
+project_uuid = 'your-project-uuid'
+dashboard_uuid = 'your-dashboard-uuid'
+
+# Generate JWT token
+payload = {
+  content: {
+    type: 'dashboard',
+    dashboardUuid: dashboard_uuid,
+    canExportCsv: true
+  },
+  exp: Time.now.to_i + 3600
+}
+
+token = JWT.encode(payload, lightdash_embed_secret, 'HS256')
+
+# Build embed URL
+embed_url = "#{instance_url}/embed/#{project_uuid}/dashboard/#{dashboard_uuid}##{token}"
+
+puts embed_url
+```
+
+</CodeGroup>
+
+### URL with user attributes
+
+For row-level security, include user attributes in the JWT token:
+
+```javascript
+const token = jwt.sign({
+  content: {
+    type: 'dashboard',
+    dashboardUuid: 'your-dashboard-uuid',
+  },
+  userAttributes: {
+    tenant_id: user.tenantId,  // Filter data by tenant
+    region: user.region,
+  },
+}, LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
+
+const embedUrl = `https://app.lightdash.cloud/embed/${projectUuid}/dashboard/${dashboardUuid}#${token}`;
+```
+
+See [User attributes reference](/references/user-attributes) for complete guide.
+
+## Embedding in HTML
+
+### Basic iframe
+
+The simplest way to embed is with a standard HTML iframe:
+
+```html
+<iframe
+  src="https://app.lightdash.cloud/embed/project-uuid/dashboard/dashboard-uuid#jwt-token"
+  width="100%"
+  height="600"
+  frameborder="0"
+  style="border: none;"
+></iframe>
+```
+
+### Recommended attributes
+
+```html
+<iframe
+  src="https://app.lightdash.cloud/embed/..."
+  width="100%"
+  height="600"
+  frameborder="0"
+  style="border: none;"
+  loading="lazy"
+  title="Lightdash Dashboard"
+  allowfullscreen
+></iframe>
+```
+
+**Attributes explained:**
+- `width="100%"` - Makes iframe responsive to container width
+- `height="600"` - Fixed height (adjust based on content)
+- `frameborder="0"` - Removes default border (legacy)
+- `style="border: none;"` - Removes border (modern CSS)
+- `loading="lazy"` - Defers loading until iframe is visible
+- `title="..."` - Accessibility: Describes iframe content for screen readers
+- `allowfullscreen` - Enables fullscreen mode (if your dashboard uses it)
+
+### Responsive iframes
+
+To make iframes maintain aspect ratio and scale responsively:
+
+**Method 1: Aspect ratio wrapper (16:9)**
+
+```html
+<div style="position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden;">
+  <iframe
+    src="https://app.lightdash.cloud/embed/..."
+    style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none;"
+    frameborder="0"
+    allowfullscreen
+  ></iframe>
+</div>
+```
+
+**Method 2: Modern CSS aspect-ratio (16:9)**
+
+```html
+<iframe
+  src="https://app.lightdash.cloud/embed/..."
+  style="aspect-ratio: 16/9; width: 100%; border: none;"
+  frameborder="0"
+  allowfullscreen
+></iframe>
+```
+
+**Method 3: Fixed viewport percentage**
+
+```html
+<iframe
+  src="https://app.lightdash.cloud/embed/..."
+  style="width: 100%; height: 80vh; border: none;"
+  frameborder="0"
+></iframe>
+```
+
+### Dynamic height
+
+iframes have fixed height by default. For dynamic height based on content:
+
+<Warning>
+Lightdash embeds do not currently support automatic height adjustment via postMessage. Use a fixed height or viewport-based height (e.g., `80vh`).
+</Warning>
+
+Recommended approach for dashboards with unknown content:
+
+```html
+<iframe
+  src="https://app.lightdash.cloud/embed/..."
+  style="width: 100%; min-height: 600px; height: 90vh; border: none;"
+  frameborder="0"
+></iframe>
+```
+
+### Security considerations
+
+iframes provide natural security isolation, but you can add additional restrictions:
+
+```html
+<iframe
+  src="https://app.lightdash.cloud/embed/..."
+  sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"
+  style="width: 100%; height: 600px; border: none;"
+></iframe>
+```
+
+**sandbox attributes:**
+- `allow-scripts` - Required for Lightdash to function
+- `allow-same-origin` - Required for Lightdash to function
+- `allow-forms` - Required for filter interactions
+- `allow-downloads` - Required if you enable CSV/image exports
+
+<Info>
+The `sandbox` attribute provides additional security but may restrict functionality. Test thoroughly if you use it.
+</Info>
+
+## Common patterns
+
+### Server-side rendering
+
+Generate embed URLs in your server-side templates:
+
+**Express (Node.js)**
+
+```javascript
+app.get('/dashboard', authenticateUser, async (req, res) => {
+  const user = await getUser(req.user.id);
+
+  const token = jwt.sign({
+    content: {
+      type: 'dashboard',
+      dashboardUuid: 'dashboard-uuid',
+    },
+    userAttributes: {
+      tenant_id: user.tenantId,
+    },
+  }, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
+
+  const embedUrl = `https://app.lightdash.cloud/embed/${projectUuid}/dashboard/dashboard-uuid#${token}`;
+
+  res.render('dashboard', { embedUrl });
+});
+```
+
+**Template (EJS)**
+
+```html
+<div class="dashboard-container">
+  <iframe
+    src="<%= embedUrl %>"
+    width="100%"
+    height="600"
+    frameborder="0"
+    style="border: none;"
+  ></iframe>
+</div>
+```
+
+### Single-page apps (SPA)
+
+Generate URLs via API when component mounts:
+
+**React example**
+
+```jsx
+function EmbeddedDashboard() {
+  const [embedUrl, setEmbedUrl] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/dashboard-embed-url')
+      .then(res => res.json())
+      .then(data => setEmbedUrl(data.url));
+  }, []);
+
+  if (!embedUrl) return <div>Loading...</div>;
+
+  return (
+    <iframe
+      src={embedUrl}
+      width="100%"
+      height="600"
+      frameBorder="0"
+      style={{ border: 'none' }}
+    />
+  );
+}
+```
+
+### Static sites
+
+For static sites, generate URLs at build time or use edge functions:
+
+**Next.js (server component)**
+
+```tsx
+import jwt from 'jsonwebtoken';
+
+async function DashboardPage() {
+  // Generate at request time
+  const token = jwt.sign({
+    content: {
+      type: 'dashboard',
+      dashboardUuid: 'dashboard-uuid',
+    },
+  }, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '24h' });
+
+  const embedUrl = `https://app.lightdash.cloud/embed/project-uuid/dashboard/dashboard-uuid#${token}`;
+
+  return (
+    <iframe
+      src={embedUrl}
+      width="100%"
+      height="600"
+      frameBorder="0"
+      style={{ border: 'none' }}
+    />
+  );
+}
+```
+
+### Content management systems
+
+Embed in WordPress, Webflow, or other CMS:
+
+1. Create a server endpoint that generates embed URLs
+2. Use iframe embed code with dynamic URL
+3. Refresh tokens via JavaScript when expired
+
+**WordPress shortcode example:**
+
+```php
+function lightdash_embed_shortcode($atts) {
+    $atts = shortcode_atts(array(
+        'dashboard' => '',
+    ), $atts);
+
+    $embed_url = generate_lightdash_url($atts['dashboard']);
+
+    return '<iframe src="' . esc_url($embed_url) . '" width="100%" height="600" frameborder="0" style="border: none;"></iframe>';
+}
+add_shortcode('lightdash', 'lightdash_embed_shortcode');
+```
+
+## Token refresh
+
+JWT tokens expire after the time specified in `expiresIn`. Handle token expiration:
+
+### Option 1: Long-lived tokens
+
+For public or semi-public dashboards, use longer expiration:
+
+```javascript
+jwt.sign(payload, secret, { expiresIn: '7d' })  // 7 days
+```
+
+<Warning>
+Long-lived tokens are convenient but less secure. Use only when appropriate for your use case.
+</Warning>
+
+### Option 2: Regenerate URL on expiration
+
+Detect when iframe shows "Token expired" error and reload with new URL:
+
+```javascript
+function refreshEmbed() {
+  fetch('/api/dashboard-embed-url')
+    .then(res => res.json())
+    .then(data => {
+      document.getElementById('dashboard-iframe').src = data.url;
+    });
+}
+
+// Refresh before expiration (e.g., every 50 minutes for 1-hour tokens)
+setInterval(refreshEmbed, 50 * 60 * 1000);
+```
+
+### Option 3: Backend proxy
+
+Create a backend endpoint that serves a static iframe URL but generates fresh tokens:
+
+```javascript
+app.get('/embed-proxy/dashboard/:dashboardUuid', authenticateUser, (req, res) => {
+  const token = jwt.sign({
+    content: {
+      type: 'dashboard',
+      dashboardUuid: req.params.dashboardUuid,
+    },
+  }, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
+
+  const embedUrl = `https://app.lightdash.cloud/embed/${projectUuid}/dashboard/${req.params.dashboardUuid}#${token}`;
+
+  // Redirect to actual embed URL
+  res.redirect(embedUrl);
+});
+```
+
+Then use:
+
+```html
+<iframe src="/embed-proxy/dashboard/dashboard-uuid"></iframe>
+```
+
+## Troubleshooting
+
+### Token not working
+
+**Issue:** iframe shows "Invalid token" or "Token expired"
+
+**Solutions:**
+- Verify embed secret matches between token generation and Lightdash
+- Check token hasn't expired (`expiresIn` in jwt.sign)
+- Ensure JWT payload structure matches [embedding reference](/references/embedding#jwt-token-structure)
+- Test token expiration: `jwt.decode(token)` and check `exp` field
+
+### Content not displaying
+
+**Issue:** iframe is blank or shows loading indefinitely
+
+**Solutions:**
+- Check browser console for errors
+- Verify dashboard/chart UUID is correct
+- Ensure content is added to "allowed dashboards/charts" in Lightdash settings
+- Check project UUID is correct
+- Try accessing embed URL directly in browser to see error message
+
+### CORS errors
+
+**Issue:** Browser console shows CORS errors
+
+**Solution:**
+- iframes should NOT have CORS issues (CORS only affects React SDK)
+- If you see CORS errors with iframes, you may be using fetch/XHR to load content instead of iframe
+- Use standard iframe src attribute, not JavaScript-based loading
+
+### URL encoding issues
+
+**Issue:** JWT token or URL appears malformed
+
+**Solutions:**
+- Don't URL-encode the JWT token in the hash fragment
+- If constructing URLs in templates, ensure proper escaping:
+  ```html
+  <!-- Good -->
+  <iframe src="https://app.lightdash.cloud/embed/...#<%= token %>"></iframe>
+
+  <!-- Bad - Don't URL encode token -->
+  <iframe src="https://app.lightdash.cloud/embed/...#<%= encodeURIComponent(token) %>"></iframe>
+  ```
+
+### Dashboard filters not working
+
+**Issue:** Users can't interact with filters despite `dashboardFiltersInteractivity: { enabled: 'all' }`
+
+**Solutions:**
+- Verify JWT token includes correct interactivity settings
+- Check browser console for JavaScript errors
+- Ensure iframe isn't using `sandbox` attribute without `allow-forms`
+
+## See also
+
+<CardGroup cols={2}>
+  <Card title="Embedding reference" icon="book" href="/references/embedding">
+    JWT token structure and configuration options
+  </Card>
+
+  <Card title="React SDK reference" icon="react" href="/references/react-sdk">
+    Alternative: React component embedding
+  </Card>
+
+  <Card title="Embedding dashboards" icon="grid-2" href="/guides/embedding/dashboards">
+    Step-by-step dashboard embedding guide
+  </Card>
+
+  <Card title="Embedding charts" icon="chart-line" href="/guides/embedding/charts">
+    Step-by-step chart embedding guide
+  </Card>
+
+  <Card title="User attributes" icon="shield-check" href="/references/user-attributes">
+    Row-level security with user attributes
+  </Card>
+</CardGroup>
