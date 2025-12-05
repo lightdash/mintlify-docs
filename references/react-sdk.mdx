@@ -1,37 +1,54 @@
 ---
-title: "React SDK"
-description: "Reference documentation for the Lightdash React SDK, used for Embedding. "
+title: "Embedding with React SDK"
+sidebarTitle: "React SDK"
+description: "Reference documentation for the Lightdash React SDK for seamless embedding in React applications"
 ---
+
+## Overview
+
+The Lightdash React SDK (`@lightdash/sdk`) provides React components for embedding Lightdash content in your React or Next.js applications. The SDK offers advantages over iframe embedding:
+
+- Seamless integration with your React application
+- Programmatic filters for dashboards
+- Callbacks for user interactions (e.g., explore navigation)
+- Custom styling to match your application
+- TypeScript support with full type definitions
+
+For iframe embedding, see the [embedding reference](/references/embedding).
 
 ## Set up CORS
 
-To make the React SDK work, you need to update your "Cross-Origin Resource Sharing" (CORS) policy.
+To use the React SDK, you need to update your "Cross-Origin Resource Sharing" (CORS) policy.
 
-This is done using environment variables. For Lightdash Cloud customers, you'll need to contact the Lightdash team to update these for you.
+This is done using environment variables. For Lightdash Cloud customers, contact the Lightdash team to update these for you.
 
 ```bash
 LIGHTDASH_CORS_ENABLED=true
-LIGHTDASH_CORS_ALLOWED_DOMAINS=https://domain-where-you-are-going-to-use-the-sdk.com  
+LIGHTDASH_CORS_ALLOWED_DOMAINS=https://domain-where-you-are-going-to-use-the-sdk.com
 ```
 
 <Info>
-  **Why this is needed?**
+  **Why CORS is needed**
 
   Enabling CORS (Cross-Origin Resource Sharing) is necessary because browsers enforce security policies that prevent web applications from making requests to a different domain than the one that served the app (known as the **Same-Origin Policy**).
 
-  Since the **Lightdash React SDK** interacts with an Lightdash API, you need to configure CORS on your Lightdash instance to allow your frontend application to communicate with the Lightdash server without being blocked by the browser.
+  Since the **Lightdash React SDK** interacts with a Lightdash API, you need to configure CORS on your Lightdash instance to allow your frontend application to communicate with the Lightdash server without being blocked by the browser.
 </Info>
+
+<Warning>
+CORS is **only required for the React SDK**. iframe embedding does not require CORS configuration.
+</Warning>
 
 ## Installing the Lightdash SDK
 
 In your frontend project, use your preferred package manager to install the SDK.
 
 ```bash
-npm install @lightdash/sdk  
+npm install @lightdash/sdk
 # or
-pnpm add @lightdash/sdk  
+pnpm add @lightdash/sdk
 # or
-yarn add @lightdash/sdk  
+yarn add @lightdash/sdk
 ```
 
 <Info>
@@ -39,165 +56,524 @@ yarn add @lightdash/sdk  
   For Next.js, version 15 or later is required.
 </Info>
 
-## Using the Lightdash SDK
+## Components
 
-In your frontend project, import and use the `Lightdash.Dashboard` component in your desired location to mount the Lightdash dashboard.
+The Lightdash SDK exports three components for embedding different content types:
+
+- `Lightdash.Dashboard` - Embed complete dashboards with multiple tiles
+- `Lightdash.Chart` - Embed individual saved charts
+- `Lightdash.Explore` - Embed interactive data exploration interface
+
+All components share common props for authentication and styling.
+
+### Lightdash.Dashboard
+
+Embed complete Lightdash dashboards with multiple visualizations, filters, and interactive features.
+
+#### Props
+
+```typescript
+type DashboardProps = {
+  // Required
+  instanceUrl: string;              // Your Lightdash instance URL
+  token: string | Promise<string>;  // JWT token (can be async)
+
+  // Optional
+  styles?: {
+    backgroundColor?: string;       // Background color or 'transparent'
+    fontFamily?: string;            // Font family for all text
+  };
+  filters?: SdkFilter[];            // Apply filters programmatically
+  contentOverrides?: LanguageMap;   // Localization/translation overrides
+  onExplore?: (options: {
+    chart: SavedChart
+  }) => void;                       // Callback when user navigates to explore
+};
+```
+
+#### Basic usage
 
 ```tsx
 import Lightdash from '@lightdash/sdk';
 
+function MyDashboard() {
+  return (
+    <Lightdash.Dashboard
+      instanceUrl="https://app.lightdash.cloud"
+      token={generateToken()} // Server-side function
+    />
+  );
+}
+```
+
+#### With filters
+
+Apply filters programmatically using the `filters` prop:
+
+```tsx
+import Lightdash, { FilterOperator } from '@lightdash/sdk';
+
 <Lightdash.Dashboard
-    instanceUrl="{{ your instance URL (e.g., https://lightdash.yourcompanydomain.com) }}"
-    projectUuid="{{ project ID that the dashboard is part of }}"
-    token="see the section below on how to generate a token for the SDK"
+  instanceUrl="https://app.lightdash.cloud"
+  token={token}
+  filters={[
+    {
+      model: 'orders',
+      field: 'status',
+      operator: FilterOperator.EQUALS,
+      value: 'completed',
+    },
+    {
+      model: 'orders',
+      field: 'created_date',
+      operator: FilterOperator.IN_BETWEEN,
+      value: ['2024-01-01', '2024-12-31'],
+    },
+  ]}
 />
 ```
 
-## Generating an embed token
+See [Filtering data](#filtering-data) for complete filter documentation.
 
-### Development
+#### With styling
 
-When developing you can quickly and easily [generate tokens through the Lightdash UI](https://docs.lightdash.com/references/embedding#embed-secret). Since this requires manual steps we don’t recommend you do this in production.
+```tsx
+<Lightdash.Dashboard
+  instanceUrl="https://app.lightdash.cloud"
+  token={token}
+  styles={{
+    backgroundColor: '#f5f5f5',
+    fontFamily: 'Inter, sans-serif',
+  }}
+/>
+```
 
-### Production
+#### With explore callback
 
-To run the Lightdash SDK in production you need:
+Track when users navigate to explore:
 
-1. A frontend to embed the Lightdash dashboard.
-2. A backend (or other privileged environment) where you can safely generate embedding tokens. This component will be able to generate access to any content, so this shouldn’t be accessible to your end users.
+```tsx
+<Lightdash.Dashboard
+  instanceUrl="https://app.lightdash.cloud"
+  token={generateToken({ canExplore: true })}
+  onExplore={({ chart }) => {
+    console.log('User exploring chart:', chart.name);
+    // Track analytics, show help guides, etc.
+  }}
+/>
+```
 
-### JWT Authentication Flow
+### Lightdash.Chart
 
-![images/jwt-auth-flow.png](/images/jwt-auth-flow.png)
+Embed individual saved charts for focused, single-metric displays with minimal UI.
 
-To generate a signed JWT token, you need to use your **embed secret**, which is located in **Settings → Embed** in Lightdash. There, you can [generate or regenerate the secret](/references/embedding#embed-secret). This secret is used to sign JWT tokens, allowing secure use of the SDK.
-
-You can use the form to configure which **Dashboard** you want to show in the SDK, [enable specific features](/references/embedding#interactivity), and set up **User Attributes** for advanced security controls. For more details on **User Attributes**, check out the guide [here](https://docs.lightdash.com/references/user-attributes). 
-
-#### Token Configuration
-
-After you configure the form you should end up with the snippet which looks like this:
+#### Props
 
 ```typescript
-import jwt from 'jsonwebtoken';
+type ChartProps = {
+  // Required
+  instanceUrl: string;              // Your Lightdash instance URL
+  id: string;                       // Chart UUID (savedQueryUuid)
+  token: string | Promise<string>;  // JWT token with type: 'chart'
 
-const LIGHTDASH_EMBED_SECRET = '{{ keep this secret and do not expose it in the frontend }}';
-const projectUuid = '{{ your project uuid }} ';
-const data = {
-    content: {
-        type: 'dashboard',
-        dashboardUuid: '{{your dashboard uuid}}',
-        dashboardFiltersInteractivity: {
-            enabled: "none",
-            allowedFilters: undefined,
-        },
-        canExportCsv: false,
-        canExportImages: false,
-        canExportPagePdf: true,
-        canDateZoom: false,
-        canExplore: false,
-        canViewUnderlyingData: false,
-    },
-    user: {
-        externalId: undefined,
-        email: "{{ authenticated user email }} "
-    },
-    userAttributes: {"":""},
+  // Optional
+  styles?: {
+    backgroundColor?: string;       // Background color or 'transparent'
+    fontFamily?: string;            // Font family for all text
+  };
+  contentOverrides?: LanguageMap;   // Localization/translation overrides
 };
-const token = jwt.sign(data, LIGHTDASH_EMBED_SECRET, { expiresIn: '1 hour' });
-
-console.log({ projectUuid, token })
-
-// ^^^ use generated projectUuid and token in the `<Lightdash.Dashboard` props
 ```
 
 <Info>
-  The Lightdash SDK works the same way as our embedding feature, which embeds the Lightdash dashboard as an “iframe”. We recommend reading the [documentation on Embedding](https://docs.lightdash.com/references/embedding/#code-snippet), which provides a detailed explanation of how token generation works and how to securely use Lightdash content using the SDK.
+Unlike Dashboard, Chart does not support `filters` or `onExplore` props since charts are read-only and cannot navigate to explore.
 </Info>
 
+#### Basic usage
+
+```tsx
+import Lightdash from '@lightdash/sdk';
+
+function MyChart() {
+  return (
+    <Lightdash.Chart
+      instanceUrl="https://app.lightdash.cloud"
+      id="your-chart-uuid"
+      token={generateChartToken()} // Server-side function
+    />
+  );
+}
+```
+
+#### With styling
+
+```tsx
+<Lightdash.Chart
+  instanceUrl="https://app.lightdash.cloud"
+  id="your-chart-uuid"
+  token={token}
+  styles={{
+    backgroundColor: 'white',
+    fontFamily: 'Helvetica, Arial, sans-serif',
+  }}
+/>
+```
+
+#### Token generation for charts
+
+Charts require a JWT token with `type: 'chart'`:
+
+```javascript
+// Backend API endpoint
+import jwt from 'jsonwebtoken';
+
+export function generateChartToken(chartId) {
+  return jwt.sign({
+    content: {
+      type: 'chart',
+      contentId: chartId,  // savedQueryUuid
+      canExportCsv: true,
+      canExportImages: false,
+      canViewUnderlyingData: true,
+    },
+  }, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '24h' });
+}
+```
+
+See [Embedding charts guide](/guides/embedding/charts) for details.
+
+### Lightdash.Explore
+
+Embed interactive data exploration interface with full query builder capabilities.
+
+#### Props
+
+```typescript
+type ExploreProps = {
+  // Required
+  instanceUrl: string;              // Your Lightdash instance URL
+  token: string | Promise<string>;  // JWT token with canExplore: true
+
+  // Optional
+  styles?: {
+    backgroundColor?: string;       // Background color or 'transparent'
+    fontFamily?: string;            // Font family for all text
+  };
+  contentOverrides?: LanguageMap;   // Localization/translation overrides
+};
+```
+
+#### Basic usage
+
+```tsx
+import Lightdash from '@lightdash/sdk';
+
+function MyExplore() {
+  return (
+    <Lightdash.Explore
+      instanceUrl="https://app.lightdash.cloud"
+      token={generateExploreToken()} // Must include canExplore: true
+    />
+  );
+}
+```
+
+#### With styling
+
+```tsx
+<Lightdash.Explore
+  instanceUrl="https://app.lightdash.cloud"
+  token={token}
+  styles={{
+    backgroundColor: '#f9f9f9',
+    fontFamily: 'Inter, sans-serif',
+  }}
+/>
+```
+
+#### Token generation for explores
+
+Explores require `canExplore: true` in the JWT token:
+
+```javascript
+// Backend API endpoint
+import jwt from 'jsonwebtoken';
+
+export function generateExploreToken() {
+  return jwt.sign({
+    content: {
+      type: 'dashboard',  // Can use dashboard type
+      dashboardUuid: 'starting-dashboard-uuid',
+      canExplore: true,   // Required for explore access
+      canExportCsv: true,
+      canExportImages: true,
+    },
+  }, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '4h' });
+}
+```
+
+## Generating embed tokens
+
+All SDK components require JWT tokens generated server-side. Here's a complete example:
+
+### Backend API endpoint
+
+```typescript
+// server/api/embed-token.ts
+import jwt from 'jsonwebtoken';
+
+export async function generateEmbedToken(req, res) {
+  // Authenticate user
+  const userId = req.user.id;
+  const user = await getUserFromDatabase(userId);
+
+  // Generate token with user-specific attributes
+  const token = jwt.sign({
+    content: {
+      type: 'dashboard',
+      dashboardUuid: 'your-dashboard-uuid',
+      dashboardFiltersInteractivity: {
+        enabled: 'all',
+      },
+      canExportCsv: true,
+      canExplore: true,
+    },
+    userAttributes: {
+      tenant_id: user.tenantId,  // Row-level filtering
+    },
+    user: {
+      externalId: user.id,
+      email: user.email,
+    },
+  }, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
+
+  res.json({ token });
+}
+```
+
+### Frontend React component
+
+```tsx
+import Lightdash from '@lightdash/sdk';
+import { useState, useEffect } from 'react';
+
+function EmbeddedDashboard() {
+  const [token, setToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Fetch token from your backend
+    fetch('/api/embed-token')
+      .then(res => res.json())
+      .then(data => setToken(data.token));
+  }, []);
+
+  if (!token) return <div>Loading...</div>;
+
+  return (
+    <Lightdash.Dashboard
+      instanceUrl="https://app.lightdash.cloud"
+      token={token}
+    />
+  );
+}
+```
+
 <Warning>
-  To ensure security, the JWT token generation code should run **in your backend**, and the **Lightdash embed secret** must never be exposed in frontend code. This prevents unauthorized access and protects sensitive data.
+  To ensure security, JWT token generation code must run **in your backend**, and the **Lightdash embed secret** must never be exposed in frontend code. This prevents unauthorized access and protects sensitive data.
 </Warning>
 
 ## Applying styles
 
-It’s possible to override some styles within the `<Lightdash.Dashbaord/>` component to match the surrounding page better. Some styles will cascade, but some charts and components set things like `font-family` explicitly, so it is necessary to pass them to the component. Supported style overrides are:
+Override styles within Lightdash components to match your application's design.
 
-- `fontFamily` - which will set all fonts within the dashboard to the specified font family. Note that only font family will be updated; font sizes and other properties will be preserved.
-- `backgroundColor` - sets the background for the dashboard (not the tiles). This can be set to any color or `transparent` .
+### Supported style overrides
 
-Both of these properties accept normal css values and are set on a `styles` object passed to the dashboard. For example:
+```typescript
+styles?: {
+  fontFamily?: string;       // Sets all fonts within the component
+  backgroundColor?: string;  // Sets the background color or 'transparent'
+}
+```
+
+Both properties accept normal CSS values and are set on a `styles` object passed to any component.
+
+### Font family
+
+Sets the font family for all text within the embedded content. Font sizes and other properties are preserved.
 
 ```typescript
 <Lightdash.Dashboard
-    instanceUrl={lightdashUrl}
-    token={lightdashToken}
-    styles={{
-        backgroundColor: 'transparent',
-        fontFamily: 'Comic Sans MS',
-    }}
+  instanceUrl={lightdashUrl}
+  token={lightdashToken}
+  styles={{
+    fontFamily: 'Inter, sans-serif',
+  }}
+/>
+```
+
+<Info>
+Some charts and components set `font-family` explicitly, so the `fontFamily` style is applied with higher specificity to override these.
+</Info>
+
+### Background color
+
+Sets the background for the embedded content. Can be any color value or `'transparent'`.
+
+```typescript
+<Lightdash.Dashboard
+  instanceUrl={lightdashUrl}
+  token={lightdashToken}
+  styles={{
+    backgroundColor: 'transparent',
+  }}
+/>
+```
+
+### Complete example
+
+```typescript
+<Lightdash.Dashboard
+  instanceUrl={lightdashUrl}
+  token={lightdashToken}
+  styles={{
+    backgroundColor: '#f5f5f5',
+    fontFamily: 'Helvetica, Arial, sans-serif',
+  }}
 />
 ```
 
 ## Filtering data
 
-Filters can be passed to the `<Lightdash.Dashbaord/>` to filter dimensions by values. Filters are passed as an array to the dashboard like this:
+Filters can be passed to `<Lightdash.Dashboard/>` to filter dimensions by values. Filters are applied as AND operations, each further restricting results.
+
+<Info>
+Filtering is **only available for Dashboard** components. Chart and Explore components do not support the `filters` prop.
+</Info>
+
+### Filter structure
+
+```typescript
+type SdkFilter = {
+  model: string;             // The model the dimension is part of
+  field: string;             // The name of the dimension to filter by
+  operator: FilterOperator;  // The filter operator (enum)
+  value: unknown | unknown[]; // The value(s) to filter against
+};
+```
+
+### Basic example
 
 ```javascript
 <Lightdash.Dashboard
-    instanceUrl={lightdashUrl}
-    token={lightdashToken}
-    filters={[
-        {
-            model: 'dbt_users',
-            field: 'created_date_week',
-            operator: FilterOperator.IN_BETWEEN,
-            value: ['2024-08', '2024-10'],
-        },
-        {
-            model: 'dbt_users',
-            field: 'browser',
-            operator: FilterOperator.INCLUDE,
-            value: ['chrome', 'safari'],
-        },
-    ]}
+  instanceUrl={lightdashUrl}
+  token={lightdashToken}
+  filters={[
+    {
+      model: 'dbt_users',
+      field: 'browser',
+      operator: FilterOperator.INCLUDE,
+      value: ['chrome', 'safari'],
+    },
+  ]}
 />
 ```
 
-Each entry in the array specifies
+### Multiple filters
 
-- `field` - the name of the dimension to filter by
-- `model` - the model the dimension is a part of
-- `operator` - the fitler operator, specified with the `FilterOperator` enum
-- `value` - the value or values to fitler against. Some opperators, such as `IN_BETWEEN` expect an array, others take only a value
+Filters are applied as AND operations:
 
-Filter objects will each be applied as AND operations, each further restricting results.
+```javascript
+<Lightdash.Dashboard
+  instanceUrl={lightdashUrl}
+  token={lightdashToken}
+  filters={[
+    {
+      model: 'dbt_users',
+      field: 'created_date_week',
+      operator: FilterOperator.IN_BETWEEN,
+      value: ['2024-08', '2024-10'],
+    },
+    {
+      model: 'dbt_users',
+      field: 'browser',
+      operator: FilterOperator.INCLUDE,
+      value: ['chrome', 'safari'],
+    },
+    {
+      model: 'orders',
+      field: 'status',
+      operator: FilterOperator.EQUALS,
+      value: 'completed',
+    },
+  ]}
+/>
+```
+
+### FilterOperator enum
+
+Import `FilterOperator` from the SDK:
+
+```typescript
+import Lightdash, { FilterOperator } from '@lightdash/sdk';
+```
+
+Available operators:
+
+| Operator | Description | Value Type |
+|----------|-------------|------------|
+| `FilterOperator.IS_NULL` | Field is null | n/a |
+| `FilterOperator.NOT_NULL` | Field is not null | n/a |
+| `FilterOperator.EQUALS` | Field equals value | single value |
+| `FilterOperator.NOT_EQUALS` | Field does not equal value | single value |
+| `FilterOperator.STARTS_WITH` | Field starts with value | single value |
+| `FilterOperator.ENDS_WITH` | Field ends with value | single value |
+| `FilterOperator.INCLUDE` | Field includes any of values | array |
+| `FilterOperator.NOT_INCLUDE` | Field does not include values | array |
+| `FilterOperator.LESS_THAN` | Field is less than value | single value |
+| `FilterOperator.LESS_THAN_OR_EQUAL` | Field is ≤ value | single value |
+| `FilterOperator.GREATER_THAN` | Field is greater than value | single value |
+| `FilterOperator.GREATER_THAN_OR_EQUAL` | Field is ≥ value | single value |
+| `FilterOperator.IN_THE_PAST` | Date in the past N units | single value |
+| `FilterOperator.NOT_IN_THE_PAST` | Date not in past N units | single value |
+| `FilterOperator.IN_THE_NEXT` | Date in the next N units | single value |
+| `FilterOperator.IN_THE_CURRENT` | Date in current period | single value |
+| `FilterOperator.NOT_IN_THE_CURRENT` | Date not in current period | single value |
+| `FilterOperator.IN_BETWEEN` | Field between two values | array with 2 values |
+| `FilterOperator.NOT_IN_BETWEEN` | Field not between values | array with 2 values |
 
 ### Available fields
 
-Note that only field that are available for filtering will be filterable. These are specified in the token passed to the SDK. To generate such a token, see the Lightdash embed configuration.
+Only fields that are available for filtering can be filtered. These are specified in the JWT token passed to the SDK.
+
+<Info>
+To generate tokens with filterable fields, configure your embed in the Lightdash UI or include the appropriate fields in your JWT token structure.
+</Info>
 
 ## Localization
 
-The **Lightdash SDK** supports multilingual translation using standard i18n translation objects. To display a translated Lightdash dashboard, an app simply needs to pass a correctly formatted translation object to the SDK. We recommend using the following tools (or similar) to create and manage translations efficiently:
+The **Lightdash SDK** supports multilingual translation using standard i18n translation objects. To display a translated Lightdash dashboard, pass a correctly formatted translation object to the SDK.
 
-- **Translation maps** – The Lightdash CLI can generate translation maps when downloading content as code. These maps include keys and original text for all translatable strings in a dashboard, making them easy to use with translation tools like **Locize** or for manual translation. See below for details.
-- **Runtime translation management**– In apps using the SDK, we recommend using a translation library like `i18next` to handle translation parameters and generate translation objects dynamically. See below for an example.
-- **Translation production tools** – Tools like **Locize** help translators manage translations efficiently during production. Locize, for instance, can process translation objects from the Lightdash CLI translation maps and generate the dictionaries required by the SDK. These dictionaries can be included statically in the app or fetched dynamically from Locize servers. See the demo video below for an overview.
+### Recommended tools
 
-### Video overview of Localization
+- **Translation maps** – The Lightdash CLI can generate translation maps when downloading content as code
+- **Runtime translation management** – Use a translation library like `i18next`
+- **Translation production tools** – Tools like **Locize** help manage translations efficiently
+
+### Video overview
 
 <iframe width="640" height="360" src="https://www.loom.com/embed/d664260545624198b9d4074401c6fb6f?sid=292691a9-5cd9-4504-80b3-bcd6cd874558" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen />
 
 ### Translation maps
 
-The Lightdash CLI can produce translation maps, which specify translatable strings in a structured object which can be translated in a Lightdash dashboard. To include translation maps when downloading content with the Lightdash CLI, add the `--language-map` flag:
+The Lightdash CLI can produce translation maps for dashboards and charts. To include translation maps when downloading content, add the `--language-map` flag:
 
-```
+```bash
 lightdash download --language-map
 ```
 
-Alongside each downloaded dashboard and chart there will be a `<file name>.language.map.yml` file containing a nested object and its existing translatable strings. Here’s a simple dashboard language map:
+Alongside each downloaded dashboard and chart, there will be a `<file name>.language.map.yml` file containing translatable strings.
+
+**Example translation map:**
 
 ```yaml
 dashboard:
@@ -216,44 +592,193 @@ dashboard:
           title: "How do payment methods vary across different amount ranges?"
 ```
 
-These translation maps can be imported directly into a tool like Locize to begin translation.
+These translation maps can be imported into tools like Locize to begin translation.
 
 ### Runtime translation
 
-At runtime, if a translation object is passed to the Lightdash SDK `contentOverrides` prop, the specified translations will be made. We suggest using `i18Next` to load translations, specify a language and produce the translation object (with `getResoruceBundle`):
+At runtime, pass a translation object to the SDK's `contentOverrides` prop. We suggest using `i18Next` to load translations:
 
 ```typescript
+import i18n from 'i18next';
+
 <Lightdash.Dashboard
-    instanceUrl={lightdashUrl}
-    token={lightdashToken}
-    contentOverrides={i18n.getResourceBundle(
-        i18n.language,    // Specify language
-        'demo-dashboard', // Specify namespace
-    )}
+  instanceUrl={lightdashUrl}
+  token={lightdashToken}
+  contentOverrides={i18n.getResourceBundle(
+    i18n.language,      // Specify language
+    'demo-dashboard',   // Specify namespace
+  )}
 />
 ```
 
-There are a number of ways that `i18Next` can be set up to fetch translations, but it can be set up to fetch translations directly from Locize or another language server.
-
-### Translation tools
-
-We suggest using Locize (or equivalent) to produce and store translations. Locize can load the language maps produced by the Lightdash CLI. It will show the translatable strings in the dashboard or chart nested under the correct keys. Translators can then add the necessary translation strings in the target language (Locize can also fill them in from google translate). The resulting translation objects can be exported and included in an app, or loaded dynamically.
-
-The basic setup for loading translations dynamically from Locize looks like this:
+### Setting up i18Next with Locize
 
 ```typescript
+import i18next from 'i18next';
+import { initReactI18next } from 'react-i18next';
+import Locize from 'i18next-locize-backend';
+
 i18next
-    .use(Locize) // Add Locize
-    .use(initReactI18next) // Bind react-i18next to the instance
-    .init({
-        ...
-        // Initialization properties, including app ID
-        ...
-    });
+  .use(Locize)  // Add Locize backend
+  .use(initReactI18next)  // Bind react-i18next
+  .init({
+    // Locize configuration
+    backend: {
+      projectId: 'your-locize-project-id',
+      apiKey: 'your-api-key',
+      referenceLng: 'en',
+    },
+    lng: 'en',
+    fallbackLng: 'en',
+    interpolation: {
+      escapeValue: false,
+    },
+  });
 ```
 
-### What can be translated?
+### What can be translated
 
-Strings that can be specified in the Lightdash UI can be translated. For example, titles, descriptions, chart names, axis names and series names can all be translated.
+**Can be translated** (UI strings specified in Lightdash):
+- Dashboard names and descriptions
+- Tile titles
+- Chart names
+- Axis labels
+- Series names
+- Markdown content
 
-Strings originating from a client warehouse cannot be translated by the SDK. String data within a chart will be presented as it exists in the database.
+**Cannot be translated** (data from your warehouse):
+- String values in charts
+- Dimension values
+- Metric names from database
+- Raw data in tables
+
+<Info>
+Strings originating from your data warehouse cannot be translated by the SDK. They are presented as they exist in your database.
+</Info>
+
+## Complete example
+
+Here's a full example integrating everything:
+
+### Backend (Express + Node.js)
+
+```javascript
+// server.js
+import express from 'express';
+import jwt from 'jsonwebtoken';
+import cors from 'cors';
+
+const app = express();
+app.use(cors());
+
+app.get('/api/dashboard-token', authenticateUser, async (req, res) => {
+  const user = await getUserFromDatabase(req.user.id);
+
+  const token = jwt.sign({
+    content: {
+      type: 'dashboard',
+      dashboardUuid: 'abc-123-def-456',
+      dashboardFiltersInteractivity: { enabled: 'all' },
+      parameterInteractivity: { enabled: true },
+      canExportCsv: true,
+      canExportImages: true,
+      canExplore: true,
+      canViewUnderlyingData: true,
+    },
+    userAttributes: {
+      tenant_id: user.tenantId,
+      region: user.region,
+    },
+    user: {
+      externalId: user.id,
+      email: user.email,
+    },
+  }, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '2h' });
+
+  res.json({ token, projectUuid: process.env.LIGHTDASH_PROJECT_UUID });
+});
+
+app.listen(3000);
+```
+
+### Frontend (React)
+
+```tsx
+// Dashboard.tsx
+import { useState, useEffect } from 'react';
+import Lightdash, { FilterOperator } from '@lightdash/sdk';
+
+export function EmbeddedDashboard() {
+  const [token, setToken] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/dashboard-token')
+      .then(res => res.json())
+      .then(data => {
+        setToken(data.token);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Failed to load token:', err);
+        setLoading(false);
+      });
+  }, []);
+
+  if (loading) return <div>Loading analytics...</div>;
+  if (!token) return <div>Failed to load dashboard</div>;
+
+  return (
+    <div style={{ height: '100vh', width: '100%' }}>
+      <Lightdash.Dashboard
+        instanceUrl="https://app.lightdash.cloud"
+        token={token}
+        filters={[
+          {
+            model: 'orders',
+            field: 'status',
+            operator: FilterOperator.EQUALS,
+            value: 'completed',
+          },
+        ]}
+        styles={{
+          backgroundColor: 'transparent',
+          fontFamily: 'Inter, -apple-system, sans-serif',
+        }}
+        onExplore={({ chart }) => {
+          console.log('User exploring:', chart.name);
+          // Track analytics event
+        }}
+      />
+    </div>
+  );
+}
+```
+
+## See also
+
+<CardGroup cols={2}>
+  <Card title="Embedding quickstart" icon="rocket" href="/guides/how-to-embed-content">
+    Get started with embedding in 5 minutes
+  </Card>
+
+  <Card title="Embedding API reference" icon="book" href="/references/embedding">
+    Complete JWT token structure and configuration
+  </Card>
+
+  <Card title="iframe embedding reference" icon="code" href="/references/iframe-embedding">
+    Complete iframe URL patterns and HTML embedding
+  </Card>
+
+  <Card title="Embedding dashboards" icon="grid-2" href="/guides/embedding/dashboards">
+    Complete guide to dashboard embedding
+  </Card>
+
+  <Card title="Embedding charts" icon="chart-line" href="/guides/embedding/charts">
+    Complete guide to chart embedding
+  </Card>
+
+  <Card title="User attributes" icon="shield-check" href="/references/user-attributes">
+    Implement row-level security with user attributes
+  </Card>
+</CardGroup>
