@@ -341,3 +341,83 @@ To do this, you:
    You can then add this chart to a dashboard. Users can select an option from the `Date Range` parameter and the charts will automatically update to display the selected period. 
 
    Take a look at our example dashboard in our demo site [here](https://demo.lightdash.com/projects/2014e038-ff4b-4761-ae6f-fbf551e7b468/dashboards/8813b2bf-3983-48b0-aff7-088b59490cfa/view). 
+
+
+### Custom date range example 
+
+Similar to above, you can also set up a custom date range parameter that allows users to select specific start and end dates for their analysis. 
+
+Below is the code needed for the parameter and the additional dimension to categorize the date periods for a custom date range:
+
+<Accordion title="Custom date range parameter configuration">
+``` yaml
+parameters:
+  custom_range_start:
+    label: "Start of custom date range"
+    description: "The start of the custom date range"
+    type: date
+  custom_range_end:
+    label: "End of custom date range"
+    description: "The end of the custom date range"
+    type: date
+```
+</Accordion>
+
+
+<Accordion title="Custom date range additional dimension code">
+``` yaml
+- name: order_date
+  description: 'Date of order placement by user.'
+  meta:
+    dimension:
+      type: date
+    additional_dimensions:
+      order_date_custom_period:
+        description: Date period bucket based on custom Start date and End date parameters
+        type: string
+        sql: |
+          case
+            --invalid date range 
+            when ${lightdash.parameters.dbt_orders.custom_range_start} is null
+              or ${lightdash.parameters.dbt_orders.custom_range_end} is null
+              or ${lightdash.parameters.dbt_orders.custom_range_start} > ${lightdash.parameters.dbt_orders.custom_range_end}
+              then 'invalid date range'
+
+            --current period 
+            when ${order_date_day} >= ${lightdash.parameters.dbt_orders.custom_range_start} 
+              and ${order_date_day} <= ${lightdash.parameters.dbt_orders.custom_range_end}
+              then 'current period'
+
+            --previous period
+            when ${order_date_day} between date_sub(
+              ${lightdash.parameters.dbt_orders.custom_range_start},
+              interval (date_diff(
+                ${lightdash.parameters.dbt_orders.custom_range_end},
+                ${lightdash.parameters.dbt_orders.custom_range_start},
+                day
+              ) + 1) day
+            ) and date_sub(
+              ${lightdash.parameters.dbt_orders.custom_range_end},
+              interval (date_diff(
+                ${lightdash.parameters.dbt_orders.custom_range_end},
+                ${lightdash.parameters.dbt_orders.custom_range_start},
+                day
+              ) + 1) day
+            )
+              then 'previous period'
+
+            --previous year
+            when date(${order_date_day}) between date_sub(${lightdash.parameters.dbt_orders.custom_range_start}, interval 1 year)
+              and date_sub(${lightdash.parameters.dbt_orders.custom_range_end}, interval 1 year)
+              then 'previous year'
+
+            else 'out of range'
+          end
+```
+</Accordion>
+
+The code examples above will give you the following parameter options in the Lightdash UI that will output the custom period labels shown in the chart:
+
+<Frame>
+  <img src="/images/guides/custom_range_pop.png" alt=""/>
+</Frame>
