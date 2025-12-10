@@ -1,204 +1,714 @@
 ---
 title: "Embedding reference"
-description: "You can embed Lightdash content in your website or application securely using Lightdash embedding."
+description: "Complete API reference for embedding Lightdash content securely using JWT tokens"
 ---
 
-<Info>
-  Embedding is available to all Lightdash Cloud users, [get in touch](https://lightdash.typeform.com/to/BujU5wg5) to have this feature enabled in your account.
-</Info>
+import EmbedAvailability from '/snippets/embedding-availability.mdx';
 
-Embedded Lightdash content is available to view by anyone (not just folks with a Lightdash login).
+<EmbedAvailability />
 
-So, for example, you could embed a dashboard in your product, and anyone who has access to your product would have access to that dashboard. No need to login to Lightdash.
+## Overview
 
-We make sure that the links are secure and have a set expiry time that you pick (more on that below).
+This document provides complete API reference for JWT token structure and configuration options used by both embedding methods (iframe and React SDK).
 
-For more of a deep dive into setting up and using embedding in Lightdash, check out our [How to embed content guide](/guides/how-to-embed-content).
+**For method-specific implementation details, see:**
+- [iframe embedding reference](/references/iframe-embedding) - URL patterns, HTML embedding
+- [React SDK reference](/references/react-sdk) - React components, props, TypeScript
+
+**For step-by-step guides, see:**
+- [Embedding quickstart](/guides/how-to-embed-content)
+- [Embedding dashboards](/guides/embedding/dashboards)
+- [Embedding charts](/guides/embedding/charts)
+
+Embedded Lightdash content is available to view by anyone (not just folks with a Lightdash login). Content is secured using JWT (JSON Web Tokens) with configurable expiration times.
 
 ## Known limitations
 
-There are a couple of known limitations today with embedding:
-
-- Embedding only works for dashboards, not table explores or single charts (unless the single chart is pinned to a dashboard first).
+- Embedding only works for dashboards and charts directly. To embed explores, use the `canExplore` flag in a dashboard.
 - The **Filter dashboard to** option when clicking on individual chart segments will not work on embedded dashboards.
-- Parameters are not supported on embedded dashboards.
 
-If you're interested in embedding and one or more of these items are blockers, please reach out - we can activate them quickly. 
+If you're interested in embedding and one or more of these items are blockers, please reach out.
 
 ## Embed secret
 
-The embed secret is used to generate tokens for embedding dashboards.
-
-This secret is like a password that will help you encrypt the URLs so we know the access is valid.
+The embed secret is used to generate JWT tokens for embedding content. This secret acts like a password that encrypts and signs your tokens.
 
 <Frame>
   ![](/images/references/embed-create-secret-fbb86d6bcb70f4d004c48adb3c107922.png)
 </Frame>
 
-You can regenerate the secret by clicking on the `Generate new secret` button. If you do this, people with an old URL will automatically lose access to any previously shared embed URL.
+<Warning>
+Keep your embed secret secure! Store it as an environment variable and never expose it in frontend code. Always generate tokens server-side.
+</Warning>
 
-## Allowed dashboards
+You can regenerate the secret by clicking `Generate new secret`. If you do this, all previously generated embed URLs will be invalidated immediately.
 
-Only dashboards included in the `allowed dashboards` can be accessed using embed URLs. To embed a dashboard, you need to first add it to the `allowed dashboards` list.
+## JWT token structure
 
-You can use the `Allow all dashboards` toggle to skip the dashboard selection process. When enabled, it overrides the `allowed dashboards` setting, allowing embed URLs to be generated for any dashboard in your project.
+All embedding methods use JWT tokens to authenticate and configure embedded content. The token structure includes three main parts:
+
+### Common fields
+
+All tokens share these fields:
+
+```typescript
+{
+  content: {
+    // Content configuration (required)
+    type: 'dashboard' | 'chart',
+    projectUuid?: string,
+    // ... type-specific fields
+  },
+  user?: {
+    // User information for analytics (optional)
+    externalId?: string,
+    email?: string,
+  },
+  userAttributes?: {
+    // User attributes for row-level filtering (optional)
+    [attributeName: string]: string,
+  },
+  // Token expiration (handled by JWT library)
+  exp?: number,
+  iat?: number,
+}
+```
+
+### Dashboard token
+
+For embedding dashboards with multiple tiles, filters, and interactive features:
+
+```typescript
+{
+  content: {
+    type: 'dashboard',
+
+    // Dashboard identifier (required, use one)
+    dashboardUuid?: string,
+    dashboardSlug?: string,
+
+    // Project identifier (optional)
+    projectUuid?: string,
+
+    // Filter interactivity
+    dashboardFiltersInteractivity?: {
+      enabled: 'all' | 'some' | 'none',  // Required
+      allowedFilters?: string[],          // Required if enabled: 'some'
+      hidden?: boolean,                   // Optional: hide filter UI
+    },
+
+    // Parameter interactivity
+    parameterInteractivity?: {
+      enabled: boolean,
+    },
+
+    // Export capabilities
+    canExportCsv?: boolean,         // Allow CSV export
+    canExportImages?: boolean,      // Allow image/PNG export
+    canExportPagePdf?: boolean,     // Allow PDF export
+
+    // Interactive features
+    canDateZoom?: boolean,          // Allow date granularity zoom
+    canExplore?: boolean,           // Allow "Explore from here"
+    canViewUnderlyingData?: boolean, // Allow viewing raw data
+  },
+
+  // Optional: User information for query tracking
+  user?: {
+    externalId?: string,
+    email?: string,
+  },
+
+  // Optional: User attributes for row-level filtering
+  userAttributes?: {
+    [attributeName: string]: string,
+  },
+}
+```
+
+**Example:**
+
+```javascript
+import jwt from 'jsonwebtoken';
+
+const token = jwt.sign({
+  content: {
+    type: 'dashboard',
+    dashboardUuid: 'abc-123-def-456',
+    dashboardFiltersInteractivity: {
+      enabled: 'all',
+    },
+    canExportCsv: true,
+    canExportImages: true,
+    canExportPagePdf: true,
+    canDateZoom: true,
+    canExplore: true,
+    canViewUnderlyingData: true,
+  },
+  user: {
+    externalId: 'user-789',
+    email: 'user@example.com',
+  },
+  userAttributes: {
+    tenant_id: 'tenant-abc',
+  },
+}, SECRET, { expiresIn: '1h' });
+```
+
+### Chart token
+
+For embedding individual saved charts with minimal UI:
+
+<Warning>
+Chart embedding is **only available via the React SDK**. iframe embedding for charts is not currently supported. See the [React SDK reference](/references/react-sdk) for details.
+</Warning>
+
+```typescript
+{
+  content: {
+    type: 'chart',
+
+    // Chart identifier (required)
+    contentId: string,  // savedQueryUuid
+
+    // Project identifier (optional)
+    projectUuid?: string,
+
+    // Preview mode (optional)
+    isPreview?: boolean,
+
+    // Permission scopes (optional)
+    scopes?: string[],  // e.g., ['view:Chart']
+
+    // Export capabilities
+    canExportCsv?: boolean,         // Allow CSV export
+    canExportImages?: boolean,      // Allow image/PNG export
+    canViewUnderlyingData?: boolean, // Allow viewing raw data
+  },
+
+  // Optional: User information for query tracking
+  user?: {
+    externalId?: string,
+    email?: string,
+  },
+}
+```
+
+<Info>
+Chart tokens use `contentId` (the saved chart UUID) instead of `dashboardUuid`. Chart embeds are scoped to the specific chart and cannot access other content.
+</Info>
+
+**Example:**
+
+```javascript
+import jwt from 'jsonwebtoken';
+
+const token = jwt.sign({
+  content: {
+    type: 'chart',
+    contentId: 'saved-chart-uuid-789',
+    scopes: ['view:Chart'],
+    canExportCsv: true,
+    canExportImages: false,
+    canViewUnderlyingData: true,
+  },
+  user: {
+    externalId: 'user-456',
+    email: 'user@example.com',
+  },
+}, SECRET, { expiresIn: '24h' });
+```
+
+## Interactivity options reference
+
+### Dashboard filters interactivity
+
+Controls whether users can interact with dashboard filters.
+
+```typescript
+dashboardFiltersInteractivity?: {
+  enabled: 'all' | 'some' | 'none',
+  allowedFilters?: string[],  // Filter UUIDs, required if enabled: 'some'
+  hidden?: boolean,           // Hide filter UI but keep filters active
+}
+```
+
+**Options:**
+
+- `enabled: 'all'` - All dashboard filters are visible and interactive
+- `enabled: 'some'` - Only filters listed in `allowedFilters` are interactive
+- `enabled: 'none'` - Filters are applied but not visible or editable
+- `hidden: true` - Filters are configurable at runtime, but UI is hidden (works with 'all' or 'some')
+
+#### All filters available as interactive:
+
+All filters configured on the dashboard will be shown in the embedded dashboard and interactive.
+
+```javascript
+dashboardFiltersInteractivity: {
+  enabled: 'all',
+}
+```
 
 <Frame>
-  ![](/images/references/embed-add-dashboard-feb6ef5fde69ba9d6eaeb693744d750f.png)
+    ![](/images/references/embedding-preview-all-filters-bf5d00a3ef24a2370bc5ca56c8785e2d.png)
 </Frame>
 
-## Configure
+#### Specific filters only
 
-Configure the embed URL. Then preview your settings and copy it to your clipboard.
+Only the filters you select will be shown in the embedded dashboard for users to interact with. All dashboard filters are still applied.
 
-<Frame>
-  ![](/images/references/embed-preview-6add607fe9348ed49483ae487235bd50.png)
-</Frame>
 
-### Dashboard
+```javascript
+dashboardFiltersInteractivity: {
+  enabled: 'some',
+  allowedFilters: ['filter-uuid-1', 'filter-uuid-2'],
+}
+```
 
-Select the dashboard that you want to embed. Only dashboards included in the `allowed dashboards` list appear here.
-
-### Expires in
-
-Set the amount of time it takes before your embed token expires.
-
-Although you can generate URLs directly from Lightdash with a long expiration using [generate and copy URL](#generate--copy-url), it is recommended to generate your own JWT embed tokens in your backend (using the [code snippet](#code-snippet)) with a short expiration using your `secret` to make sure people can't be using embed URLs outside your app.
-
-### User attributes
-
-Use user attributes to limit access to certain data in the embedded dashboard. You can use any [user attribute](/references/user-attributes) that you've defined in your organization in the embedded dashboard.
-
-To learn about getting your embedded dashboard to show different values for different users in your app, [check out the guide here](/guides/how-to-embed-content#i-want-to-have-my-embedded-dashboard-show-different-values-for-different-users-in-my-app).
-
-### Interactivity
-
-There are options to enable certain dashboard interactivity features on your embedded dashboard in this section. By default, all interactivity is disabled on an embedded dashboard.
-
-#### Allow users to change dashboard filters
-
-You can choose which filters are displayed in your embedded dashboard.
-
-The filters shown in the embedded dashboard will act like they do in Lightdash. Users interacting with the embedded dashboard will be able to change the value and operator of your filters. They cannot add new filters, remove existing filters, change the field used in the filter, or change the tiles the filter is applied to.
-
-- **No filters**
-  No filters will be shown in the embedded dashboard. All dashboard filters are still applied.
-
-<Frame>
-  ![](/images/references/embedding-preview-no-filters-ced58145c215a0b17d86b50634a09057.png)
-</Frame>
-
-- **Some filters**
+Configuring in the UI:
 
 <Frame>
   ![](/images/references/embedding-settings-some-filters-1658fe2f72623f85dee2eff322833ea8.png)
 </Frame>
 
-Only the filters you select will be shown in the embedded dashboard. All dashboard filters are still applied.
+Will result in some filters in the dashboard for users to interact with:
 
 <Frame>
   ![](/images/references/embedding-preview-some-filters-9f13263ec3800c3e7f5e6079fa78cd66.png)
 </Frame>
 
-- **All filters**
-  All dashboard filters will be shown in the embedded dashboard.
+#### Filters applied but hidden:
+
+Filters are applied to the dashboard, but users cannot see or modify them.
+
+```javascript
+dashboardFiltersInteractivity: {
+  enabled: 'none',
+}
+```
 
 <Frame>
-  ![](/images/references/embedding-preview-all-filters-bf5d00a3ef24a2370bc5ca56c8785e2d.png)
+  ![](/images/references/embedding-preview-no-filters-ced58145c215a0b17d86b50634a09057.png)
 </Frame>
 
-#### Can download CSV
 
-Enabling this option allows users to download all chart results as CSV files.
+### Parameter interactivity
 
-On the embedded dashboard, this `download button` is accessible from the `...` options menu located in the top right corner when hovering over the chart tile.
+Controls whether users can modify dashboard parameters.
+
+```typescript
+parameterInteractivity?: {
+  enabled: boolean,
+}
+```
+
+When enabled, users can change parameter values in the dashboard UI.
+
+### Export options
+
+Control what users can export from embedded content.
+
+```typescript
+{
+  canExportCsv?: boolean,        // Download chart data as CSV files
+  canExportImages?: boolean,     // Download charts as PNG images
+  canExportPagePdf?: boolean,    // Download entire dashboard page as PDF (dashboards only)
+}
+```
+
+**CSV Export:**
+- Enables "Download CSV" in chart tile menus
+- Each chart can be exported individually
+- Exports the data shown in the visualization
 
 <Frame>
   ![](/images/references/embedding-download-csv-2a4cbcfa350c6cefed880971090c117b.png)
 </Frame>
 
-#### Can Explore
+**Image Export:**
+- Enables "Download as image" in chart tile menus
+- Exports charts as PNG files
+- Captures current chart state
 
-This option allows users to open a dashboard chart in the [Lightdash Explore view](https://docs.lightdash.com/get-started/exploring-data/using-explores#select-your-fields). Within an embedded context, users can only interact with the chart from which they clicked "Explore from here". Any changes to a chart in this context will not be saved. Embedded users also are not able to run raw SQL for any Explores.
-
-On the embedded dashboard, "Explore from here" is accessible from the `...` options menu located in the top right corner when hovering over the chart tile. 
-
-<Frame>
-  ![](/images/references/embedding-explore-from-here.png)
-</Frame>
-
-#### Can View Underlying Data
-
-[View Underlying Data](/get-started/exploring-data/exploring-your-content#view-underlying-data) allows users to open a table for a given dashboard tile, and view a table of the data powering that tile. In the embedded context, users can only view the underlying data—that underlying data cannot be exported or opened in an Explore view. 
-
-The "View underlying data" option can be opened by clicking on a chart or big number to see the "View Underlying Data" menu option. 
-
-<Frame>
-  ![](/images/references/embedding-view-underlying-data.png)
-</Frame>
-
-### Preview
-
-Clicking on `preview` allows you to preview the configuration for your embedded dashboard. This what people viewing your embedded dashboard will see.
-
-### Generate & Copy URL
-
-Clicking `generate & copy url` will generate an embed URL based on the configuration that you've set.
-
-You can embed this one-off URL directly into your application, but you will manually need to update the URL each time the embed URL expires. Alternatively, you can add the [code snippet](#code-snippet) to your app to automatically generate embed URLs in your application.
-
-## Code snippet and demo
-
-Although you can generate URLs directly from Lightdash with a long expiration, it is recommended to generate your own JWT embed tokens in your backend with a short expiration using your `secret` to make sure people can't be using embed URLs outside your app.
-
-To make this easier to integrate, we included some code snippets you can copy and use in your app to generate a valid embed URL.
-
-<Frame>
-  ![](/images/references/embed-developer-dcdab9d9082069f5ade377284254319c.png)
-</Frame>
-
-Here is a demo of how to add the code snippet to your app:
-
-<div style={{ position:"relative",paddingBottom:"65%",height:0 }}>
-<iframe src="https://www.loom.com/embed/dd1889b09b364baa8fd606203cddc45d?sid=18b6f137-a175-422c-9f88-d679c99e3018" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen style={{ position:"absolute",top:0,left:0,width:"100%",height:"100%" }} />
-
-</div>
-
-<br />
-
-You can find the source code [here](https://github.com/lightdash/example-embed-dashboard-with-nodejs-app).
-
-### User metadata
-
-You can pass user metadata (specifically, an external user ID) from your application so that anytime someone views your embedded dashboard and runs queries in Lightdash, these query logs are enriched with this user metadata. Specifcally, this user metadata gets added to the [query tags](/references/usage-analytics#query-tags) for queries run in Lightdash.
-
-To assign an external ID, you can update the embed code snippet like this:
-
-```js
-import jwt from 'jsonwebtoken';
-const LIGHTDASH_EMBED_SECRET = 'secret'; // replace with your secret
-const projectUuid = 'my-project-uuid';
-const data = {
-  user: {
-    externalId: 'your_user_id_123', // Add this to assign an external ID
-  },
-  content: {
-    type: 'dashboard',
-    dashboardUuid: 'your dashboard uuid',
-  },
-};
-const token = jwt.sign(data, LIGHTDASH_EMBED_SECRET, { expiresIn: '1 hour' });
-const url = `https://analytics.lightdash.cloud/embed/${projectUuid}/#${token}`;
-```
-
-If you don't assign an external ID in your embed code, then we will automatically generate and an assign an external ID based on the embed token.
-
-## PDF Export Functionality
-
-In the embedded dashboard, you have the ability to export the current page as a PDF document. This feature can be accessed by clicking on the Print icon located in the upper right corner of the interface.
+**PDF Export (dashboards only):**
+- Enables print icon in dashboard header
+- Exports entire dashboard page as PDF
+- Includes all visible tiles
 
 <Frame>
   ![](/images/references/embedding-print-61cb9f9107c6e4ae00fa3cde99dd572d.png)
 </Frame>
 
-Upon selecting the Print icon, a dialog box will emerge, presenting you with several print options. Within this dialog, you have the option to choose "Export as PDF" as your desired output format.
+### Date zoom
+
+Allows users to zoom into time-series data by changing granularity.
+
+```typescript
+canDateZoom?: boolean
+```
+
+When enabled on time-series charts, users can click on data points to zoom to finer granularities (year → quarter → month → week → day).
+
+### Explore from here
+
+Enables navigation from dashboard charts to the explore view.
+
+```typescript
+canExplore?: boolean
+```
+
+When enabled, users see "Explore from here" in chart tile menus. This opens the full query builder with the chart's configuration pre-loaded.
+
+<Frame>
+  ![](/images/references/embedding-explore-from-here.png)
+</Frame>
+
+Users can:
+- Modify dimensions and metrics
+- Apply different filters
+- Change chart types
+- Run custom queries
+
+Users cannot:
+- Save charts
+- Share results
+- View SQL
+
+### View underlying data
+
+Allows users to view the raw data table behind visualizations.
+
+```typescript
+canViewUnderlyingData?: boolean
+```
+
+When enabled, users can click on charts to open a modal showing the underlying data table. Data cannot be exported separately (use `canExportCsv` for that).
+
+<Frame>
+  ![](/images/references/embedding-view-underlying-data.png)
+</Frame>
+
+## Allowed content
+
+### Allowed dashboards
+
+Only dashboards added to the "allowed dashboards" list can be embedded.
+
+<Frame>
+  ![](/images/references/embed-add-dashboard-feb6ef5fde69ba9d6eaeb693744d750f.png)
+</Frame>
+
+You can use the "Allow all dashboards" toggle to bypass dashboard selection. When enabled, any dashboard in your project can be embedded.
+
+### Allowed charts
+
+Charts must be explicitly allowed for embedding. Add charts to the allowed list in your embed settings.
+
+<Info>
+Chart embeds provide more granular access control than dashboards. Each chart must be individually allowed.
+</Info>
+
+## User attributes
+
+User attributes enable row-level security by filtering data based on user properties.
+
+```typescript
+userAttributes?: {
+  [attributeName: string]: string,
+}
+```
+
+**Example:**
+
+```javascript
+{
+  userAttributes: {
+    tenant_id: 'customer-123',
+    region: 'us-west',
+    department: 'sales',
+  }
+}
+```
+
+User attributes filter tables that have `sql_filter` configurations in dbt. See the complete [User attributes guide](/references/user-attributes).
+
+## User metadata
+
+Pass user information to track who's viewing embedded content.
+
+```typescript
+user?: {
+  externalId?: string,  // Your internal user ID
+  email?: string,       // User's email address
+}
+```
+
+This metadata appears in [query tags](/references/usage-analytics#query-tags) for usage analytics. If you don't provide an `externalId`, Lightdash automatically generates one based on the embed token.
+
+**Example:**
+
+```javascript
+{
+  user: {
+    externalId: 'user-12345',
+    email: 'jane@example.com',
+  }
+}
+```
+
+## Token expiration
+
+JWT tokens should have short expiration times for security. Use your JWT library's expiration parameter:
+
+```javascript
+jwt.sign(payload, secret, { expiresIn: '1h' })
+```
+
+**Recommended expiration times:**
+
+- **Development/testing**: `'24h'` or `'1 week'`
+- **Production dashboards**: `'1h'` to `'4h'`
+- **Production charts**: `'24h'` (if used in public pages)
+- **Explore sessions**: `'4h'` to `'8h'` (longer for analysis sessions)
+
+<Warning>
+Always generate tokens server-side with short expiration times. Never generate long-lived tokens in frontend code.
+</Warning>
+
+## Code examples
+
+### Node.js
+
+```javascript
+import jwt from 'jsonwebtoken';
+
+const LIGHTDASH_EMBED_SECRET = process.env.LIGHTDASH_EMBED_SECRET;
+const projectUuid = 'your-project-uuid';
+
+// Dashboard embed
+const dashboardToken = jwt.sign({
+  content: {
+    type: 'dashboard',
+    dashboardUuid: 'dashboard-uuid',
+    dashboardFiltersInteractivity: { enabled: 'all' },
+    canExportCsv: true,
+  },
+  userAttributes: { tenant_id: 'tenant-123' },
+}, LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
+
+const dashboardUrl = `https://app.lightdash.cloud/embed/${projectUuid}/dashboard/dashboard-uuid#${dashboardToken}`;
+
+// Chart embed
+const chartToken = jwt.sign({
+  content: {
+    type: 'chart',
+    contentId: 'chart-uuid',
+    canExportCsv: true,
+  },
+}, LIGHTDASH_EMBED_SECRET, { expiresIn: '24h' });
+
+const chartUrl = `https://app.lightdash.cloud/embed/${projectUuid}/chart/chart-uuid#${chartToken}`;
+```
+
+### Python
+
+```python
+import jwt
+import datetime
+import os
+
+LIGHTDASH_EMBED_SECRET = os.getenv('LIGHTDASH_EMBED_SECRET')
+project_uuid = 'your-project-uuid'
+
+# Dashboard embed
+dashboard_payload = {
+    'content': {
+        'type': 'dashboard',
+        'dashboardUuid': 'dashboard-uuid',
+        'dashboardFiltersInteractivity': { 'enabled': 'all' },
+        'canExportCsv': True,
+    },
+    'userAttributes': { 'tenant_id': 'tenant-123' },
+    'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+}
+
+dashboard_token = jwt.encode(dashboard_payload, LIGHTDASH_EMBED_SECRET, algorithm='HS256')
+dashboard_url = f"https://app.lightdash.cloud/embed/{project_uuid}/dashboard/dashboard-uuid#{dashboard_token}"
+
+# Chart embed
+chart_payload = {
+    'content': {
+        'type': 'chart',
+        'contentId': 'chart-uuid',
+        'canExportCsv': True,
+    },
+    'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+}
+
+chart_token = jwt.encode(chart_payload, LIGHTDASH_EMBED_SECRET, algorithm='HS256')
+chart_url = f"https://app.lightdash.cloud/embed/{project_uuid}/chart/chart-uuid#{chart_token}"
+```
+
+### Ruby
+
+```ruby
+require 'jwt'
+
+lightdash_embed_secret = ENV['LIGHTDASH_EMBED_SECRET']
+project_uuid = 'your-project-uuid'
+
+# Dashboard embed
+dashboard_payload = {
+  content: {
+    type: 'dashboard',
+    dashboardUuid: 'dashboard-uuid',
+    dashboardFiltersInteractivity: { enabled: 'all' },
+    canExportCsv: true
+  },
+  userAttributes: { tenant_id: 'tenant-123' },
+  exp: Time.now.to_i + 3600  # 1 hour
+}
+
+dashboard_token = JWT.encode(dashboard_payload, lightdash_embed_secret, 'HS256')
+dashboard_url = "https://app.lightdash.cloud/embed/#{project_uuid}/dashboard/dashboard-uuid##{dashboard_token}"
+
+# Chart embed
+chart_payload = {
+  content: {
+    type: 'chart',
+    contentId: 'chart-uuid',
+    canExportCsv: true
+  },
+  exp: Time.now.to_i + 86400  # 24 hours
+}
+
+chart_token = JWT.encode(chart_payload, lightdash_embed_secret, 'HS256')
+chart_url = "https://app.lightdash.cloud/embed/#{project_uuid}/chart/chart-uuid##{chart_token}"
+```
+
+### Java
+
+```java
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+
+String LIGHTDASH_EMBED_SECRET = System.getenv("LIGHTDASH_EMBED_SECRET");
+String projectUuid = "your-project-uuid";
+
+// Dashboard embed
+Map<String, Object> dashboardContent = new HashMap<>();
+dashboardContent.put("type", "dashboard");
+dashboardContent.put("dashboardUuid", "dashboard-uuid");
+dashboardContent.put("canExportCsv", true);
+
+Map<String, Object> userAttrs = new HashMap<>();
+userAttrs.put("tenant_id", "tenant-123");
+
+Map<String, Object> dashboardClaims = new HashMap<>();
+dashboardClaims.put("content", dashboardContent);
+dashboardClaims.put("userAttributes", userAttrs);
+
+String dashboardToken = Jwts.builder()
+    .setClaims(dashboardClaims)
+    .setExpiration(new Date(System.currentTimeMillis() + 3600000)) // 1 hour
+    .signWith(SignatureAlgorithm.HS256, LIGHTDASH_EMBED_SECRET)
+    .compact();
+
+String dashboardUrl = String.format(
+    "https://app.lightdash.cloud/embed/%s/dashboard/dashboard-uuid#%s",
+    projectUuid, dashboardToken
+);
+```
+
+## Security best practices
+
+### Never expose embed secret
+
+```javascript
+// ❌ BAD: Never do this
+const token = jwt.sign(payload, 'my-secret-key');  // Hardcoded secret
+
+// ✅ GOOD: Use environment variables
+const token = jwt.sign(payload, process.env.LIGHTDASH_EMBED_SECRET);
+```
+
+### Generate tokens server-side only
+
+```javascript
+// ❌ BAD: Don't generate tokens in frontend/browser
+// This exposes your secret!
+
+// ✅ GOOD: Create a backend API endpoint
+app.get('/api/embed-token', authenticateUser, (req, res) => {
+  const token = jwt.sign({
+    content: { type: 'dashboard', dashboardUuid: 'xyz' },
+    userAttributes: { tenant_id: req.user.tenantId },
+  }, process.env.SECRET);
+
+  res.json({ token });
+});
+```
+
+### Use short-lived tokens
+
+```javascript
+// ✅ GOOD: Tokens expire quickly
+jwt.sign(payload, secret, { expiresIn: '1h' })
+
+// ⚠️ CAUTION: Long-lived tokens are riskier
+jwt.sign(payload, secret, { expiresIn: '30d' })
+```
+
+### Validate user ownership
+
+```javascript
+app.get('/api/embed-token', authenticateUser, async (req, res) => {
+  const user = await getUser(req.user.id);
+  const requestedDashboard = req.query.dashboardId;
+
+  // ✅ Verify user has access to dashboard
+  if (!userHasAccessTo(user, requestedDashboard)) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  const token = jwt.sign({ content: { ... } }, secret);
+  res.json({ token });
+});
+```
+
+### Use user attributes for row-level security
+
+```javascript
+// ✅ Filter data by user's tenant
+{
+  userAttributes: {
+    tenant_id: user.tenantId,  // From server-side user object
+  }
+}
+```
+
+See [User attributes reference](/references/user-attributes) for complete implementation guide.
+
+## See also
+
+<CardGroup cols={2}>
+  <Card title="iframe embedding reference" icon="code" href="/references/iframe-embedding">
+    URL patterns and HTML embedding details
+  </Card>
+
+  <Card title="React SDK reference" icon="react" href="/references/react-sdk">
+    Component API for React integration
+  </Card>
+
+  <Card title="Embedding quickstart" icon="rocket" href="/guides/how-to-embed-content">
+    Get started with embedding in 5 minutes
+  </Card>
+
+  <Card title="User attributes" icon="shield-check" href="/references/user-attributes">
+    Implement row-level security
+  </Card>
+</CardGroup>

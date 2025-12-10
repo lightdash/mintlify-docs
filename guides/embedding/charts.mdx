@@ -1,0 +1,344 @@
+---
+title: "How to Embed Charts"
+sidebarTitle: "Charts"
+description: "Learn how to embed individual Lightdash charts with minimal UI for focused, single-metric displays"
+---
+
+import EmbedAvailability from 'snippets/embedding-availability.mdx'
+
+<EmbedAvailability />
+
+## Overview
+
+Chart embedding allows you to display single saved charts from Lightdash in your application with a minimal, focused interface. Unlike dashboard embedding, chart embeds are scoped to a specific chart and provide a clean, distraction-free view of a single visualization.
+
+<Warning>
+Chart embedding is **only available via the React SDK**. iframe embedding for charts is not currently supported.
+</Warning>
+
+### When to use chart embedding
+
+- **Single KPI displays**: Show one key metric or visualization
+- **Embedded widgets**: Add analytics widgets to application pages
+- **Marketing pages**: Display metrics on public-facing pages
+- **Minimal UI requirements**: When you need a clean, focused display
+- **Scoped access**: Grant access to specific charts only, not entire dashboards
+
+### Key differences from dashboard embedding
+
+| Feature | Dashboard Embedding | Chart Embedding |
+|---------|-------------------|-----------------|
+| **Embedding method** | iframe or React SDK | React SDK only |
+| **Content** | Multiple tiles, tabs | Single chart only |
+| **Filters** | Interactive dashboard filters | No filters (pre-configured) |
+| **JWT scope** | Dashboard UUID | Scoped to chart UUID |
+| **UI** | Full dashboard interface | Minimal chart view |
+| **Explore** | Can navigate to explore | Cannot access explore |
+
+### Available features
+
+Chart embedding supports:
+- All chart types (bar, line, pie, table, big number, etc.)
+- Parameterized charts with pre-set values
+- Export to CSV (if enabled)
+- Export to PNG/images (if enabled)
+- View underlying data (if enabled)
+
+<Warning>
+Chart embeds are **read-only**. Users cannot modify the chart configuration, apply filters, or access the underlying data model.
+</Warning>
+
+## Setup
+
+### Configure allowed charts
+
+Add the charts you want to embed to your project's embed settings. Navigate to **Settings → Embed** and add specific charts to the allowed list.
+
+<Frame>
+  <img src="/images/guides/embed-add-chart.png" alt="Add allowed charts"/>
+</Frame>
+
+## Embedding with React SDK
+
+Chart embedding requires the Lightdash React SDK for seamless integration in your React application.
+
+<Info>
+See the [React SDK reference](/references/react-sdk) for installation, setup, and complete configuration options.
+</Info>
+
+### Basic usage
+
+```tsx
+import Lightdash from '@lightdash/sdk';
+
+function MyChart() {
+  return (
+    <Lightdash.Chart
+      instanceUrl="https://app.lightdash.cloud"
+      id="your-chart-uuid"
+      token={generateToken()} // Server-side function
+    />
+  );
+}
+```
+
+### Component props
+
+```typescript
+type ChartProps = {
+  instanceUrl: string;                    // Required: Your Lightdash instance URL
+  id: string;                             // Required: Chart UUID (savedQueryUuid)
+  token: string | Promise<string>;        // Required: JWT token
+  styles?: {
+    backgroundColor?: string;             // Chart background color or 'transparent'
+    fontFamily?: string;                  // Font family for text
+  };
+  contentOverrides?: LanguageMap;         // Translation/localization overrides
+};
+```
+
+<Info>
+Unlike the Dashboard component, Chart does not support `filters` or `onExplore` props since charts are read-only and cannot navigate to explore.
+</Info>
+
+#### Advanced example with styling
+
+```tsx
+import Lightdash from '@lightdash/sdk';
+
+<Lightdash.Chart
+  instanceUrl="https://app.lightdash.cloud"
+  id="your-chart-uuid"
+  token={await generateToken()}
+  styles={{
+    backgroundColor: 'white',
+    fontFamily: 'Inter, sans-serif',
+  }}
+/>
+```
+
+## Configuring features
+
+Control what users can do with your embedded chart by configuring feature options. These options work for both iframe and React SDK embedding methods and are set in the JWT token.
+
+### Export CSV
+
+Export CSV allows users to download the raw data behind the chart as a CSV file, useful for further analysis in spreadsheet applications.
+
+**Configure in JWT token:**
+
+```javascript
+{
+  content: {
+    type: 'chart',
+    contentId: 'your-chart-uuid',
+    canExportCsv: true,
+  }
+}
+```
+
+When enabled, users see a "Download CSV" option in the chart's menu.
+
+### Export images
+
+Export images allows users to download the chart visualization as a PNG image file, useful for presentations and reports.
+
+**Configure in JWT token:**
+
+```javascript
+{
+  content: {
+    type: 'chart',
+    contentId: 'your-chart-uuid',
+    canExportImages: true,
+  }
+}
+```
+
+### View underlying data
+
+View underlying data shows users the raw data table behind the chart, making it easy to inspect the actual values and records that create the visualization.
+
+**Configure in JWT token:**
+
+```javascript
+{
+  content: {
+    type: 'chart',
+    contentId: 'your-chart-uuid',
+    canViewUnderlyingData: true,
+  }
+}
+```
+
+### Complete configuration example
+
+```javascript
+import jwt from 'jsonwebtoken';
+
+const token = jwt.sign({
+  content: {
+    type: 'chart',
+    projectUuid: 'your-project-uuid',
+    contentId: 'your-chart-uuid',
+
+    // Export capabilities
+    canExportCsv: true,
+    canExportImages: true,
+    canViewUnderlyingData: true,
+  },
+
+  // User information (for analytics)
+  user: {
+    externalId: 'user-123',
+    email: 'user@example.com',
+  },
+}, LIGHTDASH_EMBED_SECRET, { expiresIn: '24h' });
+```
+
+## Limitations
+
+Chart embeds have the following limitations compared to dashboard embeds:
+
+### Cannot modify charts
+Charts are always read-only. Users cannot:
+- Change dimensions or metrics
+- Apply filters
+- Modify chart configuration
+- Change visualization type
+
+### No filter support
+Charts use their saved filter configuration. You cannot:
+- Add interactive filters
+- Apply filters programmatically via SDK
+- Change filter values at runtime
+
+### No explore access
+Users cannot:
+- Navigate to the explore view
+- Access the underlying data model
+- Run custom queries
+- View or edit SQL
+
+### Scoped permissions
+The JWT token is scoped to the specific chart UUID in `contentId`. Users cannot:
+- Access other charts not in the token
+- View project configuration
+- Access explore metadata
+
+<Info>
+If you need filter interactivity or exploration capabilities, consider using [dashboard embedding](/guides/embedding/dashboards) instead or contact us with your use-case.
+</Info>
+
+## Use cases and examples
+
+### Single KPI widget
+
+Display a key performance indicator in your application dashboard:
+
+```tsx
+<div className="kpi-widget">
+  <h3>Monthly Revenue</h3>
+  <Lightdash.Chart
+    instanceUrl="https://app.lightdash.cloud"
+    id="revenue-chart-uuid"
+    token={token}
+    styles={{ backgroundColor: 'transparent' }}
+  />
+</div>
+```
+
+### Embedded metric in marketing page
+
+Show a public-facing metric on your website:
+
+```html
+<section class="metrics">
+  <div class="metric">
+    <h2>Active Users</h2>
+    <iframe
+      src="https://app.lightdash.cloud/embed/project-uuid/chart/active-users-uuid#token"
+      width="300"
+      height="200"
+      frameborder="0"
+    ></iframe>
+  </div>
+</section>
+```
+
+### Parameterized chart
+
+Display a chart with pre-set parameter values:
+
+```javascript
+// Chart is saved with a parameter for "region"
+// Pass parameter value in the chart configuration
+const token = jwt.sign({
+  content: {
+    type: 'chart',
+    contentId: 'sales-by-region-uuid',
+    canExportCsv: true,
+  },
+}, LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
+```
+
+<Info>
+Parameter values are set when the chart is saved. Chart embeds display the chart with its saved parameter configuration.
+</Info>
+
+## Advanced features
+
+### User metadata for analytics
+
+Pass user information to track who's viewing your embedded charts.
+
+```javascript
+{
+  user: {
+    externalId: 'user-123',       // Your internal user ID
+    email: 'user@example.com',    // User's email
+  }
+}
+```
+
+This metadata appears in [query tags](/references/usage-analytics#query-tags) in Lightdash usage analytics.
+
+### Custom styling (SDK only)
+
+Apply custom styling to match your application's design.
+
+```tsx
+<Lightdash.Chart
+  instanceUrl="https://app.lightdash.cloud"
+  id="chart-uuid"
+  token={token}
+  styles={{
+    backgroundColor: 'transparent',
+    fontFamily: 'Helvetica, Arial, sans-serif',
+  }}
+/>
+```
+
+### Localization (SDK only)
+
+Translate embedded charts using the `contentOverrides` prop. See [React SDK localization](/references/react-sdk#localization) for details.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Embedding dashboards" icon="grid-2" href="/guides/embedding/dashboards">
+    Embed multiple charts with filters and interactivity
+  </Card>
+
+  <Card title="iframe embedding reference" icon="code" href="/references/iframe-embedding">
+    Complete iframe URL patterns and HTML embedding
+  </Card>
+
+  <Card title="Embedding API reference" icon="book" href="/references/embedding">
+    Complete JWT token structure documentation
+  </Card>
+
+  <Card title="React SDK reference" icon="react" href="/references/react-sdk">
+    Complete SDK component documentation
+  </Card>
+</CardGroup>
