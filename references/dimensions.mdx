@@ -415,6 +415,42 @@ You can set custom versions of time intervals by using additional dimensions and
               groups: ["Delivery Date"]
 ```
 
+### Reference time intervals in other dimensions
+
+You can reference specific time intervals of a dimension in other dimensions. When you define time intervals for a dimension (like `session_start`), Lightdash creates separate dimensions for each interval (e.g., `session_start_day`, `session_start_month`). You can reference these in custom SQL for other dimensions.
+
+For example, if you have a `user_created_at` dimension with time intervals defined, you can calculate the duration between two dates using the `DAY` interval:
+
+```yaml
+  - name: user_created_at
+    meta:
+      dimension:
+        type: timestamp
+        time_intervals:
+        - DAY_OF_WEEK_NAME
+        - WEEK
+        - MONTH
+        - RAW
+        - DAY
+        - HOUR_OF_DAY_NUM
+        - QUARTER
+  - name: first_purchase_at
+    meta:
+      dimension:
+        type: timestamp
+        time_intervals:
+        - DAY
+        - MONTH
+        - QUARTER
+  - name: duration
+    meta:
+      dimension:
+        type: number
+        sql: EXTRACT(DAY FROM ${first_purchase_at_day} - ${user_created_at_day})
+```
+
+In this example, `${user_created_at_day}` and `${first_purchase_at_day}` reference the `DAY` time interval versions of the `user_created_at` and `first_purchase_at` dimensions.
+
 ## Groups
 
 You can group your dimensions and metrics in the sidebar using the `groups` parameter.
@@ -948,3 +984,34 @@ models:
               type: max
               sql: ${version}
 ```
+
+### Referencing time intervals in additional dimensions
+
+You can reference time interval dimensions within additional dimensions. This is useful for creating custom logic based on specific time intervals.
+
+For example, you can create a tier based on whether a specific time interval has a value:
+
+```yaml
+  - name: session_start
+    meta:
+      dimension:
+        type: timestamp
+        time_intervals:
+        - DAY_OF_WEEK_NAME
+        - WEEK
+        - MONTH
+        - RAW
+        - DAY
+        - HOUR_OF_DAY_NUM
+        - QUARTER
+      additional_dimensions:
+        extra_session_start_tier:
+          type: string
+          sql: |
+            CASE 
+              WHEN ${session_start_month} IS NOT NULL THEN 'month' 
+              ELSE 'else'
+            END
+```
+
+In this example, the additional dimension `extra_session_start_tier` references `${session_start_month}`, which is the `MONTH` time interval of the `session_start` dimension.
