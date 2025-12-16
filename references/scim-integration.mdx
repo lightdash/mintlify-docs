@@ -127,6 +127,59 @@ This document describes the steps required to integrate SCIM into your Enterpris
 
       For example, if a user is provisioned as inactive or is deactivated in Okta, that user will still exist in Lightdash marked as inactive, meaning they will be unable to use the platform.
     </Info>
+
+    ### Step 3 - Managing Roles in Okta (Optional)
+
+    #### Create Attributes for Role Management
+
+    1. Go to **Provisioning \> Profile Editor**.
+    2. Click **Add attribute** to create attributes for organization and project roles.
+
+    **For Organization Role:**
+    - **Variable name**: `org_role` (or your preferred name)
+    - **External name**: `roles.^[type=='org'].value`
+    - **External namespace**: `urn:ietf:params:scim:schemas:core:2.0:User`
+
+    <Frame>
+      ![](/images/references/scim-okta-org-role-attribute.png)
+    </Frame>
+
+    **For Project Roles:**
+    - **Variable name**: `project_role` (or your preferred name)
+    - **External name**: `roles.^[type=='project_name'].value`
+    - **External namespace**: `urn:ietf:params:scim:schemas:core:2.0:User`
+
+    <Warning>
+      **Note**: Okta doesn't work as expected if using double quotes and other special characters in the project name when creating role attributes.
+    </Warning>
+
+    <Frame>
+      ![](/images/references/scim-okta-project-role-attribute.png)
+    </Frame>
+
+    #### Define Role Mappings
+
+    1. In the **Profile Editor**, go to **Mappings \> Okta User to Lightdash**.
+    2. Configure mappings based on Okta group membership.
+
+    **For Organization Role Mapping:**
+    ```
+    isMemberOfGroupName("Lightdash - Admin") ? 'admin' :
+    isMemberOfGroupName("Lightdash - Editor") ? 'editor' : 'member'
+    ```
+
+    **For Project Role Mapping:**
+    ```
+    isMemberOfGroupName("Marketing - Admin") ? '3675b69e-8324-4110-bdca-059031aa8da3:admin' :
+    isMemberOfGroupName("Marketing - Editor") ? '3675b69e-8324-4110-bdca-059031aa8da3:editor' :
+    '3675b69e-8324-4110-bdca-059031aa8da3:no-role'
+    ```
+
+    Replace `3675b69e-8324-4110-bdca-059031aa8da3` with your actual project UUID and adjust group names to match your Okta groups.
+
+    <Frame>
+      ![](/images/references/scim-okta-role-mapping.png)
+    </Frame>
   </Accordion>
   <Accordion title="Azure">
     <Info>
@@ -199,6 +252,7 @@ You can find the full API docs and examples for SCIM [here](https://docs.lightda
 - A user must have an organization role.
 - On creation, if no `roles` are provided, the organization role will default to `member`.
 - On edit (PUT/PATCH), if no `roles` are provided, no changes are made to the user's roles.
+- A user's project role will be removed if there is no entry for it in the SCIM request, or if there is a value `<project_uuid>:no-role`. This allows for explicit role removal from projects.
 - To reduce data pollution, roles for preview projects cannot be managed via SCIM, as those projects are intended to be short‑lived.
 
 ### Can the IdP-provided SCIM email be trusted?
