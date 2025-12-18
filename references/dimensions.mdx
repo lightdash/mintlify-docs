@@ -12,30 +12,18 @@ Read more about [adding dimensions to your project in our docs here](/get-starte
 
 For a dimension to appear in Lightdash, you just need to declare it in your dbt model's YAML file.
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: my_model
-        columns:
-          - name: user_id # will be "User id" in LightDash
-            description: "Unique identifier for a user."
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+">
-    ```yaml
-    models:
-      - name: my_model
-        columns:
-          - name: user_id # will be "User id" in LightDash
-            description: "Unique identifier for a user."
-    ```
-  </Tab>
-</Tabs>
+```yaml
+models:
+  - name: my_model
+    columns:
+      - name: user_id # will be "User id" in LightDash
+        description: "Unique identifier for a user."
+```
+
 
 ## Dimension configuration
 
-To customize the dimension, you can do it in your dbt model's YAML file.
+To customize the dimension, you can do it in your dbt model's YAML file under the `meta` tag. The syntax depends on your dbt version.
 
 If you want to declare multiple dimensions based on the same column, check [additional dimensions](#additional-dimensions) section.
 
@@ -123,13 +111,13 @@ If you want to declare multiple dimensions based on the same column, check [addi
   </Tab>
 </Tabs>
 
-All the properties you can customize:
+The table below shows all the dimension properties you can customize:
 
 | Property | Required | Value  | Description |
 | :------- | :------- | :----- | :---------- |
 | label    | No       | string | Custom label. If you set this property, this is what you'll see in Lightdash instead of the dimension name. |
 | [type](#type) | No  | Dimension type | The dimension type is automatically pulled from your table schemas in Lightdash but you can override the type using this property. |
-| description | No    | string | Description of the dimension in Lightdash. You can use this to override the description you have for the dimension in dbt. |
+| [description](#description) | No    | string | Description of the dimension in Lightdash. You can use this to override the description you have for the dimension in dbt. |
 | sql | No            | string | Custom SQL applied to the column used to define the dimension. |
 | [time_intervals](#time-intervals) | No | 'default' or OFF or an array[] containing elements of [date](#date-options), [numeric](#numeric-options) or [string](#string-options) options | 'default' (or not setting the time_intervals property) will be converted into ['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR'] for dates and ['RAW', 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR'] for timestamps; if you want no time intervals set 'OFF'. |
 | hidden | No       | boolean | If set to true, the dimension is hidden from Lightdash. By default, this is set to false if you don't include this property. |
@@ -458,15 +446,26 @@ Lightdash breaks this out into the default intervals automatically. So, this is 
   If you want to apply different formats for different time intervals, we recommend creating [additional dimensions](#additional-dimensions) for time intervals where you want to customize the format.
 </Info>
 
-### By default, the time intervals we use are:
 
-**Date**: ['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']
+### Default time intervals
 
-**Timestamp**: ['RAW', 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']
+The default time intervals that Lightdash adds are...
 
-### To turn off time intervals for a dimension, set `time_intervals: OFF`
+**For `date` type**: 
 
-If you want to turn off time intervals for a dimension, you can simply set the `time_intervals` property to `OFF`.
+```yaml
+['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']
+```
+
+**For `timestamp` type**: 
+
+```yaml
+['RAW', 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']
+```
+
+### Disable time intervals
+
+If you want to turn off time intervals for a dimension, you set the `time_intervals` property to `OFF`.
 
 In this example, `created` would now appear as a single, timestamp dimension without a drop-down list of time intervals in Lightdash:
 
@@ -477,6 +476,7 @@ In this example, `created` would now appear as a single, timestamp dimension wit
       description: 'Timestamp when the user was created.'
       meta:
         dimension:
+          type: timestamp
           time_intervals: OFF
     ```
   </Tab>
@@ -487,6 +487,7 @@ In this example, `created` would now appear as a single, timestamp dimension wit
       config:
         meta:
           dimension:
+            type: timestamp
             time_intervals: OFF
     ```
   </Tab>
@@ -495,6 +496,7 @@ In this example, `created` would now appear as a single, timestamp dimension wit
 <Frame>
   ![screenshot-intervals-off](/images/references/screenshot-intervals-off-e786a3290b6c8b8454fe7f223a5682d8.png)
 </Frame>
+
 
 ### To customize the time intervals for a dimension, you can use the `time_intervals` parameter.
 
@@ -569,8 +571,29 @@ You can see all of the standard interval options for date and timestamp fields b
 
 You can set custom versions of time intervals by using additional dimensions and groups. Here's an example of how that might look if you wanted to add `year_of_week_iso` to your drop down list for the `delivery_date` dimension. Note that by definiting the `groups:` option, we ensure that the new "Year of week" options is displayed as expected.
 
-```
-      - name: delivery_date
+
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    - name: delivery_date
+      meta:
+        dimension:
+          label: "Delivery Date"
+          type: date
+          time_intervals: [ ... ]
+        additional_dimensions:
+          year_of_week_num:
+            type: number
+            label: "Year of week"
+            sql: "yearofweekiso(${delivery_date})"
+            groups: ["Delivery Date"]
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    - name: delivery_date
+      config:
         meta:
           dimension:
             label: "Delivery Date"
@@ -582,7 +605,10 @@ You can set custom versions of time intervals by using additional dimensions and
               label: "Year of week"
               sql: "yearofweekiso(${delivery_date})"
               groups: ["Delivery Date"]
-```
+    ```
+  </Tab>
+</Tabs>
+
 
 ## Groups
 
@@ -737,7 +763,7 @@ The `${ value.formatted }` will be replaced with the value of the company name i
 
 ### You can reference values from other columns in your URLs
 
-You can reference another dimension from your table in your URL. For these URLs to work, the other column you've referenced needs to be included in your results table. For example, say I’ve added a URL to `company_name` and it uses the field `customer_id`:
+You can reference another dimension from your table in your URL. For these URLs to work, the other column you've referenced needs to be included in your results table. For example, say I've added a URL to `company_name` and it uses the field `customer_id`:
 
 <Tabs>
   <Tab title="dbt v1.9 and earlier">
@@ -768,6 +794,7 @@ You can reference another dimension from your table in your URL. For these URLs 
 </Tabs>
 
 This URL will only work if I have `customer_id` included in my results table.
+
 
 ### Liquid Templating
 
@@ -845,6 +872,7 @@ In the example below, only users with `is_admin` attribute `true` can use the `s
 
 If a user without access to this dimension runs a query that contains this dimension, they will get a `Forbidden` error.
 
+
 ### Current limitations
 
 Lightdash dimensions and custom metrics are protected by this feature, however, it is possible to write custom SQL to bypass this filter, for example:
@@ -855,6 +883,7 @@ Lightdash dimensions and custom metrics are protected by this feature, however, 
 <Info>
   Scheduler deliveries will run against the user who created the scheduled delivery, be careful when sharing required attributes with other users.
 </Info>
+
 
 ## Color
 
@@ -906,6 +935,7 @@ You can predefine colors for your string type dimensions, these colors will be u
   These colors will also take precedence over the organization color palette.
 </Info>
 
+
 ## Image Display
 
 <Warning>
@@ -913,6 +943,7 @@ You can predefine colors for your string type dimensions, these colors will be u
 </Warning>
 
 You can configure dimensions to display images in table cells using URL templates. Images are rendered as thumbnails with hover tooltips showing larger previews, perfect for visualizing product images, user avatars, or any other image-based data.
+
 
 ### How it works
 
@@ -1056,12 +1087,14 @@ You can control the size and display behavior of images using width, height, and
   </Tab>
 </Tabs>
 
+
 ### Display behavior
 
 - **Thumbnails**: Images display as thumbnails in table cells (default: 32px height)
 - **Hover preview**: Hovering over a thumbnail reveals a larger preview via tooltip
 - **Error handling**: Failed image loads show a photo-off icon with error details in the tooltip
 - **Validation**: Invalid URL syntax is caught and displays an error state
+
 
 ### Image configuration properties
 
@@ -1129,6 +1162,7 @@ image:
 
 - **Dimensions only**: Image display is currently supported for dimensions and additional dimensions only (not metrics or table calculations)
 - **Referenced columns**: When using `${ row.table_name.column_name }` templates, the referenced column must be included in your results table for the image to display
+
 
 ### Example: Product catalog with images
 
@@ -1230,6 +1264,7 @@ image:
   </Tab>
 </Tabs>
 
+
 ## Using special characters or capital letters in your column names
 
 If you use special characters on your column names, you might get errors when using those columns on explore. For example, having a column named `Status` with capital S on a table named `orders` in postgres throws the following error:
@@ -1270,6 +1305,7 @@ SELECT
   "orders"."Status" AS "orders_status"
 FROM "postgres"."jaffle"."orders" AS "orders"
 ```
+
 
 ## Additional dimensions
 
@@ -1321,6 +1357,7 @@ All [dimension configurations](#dimension-configuration) are available for addit
   </Tab>
 </Tabs>
 
+
 ### Comparing or combining columns
 
 When defining additional dimensions, you can reference other dimensions, even from joined tables (`organizations` is a joined table in the example below).
@@ -1365,6 +1402,7 @@ When defining additional dimensions, you can reference other dimensions, even fr
   </Tab>
 </Tabs>
 
+
 ### Parsing JSON columns
 
 Usually you'll want to add `hidden:true` for the main JSON dimension since raw JSON is not useful in charts.
@@ -1399,49 +1437,113 @@ Usually you'll want to add `hidden:true` for the main JSON dimension since raw J
   </Tab>
 </Tabs>
 
+
 ### Adding multiple timezones for the same dimension
 
 You can use additional dimensions to convert a timestamp into multiple timezones:
 
-```yaml
-columns:
-  - name: created_at
-    description: 'The time that the thing was created'
-    meta:
-      dimension:
-        label: 'Created (UTC)'
-        type: timestamp
-      additional_dimensions:
-        created_at_est:
+
+
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+  ```yaml
+  columns:
+    - name: created_at
+      description: 'The time that the thing was created'
+      meta:
+        dimension:
+          label: 'Created (UTC)'
           type: timestamp
-          label: 'Created (EST)'
-          description: 'The time that the thing was created, in EST'
-          sql: "convert_timezone('UTC', 'America/New_York', ${TABLE}.created_at)"
-```
+        additional_dimensions:
+          created_at_est:
+            type: timestamp
+            label: 'Created (EST)'
+            description: 'The time that the thing was created, in EST'
+            sql: "convert_timezone('UTC', 'America/New_York', ${TABLE}.created_at)"
+  ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+  ```yaml
+  columns:
+    - name: created_at
+      description: 'The time that the thing was created'
+      config: 
+        meta:
+          dimension:
+            label: 'Created (UTC)'
+            type: timestamp
+          additional_dimensions:
+            created_at_est:
+              type: timestamp
+              label: 'Created (EST)'
+              description: 'The time that the thing was created, in EST'
+              sql: "convert_timezone('UTC', 'America/New_York', ${TABLE}.created_at)"
+  ```
+  </Tab>
+</Tabs>
+
+
+
+
 
 ### Using additional dimensions in metrics
 
 To define metrics based on additional dimensions, you need to add them to the model's meta metrics, or use custom SQL in defining them under the column's meta.
 
-```yaml
-models:
-  - name: users
-    meta:
-      metrics:
-        highest_version_model_metric_example:
-          type: max
-          sql: ${version}
-    columns:
-      - name: metadata
+
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+  ```yaml
+  models:
+    - name: users
+      meta:
+        metrics:
+          highest_version_model_metric_example:
+            type: max
+            sql: ${version}
+      columns:
+        - name: metadata
+          meta:
+            dimension:
+              hidden: true
+            additional_dimensions:
+              version:
+                type: number
+                sql: JSON_VALUE(${metadata}, '$.version')
+            metrics:
+              highest_version:
+                type: max
+                sql: ${version}
+  ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+  ```yaml
+  models:
+    - name: users
+      config:
         meta:
-          dimension:
-            hidden: true
-          additional_dimensions:
-            version:
-              type: number
-              sql: JSON_VALUE(${metadata}, '$.version')
           metrics:
-            highest_version:
+            highest_version_model_metric_example:
               type: max
               sql: ${version}
-```
+        columns:
+          - name: metadata
+            meta:
+              dimension:
+                hidden: true
+              additional_dimensions:
+                version:
+                  type: number
+                  sql: JSON_VALUE(${metadata}, '$.version')
+              metrics:
+                highest_version:
+                  type: max
+                  sql: ${version}
+  ```
+  </Tab>
+</Tabs>
+
+
+
