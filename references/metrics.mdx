@@ -13,21 +13,44 @@ In Lightdash, metrics are used to summarize dimensions or, sometimes, other metr
 
 To add a metric to Lightdash using the `meta` tag, you define it in your dbt project under the dimension name you're trying to describe/summarize.
 
-```yaml
-models:
-  - name: orders_model
-    columns:
-      - name: user_id # dimension your metric is aggregating
-        meta:
-          metrics:
-            distinct_user_ids: # name of your metric
-              type: count_distinct # metric type
-      - name: revenue # dimension your metric is aggregating
-        meta:
-          metrics:
-            sum_revenue: # name of your metric
-              type: sum # metric type
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders_model
+        columns:
+          - name: user_id # dimension your metric is aggregating
+            meta:
+              metrics:
+                distinct_user_ids: # name of your metric
+                  type: count_distinct # metric type
+          - name: revenue # dimension your metric is aggregating
+            meta:
+              metrics:
+                sum_revenue: # name of your metric
+                  type: sum # metric type
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: orders_model
+        columns:
+          - name: user_id # dimension your metric is aggregating
+            config:
+              meta:
+                metrics:
+                  distinct_user_ids: # name of your metric
+                    type: count_distinct # metric type
+          - name: revenue # dimension your metric is aggregating
+            config:
+              meta:
+                metrics:
+                  sum_revenue: # name of your metric
+                    type: sum # metric type
+    ```
+  </Tab>
+</Tabs>
 
 Once you've got the hang of what these metrics look like, read more about the [metric types you can use below.](#metric-types)
 
@@ -35,18 +58,37 @@ Once you've got the hang of what these metrics look like, read more about the [m
 
 Sometimes a metric references multiple columns, in these cases you can define the metric at the model level:
 
-```yaml
-models:
-  - name: orders_model
-    meta:
-      metrics:
-        revenue_per_user:
-          type: number
-          sql: ${sum_revenue} / ${distinct_user_ids}
-        sum_total_paid:
-          type: sum
-          sql: ${revenue} + ${taxes_paid}
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders_model
+        meta:
+          metrics:
+            revenue_per_user:
+              type: number
+              sql: ${sum_revenue} / ${distinct_user_ids}
+            sum_total_paid:
+              type: sum
+              sql: ${revenue} + ${taxes_paid}
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: orders_model
+        config:
+          meta:
+            metrics:
+              revenue_per_user:
+                type: number
+                sql: ${sum_revenue} / ${distinct_user_ids}
+              sum_total_paid:
+                type: sum
+                sql: ${revenue} + ${taxes_paid}
+    ```
+  </Tab>
+</Tabs>
 
 <Warning>
   **Non-aggregate metrics** (`number`, `boolean`, etc.) can only reference other metrics in `sql:` since they are inserted directly into the generated SQL query without being wrapped in an aggregate function.
@@ -90,40 +132,82 @@ Post calculation metrics are computed after aggregate and non-aggregate metrics 
 
 You can customize your metrics in your dbt model's YAML file. Here's an example of the properties used in defining a metric:
 
-```yaml
-models:
-  - name: sales_stats
-    meta:
-      joins:
-        - join: web_sessions
-          sql_on: ${web_sessions.date} = ${sales_stats.date}
-      group_details:
-        product_details:
-          label: Product Details
-          description: 'Fields that have information about the products in the basket.'
-        item_details:
-          label: Item Details
-          description: 'Fields that have information about the items in the basket.'
-    columns:
-      - name: revenue
-        description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: sales_stats
         meta:
-          metrics:
-            total_revenue:
-              label: 'Total revenue GBP'
-              type: SUM
-              description: 'Total revenue in GBP'
-              sql: 'IF(${revenue} IS NULL, 10, ${revenue})'
-              groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
-              hidden: false
-              format: '[$£]#,##0.00' # GBP rounded to two decimal points
-              show_underlying_values:
-                - revenue
-                - forecast_date
-                - web_sessions.session_id # field from joined table
-              filters:
-                - is_adjusted: true
-```
+          joins:
+            - join: web_sessions
+              sql_on: ${web_sessions.date} = ${sales_stats.date}
+          group_details:
+            product_details:
+              label: Product Details
+              description: 'Fields that have information about the products in the basket.'
+            item_details:
+              label: Item Details
+              description: 'Fields that have information about the items in the basket.'
+        columns:
+          - name: revenue
+            description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
+            meta:
+              metrics:
+                total_revenue:
+                  label: 'Total revenue GBP'
+                  type: SUM
+                  description: 'Total revenue in GBP'
+                  sql: 'IF(${revenue} IS NULL, 10, ${revenue})'
+                  groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
+                  hidden: false
+                  format: '[$£]#,##0.00' # GBP rounded to two decimal points
+                  show_underlying_values:
+                    - revenue
+                    - forecast_date
+                    - web_sessions.session_id # field from joined table
+                  filters:
+                    - is_adjusted: true
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: sales_stats
+        config:
+          meta:
+            joins:
+              - join: web_sessions
+                sql_on: ${web_sessions.date} = ${sales_stats.date}
+            group_details:
+              product_details:
+                label: Product Details
+                description: 'Fields that have information about the products in the basket.'
+              item_details:
+                label: Item Details
+                description: 'Fields that have information about the items in the basket.'
+        columns:
+          - name: revenue
+            description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
+            config:
+              meta:
+                metrics:
+                  total_revenue:
+                    label: 'Total revenue GBP'
+                    type: SUM
+                    description: 'Total revenue in GBP'
+                    sql: 'IF(${revenue} IS NULL, 10, ${revenue})'
+                    groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
+                    hidden: false
+                    format: '[$£]#,##0.00' # GBP rounded to two decimal points
+                    show_underlying_values:
+                      - revenue
+                      - forecast_date
+                      - web_sessions.session_id # field from joined table
+                    filters:
+                      - is_adjusted: true
+    ```
+  </Tab>
+</Tabs>
 
 Here are all of the properties you can customize:
 
@@ -169,15 +253,31 @@ The `percentile` metric can be used on any numeric dimension or, [for custom SQL
 
 For example, this creates a metric `median_price` by taking the 50% percentile of the `item_price` dimension:
 
-```yaml
-columns:
-  - name: item_price
-    meta:
-      metrics:
-        median_price:
-          type: percentile
-          percentile: 50
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: item_price
+        meta:
+          metrics:
+            median_price:
+              type: percentile
+              percentile: 50
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: item_price
+        config:
+          meta:
+            metrics:
+              median_price:
+                type: percentile
+                percentile: 50
+    ```
+  </Tab>
+</Tabs>
 
 ### median
 
@@ -187,14 +287,29 @@ The `median` metric can be used on any numeric dimension or, [for custom SQL](#u
 
 For example, this creates a metric `median_price` by taking the 50% percentile of the `item_price` dimension:
 
-```yaml
-columns:
-  - name: item_price
-    meta:
-      metrics:
-        median_price:
-          type: median
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: item_price
+        meta:
+          metrics:
+            median_price:
+              type: median
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: item_price
+        config:
+          meta:
+            metrics:
+              median_price:
+                type: median
+    ```
+  </Tab>
+</Tabs>
 
 ### average
 
@@ -204,14 +319,29 @@ The `average` metric can be used on any numeric dimension or, [for custom SQL](#
 
 For example, this creates a metric `avg_price` by taking the average of the `item_price` dimension:
 
-```yaml
-columns:
-  - name: item_price
-    meta:
-      metrics:
-        avg_price:
-          type: average
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: item_price
+        meta:
+          metrics:
+            avg_price:
+              type: average
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: item_price
+        config:
+          meta:
+            metrics:
+              avg_price:
+                type: average
+    ```
+  </Tab>
+</Tabs>
 
 ### boolean
 
@@ -223,17 +353,35 @@ The `boolean` metric can be used on any valid SQL expression that gives you a `T
 
 For example, the `avg_price` metric below is an average of all of the `item_price` values in our product table. A second metric called `is_avg_price_above_20` is a `boolean` type metric. The `is_avg_price_above_20` metric has a custom SQL expression that tells us whether the `avg_price` value is greater than 20.
 
-```yaml
-columns:
-  - name: item_price
-    meta:
-      metrics:
-        avg_price:
-          type: average
-        is_avg_price_above_20:
-          type: boolean
-          sql: 'IF(${avg_price} > 20, TRUE, FALSE)'
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: item_price
+        meta:
+          metrics:
+            avg_price:
+              type: average
+            is_avg_price_above_20:
+              type: boolean
+              sql: 'IF(${avg_price} > 20, TRUE, FALSE)'
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: item_price
+        config:
+          meta:
+            metrics:
+              avg_price:
+                type: average
+              is_avg_price_above_20:
+                type: boolean
+                sql: 'IF(${avg_price} > 20, TRUE, FALSE)'
+    ```
+  </Tab>
+</Tabs>
 
 ### count
 
@@ -243,14 +391,29 @@ The `count` metric can be used on any dimension or, [for custom SQL](#using-cust
 
 For example, this creates a metric `number_of_users` by counting the number of `user_id` values in the table:
 
-```yaml
-columns:
-  - name: user_id
-    meta:
-      metrics:
-        number_of_users:
-          type: count
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: user_id
+        meta:
+          metrics:
+            number_of_users:
+              type: count
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: user_id
+        config:
+          meta:
+            metrics:
+              number_of_users:
+                type: count
+    ```
+  </Tab>
+</Tabs>
 
 ### count_distinct
 
@@ -260,14 +423,29 @@ The `count_distinct` metric can be used on any dimension or, [for custom SQL](#u
 
 For example, this creates a metric `number_of_unique_users` by counting the number of unique `user_id` values in the table:
 
-```yaml
-columns:
-  - name: user_id
-    meta:
-      metrics:
-        number_of_unique_users:
-          type: count_distinct
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: user_id
+        meta:
+          metrics:
+            number_of_unique_users:
+              type: count_distinct
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: user_id
+        config:
+          meta:
+            metrics:
+              number_of_unique_users:
+                type: count_distinct
+    ```
+  </Tab>
+</Tabs>
 
 ### date
 
@@ -279,17 +457,36 @@ The `date` metric can be used on any valid SQL expression that gives you a date 
 
 If you want to create a metric of a maximum or minimum date, you can't use `type: max` or of `type: min` metrics because these are only compatible with numeric type fields. Instead, you can calculate a maximum or minimum date by defining a metric of `type: date` and using some custom sql, like this:
 
-```yaml
-columns:
-  - name: created_at_date
-    meta:
-      dimension:
-        type: date
-      metrics:
-        max_created_at_date:
-          type: date
-          sql: MAX(${TABLE}.created_at_date)
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: created_at_date
+        meta:
+          dimension:
+            type: date
+          metrics:
+            max_created_at_date:
+              type: date
+              sql: MAX(${TABLE}.created_at_date)
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: created_at_date
+        config:
+          meta:
+            dimension:
+              type: date
+            metrics:
+              max_created_at_date:
+                type: date
+                sql: MAX(${TABLE}.created_at_date)
+    ```
+  </Tab>
+</Tabs>
+
 
 ### max
 
@@ -301,14 +498,29 @@ Because `type: max` metrics only work with numerical fields, you can't use them 
 
 For example, this creates a metric `max_delivery_cost` by looking at the `delivery_cost` dimension and taking the largest value it finds:
 
-```yaml
-columns:
-  - name: delivery_cost
-    meta:
-      metrics:
-        max_delivery_cost:
-          type: max
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: delivery_cost
+        meta:
+          metrics:
+            max_delivery_cost:
+              type: max
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: delivery_cost
+        config:
+          meta:
+            metrics:
+              max_delivery_cost:
+                type: max
+    ```
+  </Tab>
+</Tabs>
 
 ### min
 
@@ -320,14 +532,29 @@ Because `type: min` metrics only work with numerical fields, you can't use them 
 
 For example, this creates a metric `min_delivery_cost` by looking at the `delivery_cost` dimension and taking the smallest value it finds:
 
-```yaml
-columns:
-  - name: delivery_cost
-    meta:
-      metrics:
-        min_delivery_cost:
-          type: min
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: delivery_cost
+        meta:
+          metrics:
+            min_delivery_cost:
+              type: min
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: delivery_cost
+        config:
+          meta:
+            metrics:
+              min_delivery_cost:
+                type: min
+    ```
+  </Tab>
+</Tabs>
 
 ### number
 
@@ -337,22 +564,46 @@ The `number` metric can be used on any valid SQL expression that gives you a num
 
 For example, this creates a metric called `total_gross_profit_margin_percentage` based on the `total_sale_price` and `total_gross_profit_margin` aggregate metrics:
 
-```yaml
-columns:
-  - name: sale_price
-    meta:
-      metrics:
-        total_sale_price:
-          type: sum
-  - name: gross_profit_margin
-    meta:
-      metrics:
-        total_gross_profit_margin:
-          type: sum
-        total_gross_profit_margin_percentage:
-          type: number
-          sql: '(${total_gross_profit_margin}/ NULLIF(${total_sale_price},0))'
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: sale_price
+        meta:
+          metrics:
+            total_sale_price:
+              type: sum
+      - name: gross_profit_margin
+        meta:
+          metrics:
+            total_gross_profit_margin:
+              type: sum
+            total_gross_profit_margin_percentage:
+              type: number
+              sql: '(${total_gross_profit_margin}/ NULLIF(${total_sale_price},0))'
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: sale_price
+        config:
+          meta:
+            metrics:
+              total_sale_price:
+                type: sum
+      - name: gross_profit_margin
+        config:
+          meta:
+            metrics:
+              total_gross_profit_margin:
+                type: sum
+              total_gross_profit_margin_percentage:
+                type: number
+                sql: '(${total_gross_profit_margin}/ NULLIF(${total_sale_price},0))'
+    ```
+  </Tab>
+</Tabs>
 
 The example above also uses the NULLIF() SQL function to avoid division-by-zero errors.
 
@@ -364,28 +615,59 @@ The `sum` metric can be used on any numeric dimension or, [for custom SQL](#usin
 
 For example, this creates a metric `total_revenue` by adding up the values in the `revenue` dimension:
 
-```yaml
-columns:
-  - name: revenue
-    meta:
-      metrics:
-        total_revenue:
-          type: sum
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: revenue
+        meta:
+          metrics:
+            total_revenue:
+              type: sum
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: revenue
+        config:
+          meta:
+            metrics:
+              total_revenue:
+                type: sum
+    ```
+  </Tab>
+</Tabs>
 
 **What about sum distinct?** Lightdash does not have a `sum_distinct` metric type, but if your database supports it, you can call it directly by adding a number metric and using the `sql` argument (see example below).
 
 <Warning>In most cases it will be more accurate to use [Lightdash fanout protection](/references/joins#handling-fanouts) to de-duplicate values before summing rather than using `SUM(DISTINCT ...)` in your SQL. This is because `SUM(DISTINCT ...)` can give incorrect results if there are multiple rows with the same value.</Warning>
 
-```yaml
-columns:
-  - name: revenue
-    meta:
-      metrics:
-        total_revenue:
-          type: number
-          sql: 'SUM(DISTINCT ${revenue})'
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: revenue
+        meta:
+          metrics:
+            total_revenue:
+              type: number
+              sql: 'SUM(DISTINCT ${revenue})'
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: revenue
+        config:
+          meta:
+            metrics:
+              total_revenue:
+                type: number
+                sql: 'SUM(DISTINCT ${revenue})'
+    ```
+  </Tab>
+</Tabs>
 
 
 ### string
@@ -398,15 +680,31 @@ The `string` metric can be used on any valid SQL expression that gives you a str
 
 For example, this creates a metric `product_name_group` by combining the unique values of a dimension called `product_name`:
 
-```yaml
-columns:
-  - name: product_name
-    meta:
-      metrics:
-        product_name_group:
-          type: string
-          sql: 'GROUP_CONCAT(${TABLE}.product_name)'
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: product_name
+        meta:
+          metrics:
+            product_name_group:
+              type: string
+              sql: 'GROUP_CONCAT(${TABLE}.product_name)'
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: product_name
+        config:
+          meta:
+            metrics:
+              product_name_group:
+                type: string
+                sql: 'GROUP_CONCAT(${TABLE}.product_name)'
+    ```
+  </Tab>
+</Tabs>
 
 ### percent_of_previous
 
@@ -414,18 +712,37 @@ Returns the current value as a percentage of the previous row's value for a refe
 
 For example, to calculate the percent of the previous value of total revenue:
 
-```yaml
-models:
-  - name: orders_model
-    meta:
-      metrics:
-        total_revenue:
-          type: sum
-        revenue_percent_of_previous:
-          type: percent_of_previous
-          sql: ${total_revenue}
-          format: '0.00%'
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders_model
+        meta:
+          metrics:
+            total_revenue:
+              type: sum
+            revenue_percent_of_previous:
+              type: percent_of_previous
+              sql: ${total_revenue}
+              format: '0.00%'
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: orders_model
+        config:
+          meta:
+            metrics:
+              total_revenue:
+                type: sum
+              revenue_percent_of_previous:
+                type: percent_of_previous
+                sql: ${total_revenue}
+                format: '0.00%'
+    ```
+  </Tab>
+</Tabs>
 
 Note: If the previous value is 0 or NULL, the result will be NULL to avoid division-by-zero.
 <Warning>
@@ -438,18 +755,37 @@ Returns the current value as a percentage of the total across the result set (or
 
 For example, to calculate each row's percent of total revenue:
 
-```yaml
-models:
-  - name: orders_model
-    meta:
-      metrics:
-        total_revenue:
-          type: sum
-        revenue_percent_of_total:
-          type: percent_of_total
-          sql: ${total_revenue}
-          format: '0.00%'
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders_model
+        meta:
+          metrics:
+            total_revenue:
+              type: sum
+            revenue_percent_of_total:
+              type: percent_of_total
+              sql: ${total_revenue}
+              format: '0.00%'
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: orders_model
+        config:
+          meta:
+            metrics:
+              total_revenue:
+                type: sum
+              revenue_percent_of_total:
+                type: percent_of_total
+                sql: ${total_revenue}
+                format: '0.00%'
+    ```
+  </Tab>
+</Tabs>
 
 <Warning>
 **This is a post calculation metric** which is computed after other metrics. It can only reference aggregate and non-aggregate metrics (and cannot reference dimensions or other post calculation metrics).
@@ -461,17 +797,35 @@ Returns the cumulative total of a referenced metric according to the query's gro
 
 For example, to calculate a running total of revenue:
 
-```yaml
-models:
-  - name: orders_model
-    meta:
-      metrics:
-        total_revenue:
-          type: sum
-        running_total_revenue:
-          type: running_total
-          sql: ${total_revenue}
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders_model
+        meta:
+          metrics:
+            total_revenue:
+              type: sum
+            running_total_revenue:
+              type: running_total
+              sql: ${total_revenue}
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: orders_model
+        config:
+          meta:
+            metrics:
+              total_revenue:
+                type: sum
+              running_total_revenue:
+                type: running_total
+                sql: ${total_revenue}
+    ```
+  </Tab>
+</Tabs>
 <Warning>
 **This is a post calculation metric** which is computed after other metrics. It can only reference aggregate and non-aggregate metrics (and cannot reference dimensions or other post calculation metrics).
 </Warning>
@@ -564,14 +918,15 @@ metrics:
 
   | Option  | Equivalent format expression | Description                                                                         | Raw value | Displayed value |
   | :------ | :--------------------------- | :---------------------------------------------------------------------------------- | :-------- | :-------------- |
-  | km      | '#,##0.00" km"'              | Adds the suffix `km` to your value                                                  | 10        | 10 km           |
-  | mi      | '#,##0.00" mi"'              | Adds the suffix `mile` to your value                                                | 10        | 10 mi           |
-  | usd     | '[\$]#,##0.00'               | Adds the `$` symbol to your number value                                            | 10        | \$10.00         |
-  | gbp     | '[\$£]#,##0.00'              | Adds the `£` symbol to your number value                                            | 10        | £10.00          |
-  | eur     | '[\$€]#,##0.00'              | Adds the `€` symbol to your number value                                            | 10        | €10.00          |
-  | jpy     | '[\$¥]#,##0.00'              | Adds the `¥` symbol to your number value                                            | 10        | ¥10             |
-  | percent | '#,##0.00%'                  | Adds the `%` symbol and multiplies your value by 100                                | 0.1       | %10             |
-  | id      | '0'                          | Removes commas and spaces from number or string types so that they appear like IDs. | 12389572  | 12389572        |
+  | km      | `'#,##0.00" km"'`              | Adds the suffix `km` to your value                                                  | 10        | 10 km           |
+  | mi      | `'#,##0.00" mi"'`              | Adds the suffix `mile` to your value                                                | 10        | 10 mi           |
+  | usd     | `'[\$]#,##0.00'`               | Adds the `$` symbol to your number value                                            | 10        | \$10.00         |
+  | gbp     | `'[\$£]#,##0.00'`              | Adds the `£` symbol to your number value                                            | 10        | £10.00          |
+  | eur     | `'[\$€]#,##0.00'`              | Adds the `€` symbol to your number value                                            | 10        | €10.00          |
+  | jpy     | `'[\$¥]#,##0.00'`              | Adds the `¥` symbol to your number value                                            | 10        | ¥10             |
+  | percent | `'#,##0.00%'`                  | Adds the `%` symbol and multiplies your value by 100                                | 0.1       | %10             |
+  | id      | `'0'`                          | Removes commas and spaces from number or string types so that they appear like IDs. | 12389572  | 12389572        |
+
 
   #### Round (legacy)
 
@@ -606,10 +961,10 @@ models:
 
 | Value     | Alias                | Equivalent format expression          | Example output |
 | :-------- | :------------------- | :------------------------------------ | :------------- |
-| thousands | "K" and "thousand"   | '#,##0," K"' or '#,##0.00," K"'       | 1K             |
-| millions  | "M" and "million"    | '#,##0,," M"' or '#,##0.00,," M"'     | 1M             |
-| billions  | "B" and "billion"    | '#,##0,,," B"' or '#,##0.00,,," B"'   | 1B             |
-| trillions | "T" and "trillion"   | '#,##0,,,," T"' or '#,##0.00,,,," T"' | 1T             |
+| thousands | "K" and "thousand"   | `'#,##0," K"'` or `'#,##0.00," K"'`       | 1K             |
+| millions  | "M" and "million"    | `'#,##0,," M"'` or `'#,##0.00,," M"'`     | 1M             |
+| billions  | "B" and "billion"    | `'#,##0,,," B"'` or `'#,##0.00,,," B"'`   | 1B             |
+| trillions | "T" and "trillion"   | `'#,##0,,,," T"'` or `'#,##0.00,,,," T"'` | 1T             |
 | kilobytes | "KB" and "kilobyte"  |                                       | 1KB            |
 | megabytes | "MB" and "megabyte"  |                                       | 1MB            |
 | gigabytes | "GB" and "gigabyte"  |                                       | 1GB            |
@@ -725,39 +1080,81 @@ You can group your dimensions and metrics in the sidebar using the `groups` para
 
 To do this, you need to set up `group_details` in the model's configuration. Then, you can use these groups to organize metrics and dimensions. You can create nested groups up to 2 levels.
 
-```yaml
-models:
-  - name: baskets
-    meta:
-      group_details:
-        product_details:
-          label: Product Details
-          description: 'Fields that have information about the products in the basket.'
-        item_details:
-          label: Item Details
-          description: 'Fields that have information about the items in the basket.'
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: baskets
+        meta:
+          group_details:
+            product_details:
+              label: Product Details
+              description: 'Fields that have information about the products in the basket.'
+            item_details:
+              label: Item Details
+              description: 'Fields that have information about the items in the basket.'
 
-    columns:
-      - name: basket_item_id
-        description: 'ID for the product item within the basket.'
-        meta:
-          dimension:
-            groups: ['product_details', 'item_details'] # this would add the dimension to a nested group: `product details` --> `item details`
-          metrics:
-            count_total_basket_items:
-              type: count_distinct
-              groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
-      - name: product_name
-        description: 'Full name of the product.'
-        meta:
-          dimension:
-            label: 'Product name'
-            groups: ['product_details'] # this would add the dimension under the group label: `product_details`
-          metrics:
-            count_total_product_types:
-              type: count_distinct
-              groups: ['product_details'] # this would add the metric under the group label: `product_details`
-```
+        columns:
+          - name: basket_item_id
+            description: 'ID for the product item within the basket.'
+            meta:
+              dimension:
+                groups: ['product_details', 'item_details'] # this would add the dimension to a nested group: `product details` --> `item details`
+              metrics:
+                count_total_basket_items:
+                  type: count_distinct
+                  groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
+          - name: product_name
+            description: 'Full name of the product.'
+            meta:
+              dimension:
+                label: 'Product name'
+                groups: ['product_details'] # this would add the dimension under the group label: `product_details`
+              metrics:
+                count_total_product_types:
+                  type: count_distinct
+                  groups: ['product_details'] # this would add the metric under the group label: `product_details`
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: baskets
+        config:
+          meta:
+            group_details:
+              product_details:
+                label: Product Details
+                description: 'Fields that have information about the products in the basket.'
+              item_details:
+                label: Item Details
+                description: 'Fields that have information about the items in the basket.'
+
+        columns:
+          - name: basket_item_id
+            description: 'ID for the product item within the basket.'
+            config:
+              meta:
+                dimension:
+                  groups: ['product_details', 'item_details'] # this would add the dimension to a nested group: `product details` --> `item details`
+                metrics:
+                  count_total_basket_items:
+                    type: count_distinct
+                    groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
+          - name: product_name
+            description: 'Full name of the product.'
+            config:
+              meta:
+                dimension:
+                  label: 'Product name'
+                  groups: ['product_details'] # this would add the dimension under the group label: `product_details`
+                metrics:
+                  count_total_product_types:
+                    type: count_distinct
+                    groups: ['product_details'] # this would add the metric under the group label: `product_details`
+    ```
+  </Tab>
+</Tabs>
 
 ## Filters
 
@@ -765,21 +1162,43 @@ Filters are applied to metrics any time that metric is used in Lightdash. Filter
 
 For example, we could add a filter to our users count to make sure it didn't include user IDs with closed accounts, like this:
 
-```yaml
-models:
-  - name: sales_stats
-    columns:
-      - name: user_id
-        description: 'Unique ID for users.'
-        meta:
-          dimension:
-            type: string
-          metrics:
-            count_users:
-              type: count_distinct
-              filters:
-                - is_closed_account: false
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: sales_stats
+        columns:
+          - name: user_id
+            description: 'Unique ID for users.'
+            meta:
+              dimension:
+                type: string
+              metrics:
+                count_users:
+                  type: count_distinct
+                  filters:
+                    - is_closed_account: false
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: sales_stats
+        columns:
+          - name: user_id
+            description: 'Unique ID for users.'
+            config:
+              meta:
+                dimension:
+                  type: string
+                metrics:
+                  count_users:
+                    type: count_distinct
+                    filters:
+                      - is_closed_account: false
+    ```
+  </Tab>
+</Tabs>
 
 These filters do not appear in the `Filters` tab in the Explore view, instead, they are applied automatically in the SQL query that fetches your results. That means filters added using the `filter` parameter can't be removed in the UI and won't be visible to users unless they look at the SQL query.
 
@@ -787,26 +1206,28 @@ These filters do not appear in the `Filters` tab in the Explore view, instead, t
 
 | Type                          | Example (in English)                           | Example (as code)           |
 | :---------------------------- | :--------------------------------------------- | :-------------------------- |
-| is                            | User name is equal to katie                    | user_name: "katie"          |
-| is not                        | User name is not equal to katie                | user_name: "\!katie"        |
-| contains                      | User name contains katie                       | user_name: "%katie%"        |
-| does not contain              | User name does not contain katie               | user_name: "\!%katie%"      |
-| starts with                   | User name starts with katie                    | user_name: "katie%"         |
-| ends with                     | User name ends with katie                      | user_name: "%katie"         |
-| is greater than (number)      | Number of orders is greater than 4             | num_orders: "\> 4"          |
-| in the past (date) (interval) | Date is before x (days / months / years)       | date: "inThePast 14 months" |
-| in the next (date) (interval) | Date is after x (days / months / years)        | date: "inTheNext 14 days"   |
-| is greater than or equal to   | Number of orders is greater than or equal to 4 | num_orders: "\>= 4"         |
-| is less than                  | Number of orders is less than 4                | num_orders: "\< 4"          |
-| is less than or equal to      | Number of orders is less than or equal to 4    | num_orders: "\<= 4"         |
-| is null                       | Status is NULL                                 | status: "null"              |
-| is not null                   | Status is not NULL                             | status: "\!null"            |
-| is [boolean]                  | Is complete is true                            | is_complete: "true"         |
-| is not [boolean]              | Is complete is false or null                   | is_complete: "\!true"       |
+| is                            | User name is equal to katie                    | `user_name: "katie"`          |
+| is not                        | User name is not equal to katie                | `user_name: "!katie"`        |
+| contains                      | User name contains katie                       | `user_name: "%katie%"`        |
+| does not contain              | User name does not contain katie               | `user_name: "!%katie%"`      |
+| starts with                   | User name starts with katie                    | `user_name: "katie%"`         |
+| ends with                     | User name ends with katie                      | `user_name: "%katie"`         |
+| is greater than (number)      | Number of orders is greater than 4             | `num_orders: "> 4"`          |
+| in the past (date) (interval) | Date is before x (days / months / years)       | `date: "inThePast 14 months"` |
+| in the next (date) (interval) | Date is after x (days / months / years)        | `date: "inTheNext 14 days"`   |
+| is greater than or equal to   | Number of orders is greater than or equal to 4 | `num_orders: ">= 4"`         |
+| is less than                  | Number of orders is less than 4                | `num_orders: "< 4"`          |
+| is less than or equal to      | Number of orders is less than or equal to 4    | `num_orders: "<= 4"`         |
+| is null                       | Status is NULL                                 | `status: "null"`              |
+| is not null                   | Status is not NULL                             | `status: "!null"`            |
+| is [boolean]                  | Is complete is true                            | `is_complete: "true"`         |
+| is not [boolean]              | Is complete is false or null                   | `is_complete: "!true"`       |
+
 
 ### Date filters
 
 For date filtering, use `inThePast` or `inTheNext` followed by a number and time unit (days, months, or years). These keywords are case sensitive and must be written exactly as shown.
+
 ```yaml
 filters:
   - created_at: 'inThePast 30 days'
@@ -826,22 +1247,43 @@ filters:
   - subscription_status: is\_subscribed
 ```
 
+
 ### Filtering using a list of values
 
 To filter a field using a list of values you can supply them as an array for that field. For example, if you wanted to filter for orders with order status `completed` or `shipped` you should write the metric like:
 
-```yaml
-columns:
-  - name: order_id
-    meta:
-      metrics:
-        completed_or_shipped_order_count:
-          type: count_distinct
-          filters:
-            - order_status:
-                - completed
-                - shipped
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: order_id
+        meta:
+          metrics:
+            completed_or_shipped_order_count:
+              type: count_distinct
+              filters:
+                - order_status:
+                    - completed
+                    - shipped
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: order_id
+        config:
+          meta:
+            metrics:
+              completed_or_shipped_order_count:
+                type: count_distinct
+                filters:
+                  - order_status:
+                      - completed
+                      - shipped
+    ```
+  </Tab>
+</Tabs>
+
 
 ### Filters are joined using `AND`
 
@@ -855,30 +1297,60 @@ filters:
 
 Would give you logic like `is_closed_account = TRUE AND is_7d_active = FALSE`.
 
+
 ### Adding filters from joined models
 
 To filter using a field from a joined model, just use the syntax `model_name.field`, like this:
 
-```yaml
-models:
-  - name: sales_stats
-    meta:
-      joins:
-        - join: web_sessions
-          sql_on: ${web_sessions.date} = ${sales_stats.date}
-    columns:
-      - name: user_id
-        description: 'Unique ID for users.'
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: sales_stats
         meta:
-          dimension:
-            type: string
-          metrics:
-            count_users:
-              type: count_distinct
-              filters:
-                - is_closed_account: false
-                - web_sessions.is_bot_user: false
-```
+          joins:
+            - join: web_sessions
+              sql_on: ${web_sessions.date} = ${sales_stats.date}
+        columns:
+          - name: user_id
+            description: 'Unique ID for users.'
+            meta:
+              dimension:
+                type: string
+              metrics:
+                count_users:
+                  type: count_distinct
+                  filters:
+                    - is_closed_account: false
+                    - web_sessions.is_bot_user: false
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: sales_stats
+        config:
+          meta:
+            joins:
+              - join: web_sessions
+                sql_on: ${web_sessions.date} = ${sales_stats.date}
+        columns:
+          - name: user_id
+            description: 'Unique ID for users.'
+            config:
+              meta:
+                dimension:
+                  type: string
+                metrics:
+                  count_users:
+                    type: count_distinct
+                    filters:
+                      - is_closed_account: false
+                      - web_sessions.is_bot_user: false
+    ```
+  </Tab>
+</Tabs>
+
 
 ### Referencing time intervals in filters
 
@@ -899,37 +1371,80 @@ You can't use filters with non-aggregate metric types. Instead, if your non-aggr
 
 Here's an example: imagine you wanted to calculate the average cost per item that had the status `shipped`. You would need to do something like this in your .yml:
 
-```yaml
-models:
-  - name: orders
-    meta:
-      metrics:
-        average_cost_per_item_shipped:
-          type: number
-          sql: ${total_cost_of_shipped} / ${count_unique_items_shipped}
-    columns:
-      - name: item_id
-        description: 'Unique ID for items ordered.'
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
         meta:
-          dimension:
-            type: string
           metrics:
-            count_unique_items:
-              type: count_distinct
-            count_unique_items_shipped:
-              type: count_distinct
-              filters:
-                - status: 'shipped'
-      - name: item_cost
-        description: 'Cost for each item ordered.'
-        meta:
-          dimension:
-            type: number
-          metrics:
-            total_cost:
-              type: sum
-            total_cost_of_shipped:
-              type: sum
-              filters:
-                - status: 'shipped'
-```
+            average_cost_per_item_shipped:
+              type: number
+              sql: ${total_cost_of_shipped} / ${count_unique_items_shipped}
+        columns:
+          - name: item_id
+            description: 'Unique ID for items ordered.'
+            meta:
+              dimension:
+                type: string
+              metrics:
+                count_unique_items:
+                  type: count_distinct
+                count_unique_items_shipped:
+                  type: count_distinct
+                  filters:
+                    - status: 'shipped'
+          - name: item_cost
+            description: 'Cost for each item ordered.'
+            meta:
+              dimension:
+                type: number
+              metrics:
+                total_cost:
+                  type: sum
+                total_cost_of_shipped:
+                  type: sum
+                  filters:
+                    - status: 'shipped'
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: orders
+        config:
+          meta:
+            metrics:
+              average_cost_per_item_shipped:
+                type: number
+                sql: ${total_cost_of_shipped} / ${count_unique_items_shipped}
+        columns:
+          - name: item_id
+            description: 'Unique ID for items ordered.'
+            config:
+              meta:
+                dimension:
+                  type: string
+                metrics:
+                  count_unique_items:
+                    type: count_distinct
+                  count_unique_items_shipped:
+                    type: count_distinct
+                    filters:
+                      - status: 'shipped'
+          - name: item_cost
+            description: 'Cost for each item ordered.'
+            config:
+              meta:
+                dimension:
+                  type: number
+                metrics:
+                  total_cost:
+                    type: sum
+                  total_cost_of_shipped:
+                    type: sum
+                    filters:
+                      - status: 'shipped'
+    ```
+  </Tab>
+</Tabs>

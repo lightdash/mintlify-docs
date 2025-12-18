@@ -20,58 +20,104 @@ models:
         description: "Unique identifier for a user."
 ```
 
+
 ## Dimension configuration
 
-To customize the dimension, you can do it in your dbt model's YAML file.
+To customize the dimension, you can do it in your dbt model's YAML file under the `meta` tag. The syntax depends on your dbt version.
 
 If you want to declare multiple dimensions based on the same column, check [additional dimensions](#additional-dimensions) section.
 
-```yaml
-models:
-  - name: sales_stats
-    meta:
-      group_details:
-        finance:
-          label: Finance
-          description: Finance-related fields.
-      joins:
-        - join: web_sessions
-          sql_on: ${web_sessions.date} = ${sales_stats.date}
-    columns:
-      - name: revenue_gbp_total_est
-        description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: sales_stats
         meta:
-          dimension:
-            type: number
-            label: 'Total revenue' # this is the label you'll see in Lightdash
-            description: 'My custom description' # you can override the description you'll see in Lightdash here
-            sql: 'IF(${TABLE}.revenue_gbp_total_est = NULL, 0, ${registered_user_email})' # custom SQL applied to the column from dbt used to define the dimension
-            hidden: false
-            format: '[$£]#,##0.00' # GBP rounded to two decimal points
-            groups: ['finance']
-      - name: forecast_date
-        description: 'Date of the forecasting.'
-        meta:
-          dimension:
-            type: date
-            time_intervals: ['DAY', 'WEEK', 'MONTH', 'QUARTER'] # not required: the default time intervals for dates are `['DAY', 'WEEK', 'MONTH', 'YEAR']`
-            urls:
-              - label: 'Open in forecasting tool'
-                url: 'https://finance.com/forceasts/weeks/${ value.raw }'
-              - label: Open in Google Calendar
-                url: 'https://calendar.google.com/calendar/u/0/r/day/${ value.formatted |split: "-" |join: "/"}'
-            required_attributes:
-              is_admin: 'true'
-    
-```
+          group_details:
+            finance:
+              label: Finance
+              description: Finance-related fields.
+          joins:
+            - join: web_sessions
+              sql_on: ${web_sessions.date} = ${sales_stats.date}
+        columns:
+          - name: revenue_gbp_total_est
+            description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
+            meta:
+              dimension:
+                type: number
+                label: 'Total revenue' # this is the label you'll see in Lightdash
+                description: 'My custom description' # you can override the description you'll see in Lightdash here
+                sql: 'IF(${TABLE}.revenue_gbp_total_est = NULL, 0, ${registered_user_email})' # custom SQL applied to the column from dbt used to define the dimension
+                hidden: false
+                format: '[$£]#,##0.00' # GBP rounded to two decimal points
+                groups: ['finance']
+          - name: forecast_date
+            description: 'Date of the forecasting.'
+            meta:
+              dimension:
+                type: date
+                time_intervals: ['DAY', 'WEEK', 'MONTH', 'QUARTER'] # not required: the default time intervals for dates are `['DAY', 'WEEK', 'MONTH', 'YEAR']`
+                urls:
+                  - label: 'Open in forecasting tool'
+                    url: 'https://finance.com/forceasts/weeks/${ value.raw }'
+                  - label: Open in Google Calendar
+                    url: 'https://calendar.google.com/calendar/u/0/r/day/${ value.formatted |split: "-" |join: "/"}'
+                required_attributes:
+                  is_admin: 'true'
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: sales_stats
+        config:
+          meta:
+            group_details:
+              finance:
+                label: Finance
+                description: Finance-related fields.
+            joins:
+              - join: web_sessions
+                sql_on: ${web_sessions.date} = ${sales_stats.date}
+        columns:
+          - name: revenue_gbp_total_est
+            description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
+            config:
+              meta:
+                dimension:
+                  type: number
+                  label: 'Total revenue' # this is the label you'll see in Lightdash
+                  description: 'My custom description' # you can override the description you'll see in Lightdash here
+                  sql: 'IF(${TABLE}.revenue_gbp_total_est = NULL, 0, ${registered_user_email})' # custom SQL applied to the column from dbt used to define the dimension
+                  hidden: false
+                  format: '[$£]#,##0.00' # GBP rounded to two decimal points
+                  groups: ['finance']
+          - name: forecast_date
+            description: 'Date of the forecasting.'
+            config:
+              meta:
+                dimension:
+                  type: date
+                  time_intervals: ['DAY', 'WEEK', 'MONTH', 'QUARTER'] # not required: the default time intervals for dates are `['DAY', 'WEEK', 'MONTH', 'YEAR']`
+                  urls:
+                    - label: 'Open in forecasting tool'
+                      url: 'https://finance.com/forceasts/weeks/${ value.raw }'
+                    - label: Open in Google Calendar
+                      url: 'https://calendar.google.com/calendar/u/0/r/day/${ value.formatted |split: "-" |join: "/"}'
+                  required_attributes:
+                    is_admin: 'true'
+    ```
+  </Tab>
+</Tabs>
 
-All the properties you can customize:
+The table below shows all the dimension properties you can customize:
 
 | Property | Required | Value  | Description |
 | :------- | :------- | :----- | :---------- |
 | label    | No       | string | Custom label. If you set this property, this is what you'll see in Lightdash instead of the dimension name. |
 | [type](#type) | No  | Dimension type | The dimension type is automatically pulled from your table schemas in Lightdash but you can override the type using this property. |
-| description | No    | string | Description of the dimension in Lightdash. You can use this to override the description you have for the dimension in dbt. |
+| [description](#description) | No    | string | Description of the dimension in Lightdash. You can use this to override the description you have for the dimension in dbt. |
 | sql | No            | string | Custom SQL applied to the column used to define the dimension. |
 | [time_intervals](#time-intervals) | No | 'default' or OFF or an array[] containing elements of [date](#date-options), [numeric](#numeric-options) or [string](#string-options) options | 'default' (or not setting the time_intervals property) will be converted into ['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR'] for dates and ['RAW', 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR'] for timestamps; if you want no time intervals set 'OFF'. |
 | hidden | No       | boolean | If set to true, the dimension is hidden from Lightdash. By default, this is set to false if you don't include this property. |
@@ -88,12 +134,25 @@ All the properties you can customize:
 
 The types of your dimensions are pulled from your data warehouse, automatically. You can override these types using the `type` meta tag in your .yml file. If you run `lightdash generate` to generate your .yml files, then Lightdash will add the `type` from your data warehouse to your .yml files automatically.
 
-```yaml
-- name: user_created_date
-  meta:
-    dimension:
-      type: date
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    - name: user_created_date
+      meta:
+        dimension:
+          type: date
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    - name: user_created_date
+      config:
+        meta:
+          dimension:
+            type: date
+    ```
+  </Tab>
+</Tabs>
 
 We currently support these dimension types:
 
@@ -173,20 +232,41 @@ You can use the `format` parameter to have your dimensions show in a particular 
 
 To help you build your format expression, we recommend using https://customformats.com/.
 
-```yaml
-- name: us_revenue
-  meta:
-    dimension:
-      type: number
-      description: 'Revenue in USD, with two decimal places, compacted to thousands'
-      format: '$#,##0.00," K"' # 505,430 will appear as '$505.43 K'
-    additional_dimensions:
-      percent_of_global_revenue:
-        type: number
-        description: 'Percent of total global revenue coming from US revenue.'
-        sql: ${us_revenue} / ${global_revenue}
-        format: '0.00%' # 0.67895243 will appear as '67.89%
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    - name: us_revenue
+      meta:
+        dimension:
+          type: number
+          description: 'Revenue in USD, with two decimal places, compacted to thousands'
+          format: '$#,##0.00," K"' # 505,430 will appear as '$505.43 K'
+        additional_dimensions:
+          percent_of_global_revenue:
+            type: number
+            description: 'Percent of total global revenue coming from US revenue.'
+            sql: ${us_revenue} / ${global_revenue}
+            format: '0.00%' # 0.67895243 will appear as '67.89%
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    - name: us_revenue
+      config:
+        meta:
+          dimension:
+            type: number
+            description: 'Revenue in USD, with two decimal places, compacted to thousands'
+            format: '$#,##0.00," K"' # 505,430 will appear as '$505.43 K'
+          additional_dimensions:
+            percent_of_global_revenue:
+              type: number
+              description: 'Percent of total global revenue coming from US revenue.'
+              sql: ${us_revenue} / ${global_revenue}
+              format: '0.00%' # 0.67895243 will appear as '67.89%
+    ```
+  </Tab>
+</Tabs>
 
 ### Example format expressions:
 
@@ -224,16 +304,33 @@ To help you build your format expression, we recommend using https://customforma
   </Info>
   #### Format (legacy)
 
-  ```yaml
-  models:
-    - name: sales_stats
-      columns:
-        - name: revenue
-          description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
-          meta:
-            dimension:
-              format: 'gbp'
-  ```
+  <Tabs>
+    <Tab title="dbt v1.9 and earlier">
+      ```yaml
+      models:
+        - name: sales_stats
+          columns:
+            - name: revenue
+              description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
+              meta:
+                dimension:
+                  format: 'gbp'
+      ```
+    </Tab>
+    <Tab title="dbt v1.10+">
+      ```yaml
+      models:
+        - name: sales_stats
+          columns:
+            - name: revenue
+              description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
+              config:
+                meta:
+                  dimension:
+                    format: 'gbp'
+      ```
+    </Tab>
+  </Tabs>
 
   These are the options:
 
@@ -252,30 +349,62 @@ To help you build your format expression, we recommend using https://customforma
 
   You can round values to appear with a certain number of decimal points.
 
-  ```yaml
-  	models:
-  	- name: sales
-  	  columns:
-  	    - name: revenue
-  	      meta:
-  	        dimension:
-  	          round: 0 # equivalent format expression: '#,##0.0'
-  ```
+  <Tabs>
+    <Tab title="dbt v1.9 and earlier">
+      ```yaml
+      models:
+        - name: sales
+          columns:
+            - name: revenue
+              meta:
+                dimension:
+                  round: 0 # equivalent format expression: '#,##0.0'
+      ```
+    </Tab>
+    <Tab title="dbt v1.10+">
+      ```yaml
+      models:
+        - name: sales
+          columns:
+            - name: revenue
+              config:
+                meta:
+                  dimension:
+                    round: 0 # equivalent format expression: '#,##0.0'
+      ```
+    </Tab>
+  </Tabs>
 </Accordion>
 
 ## Compact
 
 You can compact values in your YAML. For example, if I wanted all of my revenue values to be shown in thousands (e.g. `1,500` appears as `1.50K`), then I would write something like this in my .yml:
 
-```yaml
-models:
-    - name: sales
-      columns:
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: sales
+        columns:
           - name: revenue
             meta:
+              dimension:
+                compact: thousands # You can also use 'K'
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: sales
+        columns:
+          - name: revenue
+            config:
+              meta:
                 dimension:
-                    compact: thousands # You can also use 'K'
-```
+                  compact: thousands # You can also use 'K'
+    ```
+  </Tab>
+</Tabs>
 
 | Value     | Alias                | Equivalent format expression          | Example output |
 | :-------- | :------------------- | :------------------------------------ | :------------- |
@@ -317,41 +446,83 @@ Lightdash breaks this out into the default intervals automatically. So, this is 
   If you want to apply different formats for different time intervals, we recommend creating [additional dimensions](#additional-dimensions) for time intervals where you want to customize the format.
 </Info>
 
-### By default, the time intervals we use are:
 
-**Date**: ['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']
+### Default time intervals
 
-**Timestamp**: ['RAW', 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']
+The default time intervals that Lightdash adds are...
 
-### To turn off time intervals for a dimension, set `time_intervals: OFF`
+**For `date` type**: 
 
-If you want to turn off time intervals for a dimension, you can simply set the `time_intervals` property to `OFF`.
+```yaml
+['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']
+```
+
+**For `timestamp` type**: 
+
+```yaml
+['RAW', 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']
+```
+
+### Disable time intervals
+
+If you want to turn off time intervals for a dimension, you set the `time_intervals` property to `OFF`.
 
 In this example, `created` would now appear as a single, timestamp dimension without a drop-down list of time intervals in Lightdash:
 
-```yaml
-- name: created
-  description: 'Timestamp when the user was created.'
-  meta:
-    dimension:
-      time_intervals: OFF
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    - name: created
+      description: 'Timestamp when the user was created.'
+      meta:
+        dimension:
+          type: timestamp
+          time_intervals: OFF
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    - name: created
+      description: 'Timestamp when the user was created.'
+      config:
+        meta:
+          dimension:
+            type: timestamp
+            time_intervals: OFF
+    ```
+  </Tab>
+</Tabs>
 
 <Frame>
   ![screenshot-intervals-off](/images/references/screenshot-intervals-off-e786a3290b6c8b8454fe7f223a5682d8.png)
 </Frame>
 
+
 ### To customize the time intervals for a dimension, you can use the `time_intervals` parameter.
 
 If you specify time intervals manually, then this overrides the default time intervals used by Lightdash.
 
-```yaml
-- name: created
-  description: 'Timestamp when the user was created.'
-  meta:
-    dimension:
-      time_intervals: ['DAY', 'DAY_OF_MONTH_NUM', 'MONTH', 'QUARTER_NAME', 'YEAR']
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    - name: created
+      description: 'Timestamp when the user was created.'
+      meta:
+        dimension:
+          time_intervals: ['DAY', 'DAY_OF_MONTH_NUM', 'MONTH', 'QUARTER_NAME', 'YEAR']
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    - name: created
+      description: 'Timestamp when the user was created.'
+      config:
+        meta:
+          dimension:
+            time_intervals: ['DAY', 'DAY_OF_MONTH_NUM', 'MONTH', 'QUARTER_NAME', 'YEAR']
+    ```
+  </Tab>
+</Tabs>
 
 You can see all of the standard interval options for date and timestamp fields below. You can also add custom intervals using _additional dimensions_, there's an example below the following tables. 
 
@@ -400,8 +571,29 @@ You can see all of the standard interval options for date and timestamp fields b
 
 You can set custom versions of time intervals by using additional dimensions and groups. Here's an example of how that might look if you wanted to add `year_of_week_iso` to your drop down list for the `delivery_date` dimension. Note that by definiting the `groups:` option, we ensure that the new "Year of week" options is displayed as expected.
 
-```
-      - name: delivery_date
+
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    - name: delivery_date
+      meta:
+        dimension:
+          label: "Delivery Date"
+          type: date
+          time_intervals: [ ... ]
+        additional_dimensions:
+          year_of_week_num:
+            type: number
+            label: "Year of week"
+            sql: "yearofweekiso(${delivery_date})"
+            groups: ["Delivery Date"]
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    - name: delivery_date
+      config:
         meta:
           dimension:
             label: "Delivery Date"
@@ -413,7 +605,10 @@ You can set custom versions of time intervals by using additional dimensions and
               label: "Year of week"
               sql: "yearofweekiso(${delivery_date})"
               groups: ["Delivery Date"]
-```
+    ```
+  </Tab>
+</Tabs>
+
 
 ### Reference time intervals in other dimensions
 
@@ -457,31 +652,65 @@ You can group your dimensions and metrics in the sidebar using the `groups` para
 
 To do this, you need to set up `group_details` in the model's configuration. Then, you can use these groups to organize metrics and dimensions. You can create nested groups up to 3 levels.
 
-```yaml
-models:
-  - name: baskets
-    meta:
-      group_details:
-        product_details:
-          label: Product Details
-          description: 'Fields that have information about the products in the basket.'
-        item_details:
-          label: Item Details
-          description: 'Fields that have information about the items in the basket.'
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: baskets
+        meta:
+          group_details:
+            product_details:
+              label: Product Details
+              description: 'Fields that have information about the products in the basket.'
+            item_details:
+              label: Item Details
+              description: 'Fields that have information about the items in the basket.'
 
-    columns:
-      - name: basket_item_id
-        description: 'ID for the product item within the basket.'
-        meta:
-          dimension:
-            groups: ['product_details', 'item_details'] # this would add the dimension to a nested group: `product details` --> `item details`
-      - name: product_name
-        description: 'Full name of the product.'
-        meta:
-          dimension:
-            label: 'Product name'
-            groups: ['product_details'] # this would add the dimension under the group label: `product_details`
-```
+        columns:
+          - name: basket_item_id
+            description: 'ID for the product item within the basket.'
+            meta:
+              dimension:
+                groups: ['product_details', 'item_details'] # this would add the dimension to a nested group: `product details` --> `item details`
+          - name: product_name
+            description: 'Full name of the product.'
+            meta:
+              dimension:
+                label: 'Product name'
+                groups: ['product_details'] # this would add the dimension under the group label: `product_details`
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: baskets
+        config:
+          meta:
+            group_details:
+              product_details:
+                label: Product Details
+                description: 'Fields that have information about the products in the basket.'
+              item_details:
+                label: Item Details
+                description: 'Fields that have information about the items in the basket.'
+
+        columns:
+          - name: basket_item_id
+            description: 'ID for the product item within the basket.'
+            config:
+              meta:
+                dimension:
+                  groups: ['product_details', 'item_details'] # this would add the dimension to a nested group: `product details` --> `item details`
+          - name: product_name
+            description: 'Full name of the product.'
+            config:
+              meta:
+                dimension:
+                  label: 'Product name'
+                  groups: ['product_details'] # this would add the dimension under the group label: `product_details`
+    ```
+  </Tab>
+</Tabs>
 
 This example would look like this in the sidebar:
 
@@ -494,16 +723,33 @@ This example would look like this in the sidebar:
 
 Lightdash users can interact with dimension values by clicking on them. If you're already storing URLs in your models, you can create hyperlinks to those URLs in Lightdash, like so:
 
-```yaml
-columns:
-  - name: candidate_profile_url
-    label: URL of the candidate profile
-    meta:
-      dimension:
-        urls:
-          - label: Open in CRM
-            url: ${ value.raw }
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: candidate_profile_url
+        label: URL of the candidate profile
+        meta:
+          dimension:
+            urls:
+              - label: Open in CRM
+                url: ${ value.raw }
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: candidate_profile_url
+        label: URL of the candidate profile
+        config:
+          meta:
+            dimension:
+              urls:
+                - label: Open in CRM
+                  url: ${ value.raw }
+    ```
+  </Tab>
+</Tabs>
 
 
 ### How to add custom URLs
@@ -516,38 +762,75 @@ By adding custom urls you can configure the actions available to your users. Lik
 
 In the example below, users can click on a company name and open a corresponding record in their CRM or search for the company in google or open that company's Slack channel.
 
-```yaml
-columns:
-  - name: company_name
-    label: Registered trading name of the company
-    meta:
-      dimension:
-        urls:
-          - label: Search for company in Google
-            url: 'https://google.com/search?${ value.formatted | url_encode }'
-          - label: Open in CRM
-            url: 'https://mycrm.com/companies/${ row.company.company_id.raw | url_encode }'
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: company_name
+        label: Registered trading name of the company
+        meta:
+          dimension:
+            urls:
+              - label: Search for company in Google
+                url: 'https://google.com/search?${ value.formatted | url_encode }'
+              - label: Open in CRM
+                url: 'https://mycrm.com/companies/${ row.company.company_id.raw | url_encode }'
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: company_name
+        label: Registered trading name of the company
+        config:
+          meta:
+            dimension:
+              urls:
+                - label: Search for company in Google
+                  url: 'https://google.com/search?${ value.formatted | url_encode }'
+                - label: Open in CRM
+                  url: 'https://mycrm.com/companies/${ row.company.company_id.raw | url_encode }'
+    ```
+  </Tab>
+</Tabs>
 
 The `${ value.formatted }` will be replaced with the value of the company name in the Lightdash UI at query run time. The `${ row.company.company_id.raw }` will be replaced with the value of the company id in the Lightdash UI at query run time. The action will be disabled if the column "company_id" from table "company" is not part of the query.
 
 
 ### You can reference values from other columns in your URLs
 
-You can reference another dimension from your table in your URL. For these URLs to work, the other column you've referenced needs to be included in your results table. For example, say I’ve added a URL to `company_name` and it uses the field `customer_id`:
+You can reference another dimension from your table in your URL. For these URLs to work, the other column you've referenced needs to be included in your results table. For example, say I've added a URL to `company_name` and it uses the field `customer_id`:
 
-```yaml
-columns:
-  - name: company_name
-    label: Registered trading name of the company
-    meta:
-      dimension:
-        urls:
-          - label: "Open company"
-            url: "https://example.com/company/${row.customers.customer_id.raw | url_encode }"
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: company_name
+        label: Registered trading name of the company
+        meta:
+          dimension:
+            urls:
+              - label: "Open company"
+                url: "https://example.com/company/${row.customers.customer_id.raw | url_encode }"
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: company_name
+        label: Registered trading name of the company
+        config:
+          meta:
+            dimension:
+              urls:
+                - label: "Open company"
+                  url: "https://example.com/company/${row.customers.customer_id.raw | url_encode }"
+    ```
+  </Tab>
+</Tabs>
 
 This URL will only work if I have `customer_id` included in my results table.
+
 
 ### Liquid Templating
 
@@ -593,19 +876,38 @@ Lightdash can use `user attributes` to limit some dimensions to some users.
 
 In the example below, only users with `is_admin` attribute `true` can use the `salary` dimension on `user` table. Users without access to this dimension will not see it or the custom metrics created from this dimension on the `explore page`.
 
-```yaml
-columns:
-  - name:
-    description: User name
-  - salary:
-    description: User salary
-    meta:
-      dimension:
-        required_attributes:
-          is_admin: "true"
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name:
+        description: User name
+      - salary:
+        description: User salary
+        meta:
+          dimension:
+            required_attributes:
+              is_admin: "true"
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name:
+        description: User name
+      - salary:
+        description: User salary
+        config:
+          meta:
+            dimension:
+              required_attributes:
+                is_admin: "true"
+    ```
+  </Tab>
+</Tabs>
 
 If a user without access to this dimension runs a query that contains this dimension, they will get a `Forbidden` error.
+
 
 ### Current limitations
 
@@ -618,22 +920,42 @@ Lightdash dimensions and custom metrics are protected by this feature, however, 
   Scheduler deliveries will run against the user who created the scheduled delivery, be careful when sharing required attributes with other users.
 </Info>
 
+
 ## Color
 
 You can predefine colors for your string type dimensions, these colors will be used instead of your default organization colors for the right value when you use a grouped bar chart or a pie chart.
 
-```yaml
-  - name: status
-    description: "{{ doc(\"orders_status\") }}"
-    meta:
-      dimension:
-        colors:
-          "placed": "#e6fa0f"
-          "completed": "#558B2F"
-          "shipped": "#29B6F6"
-          "return_pending": "#FF6F00"
-          "returned": "#E91E63"
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+      - name: status
+        description: "{{ doc(\"orders_status\") }}"
+        meta:
+          dimension:
+            colors:
+              "placed": "#e6fa0f"
+              "completed": "#558B2F"
+              "shipped": "#29B6F6"
+              "return_pending": "#FF6F00"
+              "returned": "#E91E63"
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+      - name: status
+        description: "{{ doc(\"orders_status\") }}"
+        config:
+          meta:
+            dimension:
+              colors:
+                "placed": "#e6fa0f"
+                "completed": "#558B2F"
+                "shipped": "#29B6F6"
+                "return_pending": "#FF6F00"
+                "returned": "#E91E63"
+    ```
+  </Tab>
+</Tabs>
 
 <Frame>
   ![](/images/references/pie-chart-color-b5c761ad3dc797717c6397920572b1c4.png)
@@ -649,6 +971,7 @@ You can predefine colors for your string type dimensions, these colors will be u
   These colors will also take precedence over the organization color palette.
 </Info>
 
+
 ## Image Display
 
 <Warning>
@@ -656,6 +979,7 @@ You can predefine colors for your string type dimensions, these colors will be u
 </Warning>
 
 You can configure dimensions to display images in table cells using URL templates. Images are rendered as thumbnails with hover tooltips showing larger previews, perfect for visualizing product images, user avatars, or any other image-based data.
+
 
 ### How it works
 
@@ -665,64 +989,140 @@ To display images, you define an `image` property with a URL template in your di
 
 If your column already contains complete image URLs, you can simply configure it to display as an image:
 
-```yaml
-columns:
-  - name: image_url
-    description: "Image URL for the event"
-    meta:
-      dimension:
-        type: string
-        image:
-          url: "${value.raw}"
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: image_url
+        description: "Image URL for the event"
+        meta:
+          dimension:
+            type: string
+            image:
+              url: "${value.raw}"
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: image_url
+        description: "Image URL for the event"
+        config:
+          meta:
+            dimension:
+              type: string
+              image:
+                url: "${value.raw}"
+    ```
+  </Tab>
+</Tabs>
 
 **With custom dimensions and fit:**
 
 You can control the size and display behavior of images using width, height, and fit options:
 
-```yaml
-columns:
-  - name: product_image_url
-    description: "Product image URL"
-    meta:
-      dimension:
-        type: string
-        image:
-          url: "${value.raw}"
-          width: 100
-          height: 100
-          fit: "cover"
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: product_image_url
+        description: "Product image URL"
+        meta:
+          dimension:
+            type: string
+            image:
+              url: "${value.raw}"
+              width: 100
+              height: 100
+              fit: "cover"
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: product_image_url
+        description: "Product image URL"
+        config:
+          meta:
+            dimension:
+              type: string
+              image:
+                url: "${value.raw}"
+                width: 100
+                height: 100
+                fit: "cover"
+    ```
+  </Tab>
+</Tabs>
 
 **Basic example with URL template:**
 
-```yaml
-columns:
-  - name: product_id
-    meta:
-      additional_dimensions:
-        product_image:
-          type: string
-          label: "Product Image"
-          description: "Product thumbnail image"
-          image:
-            url: "https://example.com/images/${value.raw}.jpg"
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: product_id
+        meta:
+          additional_dimensions:
+            product_image:
+              type: string
+              label: "Product Image"
+              description: "Product thumbnail image"
+              image:
+                url: "https://example.com/images/${value.raw}.jpg"
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: product_id
+        config:
+          meta:
+            additional_dimensions:
+              product_image:
+                type: string
+                label: "Product Image"
+                description: "Product thumbnail image"
+                image:
+                  url: "https://example.com/images/${value.raw}.jpg"
+    ```
+  </Tab>
+</Tabs>
 
 **Advanced example with dynamic URLs:**
 
-```yaml
-columns:
-  - name: event_type
-    meta:
-      additional_dimensions:
-        event_image:
-          type: string
-          label: "Event Image"
-          description: "Event banner image"
-          image:
-            url: "https://cdn.example.com/${value.raw}-${row.events.event_id.raw | upcase}.png"
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: event_type
+        meta:
+          additional_dimensions:
+            event_image:
+              type: string
+              label: "Event Image"
+              description: "Event banner image"
+              image:
+                url: "https://cdn.example.com/${value.raw}-${row.events.event_id.raw | upcase}.png"
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: event_type
+        config:
+          meta:
+            additional_dimensions:
+              event_image:
+                type: string
+                label: "Event Image"
+                description: "Event banner image"
+                image:
+                  url: "https://cdn.example.com/${value.raw}-${row.events.event_id.raw | upcase}.png"
+    ```
+  </Tab>
+</Tabs>
+
 
 ### Display behavior
 
@@ -730,6 +1130,7 @@ columns:
 - **Hover preview**: Hovering over a thumbnail reveals a larger preview via tooltip
 - **Error handling**: Failed image loads show a photo-off icon with error details in the tooltip
 - **Validation**: Invalid URL syntax is caught and displays an error state
+
 
 ### Image configuration properties
 
@@ -798,52 +1199,107 @@ image:
 - **Dimensions only**: Image display is currently supported for dimensions and additional dimensions only (not metrics or table calculations)
 - **Referenced columns**: When using `${ row.table_name.column_name }` templates, the referenced column must be included in your results table for the image to display
 
+
 ### Example: Product catalog with images
 
-```yaml
-models:
-  - name: products
-    columns:
-      - name: sku
-        description: "Product SKU code"
-        meta:
-          dimension:
-            type: string
-          additional_dimensions:
-            product_thumbnail:
-              type: string
-              label: "Product Image"
-              description: "Product catalog image"
-              image:
-                url: "https://cdn.mystore.com/products/${value.raw}/thumbnail.jpg"
-                width: 80
-                height: 80
-                fit: "cover"
-      - name: category
-        description: "Product category"
-        meta:
-          dimension:
-            type: string
-          additional_dimensions:
-            category_icon:
-              type: string
-              label: "Category Icon"
-              description: "Category icon image"
-              image:
-                url: "https://cdn.mystore.com/icons/${value.raw | downcase}.png"
-                width: 40
-                height: 40
-                fit: "contain"
-      - name: hero_image_url
-        description: "Product hero image URL"
-        meta:
-          dimension:
-            type: string
-            image:
-              url: "${value.raw}"
-              width: 120
-              fit: "cover"
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: products
+        columns:
+          - name: sku
+            description: "Product SKU code"
+            meta:
+              dimension:
+                type: string
+              additional_dimensions:
+                product_thumbnail:
+                  type: string
+                  label: "Product Image"
+                  description: "Product catalog image"
+                  image:
+                    url: "https://cdn.mystore.com/products/${value.raw}/thumbnail.jpg"
+                    width: 80
+                    height: 80
+                    fit: "cover"
+          - name: category
+            description: "Product category"
+            meta:
+              dimension:
+                type: string
+              additional_dimensions:
+                category_icon:
+                  type: string
+                  label: "Category Icon"
+                  description: "Category icon image"
+                  image:
+                    url: "https://cdn.mystore.com/icons/${value.raw | downcase}.png"
+                    width: 40
+                    height: 40
+                    fit: "contain"
+          - name: hero_image_url
+            description: "Product hero image URL"
+            meta:
+              dimension:
+                type: string
+                image:
+                  url: "${value.raw}"
+                  width: 120
+                  fit: "cover"
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: products
+        columns:
+          - name: sku
+            description: "Product SKU code"
+            config:
+              meta:
+                dimension:
+                  type: string
+                additional_dimensions:
+                  product_thumbnail:
+                    type: string
+                    label: "Product Image"
+                    description: "Product catalog image"
+                    image:
+                      url: "https://cdn.mystore.com/products/${value.raw}/thumbnail.jpg"
+                      width: 80
+                      height: 80
+                      fit: "cover"
+          - name: category
+            description: "Product category"
+            config:
+              meta:
+                dimension:
+                  type: string
+                additional_dimensions:
+                  category_icon:
+                    type: string
+                    label: "Category Icon"
+                    description: "Category icon image"
+                    image:
+                      url: "https://cdn.mystore.com/icons/${value.raw | downcase}.png"
+                      width: 40
+                      height: 40
+                      fit: "contain"
+          - name: hero_image_url
+            description: "Product hero image URL"
+            config:
+              meta:
+                dimension:
+                  type: string
+                  image:
+                    url: "${value.raw}"
+                    width: 120
+                    fit: "cover"
+    ```
+  </Tab>
+</Tabs>
+
 
 ## Using special characters or capital letters in your column names
 
@@ -855,13 +1311,27 @@ column orders.status does not exist
 
 To fix this, we can add the quoted column to our `sql` meta tag on dimensions
 
-```yaml
-- name: status
-  meta:
-    dimension:
-      type: string
-      sql: '"orders"."Status"' # you can also use '${TABLE}."Status"'
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    - name: status
+      meta:
+        dimension:
+          type: string
+          sql: '"orders"."Status"' # you can also use '${TABLE}."Status"'
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    - name: status
+      config:
+        meta:
+          dimension:
+            type: string
+            sql: '"orders"."Status"' # you can also use '${TABLE}."Status"'
+    ```
+  </Tab>
+</Tabs>
 
 This will quote the `Status` columns on the SQL query
 
@@ -871,6 +1341,7 @@ SELECT
   "orders"."Status" AS "orders_status"
 FROM "postgres"."jaffle"."orders" AS "orders"
 ```
+
 
 ## Additional dimensions
 
@@ -886,104 +1357,232 @@ All [dimension configurations](#dimension-configuration) are available for addit
 
 ### Adding different formatting
 
-```yaml
-columns:
-  - name: revenue
-    meta:
-      dimension:
-        type: number
-      additional_dimensions:
-        revenue_in_thousands:
-          type: number
-          format: '#,##0," K"'
-        revenue_in_millions:
-          type: number
-          format: '#,##0,," M"'
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: revenue
+        meta:
+          dimension:
+            type: number
+          additional_dimensions:
+            revenue_in_thousands:
+              type: number
+              format: '#,##0," K"'
+            revenue_in_millions:
+              type: number
+              format: '#,##0,," M"'
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: revenue
+        config:
+          meta:
+            dimension:
+              type: number
+            additional_dimensions:
+              revenue_in_thousands:
+                type: number
+                format: '#,##0," K"'
+              revenue_in_millions:
+                type: number
+                format: '#,##0,," M"'
+    ```
+  </Tab>
+</Tabs>
+
 
 ### Comparing or combining columns
 
 When defining additional dimensions, you can reference other dimensions, even from joined tables (`organizations` is a joined table in the example below).
 
-```yaml
-columns:
-  - name: created_date
-    meta:
-      dimension:
-        type: date
-      additional_dimensions:
-        days_to_first_query_run:
-          type: number
-          description: 'Number of days between a user being created and their first query run.'
-          sql: ${first_query_date} - ${created_date}
-        days_to_organization_first_payment:
-          type: number
-          description: 'Number of days between a user being created and their organization making its first payment. This will be negative for users who joined after the first payment.'
-          sql: ${created_date} - ${organizations.first_payment_date}
-```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: created_date
+        meta:
+          dimension:
+            type: date
+          additional_dimensions:
+            days_to_first_query_run:
+              type: number
+              description: 'Number of days between a user being created and their first query run.'
+              sql: ${first_query_date} - ${created_date}
+            days_to_organization_first_payment:
+              type: number
+              description: 'Number of days between a user being created and their organization making its first payment. This will be negative for users who joined after the first payment.'
+              sql: ${created_date} - ${organizations.first_payment_date}
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: created_date
+        config:
+          meta:
+            dimension:
+              type: date
+            additional_dimensions:
+              days_to_first_query_run:
+                type: number
+                description: 'Number of days between a user being created and their first query run.'
+                sql: ${first_query_date} - ${created_date}
+              days_to_organization_first_payment:
+                type: number
+                description: 'Number of days between a user being created and their organization making its first payment. This will be negative for users who joined after the first payment.'
+                sql: ${created_date} - ${organizations.first_payment_date}
+    ```
+  </Tab>
+</Tabs>
+
 
 ### Parsing JSON columns
 
 Usually you'll want to add `hidden:true` for the main JSON dimension since raw JSON is not useful in charts.
 
-```yaml
-columns:
-  - name: metadata # this is a jsonb column with metadata
-    meta:
-      dimension:
-        hidden: true
-      additional_dimensions:
-        version:
-          type: number
-          sql: JSON_VALUE(${metadata}, '$.version') # custom SQL applied to get the "version" value inside metadata
-```
-
-### Adding multiple timezones for the same dimension
-
-You can use additional dimensions to convert a timestamp into multiple timezones:
-
-```yaml
-columns:
-  - name: created_at
-    description: 'The time that the thing was created'
-    meta:
-      dimension:
-        label: 'Created (UTC)'
-        type: timestamp
-      additional_dimensions:
-        created_at_est:
-          type: timestamp
-          label: 'Created (EST)'
-          description: 'The time that the thing was created, in EST'
-          sql: "convert_timezone('UTC', 'America/New_York', ${TABLE}.created_at)"
-```
-
-### Using additional dimensions in metrics
-
-To define metrics based on additional dimensions, you need to add them to the model's meta metrics, or use custom SQL in defining them under the column's meta.
-
-```yaml
-models:
-  - name: users
-    meta:
-      metrics:
-        highest_version_model_metric_example:
-          type: max
-          sql: ${version}
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
     columns:
-      - name: metadata
+      - name: metadata # this is a jsonb column with metadata
         meta:
           dimension:
             hidden: true
           additional_dimensions:
             version:
               type: number
-              sql: JSON_VALUE(${metadata}, '$.version')
+              sql: JSON_VALUE(${metadata}, '$.version') # custom SQL applied to get the "version" value inside metadata
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: metadata # this is a jsonb column with metadata
+        config:
+          meta:
+            dimension:
+              hidden: true
+            additional_dimensions:
+              version:
+                type: number
+                sql: JSON_VALUE(${metadata}, '$.version') # custom SQL applied to get the "version" value inside metadata
+    ```
+  </Tab>
+</Tabs>
+
+
+### Adding multiple timezones for the same dimension
+
+You can use additional dimensions to convert a timestamp into multiple timezones:
+
+
+
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+  ```yaml
+  columns:
+    - name: created_at
+      description: 'The time that the thing was created'
+      meta:
+        dimension:
+          label: 'Created (UTC)'
+          type: timestamp
+        additional_dimensions:
+          created_at_est:
+            type: timestamp
+            label: 'Created (EST)'
+            description: 'The time that the thing was created, in EST'
+            sql: "convert_timezone('UTC', 'America/New_York', ${TABLE}.created_at)"
+  ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+  ```yaml
+  columns:
+    - name: created_at
+      description: 'The time that the thing was created'
+      config: 
+        meta:
+          dimension:
+            label: 'Created (UTC)'
+            type: timestamp
+          additional_dimensions:
+            created_at_est:
+              type: timestamp
+              label: 'Created (EST)'
+              description: 'The time that the thing was created, in EST'
+              sql: "convert_timezone('UTC', 'America/New_York', ${TABLE}.created_at)"
+  ```
+  </Tab>
+</Tabs>
+
+
+
+
+
+### Using additional dimensions in metrics
+
+To define metrics based on additional dimensions, you need to add them to the model's meta metrics, or use custom SQL in defining them under the column's meta.
+
+
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+  ```yaml
+  models:
+    - name: users
+      meta:
+        metrics:
+          highest_version_model_metric_example:
+            type: max
+            sql: ${version}
+      columns:
+        - name: metadata
+          meta:
+            dimension:
+              hidden: true
+            additional_dimensions:
+              version:
+                type: number
+                sql: JSON_VALUE(${metadata}, '$.version')
+            metrics:
+              highest_version:
+                type: max
+                sql: ${version}
+  ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+  ```yaml
+  models:
+    - name: users
+      config:
+        meta:
           metrics:
-            highest_version:
+            highest_version_model_metric_example:
               type: max
               sql: ${version}
-```
+        columns:
+          - name: metadata
+            meta:
+              dimension:
+                hidden: true
+              additional_dimensions:
+                version:
+                  type: number
+                  sql: JSON_VALUE(${metadata}, '$.version')
+              metrics:
+                highest_version:
+                  type: max
+                  sql: ${version}
+  ```
+  </Tab>
+</Tabs>
+
+
+
 
 ### Referencing time intervals in additional dimensions
 
@@ -991,27 +1590,57 @@ You can reference time interval dimensions within additional dimensions. This is
 
 For example, you can create a tier based on whether a specific time interval has a value:
 
-```yaml
-  - name: session_start
-    meta:
-      dimension:
-        type: timestamp
-        time_intervals:
-        - DAY_OF_WEEK_NAME
-        - WEEK
-        - MONTH
-        - RAW
-        - DAY
-        - HOUR_OF_DAY_NUM
-        - QUARTER
-      additional_dimensions:
-        extra_session_start_tier:
-          type: string
-          sql: |
-            CASE 
-              WHEN ${session_start_month} IS NOT NULL THEN 'month' 
-              ELSE 'else'
-            END
-```
+
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+  ```yaml
+    - name: session_start
+      meta:
+        dimension:
+          type: timestamp
+          time_intervals:
+          - DAY_OF_WEEK_NAME
+          - WEEK
+          - MONTH
+          - RAW
+          - DAY
+          - HOUR_OF_DAY_NUM
+          - QUARTER
+        additional_dimensions:
+          extra_session_start_tier:
+            type: string
+            sql: |
+              CASE 
+                WHEN ${session_start_month} IS NOT NULL THEN 'month' 
+                ELSE 'else' END
+  ```  
+  </Tab>
+  <Tab title="dbt v1.10+">
+  ```yaml
+    - name: session_start
+      config:
+        meta:
+          dimension:
+            type: timestamp
+            time_intervals:
+            - DAY_OF_WEEK_NAME
+            - WEEK
+            - MONTH
+            - RAW
+            - DAY
+            - HOUR_OF_DAY_NUM
+            - QUARTER
+          additional_dimensions:
+            extra_session_start_tier:
+              type: string
+              sql: |
+                CASE 
+                  WHEN ${session_start_month} IS NOT NULL THEN 'month' 
+                  ELSE 'else' END
+  ```
+  </Tab>
+</Tabs>
+
 
 In this example, the additional dimension `extra_session_start_tier` references `${session_start_month}`, which is the `MONTH` time interval of the `session_start` dimension.
