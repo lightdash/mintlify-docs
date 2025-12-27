@@ -298,7 +298,7 @@ Maintain consistency:
 
 Found a problem in the docs?
 
-1. Check if an issue already exists
+1. [Check if an issue already exists](https://github.com/lightdash/mintlify-docs/issues)
 2. Create a new issue with:
    - Clear title
    - Page URL
@@ -307,5 +307,5 @@ Found a problem in the docs?
 
 ## ❓ Questions?
 
-- **Slack**: #analytics_engineering channel (for team members)
+- **Slack**: [#analytics-engineering](https://lightdash.slack.com/archives/C091T9LD2LC) (for team members)
 - **GitHub Discussions**: For community questions
