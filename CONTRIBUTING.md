@@ -334,8 +334,8 @@ GROUP BY user_id
 
 #### Links
 
-- Use descriptive link text: [create a new dashboard](/guides/dashboards)
-- Not: Click [here](/guides/dashboards)
+- Use descriptive link text: [create a new dashboard](/get-started/exploring-data/dashboards)
+- Not: Click [here](/get-started/exploring-data/dashboards)
 
 #### Lists
 
