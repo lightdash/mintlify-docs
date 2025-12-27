@@ -8,6 +8,7 @@ Thank you for your interest in improving Lightdash's documentation! This guide w
 - [Documentation Structure](#documentation-structure)
 - [Writing Guidelines](#writing-guidelines)
 - [Image Guidelines](#image-guidelines)
+- [Using Reusable Snippets](#using-reusable-snippets)
 - [Submitting Changes](#submitting-changes)
 - [Style Guide](#style-guide)
 
@@ -173,6 +174,69 @@ More instructions...
 Always include meaningful alt text:
 ```mdx
 <img src="/images/path/file.png" alt="Dashboard settings showing the theme selector dropdown menu"/>
+```
+
+## 🔁 Using Reusable Snippets
+
+To maintain consistency across the documentation, we use reusable snippets for common callouts and content blocks.
+
+### Available Snippets
+
+#### Feature Availability Callouts
+
+Use these to indicate which plans or deployment types support a feature:
+
+```mdx
+<!-- Enterprise-only features -->
+<Snippet file="snippets/callouts/enterprise-only.mdx" />
+
+<!-- Cloud-only features -->
+<Snippet file="snippets/callouts/cloud-only.mdx" />
+
+<!-- Self-hosted only features -->
+<Snippet file="snippets/callouts/self-hosted-only.mdx" />
+```
+
+#### Permission & Access Callouts
+
+```mdx
+<!-- Requires admin permissions -->
+<Snippet file="snippets/callouts/admin-only.mdx" />
+
+<!-- Beta features -->
+<Snippet file="snippets/callouts/beta-feature.mdx" />
+```
+
+#### Common Setup Sections
+
+```mdx
+<!-- dbt prerequisites (includes heading) -->
+<Snippet file="snippets/setup/dbt-project-required.mdx" />
+
+<!-- Support channels (includes heading) -->
+<Snippet file="snippets/common/support-channels.mdx" />
+```
+
+### When to Use Snippets
+
+- ✅ **Use snippets** for standard callouts that appear across multiple pages
+- ✅ **Use snippets** for repeated setup instructions or prerequisites
+- ❌ **Don't use snippets** for page-specific content that won't be reused
+
+### Creating New Snippets
+
+If you notice the same content repeated across 3+ pages:
+
+1. Create a new snippet file in `/snippets/` with an appropriate subdirectory
+2. Use descriptive filenames: `enterprise-only.mdx` not `callout1.mdx`
+3. Document the new snippet in this section
+4. Update existing pages to use the snippet
+
+**Example snippet file** (`snippets/callouts/my-callout.mdx`):
+```mdx
+<Note>
+  Your reusable content here. Can include [links](/path) and **formatting**.
+</Note>
 ```
 
 ## 🔄 Submitting Changes
