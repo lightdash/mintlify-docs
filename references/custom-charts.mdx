@@ -594,89 +594,102 @@ The config below will output a bubble plot with the standard Vega-Lite settings,
 
 Funnel charts are ideal for visualizing a flow or process where the quantity decreases step-by-step, such as sales pipelines, conversion rates, or order processes. Each stage is represented as a bar whose width reflects the corresponding value.
 
-This chart works best when you have a **categorical dimension** (like a status or step name) and a **numeric metric** (such as order amount or count) to measure at each step.
+This chart works best with a categorical or string dimension (like status or step name) and a numeric metric (such as order amount or count) to measure at each step.
 
-This chart works best with a string dimension (like status or step name) and a numeric metric (such as order amount or count) to measure at each step.
+Funnel chart configurations are more complex than other charts. We recommend loading the template directly in Lightdash, which will automatically map your data fields.
 
-<Tip>
-  **TIP:** If you add extra dimensions, the funnel chart will not render correctly.
-</Tip>
-
-This is just a sample of the template. Funnel chart configurations are a bit more complex than other charts, so we recommend loading the template directly in Lightdash instead of copying this code manually. The template will automatically map your data fields into the configuration.
+[See a live demo of this chart](https://demo.lightdash.com/projects/d496d901-a76d-4916-9eae-b81bc7337013/saved/b19b6a9f-b7a7-4795-bbd7-48f39b425c69) on our demo site.
 
 The config below will output a funnel chart with the standard Vega-Lite settings that looks like this:
 
-![Custom funnel chart](/images/references/custom-funnel-chart.jpg)
+![Custom funnel chart](/images/references/custom-charts-funnel-chart.png)
 
 <Accordion title="Example funnel chart config">
 
 ```json
 {
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+
+  "title": {
+    "text": "Sales Funnel",
+    "anchor": "middle",
+    "fontSize": 18,
+    "fontWeight": "bold"
+  },
+
   "config": {
     "view": {
       "strokeWidth": 0
     }
   },
+
   "transform": [
     {
-      "calculate": "datum.orders_total_order_amount + ' ' + datum.orders_status",
-      "as": "label"
-    },
-    {
-      "window": [
+      "joinaggregate": [
         {
-          "op": "lag",
-          "field": "orders_total_order_amount",
-          "as": "previous_value"
+          "as": "max_count",
+          "op": "max",
+          "field": "leads_unique_lead_count"
         }
-      ],
-      "frame": [
-        1,
-        0
       ]
     },
     {
-      "calculate": "datum.previous_value ? (datum.orders_total_order_amount / datum.previous_value) * 100 : null",
-      "as": "percent_of_previous"
+      "as": "x_start",
+      "calculate": "(datum.max_count - datum.leads_unique_lead_count) / 2"
     },
     {
-      "calculate": "isValid(datum.percent_of_previous) ? '↓ ' + format(datum.percent_of_previous, '.1f') + '%' : 'N/A'",
-      "as": "change_label"
+      "as": "x_end",
+      "calculate": "datum.x_start + datum.leads_unique_lead_count"
+    },
+    {
+      "as": "x_mid",
+      "calculate": "datum.x_start + (datum.leads_unique_lead_count / 2)"
+    },
+    {
+      "as": "label",
+      "calculate": "datum.leads_unique_lead_count + ' ' + datum.leads_lead_status"
+    },
+    {
+      "as": "change_label",
+      "calculate": "isValid(datum.conversion_rate) ? '↓ ' + format(datum.conversion_rate * 100, '.1f') + '%' : ''"
     }
   ],
+
   "layer": [
     {
       "mark": {
-        "type": "bar",
-        "color": "#40817c"
+        "type": "bar"
       },
       "encoding": {
         "x": {
-          "field": "orders_total_order_amount",
+          "axis": null,
           "type": "quantitative",
-          "stack": "center",
-          "axis": null
+          "field": "x_start"
+        },
+        "x2": {
+          "field": "x_end"
         },
         "y": {
-          "field": "orders_status",
-          "type": "nominal",
           "axis": null,
           "sort": null,
+          "type": "nominal",
+          "field": "leads_lead_status",
           "scale": {
-            "padding": 0.5
+            "padding": 0.5,
+            "reverse": true
           }
         },
         "color": {
-          "field": "orders_status",
+          "type": "nominal",
+          "field": "leads_lead_status",
           "scale": {
             "range": [
-              "#bde4e2",
-              "#a2d0ce",
-              "#87bcb9",
-              "#6ea8a5",
-              "#569490",
-              "#40817c"
+              "#FFE3CC",
+              "#FFC199",
+              "#FF9F66",
+              "#FF7D33",
+              "#E65C00",
+              "#B34700"
             ]
           }
         }
@@ -685,49 +698,99 @@ The config below will output a funnel chart with the standard Vega-Lite settings
     {
       "mark": {
         "type": "text",
-        "color": "white"
+        "align": "center",
+        "color": "black",
+        "baseline": "middle",
+        "fontWeight": "bold"
       },
       "encoding": {
+        "x": {
+          "type": "quantitative",
+          "field": "x_mid"
+        },
         "y": {
-          "field": "orders_status",
-          "type": "nominal",
           "axis": null,
-          "sort": null
+          "sort": null,
+          "type": "nominal",
+          "field": "leads_lead_status",
+          "scale": {
+            "reverse": true
+          }
         },
         "text": {
           "field": "label"
+        },
+        "yOffset": {
+          "value": -8
         }
       }
     },
     {
       "mark": {
         "type": "text",
-        "color": "black"
+        "align": "center",
+        "color": "black",
+        "baseline": "middle",
+        "fontSize": 12
       },
       "encoding": {
-        "y": {
-          "field": "orders_status",
-          "type": "nominal",
-          "axis": null,
-          "sort": null
+        "x": {
+          "type": "quantitative",
+          "field": "x_mid"
         },
-        "yOffset": {
-          "value": -9
+        "y": {
+          "axis": null,
+          "sort": null,
+          "type": "nominal",
+          "field": "leads_lead_status",
+          "scale": {
+            "reverse": true
+          }
         },
         "text": {
-          "condition": {
-            "test": "datum.change_label !== 'N/A'",
-            "field": "change_label"
+          "field": "change_label"
+        },
+        "yOffset": {
+          "value": 10
+        }
+      }
+    },
+    {
+      "mark": {
+        "type": "point",
+        "opacity": 0
+      },
+      "encoding": {
+        "color": {
+          "type": "nominal",
+          "field": "leads_lead_status",
+          "scale": {
+            "range": [
+              "#FFE3CC",
+              "#FFC199",
+              "#FF9F66",
+              "#FF7D33",
+              "#E65C00",
+              "#B34700"
+            ]
           },
-          "value": ""
+          "legend": {
+            "title": "Lead status",
+            "orient": "right"
+          }
         }
       }
     }
   ]
 }
+
 ```
 
 </Accordion>
+
+<Tip>
+  If you add extra dimensions, the funnel chart will not render correctly.
+</Tip>
 
 
 ### Waterfall charts
