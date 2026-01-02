@@ -795,82 +795,150 @@ The config below will output a funnel chart with the standard Vega-Lite settings
 
 ### Waterfall charts
 
-Waterfall charts are used to show how an initial value is affected by a series of positive and negative changes over time or across different categories. They are perfect for visualizing how different factors contribute to a total, like revenue changes, customer growth, or budget breakdowns.
+Waterfall charts show how an initial value is affected by a series of positive and negative changes, making it easy to see the cumulative effect of sequential increases and decreases. They're perfect for visualizing financial changes (revenue breakdown, budget analysis), customer lifecycle metrics, or any scenario where you need to track step-by-step contributions to a total.
 
-Each bar represents a step: increases are shown in one color (e.g. green), decreases in another (e.g. red), and the final total in a third (e.g. blue).
+This chart works best with a categorical or temporal dimension for the x-axis (like stages or time periods) and numeric metrics representing starting and ending values for each step.
 
-- This chart works best with string or date dimensions for the x-axis (like a year or stage) and two numeric metrics for the y-axis: one representing the starting point and the other representing the ending point. The difference between these two values defines the height and direction (increase or decrease) of each bar.
-- Additionally, you could use a string dimension to color the bars.
-
+[See a live demo of this chart](https://demo.lightdash.com/projects/d496d901-a76d-4916-9eae-b81bc7337013/saved/3706f242-e4c5-4bb7-9037-e750e18a06e4/) on our demo site.
 
 The config below will output a waterfall chart with the standard Vega-Lite settings, like this:
 
-![Custom Waterfall](/images/references/custom-waterfall.jpg)
-
+![Custom Waterfall](/images/references/custom-charts-waterfall.png)
 
 
 <Accordion title="Example waterfall config">
 
 ```json
 {
-  "$schema": "https://vega.github.io/schema/vega-lite/v2.json",
-  "encoding": {
-    "x": {
-      "field": "orders_status",
-      "type": "ordinal"
-    },
-    "y": {
-      "field": "orders_total_order_amount",
-      "type": "quantitative",
-      "axis": {
-        "title": "orders_total_order_amount"
-      }
-    },
-    "y2": {
-      "field": "customers_unique_customer_count",
-      "type": "quantitative"
-    }
+  "data": {
+    "name": "table"
   },
   "layer": [
     {
-      "mark": "bar",
+      "mark": {
+        "type": "bar",
+        "opacity": 1
+      },
       "encoding": {
+        "y": {
+          "type": "quantitative",
+          "field": "base",
+          "title": "Unique Active Users"
+        },
+        "y2": {
+          "field": "end"
+        },
         "color": {
-          "type": "ordinal",
-          "_comment": "chose a field to color by",
-          "_field": "type",
+          "type": "nominal",
+          "field": "type",
           "scale": {
-            "domain": [
-              "total",
-              "increase",
-              "decrease"
-            ],
             "range": [
-              "#4FC3F7",
-              "#B2FF59",
-              "#FF5252"
+              "#BFAAF9",
+              "#F28B82",
+              "#E5E7EB"
+            ],
+            "domain": [
+              "increase",
+              "decrease",
+              "no_change"
             ]
+          },
+          "legend": {
+            "title": "Change Type"
           }
-        }
+        },
+        "tooltip": [
+          {
+            "field": "tracks_timestamp_day",
+            "title": "Date",
+            "timeUnit": "yearmonthdate"
+          },
+          {
+            "field": "tracks_unique_user_count",
+            "title": "Total Users"
+          },
+          {
+            "field": "change",
+            "title": "Change"
+          }
+        ]
       }
     },
     {
-      "mark": "text",
+      "mark": {
+        "dx": 50,
+        "dy": 10,
+        "type": "text",
+        "align": "left",
+        "color": "#333",
+        "baseline": "middle",
+        "fontWeight": "bold"
+      },
       "encoding": {
+        "x": {
+          "type": "temporal",
+          "field": "tracks_timestamp_day"
+        },
         "y": {
-          "field": "orders_total_order_amount",
-          "type": "quantitative"
+          "type": "quantitative",
+          "field": "end"
         },
         "text": {
-          "field": "orders_total_order_amount",
-          "type": "nominal"
-        },
-        "color": {
-          "value": "#1B5E20"
+          "type": "quantitative",
+          "field": "change",
+          "format": "+,d"
         }
       }
     }
-  ]
+  ],
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "encoding": {
+    "x": {
+      "axis": {
+        "grid": false,
+        "format": "%b %d",
+        "tickCount": "day",
+        "labelAngle": -45
+      },
+      "type": "temporal",
+      "field": "tracks_timestamp_day",
+      "title": "Date",
+      "timeUnit": "yearmonthdate"
+    }
+  },
+  "transform": [
+    {
+      "sort": [
+        {
+          "field": "tracks_timestamp_day"
+        }
+      ],
+      "window": [
+        {
+          "as": "previous_value",
+          "op": "lag",
+          "field": "tracks_unique_user_count"
+        }
+      ]
+    },
+    {
+      "as": "change",
+      "calculate": "datum.tracks_unique_user_count - datum.previous_value"
+    },
+    {
+      "as": "type",
+      "calculate": "datum.change > 0 ? 'increase' : datum.change < 0 ? 'decrease' : 'no_change'"
+    },
+    {
+      "as": "base",
+      "calculate": "datum.previous_value || 0"
+    },
+    {
+      "as": "end",
+      "calculate": "datum.base + datum.change"
+    }
+  ],
+  "description": "Waterfall chart showing changes in active unique users per day."
 }
 ```
 
