@@ -204,6 +204,39 @@ function findOrphanedPages(allMdxFiles, docsJson) {
   return orphans;
 }
 
+function extractRedirects(docsJson) {
+  if (!docsJson || !docsJson.redirects) return [];
+  return docsJson.redirects.map(r => ({
+    source: r.source.startsWith('/') ? r.source.substring(1) : r.source,
+    destination: r.destination.startsWith('/') ? r.destination.substring(1) : r.destination
+  }));
+}
+
+function validateRedirects(redirects) {
+  const issues = [];
+
+  redirects.forEach(redirect => {
+    // Check if destination exists
+    const possiblePaths = [
+      path.join(process.cwd(), redirect.destination),
+      path.join(process.cwd(), redirect.destination + '.mdx'),
+      path.join(process.cwd(), redirect.destination + '.md'),
+    ];
+
+    const exists = possiblePaths.some(p => fs.existsSync(p));
+
+    if (!exists) {
+      issues.push({
+        source: redirect.source,
+        destination: redirect.destination,
+        issue: 'Redirect destination does not exist'
+      });
+    }
+  });
+
+  return issues;
+}
+
 async function main() {
   console.log('🔍 Checking for broken links in documentation...\n');
 
@@ -256,6 +289,11 @@ async function main() {
   const docsJson = loadDocsJson();
   const orphanedPages = findOrphanedPages(filteredFiles, docsJson);
 
+  // Check redirects
+  console.log('🔍 Checking redirects in docs.json...\n');
+  const redirects = extractRedirects(docsJson);
+  const redirectIssues = validateRedirects(redirects);
+
   // Display results
   if (brokenLinks.length === 0) {
     console.log('✅ No broken internal links found!\n');
@@ -285,6 +323,18 @@ async function main() {
       console.log(`   📄 ${page}.mdx`);
     });
     console.log('\n💡 These pages exist but are not linked in docs.json navigation.\n');
+  }
+
+  // Display redirect issues
+  if (redirectIssues.length === 0) {
+    console.log('✅ All redirects are valid!\n');
+  } else {
+    console.log(`❌ Found ${redirectIssues.length} invalid redirects in docs.json:\n`);
+    redirectIssues.forEach(({ source, destination, issue }) => {
+      console.log(`   🔀 ${source} → ${destination}`);
+      console.log(`   ❌ ${issue}\n`);
+    });
+    console.log('💡 When moving pages, ensure redirect destinations exist.\n');
   }
 
   // Check external links if requested
@@ -317,13 +367,14 @@ async function main() {
   console.log(`Total links checked: ${totalLinks}`);
   console.log(`Broken internal links: ${brokenLinks.length}`);
   console.log(`Orphaned pages: ${orphanedPages.length}`);
+  console.log(`Invalid redirects: ${redirectIssues.length}`);
   if (CHECK_EXTERNAL) {
     console.log(`External links checked: ${externalLinks.length}`);
   }
   console.log('─'.repeat(60));
 
   // Exit with error if issues found
-  const hasIssues = brokenLinks.length > 0 || orphanedPages.length > 0;
+  const hasIssues = brokenLinks.length > 0 || orphanedPages.length > 0 || redirectIssues.length > 0;
   process.exit(hasIssues ? 1 : 0);
 }
 
