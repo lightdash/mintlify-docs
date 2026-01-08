@@ -208,7 +208,7 @@ async function main() {
   console.log('🔍 Checking for broken links in documentation...\n');
 
   const mdxFiles = findMDXFiles('.');
-  const excludedPaths = ['node_modules', '.git'];
+  const excludedPaths = ['node_modules', '.git', 'CONTRIBUTING.md'];
   const filteredFiles = mdxFiles.filter(file =>
     !excludedPaths.some(excluded => file.includes(excluded))
   );

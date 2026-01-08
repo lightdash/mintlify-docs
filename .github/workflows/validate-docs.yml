@@ -1,0 +1,75 @@
+name: Validate Documentation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '**.mdx'
+      - '**.md'
+      - 'images/**'
+      - 'scripts/**'
+      - '.github/workflows/validate-docs.yml'
+
+jobs:
+  validate:
+    name: Check Links and Images
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Check for broken links
+        id: check-links
+        run: |
+          echo "::group::Checking for broken links"
+          node scripts/check-links.js
+          echo "::endgroup::"
+        continue-on-error: true
+
+      - name: Check image locations
+        id: check-images
+        run: |
+          echo "::group::Checking image locations"
+          node scripts/check-image-locations.js
+          echo "::endgroup::"
+        continue-on-error: true
+
+      - name: Report results
+        if: steps.check-links.outcome == 'failure' || steps.check-images.outcome == 'failure'
+        run: |
+          echo "## Documentation Validation Failed ❌" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.check-links.outcome }}" == "failure" ]; then
+            echo "### Broken Links Found 🔗" >> $GITHUB_STEP_SUMMARY
+            echo "Please fix the broken links identified above." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ steps.check-images.outcome }}" == "failure" ]; then
+            echo "### Image Location Issues Found 🖼️" >> $GITHUB_STEP_SUMMARY
+            echo "Images must mirror the page structure. See [CONTRIBUTING.md](../CONTRIBUTING.md#image-guidelines) for guidelines." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "💡 **Quick Reference:**" >> $GITHUB_STEP_SUMMARY
+          echo "- A page at \`guides/dashboard.mdx\` should use images from \`images/guides/dashboard/\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Shared images can be placed in parent directories" >> $GITHUB_STEP_SUMMARY
+          echo "- All internal links must point to existing files" >> $GITHUB_STEP_SUMMARY
+
+          exit 1
+
+      - name: Success message
+        if: steps.check-links.outcome == 'success' && steps.check-images.outcome == 'success'
+        run: |
+          echo "## Documentation Validation Passed ✅" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All links are valid and images are in the correct locations!" >> $GITHUB_STEP_SUMMARY
