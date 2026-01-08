@@ -84,7 +84,7 @@ function getExpectedImageDirectory(mdxFilePath) {
   return path.join('images', withoutExt);
 }
 
-function validateImageLocation(imagePath, mdxFilePath) {
+function validateImageLocation(imagePath, mdxFilePath, isShared = false) {
   const issues = [];
 
   // Resolve absolute path for image
@@ -116,6 +116,11 @@ function validateImageLocation(imagePath, mdxFilePath) {
       message: `Invalid file extension: ${ext}. Expected: ${VALID_IMAGE_EXTENSIONS.join(', ')}`,
       imagePath: imagePath
     });
+  }
+
+  // Skip location validation for shared images (used by multiple files)
+  if (isShared) {
+    return issues;
   }
 
   // Get expected directory
@@ -168,6 +173,36 @@ function getRelativePath(filePath) {
   return path.relative(process.cwd(), filePath).replace(/\\/g, '/');
 }
 
+function buildSharedImagesMap(files) {
+  const imageUsageMap = new Map(); // imagePath -> [files using it]
+
+  for (const file of files) {
+    const content = fs.readFileSync(file, 'utf8');
+    const images = extractImageReferences(content, file);
+
+    for (const image of images) {
+      const normalizedPath = image.path.startsWith('/')
+        ? image.path
+        : '/' + path.relative(process.cwd(), path.join(path.dirname(file), image.path)).replace(/\\/g, '/');
+
+      if (!imageUsageMap.has(normalizedPath)) {
+        imageUsageMap.set(normalizedPath, []);
+      }
+      imageUsageMap.get(normalizedPath).push(getRelativePath(file));
+    }
+  }
+
+  // Return set of images used by 2+ files (shared images)
+  const sharedImages = new Set();
+  for (const [imagePath, files] of imageUsageMap.entries()) {
+    if (files.length >= 2) {
+      sharedImages.add(imagePath);
+    }
+  }
+
+  return { sharedImages, imageUsageMap };
+}
+
 async function main() {
   console.log('🖼️  Checking image locations in documentation...\n');
 
@@ -179,11 +214,17 @@ async function main() {
 
   console.log(`📄 Found ${filteredFiles.length} documentation files\n`);
 
+  // First pass: identify shared images
+  console.log('🔍 Identifying shared images...\n');
+  const { sharedImages, imageUsageMap } = buildSharedImagesMap(filteredFiles);
+  console.log(`📊 Found ${sharedImages.size} images used by multiple pages\n`);
+
   const allIssues = [];
   let totalImages = 0;
   let missingImages = 0;
   let misplacedImages = 0;
   let invalidTypes = 0;
+  let sharedImagesCount = 0;
 
   // Check images in each file
   for (const file of filteredFiles) {
@@ -194,7 +235,18 @@ async function main() {
     for (const image of images) {
       totalImages++;
 
-      const issues = validateImageLocation(image.path, file);
+      // Normalize image path for comparison
+      const normalizedPath = image.path.startsWith('/')
+        ? image.path
+        : '/' + path.relative(process.cwd(), path.join(path.dirname(file), image.path)).replace(/\\/g, '/');
+
+      // Skip location validation for shared images
+      const isShared = sharedImages.has(normalizedPath);
+      if (isShared) {
+        sharedImagesCount++;
+      }
+
+      const issues = validateImageLocation(image.path, file, isShared);
 
       if (issues.length > 0) {
         issues.forEach(issue => {
@@ -256,6 +308,7 @@ async function main() {
   // Summary
   console.log('─'.repeat(60));
   console.log(`Total images checked: ${totalImages}`);
+  console.log(`Shared images (used by 2+ files): ${sharedImagesCount}`);
   console.log(`Missing images: ${missingImages}`);
   console.log(`Misplaced images: ${misplacedImages}`);
   console.log(`Invalid file types: ${invalidTypes}`);
@@ -264,7 +317,7 @@ async function main() {
   console.log('\n💡 Image Placement Rules:');
   console.log('   • Images should mirror page structure');
   console.log('   • guides/dashboard.mdx → images/guides/dashboard/');
-  console.log('   • Shared images can be in parent directories');
+  console.log('   • Shared images (used by multiple pages) are automatically allowed');
   console.log('   • See CONTRIBUTING.md for full guidelines\n');
 
   // Exit with error if issues found
