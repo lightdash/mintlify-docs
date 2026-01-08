@@ -2,6 +2,7 @@ name: Validate Documentation
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened]  # Run on PR open AND every commit
     branches:
       - main
     paths:
@@ -43,15 +44,24 @@ jobs:
           echo "::endgroup::"
         continue-on-error: true
 
-      - name: Post PR comment
-        if: steps.check-links.outputs.issues_found == 'true' || steps.check-images.outputs.issues_found == 'true'
+      - name: Post or update PR comment
+        if: always()  # Always run to update comment even if issues are fixed
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
 
+            // Build comment body
             let comment = '## 📋 Documentation Validation Report\n\n';
-            comment += '⚠️ Some issues were found in this PR. These are **informational warnings** and will not block merging.\n\n';
+
+            const hasIssues = '${{ steps.check-links.outputs.issues_found }}' === 'true' ||
+                            '${{ steps.check-images.outputs.issues_found }}' === 'true';
+
+            if (hasIssues) {
+              comment += '⚠️ Some issues were found in this PR. These are **informational warnings** and will not block merging.\n\n';
+            } else {
+              comment += '✅ All validation checks passed!\n\n';
+            }
 
             if ('${{ steps.check-links.outputs.issues_found }}' === 'true') {
               const linksOutput = fs.readFileSync('/tmp/check-links-output.txt', 'utf8');
@@ -90,12 +100,33 @@ jobs:
             comment += '- All internal links must point to existing files\n\n';
             comment += '📖 Run `node scripts/check-links.js` and `node scripts/check-image-locations.js` locally for full details.\n';
 
-            github.rest.issues.createComment({
+            // Find existing comment from this bot
+            const { data: comments } = await github.rest.issues.listComments({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: comment
             });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('📋 Documentation Validation Report')
+            );
+
+            // Update existing or create new
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                comment_id: botComment.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            }
 
       - name: Report results
         if: always()
