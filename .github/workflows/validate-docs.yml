@@ -1,0 +1,142 @@
+name: Validate Documentation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]  # Run on PR open AND every commit
+    branches:
+      - main
+    paths:
+      - '**.mdx'
+      - '**.md'
+      - 'images/**'
+      - 'scripts/**'
+      - '.github/workflows/validate-docs.yml'
+
+jobs:
+  validate:
+    name: Check Links and Images
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Check for broken links
+        id: check-links
+        run: |
+          echo "::group::Checking for broken links"
+          node scripts/check-links.js > /tmp/check-links-output.txt 2>&1 || echo "issues_found=true" >> $GITHUB_OUTPUT
+          cat /tmp/check-links-output.txt
+          echo "::endgroup::"
+        continue-on-error: true
+
+      - name: Check image locations
+        id: check-images
+        run: |
+          echo "::group::Checking image locations"
+          node scripts/check-image-locations.js > /tmp/check-images-output.txt 2>&1 || echo "issues_found=true" >> $GITHUB_OUTPUT
+          cat /tmp/check-images-output.txt
+          echo "::endgroup::"
+        continue-on-error: true
+
+      - name: Post or update PR comment
+        if: always()  # Always run to update comment even if issues are fixed
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            // Build comment body
+            let comment = '## 📋 Documentation Validation Report\n\n';
+
+            const hasIssues = '${{ steps.check-links.outputs.issues_found }}' === 'true' ||
+                            '${{ steps.check-images.outputs.issues_found }}' === 'true';
+
+            if (hasIssues) {
+              comment += '⚠️ Some issues were found in this PR. These are **informational warnings** and will not block merging.\n\n';
+            } else {
+              comment += '✅ All validation checks passed!\n\n';
+            }
+
+            if ('${{ steps.check-links.outputs.issues_found }}' === 'true') {
+              const linksOutput = fs.readFileSync('/tmp/check-links-output.txt', 'utf8');
+              const lines = linksOutput.split('\n');
+              const brokenLinks = lines.filter(line => line.includes('Broken link:') || line.includes('📄')).slice(0, 10);
+
+              comment += '### 🔗 Links\n';
+              if (brokenLinks.length > 0) {
+                comment += '<details><summary>❌ Found broken links (click to expand)</summary>\n\n';
+                comment += '```\n' + brokenLinks.join('\n') + '\n```\n';
+                comment += '</details>\n\n';
+              }
+            } else {
+              comment += '### 🔗 Links\n✅ All links valid\n\n';
+            }
+
+            if ('${{ steps.check-images.outputs.issues_found }}' === 'true') {
+              const imagesOutput = fs.readFileSync('/tmp/check-images-output.txt', 'utf8');
+              const lines = imagesOutput.split('\n');
+              const imageIssues = lines.filter(line => line.includes('📄') || line.includes('Expected in:')).slice(0, 10);
+
+              comment += '### 🖼️ Images\n';
+              if (imageIssues.length > 0) {
+                comment += '<details><summary>❌ Found image location issues (click to expand)</summary>\n\n';
+                comment += '```\n' + imageIssues.join('\n') + '\n```\n';
+                comment += '</details>\n\n';
+              }
+            } else {
+              comment += '### 🖼️ Images\n✅ All images in correct locations\n\n';
+            }
+
+            comment += '---\n';
+            comment += '💡 **Quick Reference:**\n';
+            comment += '- A page at `guides/dashboard.mdx` should use images from `images/guides/dashboard/`\n';
+            comment += '- Shared images can be placed in parent directories\n';
+            comment += '- All internal links must point to existing files\n\n';
+            comment += '📖 Run `node scripts/check-links.js` and `node scripts/check-image-locations.js` locally for full details.\n';
+
+            // Find existing comment from this bot
+            const { data: comments } = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('📋 Documentation Validation Report')
+            );
+
+            // Update existing or create new
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                comment_id: botComment.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            }
+
+      - name: Report results
+        if: always()
+        run: |
+          if [ "${{ steps.check-links.outputs.issues_found }}" == "true" ] || [ "${{ steps.check-images.outputs.issues_found }}" == "true" ]; then
+            echo "## Documentation Validation Warnings ⚠️" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Issues found - see PR comment for details" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## Documentation Validation Passed ✅" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "All links are valid and images are in the correct locations!" >> $GITHUB_STEP_SUMMARY
+          fi
