@@ -66,11 +66,40 @@ function isExternalLink(url) {
 }
 
 function isSpecialLink(url) {
-  return url.startsWith('mailto:') ||
-         url.startsWith('tel:') ||
-         url.startsWith('#') ||
-         url.includes('{{') || // Template variables
-         url.includes('${'); // Template literals
+  // Skip standard special links
+  if (url.startsWith('mailto:') ||
+      url.startsWith('tel:') ||
+      url.startsWith('#')) {
+    return true;
+  }
+
+  // Skip template variables
+  if (url.includes('{{') || // Handlebars
+      url.includes('${') || // JS template literals
+      url.includes('<%=') || // ERB/EJS templates
+      url.includes('<%')) { // ERB/EJS templates
+    return true;
+  }
+
+  // Skip placeholder/example URLs
+  const placeholderPatterns = [
+    'uuid',
+    'your-project',
+    'your-workspace',
+    'example-',
+    'dashboard-id',
+    'chart-id',
+    'project-id',
+    'workspace-id',
+    'embed-proxy', // Example embed URLs
+  ];
+
+  const lowerUrl = url.toLowerCase();
+  if (placeholderPatterns.some(pattern => lowerUrl.includes(pattern))) {
+    return true;
+  }
+
+  return false;
 }
 
 function resolveInternalLink(url, sourceFile) {
