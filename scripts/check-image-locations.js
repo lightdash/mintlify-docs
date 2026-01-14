@@ -19,8 +19,17 @@ const path = require('path');
 const MARKDOWN_IMAGE_REGEX = /!\[([^\]]*)\]\(([^)]+)\)/g;
 const JSX_IMG_SRC_REGEX = /<img[^>]+src=["']([^"']+)["']/g;
 const FRAME_IMG_REGEX = /<Frame[^>]*>[\s\S]*?<img[^>]+src=["']([^"']+)["']/g;
+const CODE_BLOCK_REGEX = /```[\s\S]*?```/g;
 
 const VALID_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'];
+
+function removeCodeBlocks(content) {
+  // Replace code blocks with same number of newlines to preserve line numbers
+  return content.replace(CODE_BLOCK_REGEX, (match) => {
+    const newlineCount = (match.match(/\n/g) || []).length;
+    return '\n'.repeat(newlineCount);
+  });
+}
 
 function findMDXFiles(dir, fileList = []) {
   const files = fs.readdirSync(dir);
@@ -42,28 +51,31 @@ function findMDXFiles(dir, fileList = []) {
 function extractImageReferences(content, filePath) {
   const images = [];
 
+  // Remove code blocks to avoid flagging example images
+  const contentWithoutCodeBlocks = removeCodeBlocks(content);
+
   // Extract markdown images: ![alt](path)
   let match;
-  while ((match = MARKDOWN_IMAGE_REGEX.exec(content)) !== null) {
+  while ((match = MARKDOWN_IMAGE_REGEX.exec(contentWithoutCodeBlocks)) !== null) {
     const imagePath = match[2];
     if (!imagePath.startsWith('http://') && !imagePath.startsWith('https://')) {
       images.push({
         alt: match[1],
         path: imagePath,
         type: 'markdown',
-        line: content.substring(0, match.index).split('\n').length
+        line: contentWithoutCodeBlocks.substring(0, match.index).split('\n').length
       });
     }
   }
 
   // Extract JSX image src
-  while ((match = JSX_IMG_SRC_REGEX.exec(content)) !== null) {
+  while ((match = JSX_IMG_SRC_REGEX.exec(contentWithoutCodeBlocks)) !== null) {
     const imagePath = match[1];
     if (!imagePath.startsWith('http://') && !imagePath.startsWith('https://')) {
       images.push({
         path: imagePath,
         type: 'jsx',
-        line: content.substring(0, match.index).split('\n').length
+        line: contentWithoutCodeBlocks.substring(0, match.index).split('\n').length
       });
     }
   }
@@ -212,12 +224,8 @@ async function main() {
     !excludedPaths.some(excluded => file.includes(excluded))
   );
 
-  console.log(`📄 Found ${filteredFiles.length} documentation files\n`);
-
   // First pass: identify shared images
-  console.log('🔍 Identifying shared images...\n');
   const { sharedImages, imageUsageMap } = buildSharedImagesMap(filteredFiles);
-  console.log(`📊 Found ${sharedImages.size} images used by multiple pages\n`);
 
   const allIssues = [];
   let totalImages = 0;
@@ -264,11 +272,14 @@ async function main() {
     }
   }
 
-  // Display results
+  // Display summary header first
   if (allIssues.length === 0) {
-    console.log('✅ All images are in the correct locations!\n');
+    console.log('✅ No image issues found!\n');
   } else {
-    console.log(`❌ Found ${allIssues.length} image issues:\n`);
+    console.log(`❌ Found ${allIssues.length} image issue(s):\n`);
+    console.log(`   • ${missingImages} missing image(s)`);
+    console.log(`   • ${misplacedImages} misplaced image(s)`);
+    console.log(`   • ${invalidTypes} invalid file type(s)\n`);
 
     // Group by issue type
     const missingIssues = allIssues.filter(i => i.type === 'missing');
@@ -276,49 +287,35 @@ async function main() {
     const typeIssues = allIssues.filter(i => i.type === 'invalid-type');
 
     if (missingIssues.length > 0) {
-      console.log(`📁 Missing Images (${missingIssues.length}):\n`);
-      missingIssues.forEach(({ file, line, imagePath, message }) => {
+      console.log('─'.repeat(40));
+      console.log('MISSING IMAGES:\n');
+      missingIssues.forEach(({ file, line, imagePath }) => {
         console.log(`   📄 ${file}:${line}`);
-        console.log(`      🔗 ${imagePath}`);
-        console.log(`      ❌ ${message}\n`);
+        console.log(`      ${imagePath}\n`);
       });
     }
 
     if (locationIssues.length > 0) {
-      console.log(`📍 Misplaced Images (${locationIssues.length}):\n`);
-      locationIssues.forEach(({ file, line, imagePath, expectedDir, actualDir, suggestion }) => {
+      console.log('─'.repeat(40));
+      console.log('MISPLACED IMAGES:\n');
+      locationIssues.forEach(({ file, line, imagePath, expectedDir, actualDir }) => {
         console.log(`   📄 ${file}:${line}`);
-        console.log(`      🔗 ${imagePath}`);
-        console.log(`      ❌ Expected in: ${expectedDir}/`);
-        console.log(`      📍 Actually in: ${actualDir}/`);
-        console.log(`      💡 ${suggestion}\n`);
+        console.log(`      ${imagePath}`);
+        console.log(`      Expected: ${expectedDir}/`);
+        console.log(`      Actual: ${actualDir}/\n`);
       });
     }
 
     if (typeIssues.length > 0) {
-      console.log(`⚠️  Invalid File Types (${typeIssues.length}):\n`);
+      console.log('─'.repeat(40));
+      console.log('INVALID FILE TYPES:\n');
       typeIssues.forEach(({ file, line, imagePath, message }) => {
         console.log(`   📄 ${file}:${line}`);
-        console.log(`      🔗 ${imagePath}`);
-        console.log(`      ❌ ${message}\n`);
+        console.log(`      ${imagePath}`);
+        console.log(`      ${message}\n`);
       });
     }
   }
-
-  // Summary
-  console.log('─'.repeat(60));
-  console.log(`Total images checked: ${totalImages}`);
-  console.log(`Shared images (used by 2+ files): ${sharedImagesCount}`);
-  console.log(`Missing images: ${missingImages}`);
-  console.log(`Misplaced images: ${misplacedImages}`);
-  console.log(`Invalid file types: ${invalidTypes}`);
-  console.log('─'.repeat(60));
-
-  console.log('\n💡 Image Placement Rules:');
-  console.log('   • Images should mirror page structure');
-  console.log('   • guides/dashboard.mdx → images/guides/dashboard/');
-  console.log('   • Shared images (used by multiple pages) are automatically allowed');
-  console.log('   • See CONTRIBUTING.md for full guidelines\n');
 
   // Exit with error if issues found
   process.exit(allIssues.length > 0 ? 1 : 0);
