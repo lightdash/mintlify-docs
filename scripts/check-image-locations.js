@@ -224,12 +224,8 @@ async function main() {
     !excludedPaths.some(excluded => file.includes(excluded))
   );
 
-  console.log(`📄 Found ${filteredFiles.length} documentation files\n`);
-
   // First pass: identify shared images
-  console.log('🔍 Identifying shared images...\n');
   const { sharedImages, imageUsageMap } = buildSharedImagesMap(filteredFiles);
-  console.log(`📊 Found ${sharedImages.size} images used by multiple pages\n`);
 
   const allIssues = [];
   let totalImages = 0;
@@ -276,11 +272,14 @@ async function main() {
     }
   }
 
-  // Display results
+  // Display summary header first
   if (allIssues.length === 0) {
-    console.log('✅ All images are in the correct locations!\n');
+    console.log('✅ No image issues found!\n');
   } else {
-    console.log(`❌ Found ${allIssues.length} image issues:\n`);
+    console.log(`❌ Found ${allIssues.length} image issue(s):\n`);
+    console.log(`   • ${missingImages} missing image(s)`);
+    console.log(`   • ${misplacedImages} misplaced image(s)`);
+    console.log(`   • ${invalidTypes} invalid file type(s)\n`);
 
     // Group by issue type
     const missingIssues = allIssues.filter(i => i.type === 'missing');
@@ -288,49 +287,35 @@ async function main() {
     const typeIssues = allIssues.filter(i => i.type === 'invalid-type');
 
     if (missingIssues.length > 0) {
-      console.log(`📁 Missing Images (${missingIssues.length}):\n`);
-      missingIssues.forEach(({ file, line, imagePath, message }) => {
+      console.log('─'.repeat(40));
+      console.log('MISSING IMAGES:\n');
+      missingIssues.forEach(({ file, line, imagePath }) => {
         console.log(`   📄 ${file}:${line}`);
-        console.log(`      🔗 ${imagePath}`);
-        console.log(`      ❌ ${message}\n`);
+        console.log(`      ${imagePath}\n`);
       });
     }
 
     if (locationIssues.length > 0) {
-      console.log(`📍 Misplaced Images (${locationIssues.length}):\n`);
-      locationIssues.forEach(({ file, line, imagePath, expectedDir, actualDir, suggestion }) => {
+      console.log('─'.repeat(40));
+      console.log('MISPLACED IMAGES:\n');
+      locationIssues.forEach(({ file, line, imagePath, expectedDir, actualDir }) => {
         console.log(`   📄 ${file}:${line}`);
-        console.log(`      🔗 ${imagePath}`);
-        console.log(`      ❌ Expected in: ${expectedDir}/`);
-        console.log(`      📍 Actually in: ${actualDir}/`);
-        console.log(`      💡 ${suggestion}\n`);
+        console.log(`      ${imagePath}`);
+        console.log(`      Expected: ${expectedDir}/`);
+        console.log(`      Actual: ${actualDir}/\n`);
       });
     }
 
     if (typeIssues.length > 0) {
-      console.log(`⚠️  Invalid File Types (${typeIssues.length}):\n`);
+      console.log('─'.repeat(40));
+      console.log('INVALID FILE TYPES:\n');
       typeIssues.forEach(({ file, line, imagePath, message }) => {
         console.log(`   📄 ${file}:${line}`);
-        console.log(`      🔗 ${imagePath}`);
-        console.log(`      ❌ ${message}\n`);
+        console.log(`      ${imagePath}`);
+        console.log(`      ${message}\n`);
       });
     }
   }
-
-  // Summary
-  console.log('─'.repeat(60));
-  console.log(`Total images checked: ${totalImages}`);
-  console.log(`Shared images (used by 2+ files): ${sharedImagesCount}`);
-  console.log(`Missing images: ${missingImages}`);
-  console.log(`Misplaced images: ${misplacedImages}`);
-  console.log(`Invalid file types: ${invalidTypes}`);
-  console.log('─'.repeat(60));
-
-  console.log('\n💡 Image Placement Rules:');
-  console.log('   • Images should mirror page structure');
-  console.log('   • guides/dashboard.mdx → images/guides/dashboard/');
-  console.log('   • Shared images (used by multiple pages) are automatically allowed');
-  console.log('   • See CONTRIBUTING.md for full guidelines\n');
 
   // Exit with error if issues found
   process.exit(allIssues.length > 0 ? 1 : 0);
