@@ -13,7 +13,7 @@ const CHECK_EXTERNAL = process.argv.includes('--external');
 
 // Regex patterns for finding links
 const MARKDOWN_LINK_REGEX = /\[([^\]]+)\]\(([^)]+)\)/g;
-const JSX_LINK_REGEX = /(?:href|src)=["']([^"']+)["']/g;
+const JSX_LINK_REGEX = /href=["']([^"']+)["']/g;
 const ANCHOR_REGEX = /#[^)\s"']*/;
 
 function findMDXFiles(dir, fileList = []) {

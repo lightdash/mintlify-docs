@@ -19,8 +19,17 @@ const path = require('path');
 const MARKDOWN_IMAGE_REGEX = /!\[([^\]]*)\]\(([^)]+)\)/g;
 const JSX_IMG_SRC_REGEX = /<img[^>]+src=["']([^"']+)["']/g;
 const FRAME_IMG_REGEX = /<Frame[^>]*>[\s\S]*?<img[^>]+src=["']([^"']+)["']/g;
+const CODE_BLOCK_REGEX = /```[\s\S]*?```/g;
 
 const VALID_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp'];
+
+function removeCodeBlocks(content) {
+  // Replace code blocks with same number of newlines to preserve line numbers
+  return content.replace(CODE_BLOCK_REGEX, (match) => {
+    const newlineCount = (match.match(/\n/g) || []).length;
+    return '\n'.repeat(newlineCount);
+  });
+}
 
 function findMDXFiles(dir, fileList = []) {
   const files = fs.readdirSync(dir);
@@ -42,28 +51,31 @@ function findMDXFiles(dir, fileList = []) {
 function extractImageReferences(content, filePath) {
   const images = [];
 
+  // Remove code blocks to avoid flagging example images in documentation
+  const contentWithoutCodeBlocks = removeCodeBlocks(content);
+
   // Extract markdown images: ![alt](path)
   let match;
-  while ((match = MARKDOWN_IMAGE_REGEX.exec(content)) !== null) {
+  while ((match = MARKDOWN_IMAGE_REGEX.exec(contentWithoutCodeBlocks)) !== null) {
     const imagePath = match[2];
     if (!imagePath.startsWith('http://') && !imagePath.startsWith('https://')) {
       images.push({
         alt: match[1],
         path: imagePath,
         type: 'markdown',
-        line: content.substring(0, match.index).split('\n').length
+        line: contentWithoutCodeBlocks.substring(0, match.index).split('\n').length
       });
     }
   }
 
   // Extract JSX image src
-  while ((match = JSX_IMG_SRC_REGEX.exec(content)) !== null) {
+  while ((match = JSX_IMG_SRC_REGEX.exec(contentWithoutCodeBlocks)) !== null) {
     const imagePath = match[1];
     if (!imagePath.startsWith('http://') && !imagePath.startsWith('https://')) {
       images.push({
         path: imagePath,
         type: 'jsx',
-        line: content.substring(0, match.index).split('\n').length
+        line: contentWithoutCodeBlocks.substring(0, match.index).split('\n').length
       });
     }
   }
