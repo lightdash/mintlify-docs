@@ -290,30 +290,28 @@ async function main() {
       console.log('─'.repeat(40));
       console.log('MISSING IMAGES:\n');
       missingIssues.forEach(({ file, line, imagePath }) => {
-        console.log(`   📄 ${file}:${line}`);
-        console.log(`      ${imagePath}\n`);
+        console.log(`   📄 ${file}:${line} → ${imagePath}`);
       });
+      console.log('');
     }
 
     if (locationIssues.length > 0) {
       console.log('─'.repeat(40));
       console.log('MISPLACED IMAGES:\n');
       locationIssues.forEach(({ file, line, imagePath, expectedDir, actualDir }) => {
-        console.log(`   📄 ${file}:${line}`);
-        console.log(`      ${imagePath}`);
-        console.log(`      Expected: ${expectedDir}/`);
-        console.log(`      Actual: ${actualDir}/\n`);
+        console.log(`   📄 ${file}:${line} → ${imagePath}`);
+        console.log(`      Expected: ${expectedDir}/ | Actual: ${actualDir}/`);
       });
+      console.log('');
     }
 
     if (typeIssues.length > 0) {
       console.log('─'.repeat(40));
       console.log('INVALID FILE TYPES:\n');
       typeIssues.forEach(({ file, line, imagePath, message }) => {
-        console.log(`   📄 ${file}:${line}`);
-        console.log(`      ${imagePath}`);
-        console.log(`      ${message}\n`);
+        console.log(`   📄 ${file}:${line} → ${imagePath} (${message})`);
       });
+      console.log('');
     }
   }
 
