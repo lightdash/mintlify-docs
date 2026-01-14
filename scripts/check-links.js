@@ -348,9 +348,9 @@ async function main() {
     console.log('─'.repeat(40));
     console.log('BROKEN LINKS:\n');
     brokenLinks.forEach(({ file, url, line }) => {
-      console.log(`   📄 ${file}:${line}`);
-      console.log(`      ${url}\n`);
+      console.log(`   📄 ${file}:${line} → ${url}`);
     });
+    console.log('');
   }
 
   // Display orphaned pages details
