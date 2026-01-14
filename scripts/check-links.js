@@ -15,6 +15,15 @@ const CHECK_EXTERNAL = process.argv.includes('--external');
 const MARKDOWN_LINK_REGEX = /\[([^\]]+)\]\(([^)]+)\)/g;
 const JSX_LINK_REGEX = /(?:href|src)=["']([^"']+)["']/g;
 const ANCHOR_REGEX = /#[^)\s"']*/;
+const CODE_BLOCK_REGEX = /```[\s\S]*?```/g;
+
+function removeCodeBlocks(content) {
+  // Replace code blocks with same number of newlines to preserve line numbers
+  return content.replace(CODE_BLOCK_REGEX, (match) => {
+    const newlineCount = (match.match(/\n/g) || []).length;
+    return '\n'.repeat(newlineCount);
+  });
+}
 
 function findMDXFiles(dir, fileList = []) {
   const files = fs.readdirSync(dir);
@@ -36,23 +45,26 @@ function findMDXFiles(dir, fileList = []) {
 function extractLinks(content, filePath) {
   const links = [];
 
+  // Remove code blocks to avoid flagging example links
+  const contentWithoutCodeBlocks = removeCodeBlocks(content);
+
   // Extract markdown links: [text](url)
   let match;
-  while ((match = MARKDOWN_LINK_REGEX.exec(content)) !== null) {
+  while ((match = MARKDOWN_LINK_REGEX.exec(contentWithoutCodeBlocks)) !== null) {
     links.push({
       text: match[1],
       url: match[2],
       type: 'markdown',
-      line: content.substring(0, match.index).split('\n').length
+      line: contentWithoutCodeBlocks.substring(0, match.index).split('\n').length
     });
   }
 
   // Extract JSX links: href="..." or src="..."
-  while ((match = JSX_LINK_REGEX.exec(content)) !== null) {
+  while ((match = JSX_LINK_REGEX.exec(contentWithoutCodeBlocks)) !== null) {
     links.push({
       url: match[1],
       type: 'jsx',
-      line: content.substring(0, match.index).split('\n').length
+      line: contentWithoutCodeBlocks.substring(0, match.index).split('\n').length
     });
   }
 
@@ -275,8 +287,6 @@ async function main() {
     !excludedPaths.some(excluded => file.includes(excluded))
   );
 
-  console.log(`📄 Found ${filteredFiles.length} documentation files\n`);
-
   const brokenLinks = [];
   const externalLinks = [];
   let totalLinks = 0;
@@ -314,56 +324,54 @@ async function main() {
   }
 
   // Check for orphaned pages
-  console.log('🔍 Checking for orphaned pages (not in docs.json)...\n');
   const docsJson = loadDocsJson();
   const orphanedPages = findOrphanedPages(filteredFiles, docsJson);
 
   // Check redirects
-  console.log('🔍 Checking redirects in docs.json...\n');
   const redirects = extractRedirects(docsJson);
   const redirectIssues = validateRedirects(redirects);
 
-  // Display results
-  if (brokenLinks.length === 0) {
-    console.log('✅ No broken internal links found!\n');
-  } else {
-    console.log(`❌ Found ${brokenLinks.length} broken internal links:\n`);
+  // Calculate total issues for summary header
+  const totalIssues = brokenLinks.length + orphanedPages.length + redirectIssues.length;
 
-    brokenLinks.forEach(({ file, url, line, type, triedPaths }) => {
-      console.log(`📄 ${file}:${line}`);
-      console.log(`   🔗 Broken link: ${url}`);
-      console.log(`   📍 Type: ${type}`);
-      if (triedPaths) {
-        console.log(`   🔍 Tried paths:`);
-        triedPaths.slice(0, 2).forEach(p => {
-          console.log(`      - ${path.relative(process.cwd(), p)}`);
-        });
-      }
-      console.log('');
+  // Print summary header first
+  if (totalIssues === 0) {
+    console.log('✅ No issues found!\n');
+  } else {
+    console.log(`❌ Found ${totalIssues} issue(s):\n`);
+    console.log(`   • ${brokenLinks.length} broken link(s)`);
+    console.log(`   • ${orphanedPages.length} orphaned page(s)`);
+    console.log(`   • ${redirectIssues.length} invalid redirect(s)\n`);
+  }
+
+  // Display broken links details
+  if (brokenLinks.length > 0) {
+    console.log('─'.repeat(40));
+    console.log('BROKEN LINKS:\n');
+    brokenLinks.forEach(({ file, url, line }) => {
+      console.log(`   📄 ${file}:${line}`);
+      console.log(`      ${url}\n`);
     });
   }
 
-  // Display orphaned pages
-  if (orphanedPages.length === 0) {
-    console.log('✅ No orphaned pages found!\n');
-  } else {
-    console.log(`⚠️  Found ${orphanedPages.length} orphaned pages (exist but not in docs.json):\n`);
+  // Display orphaned pages details
+  if (orphanedPages.length > 0) {
+    console.log('─'.repeat(40));
+    console.log('ORPHANED PAGES (not in docs.json):\n');
     orphanedPages.forEach(page => {
       console.log(`   📄 ${page}.mdx`);
     });
-    console.log('\n💡 These pages exist but are not linked in docs.json navigation.\n');
+    console.log('');
   }
 
-  // Display redirect issues
-  if (redirectIssues.length === 0) {
-    console.log('✅ All redirects are valid!\n');
-  } else {
-    console.log(`❌ Found ${redirectIssues.length} invalid redirects in docs.json:\n`);
+  // Display redirect issues details
+  if (redirectIssues.length > 0) {
+    console.log('─'.repeat(40));
+    console.log('INVALID REDIRECTS:\n');
     redirectIssues.forEach(({ source, destination, issue }) => {
       console.log(`   🔀 ${source} → ${destination}`);
-      console.log(`   ❌ ${issue}\n`);
+      console.log(`      ${issue}\n`);
     });
-    console.log('💡 When moving pages, ensure redirect destinations exist.\n');
   }
 
   // Check external links if requested
@@ -391,20 +399,8 @@ async function main() {
     }
   }
 
-  // Summary
-  console.log('─'.repeat(60));
-  console.log(`Total links checked: ${totalLinks}`);
-  console.log(`Broken internal links: ${brokenLinks.length}`);
-  console.log(`Orphaned pages: ${orphanedPages.length}`);
-  console.log(`Invalid redirects: ${redirectIssues.length}`);
-  if (CHECK_EXTERNAL) {
-    console.log(`External links checked: ${externalLinks.length}`);
-  }
-  console.log('─'.repeat(60));
-
   // Exit with error if issues found
-  const hasIssues = brokenLinks.length > 0 || orphanedPages.length > 0 || redirectIssues.length > 0;
-  process.exit(hasIssues ? 1 : 0);
+  process.exit(totalIssues > 0 ? 1 : 0);
 }
 
 main();
