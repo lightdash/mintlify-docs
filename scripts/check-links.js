@@ -15,6 +15,14 @@ const CHECK_EXTERNAL = process.argv.includes('--external');
 const MARKDOWN_LINK_REGEX = /\[([^\]]+)\]\(([^)]+)\)/g;
 const JSX_LINK_REGEX = /href=["']([^"']+)["']/g;
 const ANCHOR_REGEX = /#[^)\s"']*/;
+const CODE_BLOCK_REGEX = /```[\s\S]*?```/g;
+
+function removeCodeBlocks(content) {
+  return content.replace(CODE_BLOCK_REGEX, (match) => {
+    const newlineCount = (match.match(/\n/g) || []).length;
+    return '\n'.repeat(newlineCount);
+  });
+}
 
 function findMDXFiles(dir, fileList = []) {
   const files = fs.readdirSync(dir);
@@ -36,23 +44,26 @@ function findMDXFiles(dir, fileList = []) {
 function extractLinks(content, filePath) {
   const links = [];
 
+  // Remove code blocks to avoid flagging example links in documentation
+  const contentWithoutCodeBlocks = removeCodeBlocks(content);
+
   // Extract markdown links: [text](url)
   let match;
-  while ((match = MARKDOWN_LINK_REGEX.exec(content)) !== null) {
+  while ((match = MARKDOWN_LINK_REGEX.exec(contentWithoutCodeBlocks)) !== null) {
     links.push({
       text: match[1],
       url: match[2],
       type: 'markdown',
-      line: content.substring(0, match.index).split('\n').length
+      line: contentWithoutCodeBlocks.substring(0, match.index).split('\n').length
     });
   }
 
-  // Extract JSX links: href="..." or src="..."
-  while ((match = JSX_LINK_REGEX.exec(content)) !== null) {
+  // Extract JSX links: href="..."
+  while ((match = JSX_LINK_REGEX.exec(contentWithoutCodeBlocks)) !== null) {
     links.push({
       url: match[1],
       type: 'jsx',
-      line: content.substring(0, match.index).split('\n').length
+      line: contentWithoutCodeBlocks.substring(0, match.index).split('\n').length
     });
   }
 
