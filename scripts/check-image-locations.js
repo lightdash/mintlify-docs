@@ -51,7 +51,7 @@ function findMDXFiles(dir, fileList = []) {
 function extractImageReferences(content, filePath) {
   const images = [];
 
-  // Remove code blocks to avoid flagging example images
+  // Remove code blocks to avoid flagging example images in documentation
   const contentWithoutCodeBlocks = removeCodeBlocks(content);
 
   // Extract markdown images: ![alt](path)

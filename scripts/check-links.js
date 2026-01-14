@@ -13,12 +13,11 @@ const CHECK_EXTERNAL = process.argv.includes('--external');
 
 // Regex patterns for finding links
 const MARKDOWN_LINK_REGEX = /\[([^\]]+)\]\(([^)]+)\)/g;
-const JSX_LINK_REGEX = /(?:href|src)=["']([^"']+)["']/g;
+const JSX_LINK_REGEX = /href=["']([^"']+)["']/g;
 const ANCHOR_REGEX = /#[^)\s"']*/;
 const CODE_BLOCK_REGEX = /```[\s\S]*?```/g;
 
 function removeCodeBlocks(content) {
-  // Replace code blocks with same number of newlines to preserve line numbers
   return content.replace(CODE_BLOCK_REGEX, (match) => {
     const newlineCount = (match.match(/\n/g) || []).length;
     return '\n'.repeat(newlineCount);
@@ -45,7 +44,7 @@ function findMDXFiles(dir, fileList = []) {
 function extractLinks(content, filePath) {
   const links = [];
 
-  // Remove code blocks to avoid flagging example links
+  // Remove code blocks to avoid flagging example links in documentation
   const contentWithoutCodeBlocks = removeCodeBlocks(content);
 
   // Extract markdown links: [text](url)
@@ -59,7 +58,7 @@ function extractLinks(content, filePath) {
     });
   }
 
-  // Extract JSX links: href="..." or src="..."
+  // Extract JSX links: href="..."
   while ((match = JSX_LINK_REGEX.exec(contentWithoutCodeBlocks)) !== null) {
     links.push({
       url: match[1],
