@@ -1,8 +1,8 @@
-name: Validate Documentation
+name: Validate and Auto-fix Documentation
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]  # Run on PR open AND every commit
+    types: [opened, synchronize, reopened]
     branches:
       - main
     paths:
@@ -12,135 +12,197 @@ on:
       - 'scripts/**'
       - '.github/workflows/validate-docs.yml'
 
+permissions:
+  contents: write
+  pull-requests: write
+
 jobs:
-  validate:
-    name: Check Links and Images
+  validate-and-fix:
+    name: Check and Auto-fix Documentation
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout PR branch
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
+      - name: Post initial status comment
+        id: initial-comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: comment } = await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## 🔧 Documentation Bot\n\nChecking for issues and fixing what I can...'
+            });
+            core.setOutput('comment_id', comment.id);
+
       - name: Check for broken links
         id: check-links
         run: |
-          echo "::group::Checking for broken links"
           node scripts/check-links.js > /tmp/check-links-output.txt 2>&1 || echo "issues_found=true" >> $GITHUB_OUTPUT
           cat /tmp/check-links-output.txt
-          echo "::endgroup::"
         continue-on-error: true
 
       - name: Check image locations
         id: check-images
         run: |
-          echo "::group::Checking image locations"
           node scripts/check-image-locations.js > /tmp/check-images-output.txt 2>&1 || echo "issues_found=true" >> $GITHUB_OUTPUT
           cat /tmp/check-images-output.txt
-          echo "::endgroup::"
         continue-on-error: true
 
-      - name: Post or update PR comment
-        if: always()  # Always run to update comment even if issues are fixed
+      - name: Auto-fix image locations
+        id: fix-images
+        if: steps.check-images.outputs.issues_found == 'true'
+        run: |
+          echo "Running auto-fix for image locations..."
+          node scripts/fix-image-locations.js > /tmp/fix-output.txt 2>&1
+          cat /tmp/fix-output.txt
+
+          # Check if any files were modified
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "fixed_count=0" >> $GITHUB_OUTPUT
+            echo "No changes made (images might be missing or other unfixable issues)"
+          else
+            # Count the number of images that were fixed
+            FIXED_COUNT=$(grep -c "✓ Moved image" /tmp/fix-output.txt || echo "0")
+            echo "fixed_count=$FIXED_COUNT" >> $GITHUB_OUTPUT
+            echo "Fixed $FIXED_COUNT image(s)"
+          fi
+        continue-on-error: true
+
+      - name: Commit fixes
+        if: steps.fix-images.outputs.fixed_count != '0'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          git commit -m "🤖 Auto-fix: Move images to correct directories
+
+          Automatically fixed image location issues.
+
+          Co-Authored-By: GitHub Actions <github-actions[bot]@users.noreply.github.com>"
+
+          git push
+
+      - name: Re-check after fixes
+        id: recheck
+        if: steps.fix-images.outputs.fixed_count != '0'
+        run: |
+          echo "Re-checking image locations after fixes..."
+          if node scripts/check-image-locations.js > /tmp/recheck-output.txt 2>&1; then
+            echo "remaining_issues=false" >> $GITHUB_OUTPUT
+          else
+            echo "remaining_issues=true" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+
+      - name: Update final status comment
+        if: always()
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
 
-            // Build comment body
-            let comment = '## 📋 Documentation Validation Report\n\n';
+            let comment = '## 🤖 Documentation Bot\n\n';
 
-            const hasIssues = '${{ steps.check-links.outputs.issues_found }}' === 'true' ||
-                            '${{ steps.check-images.outputs.issues_found }}' === 'true';
+            const hasLinkIssues = '${{ steps.check-links.outputs.issues_found }}' === 'true';
+            const fixedCount = parseInt('${{ steps.fix-images.outputs.fixed_count }}' || '0');
+            const hasRemainingImageIssues = '${{ steps.recheck.outputs.remaining_issues }}' === 'true';
 
-            if (hasIssues) {
-              comment += '⚠️ Some issues were found in this PR. These are **informational warnings** and will not block merging.\n\n';
-            } else {
-              comment += '✅ All validation checks passed!\n\n';
+            // Build status summary
+            const statuses = [];
+
+            if (fixedCount > 0) {
+              statuses.push(`✅ Fixed ${fixedCount} misplaced image${fixedCount > 1 ? 's' : ''}`);
             }
 
-            if ('${{ steps.check-links.outputs.issues_found }}' === 'true') {
+            if (hasRemainingImageIssues) {
+              statuses.push('⚠️ Some image issues could not be auto-fixed (missing files or invalid types)');
+            }
+
+            if (hasLinkIssues) {
+              const linksOutput = fs.readFileSync('/tmp/check-links-output.txt', 'utf8');
+              const lines = linksOutput.split('\n');
+              const brokenLinkCount = lines.filter(line => line.includes('📄')).length;
+              statuses.push(`⚠️ ${brokenLinkCount} broken link${brokenLinkCount > 1 ? 's' : ''} need${brokenLinkCount === 1 ? 's' : ''} manual attention`);
+            }
+
+            if (statuses.length === 0) {
+              comment += '✅ **All checks passed!** No issues found.\n';
+            } else {
+              comment += '### Status\n\n';
+              statuses.forEach(status => {
+                comment += `${status}\n`;
+              });
+              comment += '\n';
+            }
+
+            // Add details for broken links if any
+            if (hasLinkIssues) {
               const linksOutput = fs.readFileSync('/tmp/check-links-output.txt', 'utf8');
               const lines = linksOutput.split('\n');
               const brokenLinks = lines.filter(line => line.includes('Broken link:') || line.includes('📄')).slice(0, 10);
 
-              comment += '### 🔗 Links\n';
-              if (brokenLinks.length > 0) {
-                comment += '<details><summary>❌ Found broken links (click to expand)</summary>\n\n';
-                comment += '```\n' + brokenLinks.join('\n') + '\n```\n';
-                comment += '</details>\n\n';
-              }
-            } else {
-              comment += '### 🔗 Links\n✅ All links valid\n\n';
-            }
-
-            if ('${{ steps.check-images.outputs.issues_found }}' === 'true') {
-              const imagesOutput = fs.readFileSync('/tmp/check-images-output.txt', 'utf8');
-              const lines = imagesOutput.split('\n');
-              const imageIssues = lines.filter(line => line.includes('📄') || line.includes('Expected in:')).slice(0, 10);
-
-              comment += '### 🖼️ Images\n';
-              if (imageIssues.length > 0) {
-                comment += '<details><summary>❌ Found image location issues (click to expand)</summary>\n\n';
-                comment += '```\n' + imageIssues.join('\n') + '\n```\n';
-                comment += '</details>\n\n';
-              }
-            } else {
-              comment += '### 🖼️ Images\n✅ All images in correct locations\n\n';
-            }
-
-            // Add auto-fix info if there are image issues
-            if ('${{ steps.check-images.outputs.issues_found }}' === 'true') {
               comment += '---\n\n';
-              comment += '### 🤖 Auto-fix Available\n\n';
-              const fixUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/workflows/fix-image-locations.yml`;
-              comment += `[Click here to automatically fix these issues](${fixUrl})\n\n`;
-              comment += `1. Click "Run workflow"\n`;
-              comment += `2. Enter PR number: **${context.issue.number}**\n`;
-              comment += `3. Click "Run workflow" button\n`;
+              comment += '### 🔗 Broken Links (Manual Fix Required)\n\n';
+              comment += '<details><summary>Click to view details</summary>\n\n';
+              comment += '```\n' + brokenLinks.join('\n') + '\n```\n';
+              comment += '</details>\n';
             }
 
-            // Find existing comment from this bot
-            const { data: comments } = await github.rest.issues.listComments({
-              issue_number: context.issue.number,
+            // Add details for unfixable image issues if any
+            if (hasRemainingImageIssues) {
+              comment += '\n---\n\n';
+              comment += '### 🖼️ Image Issues (Manual Fix Required)\n\n';
+              comment += 'Some image issues could not be automatically fixed. These typically include:\n';
+              comment += '- Missing image files\n';
+              comment += '- Invalid file types\n';
+              comment += '\nPlease review and fix these manually.\n';
+            }
+
+            // Update the initial comment
+            await github.rest.issues.updateComment({
+              comment_id: '${{ steps.initial-comment.outputs.comment_id }}',
               owner: context.repo.owner,
               repo: context.repo.repo,
+              body: comment
             });
 
-            const botComment = comments.find(c =>
-              c.user.type === 'Bot' && c.body.includes('📋 Documentation Validation Report')
-            );
-
-            // Update existing or create new
-            if (botComment) {
-              await github.rest.issues.updateComment({
-                comment_id: botComment.id,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: comment
-              });
-            } else {
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: comment
-              });
-            }
-
-      - name: Report results
+      - name: Report summary
         if: always()
         run: |
-          if [ "${{ steps.check-links.outputs.issues_found }}" == "true" ] || [ "${{ steps.check-images.outputs.issues_found }}" == "true" ]; then
-            echo "## Documentation Validation Warnings ⚠️" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Issues found - see PR comment for details" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "## Documentation Validation Passed ✅" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "All links are valid and images are in the correct locations!" >> $GITHUB_STEP_SUMMARY
+          FIXED_COUNT="${{ steps.fix-images.outputs.fixed_count }}"
+          HAS_LINK_ISSUES="${{ steps.check-links.outputs.issues_found }}"
+          HAS_REMAINING_ISSUES="${{ steps.recheck.outputs.remaining_issues }}"
+
+          echo "## Documentation Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$FIXED_COUNT" != "0" ]; then
+            echo "✅ Auto-fixed $FIXED_COUNT image location issue(s)" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$HAS_LINK_ISSUES" == "true" ]; then
+            echo "⚠️ Broken links found - manual fix required" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$HAS_REMAINING_ISSUES" == "true" ]; then
+            echo "⚠️ Some image issues could not be auto-fixed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$FIXED_COUNT" == "0" ] && [ "$HAS_LINK_ISSUES" != "true" ] && [ "$HAS_REMAINING_ISSUES" != "true" ]; then
+            echo "✅ All checks passed!" >> $GITHUB_STEP_SUMMARY
           fi
