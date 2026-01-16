@@ -273,12 +273,37 @@ node scripts/check-image-locations.js
 - **check-links.js** - Validates all internal markdown and JSX links, verifies linked files exist, and identifies orphaned pages (not in `docs.json`)
 - **check-image-locations.js** - Ensures images mirror page structure (e.g., `guides/dashboard.mdx` → `images/guides/dashboard/`), checks for missing images, and validates file extensions
 
-**Automated checks:** These scripts run automatically on all PRs via GitHub Actions. The workflow will block merging until all issues are resolved.
+**Automated checks:** These scripts run automatically on all PRs via GitHub Actions. The validation workflow will comment on your PR with any issues found (but won't block merging).
+
+#### Auto-fixing Image Location Issues
+
+If images are in the wrong location (common when using Mintlify Slack app), you can automatically fix them:
+
+```bash
+# Preview what would be changed (recommended first)
+node scripts/fix-image-locations.js --dry-run
+
+# Apply the fixes
+node scripts/fix-image-locations.js
+```
+
+The auto-fix script will:
+- Move images to the correct directory structure
+- Update all MDX file references automatically
+- Handle both single-use and shared images intelligently
+- Create necessary directories
+
+**Using the GitHub bot:**
+If you see image location issues in a PR comment, you can trigger the auto-fix bot:
+1. Go to Actions > Fix Image Locations
+2. Click "Run workflow"
+3. Enter the PR number
+4. The bot will automatically fix and commit the changes
 
 **Troubleshooting common issues:**
 
 - **Broken links:** Use absolute paths from root (`/guides/my-guide` not `../guides/my-guide`) and omit file extensions in links
-- **Misplaced images:** Images should mirror page structure. Example: `guides/foo/bar.mdx` → `images/guides/foo/bar/`
+- **Misplaced images:** Run `node scripts/fix-image-locations.js` to automatically fix
 - **Shared images:** Can be placed in the nearest common parent directory
 
 ### 4. Commit Your Changes
