@@ -24,12 +24,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Get PR branch name
+        if: inputs.pr_number
+        id: pr-info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: parseInt('${{ inputs.pr_number }}')
+            });
+            core.setOutput('branch', pr.head.ref);
+            core.setOutput('repo', pr.head.repo.full_name);
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          # If PR number is provided, checkout that PR's head
-          ref: ${{ inputs.pr_number && format('refs/pull/{0}/head', inputs.pr_number) || github.ref }}
-          # Fetch full history to allow pushing
+          # Checkout the actual PR branch, not detached HEAD
+          ref: ${{ steps.pr-info.outputs.branch || github.ref }}
+          repository: ${{ steps.pr-info.outputs.repo || github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
       - name: Setup Node.js
