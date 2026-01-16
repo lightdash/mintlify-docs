@@ -277,28 +277,24 @@ node scripts/check-image-locations.js
 
 #### Auto-fixing Image Location Issues
 
-If images are in the wrong location (common when using Mintlify Slack app), you can automatically fix them:
+**The bot automatically fixes image location issues!** When you create a PR, the Documentation Bot will:
+- Detect misplaced images
+- Automatically move them to the correct directory structure
+- Update all MDX file references
+- Commit the fixes directly to your PR branch
+
+You'll see a comment like: "✅ Fixed 2 misplaced images"
+
+**Manual fixing (optional):**
+You can also run the fix script locally:
 
 ```bash
-# Preview what would be changed (recommended first)
+# Preview what would be changed
 node scripts/fix-image-locations.js --dry-run
 
 # Apply the fixes
 node scripts/fix-image-locations.js
 ```
-
-The auto-fix script will:
-- Move images to the correct directory structure
-- Update all MDX file references automatically
-- Handle both single-use and shared images intelligently
-- Create necessary directories
-
-**Using the GitHub bot:**
-If you see image location issues in a PR comment, you can trigger the auto-fix bot:
-1. Go to Actions > Fix Image Locations
-2. Click "Run workflow"
-3. Enter the PR number
-4. The bot will automatically fix and commit the changes
 
 **Troubleshooting common issues:**
 
