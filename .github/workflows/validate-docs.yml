@@ -181,7 +181,7 @@ jobs:
               body: comment
             });
 
-      - name: Report summary
+      - name: Report summary and fail if needed
         if: always()
         run: |
           FIXED_COUNT="${{ steps.fix-images.outputs.fixed_count }}"
@@ -196,7 +196,7 @@ jobs:
           fi
 
           if [ "$HAS_LINK_ISSUES" == "true" ]; then
-            echo "⚠️ Broken links found - manual fix required" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Broken links found - fix required before merging" >> $GITHUB_STEP_SUMMARY
           fi
 
           if [ "$HAS_REMAINING_ISSUES" == "true" ]; then
@@ -205,4 +205,10 @@ jobs:
 
           if [ "$FIXED_COUNT" == "0" ] && [ "$HAS_LINK_ISSUES" != "true" ] && [ "$HAS_REMAINING_ISSUES" != "true" ]; then
             echo "✅ All checks passed!" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Fail the workflow if there are broken links
+          if [ "$HAS_LINK_ISSUES" == "true" ]; then
+            echo "::error::Broken links found. Please fix them before merging."
+            exit 1
           fi
