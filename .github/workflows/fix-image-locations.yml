@@ -1,0 +1,161 @@
+name: Fix Image Locations
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to fix images for (leave empty to run on current branch)'
+        required: false
+        type: string
+  # Can also be triggered by the validation workflow
+  workflow_call:
+    inputs:
+      pr_number:
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  fix-images:
+    name: Auto-fix Image Locations
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get PR branch name
+        if: inputs.pr_number
+        id: pr-info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: parseInt('${{ inputs.pr_number }}')
+            });
+            core.setOutput('branch', pr.head.ref);
+            core.setOutput('repo', pr.head.repo.full_name);
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Checkout the actual PR branch, not detached HEAD
+          ref: ${{ steps.pr-info.outputs.branch || github.ref }}
+          repository: ${{ steps.pr-info.outputs.repo || github.repository }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Check for image issues
+        id: check
+        run: |
+          echo "Checking for image location issues..."
+          if node scripts/check-image-locations.js > /tmp/check-output.txt 2>&1; then
+            echo "has_issues=false" >> $GITHUB_OUTPUT
+            echo "No issues found!"
+          else
+            echo "has_issues=true" >> $GITHUB_OUTPUT
+            echo "Issues found - will attempt to fix"
+            cat /tmp/check-output.txt
+          fi
+        continue-on-error: true
+
+      - name: Run auto-fix script
+        if: steps.check.outputs.has_issues == 'true'
+        id: fix
+        run: |
+          echo "Running fix-image-locations script..."
+          node scripts/fix-image-locations.js
+
+          # Check if any files were modified
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "changes_made=false" >> $GITHUB_OUTPUT
+            echo "No changes were made (images might be missing or other issues)"
+          else
+            echo "changes_made=true" >> $GITHUB_OUTPUT
+            echo "Changes were made!"
+          fi
+
+      - name: Commit and push changes
+        if: steps.fix.outputs.changes_made == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Stage all changes (moved images and updated MDX files)
+          git add -A
+
+          # Create commit
+          git commit -m "🤖 Auto-fix: Move images to correct directories
+
+          This commit was automatically generated to fix image location issues.
+          Images have been moved to match the expected directory structure.
+
+          Co-Authored-By: GitHub Actions <github-actions[bot]@users.noreply.github.com>"
+
+          # Push changes
+          git push
+
+      - name: Verify fixes
+        if: steps.fix.outputs.changes_made == 'true'
+        run: |
+          echo "Verifying that all issues are resolved..."
+          if node scripts/check-image-locations.js; then
+            echo "✅ All image location issues have been resolved!"
+            echo "verification_passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ Some issues remain after auto-fix"
+            echo "verification_passed=false" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+
+      - name: Comment on PR
+        if: inputs.pr_number && steps.fix.outputs.changes_made == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = parseInt('${{ inputs.pr_number }}');
+
+            let comment = '## 🤖 Auto-fix: Image Locations\n\n';
+            comment += 'I\'ve automatically fixed the image location issues in this PR!\n\n';
+            comment += '### Changes Made:\n';
+            comment += '- Moved images to the correct directory structure\n';
+            comment += '- Updated all references in MDX files\n\n';
+            comment += '### What was fixed:\n';
+            comment += 'Images have been moved to match the expected directory structure where:\n';
+            comment += '- A page at `guides/dashboard.mdx` uses images from `images/guides/dashboard/`\n';
+            comment += '- Shared images are placed in parent directories\n\n';
+            comment += '💡 Please review the changes and let me know if everything looks correct!\n';
+
+            await github.rest.issues.createComment({
+              issue_number: prNumber,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Image Location Fix Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.check.outputs.has_issues }}" != "true" ]; then
+            echo "✅ No image location issues found!" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.fix.outputs.changes_made }}" == "true" ]; then
+            echo "✅ Image locations have been automatically fixed and committed!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Issues were detected but could not be automatically fixed." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "This might be because:" >> $GITHUB_STEP_SUMMARY
+            echo "- Images are missing (not just misplaced)" >> $GITHUB_STEP_SUMMARY
+            echo "- Invalid file types are being referenced" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please review the check output above for details." >> $GITHUB_STEP_SUMMARY
+          fi
