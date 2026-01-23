@@ -255,6 +255,110 @@ In this example, the `event_count` metric will have both the `marketing` and `re
   If you try to add a category with the same name as an existing category, you'll get an error. This error will be displayed in the UI and in the terminal (if you use the Lightdash CLI) when you compile your project.
 </Info>
 
+## Assigning owners to metrics
+
+You can assign owners to metrics using the `spotlight.owner` property. The owner displays in the metrics catalog with their name and avatar.
+
+### Set an owner at the metric level
+
+```yaml
+models:
+  - name: orders
+    columns:
+      - name: amount
+        meta:
+          metrics:
+            total_revenue:
+              type: sum
+              spotlight:
+                owner: alice@yourcompany.com
+```
+
+### Set a default owner at the model level
+
+You can set a default owner for all metrics in a model. Metric-level owners override the model-level default.
+
+```yaml
+models:
+  - name: orders
+    meta:
+      spotlight:
+        owner: bob@yourcompany.com  # default for all metrics in this model
+    columns:
+      - name: amount
+        meta:
+          metrics:
+            total_revenue:
+              type: sum
+              spotlight:
+                owner: alice@yourcompany.com  # overrides model owner
+            avg_revenue:
+              type: average
+              # inherits bob@yourcompany.com from model
+```
+
+<Info>
+  - Use the email address of a Lightdash user in your organization.
+  - Metric-level owner takes precedence over model-level.
+  - You can filter by owner in the Spotlight UI.
+  - If the email doesn't match a Lightdash user, the metric shows as "Unassigned".
+</Info>
+
+## Controlling filtering and segmentation options
+
+You can control which dimensions appear in the filter and segment-by dropdowns when exploring metrics. This helps users focus on relevant dimensions.
+
+### Hide a dimension from all metrics
+
+Use boolean values at the dimension level to hide a dimension from filter or segment-by dropdowns for all metrics in that model:
+
+```yaml
+models:
+  - name: orders
+    columns:
+      - name: internal_tracking_id
+        meta:
+          dimension:
+            spotlight:
+              filter_by: false   # hide from filter dropdown
+              segment_by: false  # hide from segment-by dropdown
+```
+
+### Allowlist specific dimensions for a metric
+
+Use an array of dimension names at the metric level to create an allowlist of dimensions for that specific metric:
+
+```yaml
+models:
+  - name: orders
+    columns:
+      - name: amount
+        meta:
+          metrics:
+            total_revenue:
+              type: sum
+              spotlight:
+                filter_by:
+                  - status
+                  - region
+                  - order_date
+                segment_by:
+                  - status
+                  - customer_segment
+```
+
+### How it works
+
+- **Dimension-level (boolean, default `true`)**: Controls whether a dimension appears in dropdowns for all metrics in that model.
+- **Metric-level (array of dimension names)**: Creates an allowlist of dimensions for that specific metric.
+- **Metric-level allowlists override dimension-level settings**: If a dimension has `filter_by: false` but a metric includes it in its `filter_by` array, it will still be available for that metric.
+
+### Use cases
+
+- Hide internal/technical dimensions that aren't useful for analysis.
+- Curate the exploration experience per metric (e.g., revenue metrics only filterable by business dimensions).
+- Reduce clutter in models with many dimensions.
+
 ## Configuring default time settings in .yml
 
 We recommend setting up default time fields to make it easier for your business users and save them time.
