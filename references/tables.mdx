@@ -248,6 +248,35 @@ models:
 Using a properly defined primary key helps Lightdash optimize queries and provide accurate results when working with joined tables. It's especially important for preventing metric inflation in SQL joins where duplicate rows can lead to incorrect aggregations.
 
 
+## Default show underlying values
+
+You can set a default `show_underlying_values` configuration at the model level that applies to all metrics in that model. This is useful when you want consistent underlying data visibility across all metrics without repeating the same configuration for each metric.
+
+Individual metrics can override the model-level default by specifying their own `show_underlying_values`.
+
+```yaml
+models:
+  - name: payments
+    meta:
+      default_show_underlying_values:
+        - orders.customer_id
+        - unique_payment_count
+      metrics:
+        total_revenue:
+          type: sum
+          sql: ${TABLE}.revenue
+          # Uses the model default: orders.customer_id, unique_payment_count
+        average_revenue:
+          type: average
+          sql: ${TABLE}.revenue
+          show_underlying_values:
+            - custom_field  # Overrides the model default
+```
+
+The list of fields must be dimension names (or metrics if you'd like to include them) from the base table or from any joined tables. To reference a field from a joined table, prefix the field name with the joined table name, like this: `my_joined_table_name.my_dimension`.
+
+The order that the fields are listed in `default_show_underlying_values` is the order that they'll appear in on the "View underlying data" table.
+
 ## Default filters
 
 Use `default_filters` to define filters on Dimensions that will be applied when no other user-defined filter on those Dimensions exists. Default filters will show apply to tables on load and can be populated with a pre-determined value. User them to suggest to users the kind of filters they might want to consider, or provide a default filtered view of a table that can be changed if needed.
