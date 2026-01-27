@@ -26,10 +26,6 @@ However, not every team uses dbt. If you're interested in Lightdash features lik
 
 ...but you don't have dbt set up, dbt-less Lightdash provides a path forward. You can define your semantic layer directly and start using Lightdash immediately, without the overhead of adopting dbt.
 
-<Info>
-dbt is open source, so using dbt-less Lightdash isn't about avoiding a paid solution—it's about meeting you where you are in your data stack journey.
-</Info>
-
 ## dbt vs dbt-less: which should you use?
 
 | Scenario | Recommendation |
@@ -40,7 +36,7 @@ dbt is open source, so using dbt-less Lightdash isn't about avoiding a paid solu
 | You want AI agents or semantic layer features without dbt | Use dbt-less Lightdash |
 | You have tables in your warehouse ready to explore | Use dbt-less Lightdash |
 
-The good news: if you start with dbt-less Lightdash and later decide to adopt dbt, the YAML format is similar enough that migration is straightforward.
+The good news: if you start with dbt-less Lightdash and later decide to adopt dbt, the YAML formats are compatible, so migration is straightforward.
 
 ## Getting started with dbt-less Lightdash
 
@@ -64,35 +60,40 @@ mkdir -p lightdash/models
 Create a YAML file for your first model. For example, `./lightdash/models/users.yml`:
 
 ```yaml
-version: 2
+# Metadata
+type: model
+name: users
 
-models:
-  - name: users
-    meta:
-      sql_from: my_database.my_schema.users  # Update this to your table name
-    columns:
-      - name: user_id
-        meta:
-          dimension:
-            type: string
-      - name: email
-        meta:
-          dimension:
-            type: string
-      - name: created_at
-        meta:
-          dimension:
-            type: timestamp
-      - name: user_id
-        meta:
-          metrics:
-            total_users:
-              type: count_distinct
+# Table definition
+sql_from: 'DB.SCHEMA.USERS'
+
+# Metric definitions
+# For more configuration see: https://docs.lightdash.com/references/metrics
+metrics:
+  user_count:
+    type: count_distinct
+    sql: ${TABLE}.USER_ID
+    description: Total unique users
+
+# Dimension definitions
+# For more configuration see: https://docs.lightdash.com/references/dimensions
+dimensions:
+  - name: subscription_type
+    sql: ${TABLE}.SUBSCRIPTION
+    type: string
+
+  - name: signed_up_at
+    sql: ${TABLE}.SIGNED_UP
+    type: date
+    time_intervals:
+      - DAY
+      - WEEK
+      - MONTH
 ```
 
 Update the configuration:
 
-- Set `sql_from` to the fully qualified name of your table (e.g., `database.schema.table`)
+- Set `sql_from` to the fully qualified name of your table (e.g., `DATABASE.SCHEMA.TABLE`)
 - Update the dimensions to match the columns in your table
 - Add metrics that make sense for your data
 
@@ -114,7 +115,17 @@ Create your Lightdash project by deploying with the CLI:
 lightdash deploy --create --no-warehouse-credentials
 ```
 
-The `--no-warehouse-credentials` flag tells Lightdash that you're using dbt-less mode and will configure warehouse credentials separately in the Lightdash UI.
+The `--no-warehouse-credentials` flag tells Lightdash that you're deploying without warehouse credentials embedded in the CLI. After deploying, you'll need to configure your warehouse connection in the Lightdash UI:
+
+1. Go to **Settings** (gear icon in the top right)
+2. Under **Current project**, click **Connection settings**
+3. Configure your **Warehouse connection** with your database credentials
+
+<Frame>
+  ![Warehouse connection settings](/images/references/integrations/dbt-less/warehouse-connection.png)
+</Frame>
+
+For detailed instructions on configuring your warehouse connection, see [Connect to a warehouse](/get-started/setup-lightdash/connect-project#1-connect-to-a-warehouse).
 
 ### Step 4: Update your project
 
