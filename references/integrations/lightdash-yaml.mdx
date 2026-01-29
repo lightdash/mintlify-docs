@@ -1,0 +1,177 @@
+---
+title: "Lightdash YAML"
+sidebarTitle: Lightdash YAML
+description: "Use Lightdash without a dbt project by defining your semantic layer directly in YAML files."
+---
+
+<Frame>
+  <iframe width="100%" height="420" src="https://www.loom.com/embed/d7cab1a72e2a40f088998c4fb387e185" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen />
+</Frame>
+
+## What is Lightdash YAML?
+
+Lightdash YAML allows you to use Lightdash without an existing dbt project. Instead of defining your semantic layer within dbt model YAML files, you define it directly in standalone YAML files that point to tables in your data warehouse.
+
+This approach lets you leverage Lightdash's powerful features without needing to adopt dbt first.
+
+## Why use Lightdash YAML?
+
+Lightdash has always operated with dbt at its core. Traditionally, customers have active dbt projects, and Lightdash builds its semantic layer within that dbt context.
+
+However, not every team uses dbt. If you're interested in Lightdash features like:
+
+- **AI agents** that can answer questions about your data
+- **A semantic layer** with consistent metric definitions
+- **Self-service analytics** for your business users
+
+...but you don't have dbt set up, Lightdash YAML provides a path forward. You can define your semantic layer directly and start using Lightdash immediately, without the overhead of adopting dbt.
+
+## dbt vs Lightdash YAML: which should you use?
+
+| Scenario | Recommendation |
+|----------|----------------|
+| You already have a dbt project | Use the standard [dbt integration](/references/integrations/dbt-projects) |
+| You're planning to adopt dbt soon | Consider setting up dbt first, then connecting to Lightdash |
+| You don't use dbt and want to try Lightdash quickly | Use Lightdash YAML |
+| You want AI agents or semantic layer features without dbt | Use Lightdash YAML |
+| You have tables in your warehouse ready to explore | Use Lightdash YAML |
+
+The good news: if you start with Lightdash YAML and later decide to adopt dbt, the YAML formats are compatible, so migration is straightforward.
+
+## Getting started with Lightdash YAML
+
+### Prerequisites
+
+Before you begin, make sure you have:
+
+1. The [Lightdash CLI installed](/guides/cli/how-to-install-the-lightdash-cli)
+2. [Authenticated with Lightdash](/guides/cli/cli-authentication)
+3. Credentials for your data warehouse (e.g., Snowflake)
+4. Tables in your warehouse that you want to explore
+
+### Step 1: Create your project configuration
+
+At the root of your project, create a `lightdash.config.yml` file to specify your warehouse type:
+
+```yaml
+warehouse:
+  type: snowflake
+```
+
+Replace `snowflake` with your warehouse type (e.g., `bigquery`, `databricks`, `redshift`, `postgres`, `trino`).
+
+### Step 2: Create your first model
+
+Lightdash YAML uses the same syntax as the [Lightdash semantic layer in dbt](/references/integrations/dbt-projects), but instead of nesting everything under `meta` tags, all configuration is at the top level of the file.
+
+Create a directory structure for your Lightdash project:
+
+```bash
+mkdir -p lightdash/models
+```
+
+Create a YAML file for your first model. For example, `./lightdash/models/users.yml`:
+
+```yaml
+# Metadata
+type: model
+name: users
+
+# Table definition
+sql_from: 'DB.SCHEMA.USERS'
+
+# Metric definitions
+# For more configuration see: https://docs.lightdash.com/references/metrics
+metrics:
+  user_count:
+    type: count_distinct
+    sql: ${TABLE}.USER_ID
+    description: Total unique users
+
+# Dimension definitions
+# For more configuration see: https://docs.lightdash.com/references/dimensions
+dimensions:
+  - name: subscription_type
+    sql: ${TABLE}.SUBSCRIPTION
+    type: string
+
+  - name: signed_up_at
+    sql: ${TABLE}.SIGNED_UP
+    type: date
+    time_intervals:
+      - DAY
+      - WEEK
+      - MONTH
+```
+
+Update the configuration:
+
+- Set `sql_from` to the fully qualified name of your table (e.g., `DATABASE.SCHEMA.TABLE`)
+- Update the dimensions to match the columns in your table
+- Add metrics that make sense for your data
+
+### Step 3: Validate your YAML
+
+Check your YAML files for errors by running:
+
+```bash
+lightdash lint
+```
+
+This command validates your configuration and reports any issues before you deploy.
+
+### Step 4: Deploy your project
+
+Create your Lightdash project by deploying with the CLI:
+
+```bash
+lightdash deploy --create --no-warehouse-credentials
+```
+
+The `--no-warehouse-credentials` flag tells Lightdash that you're deploying without warehouse credentials embedded in the CLI. After deploying, you'll need to configure your warehouse connection in the Lightdash UI:
+
+1. Go to **Settings** (gear icon in the top right)
+2. Under **Current project**, click **Connection settings**
+3. Configure your **Warehouse connection** with your database credentials
+
+<Frame>
+  ![Warehouse connection settings](../../images/references/integrations/lightdash-yaml/warehouse-connection.png)
+</Frame>
+
+For detailed instructions on configuring your warehouse connection, see [Connect to a warehouse](/get-started/setup-lightdash/connect-project#1-connect-to-a-warehouse).
+
+### Step 5: Update your project
+
+After your initial deployment, you can edit your `.yml` files and redeploy changes:
+
+```bash
+lightdash deploy --no-warehouse-credentials
+```
+
+## Developing with AI copilots
+
+If you're developing with Cursor, Claude Code, Kilo Code, or another AI copilot, you can speed up your workflow significantly.
+
+### Recommended setup
+
+1. **Provide the schema reference:** Give your copilot this link to the Lightdash YAML format specification:
+   ```
+   https://raw.githubusercontent.com/lightdash/lightdash/refs/heads/main/packages/common/src/schemas/json/model-as-code-1.0.json
+   ```
+
+2. **Use validation:** Prompt your copilot to always run `lightdash lint` after making any changes to catch errors early.
+
+3. **Share your warehouse schema:** Give your copilot access to your warehouse schema. This makes it very fast to generate YAML files that match your actual table structures.
+
+<Tip>
+With access to your warehouse schema, AI copilots can auto-generate dimension and metric definitions for entire tables in seconds.
+</Tip>
+
+## Next steps
+
+Once you've deployed your Lightdash YAML project:
+
+- [Explore your data](/get-started/exploring-data/using-explores) in the Lightdash UI
+- [Create metrics](/get-started/develop-in-lightdash/how-to-create-metrics) to define your key business calculations
+- [Set up AI agents](/guides/ai-agents) to enable natural language queries
+- Learn about the [semantic layer reference](/references/metrics) for advanced configuration options
