@@ -247,6 +247,22 @@ Model-level parameters are defined within individual model YAML files in your db
                 type: "date"
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    parameters:
+      date_range_start:
+        label: "Date Range Start"
+        description: "Start date for filtering orders in custom time period metrics"
+        type: "date"
+      date_range_end:
+        label: "Date Range End"
+        description: "End date for filtering orders in custom time period metrics"
+        type: "date"
+    ```
+  </Tab>
 </Tabs>
 
 Model-level parameters offer the same configuration options as project-level parameters but provide better encapsulation and organization by keeping parameters close to where they're used.
@@ -298,6 +314,22 @@ You can reference parameters in the SQL definition of a dimension:
                     END
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    dimensions:
+      - name: filtered_revenue
+        type: number
+        sql: |
+          CASE
+            WHEN ${TABLE}.region IN (${lightdash.parameters.region})
+            THEN ${TABLE}.revenue
+            ELSE 0
+          END
+    ```
+  </Tab>
 </Tabs>
 
 In this example, the `filtered_revenue` dimension will only show revenue for the regions selected in the `region` parameter.
@@ -331,6 +363,17 @@ You can reference numeric parameters directly without casting:
                 dimension:
                   type: boolean
                   sql: ${TABLE}.revenue >= ${lightdash.parameters.min_revenue}
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    dimensions:
+      - name: high_value_orders
+        type: boolean
+        sql: ${TABLE}.revenue >= ${lightdash.parameters.min_revenue}
     ```
   </Tab>
 </Tabs>
@@ -376,6 +419,23 @@ You can reference parameters in the SQL definition of a metric:
                     when ${lightdash.parameters.unit} = 'Kilometers'
                       then ${TABLE}.distance_km
                   end
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: races
+
+    metrics:
+      avg_distance_unit_param:
+        type: average
+        sql: |
+          case
+            when ${lightdash.parameters.unit} = 'Miles'
+              then ${TABLE}.distance_miles
+            when ${lightdash.parameters.unit} = 'Kilometers'
+              then ${TABLE}.distance_km
+          end
     ```
   </Tab>
 </Tabs>
@@ -427,6 +487,25 @@ Parameters aren't just for filtering—they can swap entire metrics. Instead of 
                   END
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: deals
+
+    metrics:
+      selected_kpi:
+        label: Selected KPI
+        description: Dynamic metric that changes based on the KPI Metric parameter selection
+        type: number
+        sql: |
+          CASE
+            WHEN ${lightdash.parameters.kpi_selector} = 'total_revenue' THEN ${deals.total_amount}
+            WHEN ${lightdash.parameters.kpi_selector} = 'won_revenue' THEN ${deals.total_won_amount}
+            WHEN ${lightdash.parameters.kpi_selector} = 'deal_count' THEN ${deals.unique_deals}
+            WHEN ${lightdash.parameters.kpi_selector} = 'win_rate' THEN ${deals.win_rate} * 100
+          END
+    ```
+  </Tab>
 </Tabs>
 
 In this example, the `selected_kpi` metric dynamically returns different values based on the `kpi_selector` parameter. This allows you to build a single chart that can display multiple KPIs. [See this in action on our demo site](https://demo.lightdash.com/projects/d496d901-a76d-4916-9eae-b81bc7337013/dashboards/5d752e3e-7548-4117-a155-da90ba371598/view/tabs/6111424c-aa0c-4013-b454-3ff76ab9ac53).
@@ -462,6 +541,18 @@ You can use parameters in the SQL_ON clause of a table join. This includes both 
                   AND ${customers.region} IN (${lightdash.parameters.region})
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    joins:
+      - join: customers
+        sql_on: |
+          ${orders.customer_id} = ${customers.id}
+          AND ${customers.region} IN (${lightdash.parameters.region})
+    ```
+  </Tab>
 </Tabs>
 
 This join will only include customers from the regions selected in the project-level `region` parameter.
@@ -492,6 +583,18 @@ You can also reference model-level parameters from joined tables:
                 sql_on: |
                   ${orders.customer_id} = ${customers.customer_id}
                   AND ${customers.status} = ${lightdash.parameters.customers.customer_status}
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    joins:
+      - join: customers
+        sql_on: |
+          ${orders.customer_id} = ${customers.customer_id}
+          AND ${customers.status} = ${lightdash.parameters.customers.customer_status}
     ```
   </Tab>
 </Tabs>
@@ -549,6 +652,20 @@ You can use parameters in custom dimension definitions:
                   is_after_cutoff_date:
                     type: boolean
                     sql: ${order_date} >= ${lightdash.parameters.date_range_start}
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    dimensions:
+      - name: order_date
+        type: date
+        additional_dimensions:
+          is_after_cutoff_date:
+            type: boolean
+            sql: ${order_date} >= ${lightdash.parameters.date_range_start}
     ```
   </Tab>
 </Tabs>
@@ -621,6 +738,26 @@ When working with joined tables, you can reference model-level parameters from t
                       THEN ${TABLE}.revenue
                       ELSE 0
                     END
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    joins:
+      - join: customers
+        sql_on: ${orders.customer_id} = ${customers.id}
+
+    dimensions:
+      - name: filtered_customer_revenue
+        type: number
+        sql: |
+          CASE
+            WHEN ${customers.segment} = ${lightdash.parameters.customers.target_segment}
+            THEN ${TABLE}.revenue
+            ELSE 0
+          END
     ```
   </Tab>
 </Tabs>
