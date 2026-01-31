@@ -109,6 +109,42 @@ If you want to declare multiple dimensions based on the same column, check [addi
                     is_admin: 'true'
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: sales_stats
+
+    group_details:
+      finance:
+        label: Finance
+        description: Finance-related fields.
+
+    joins:
+      - join: web_sessions
+        sql_on: ${web_sessions.date} = ${sales_stats.date}
+
+    dimensions:
+      - name: revenue_gbp_total_est
+        description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
+        type: number
+        label: 'Total revenue' # this is the label you'll see in Lightdash
+        sql: 'IF(${TABLE}.revenue_gbp_total_est = NULL, 0, ${registered_user_email})' # custom SQL applied to the column from dbt used to define the dimension
+        hidden: false
+        format: '[$£]#,##0.00' # GBP rounded to two decimal points
+        groups: ['finance']
+      - name: forecast_date
+        description: 'Date of the forecasting.'
+        type: date
+        time_intervals: ['DAY', 'WEEK', 'MONTH', 'QUARTER'] # not required: the default time intervals for dates are `['DAY', 'WEEK', 'MONTH', 'YEAR']`
+        urls:
+          - label: 'Open in forecasting tool'
+            url: 'https://finance.com/forceasts/weeks/${ value.raw }'
+          - label: Open in Google Calendar
+            url: 'https://calendar.google.com/calendar/u/0/r/day/${ value.formatted |split: "-" |join: "/"}'
+        required_attributes:
+          is_admin: 'true'
+    ```
+  </Tab>
 </Tabs>
 
 The table below shows all the dimension properties you can customize:
@@ -150,6 +186,13 @@ The types of your dimensions are pulled from your data warehouse, automatically.
         meta:
           dimension:
             type: date
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: user_created_date
+        type: date
     ```
   </Tab>
 </Tabs>
@@ -266,6 +309,20 @@ To help you build your format expression, we recommend using https://customforma
               format: '0.00%' # 0.67895243 will appear as '67.89%
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: us_revenue
+        type: number
+        description: 'Revenue in USD, with two decimal places, compacted to thousands'
+        format: '$#,##0.00," K"' # 505,430 will appear as '$505.43 K'
+      - name: percent_of_global_revenue
+        type: number
+        description: 'Percent of total global revenue coming from US revenue.'
+        sql: ${us_revenue} / ${global_revenue}
+        format: '0.00%' # 0.67895243 will appear as '67.89%
+    ```
+  </Tab>
 </Tabs>
 
 ### Example format expressions:
@@ -330,6 +387,17 @@ To help you build your format expression, we recommend using https://customforma
                     format: 'gbp'
       ```
     </Tab>
+    <Tab title="Lightdash YAML">
+      ```yaml
+      type: model
+      name: sales_stats
+
+      dimensions:
+        - name: revenue
+          description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
+          format: 'gbp'
+      ```
+    </Tab>
   </Tabs>
 
   These are the options:
@@ -373,6 +441,16 @@ To help you build your format expression, we recommend using https://customforma
                     round: 0 # equivalent format expression: '#,##0.0'
       ```
     </Tab>
+    <Tab title="Lightdash YAML">
+      ```yaml
+      type: model
+      name: sales
+
+      dimensions:
+        - name: revenue
+          round: 0 # equivalent format expression: '#,##0.0'
+      ```
+    </Tab>
   </Tabs>
 </Accordion>
 
@@ -402,6 +480,16 @@ You can compact values in your YAML. For example, if I wanted all of my revenue 
               meta:
                 dimension:
                   compact: thousands # You can also use 'K'
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: sales
+
+    dimensions:
+      - name: revenue
+        compact: thousands # You can also use 'K'
     ```
   </Tab>
 </Tabs>
@@ -491,6 +579,15 @@ In this example, `created` would now appear as a single, timestamp dimension wit
             time_intervals: OFF
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: created
+        description: 'Timestamp when the user was created.'
+        type: timestamp
+        time_intervals: OFF
+    ```
+  </Tab>
 </Tabs>
 
 <Frame>
@@ -520,6 +617,14 @@ If you specify time intervals manually, then this overrides the default time int
         meta:
           dimension:
             time_intervals: ['DAY', 'DAY_OF_MONTH_NUM', 'MONTH', 'QUARTER_NAME', 'YEAR']
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: created
+        description: 'Timestamp when the user was created.'
+        time_intervals: ['DAY', 'DAY_OF_MONTH_NUM', 'MONTH', 'QUARTER_NAME', 'YEAR']
     ```
   </Tab>
 </Tabs>
@@ -605,6 +710,20 @@ You can set custom versions of time intervals by using additional dimensions and
               label: "Year of week"
               sql: "yearofweekiso(${delivery_date})"
               groups: ["Delivery Date"]
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: delivery_date
+        label: "Delivery Date"
+        type: date
+        time_intervals: [ ... ]
+      - name: year_of_week_num
+        type: number
+        label: "Year of week"
+        sql: "yearofweekiso(${delivery_date})"
+        groups: ["Delivery Date"]
     ```
   </Tab>
 </Tabs>
@@ -710,6 +829,29 @@ To do this, you need to set up `group_details` in the model's configuration. The
                   groups: ['product_details'] # this would add the dimension under the group label: `product_details`
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: baskets
+
+    group_details:
+      product_details:
+        label: Product Details
+        description: 'Fields that have information about the products in the basket.'
+      item_details:
+        label: Item Details
+        description: 'Fields that have information about the items in the basket.'
+
+    dimensions:
+      - name: basket_item_id
+        description: 'ID for the product item within the basket.'
+        groups: ['product_details', 'item_details'] # this would add the dimension to a nested group: `product details` --> `item details`
+      - name: product_name
+        description: 'Full name of the product.'
+        label: 'Product name'
+        groups: ['product_details'] # this would add the dimension under the group label: `product_details`
+    ```
+  </Tab>
 </Tabs>
 
 This example would look like this in the sidebar:
@@ -747,6 +889,16 @@ Lightdash users can interact with dimension values by clicking on them. If you'r
               urls:
                 - label: Open in CRM
                   url: ${ value.raw }
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: candidate_profile_url
+        label: URL of the candidate profile
+        urls:
+          - label: Open in CRM
+            url: ${ value.raw }
     ```
   </Tab>
 </Tabs>
@@ -792,6 +944,18 @@ In the example below, users can click on a company name and open a corresponding
                   url: 'https://mycrm.com/companies/${ row.company.company_id.raw | url_encode }'
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: company_name
+        label: Registered trading name of the company
+        urls:
+          - label: Search for company in Google
+            url: 'https://google.com/search?${ value.formatted | url_encode }'
+          - label: Open in CRM
+            url: 'https://mycrm.com/companies/${ row.company.company_id.raw | url_encode }'
+    ```
+  </Tab>
 </Tabs>
 
 The `${ value.formatted }` will be replaced with the value of the company name in the Lightdash UI at query run time. The `${ row.company.company_id.raw }` will be replaced with the value of the company id in the Lightdash UI at query run time. The action will be disabled if the column "company_id" from table "company" is not part of the query.
@@ -825,6 +989,16 @@ You can reference another dimension from your table in your URL. For these URLs 
               urls:
                 - label: "Open company"
                   url: "https://example.com/company/${row.customers.customer_id.raw | url_encode }"
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: company_name
+        label: Registered trading name of the company
+        urls:
+          - label: "Open company"
+            url: "https://example.com/company/${row.customers.customer_id.raw | url_encode }"
     ```
   </Tab>
 </Tabs>
@@ -904,6 +1078,17 @@ In the example below, only users with `is_admin` attribute `true` can use the `s
                 is_admin: "true"
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: user_name
+        description: User name
+      - name: salary
+        description: User salary
+        required_attributes:
+          is_admin: "true"
+    ```
+  </Tab>
 </Tabs>
 
 If a user without access to this dimension runs a query that contains this dimension, they will get a `Forbidden` error.
@@ -953,6 +1138,19 @@ You can predefine colors for your string type dimensions, these colors will be u
                 "shipped": "#29B6F6"
                 "return_pending": "#FF6F00"
                 "returned": "#E91E63"
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: status
+        description: "Order status"
+        colors:
+          "placed": "#e6fa0f"
+          "completed": "#558B2F"
+          "shipped": "#29B6F6"
+          "return_pending": "#FF6F00"
+          "returned": "#E91E63"
     ```
   </Tab>
 </Tabs>
@@ -1015,6 +1213,16 @@ If your column already contains complete image URLs, you can simply configure it
                 url: "${value.raw}"
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: image_url
+        description: "Image URL for the event"
+        type: string
+        image:
+          url: "${value.raw}"
+    ```
+  </Tab>
 </Tabs>
 
 **With custom dimensions and fit:**
@@ -1053,6 +1261,19 @@ You can control the size and display behavior of images using width, height, and
                 fit: "cover"
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: product_image_url
+        description: "Product image URL"
+        type: string
+        image:
+          url: "${value.raw}"
+          width: 100
+          height: 100
+          fit: "cover"
+    ```
+  </Tab>
 </Tabs>
 
 **Basic example with URL template:**
@@ -1087,6 +1308,18 @@ You can control the size and display behavior of images using width, height, and
                   url: "https://example.com/images/${value.raw}.jpg"
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: product_id
+      - name: product_image
+        type: string
+        label: "Product Image"
+        description: "Product thumbnail image"
+        image:
+          url: "https://example.com/images/${value.raw}.jpg"
+    ```
+  </Tab>
 </Tabs>
 
 **Advanced example with dynamic URLs:**
@@ -1119,6 +1352,18 @@ You can control the size and display behavior of images using width, height, and
                 description: "Event banner image"
                 image:
                   url: "https://cdn.example.com/${value.raw}-${row.events.event_id.raw | upcase}.png"
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: event_type
+      - name: event_image
+        type: string
+        label: "Event Image"
+        description: "Event banner image"
+        image:
+          url: "https://cdn.example.com/${value.raw}-${row.events.event_id.raw | upcase}.png"
     ```
   </Tab>
 </Tabs>
@@ -1298,6 +1543,45 @@ image:
                     fit: "cover"
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: products
+
+    dimensions:
+      - name: sku
+        description: "Product SKU code"
+        type: string
+      - name: product_thumbnail
+        type: string
+        label: "Product Image"
+        description: "Product catalog image"
+        image:
+          url: "https://cdn.mystore.com/products/${value.raw}/thumbnail.jpg"
+          width: 80
+          height: 80
+          fit: "cover"
+      - name: category
+        description: "Product category"
+        type: string
+      - name: category_icon
+        type: string
+        label: "Category Icon"
+        description: "Category icon image"
+        image:
+          url: "https://cdn.mystore.com/icons/${value.raw | downcase}.png"
+          width: 40
+          height: 40
+          fit: "contain"
+      - name: hero_image_url
+        description: "Product hero image URL"
+        type: string
+        image:
+          url: "${value.raw}"
+          width: 120
+          fit: "cover"
+    ```
+  </Tab>
 </Tabs>
 
 
@@ -1329,6 +1613,14 @@ To fix this, we can add the quoted column to our `sql` meta tag on dimensions
           dimension:
             type: string
             sql: '"orders"."Status"' # you can also use '${TABLE}."Status"'
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: status
+        type: string
+        sql: '"orders"."Status"' # you can also use '${TABLE}."Status"'
     ```
   </Tab>
 </Tabs>
@@ -1391,6 +1683,21 @@ All [dimension configurations](#dimension-configuration) are available for addit
                 format: '#,##0,," M"'
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: revenue
+        type: number
+      - name: revenue_in_thousands
+        type: number
+        sql: ${TABLE}.revenue
+        format: '#,##0," K"'
+      - name: revenue_in_millions
+        type: number
+        sql: ${TABLE}.revenue
+        format: '#,##0,," M"'
+    ```
+  </Tab>
 </Tabs>
 
 
@@ -1436,6 +1743,21 @@ When defining additional dimensions, you can reference other dimensions, even fr
                 sql: ${created_date} - ${organizations.first_payment_date}
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: created_date
+        type: date
+      - name: days_to_first_query_run
+        type: number
+        description: 'Number of days between a user being created and their first query run.'
+        sql: ${first_query_date} - ${created_date}
+      - name: days_to_organization_first_payment
+        type: number
+        description: 'Number of days between a user being created and their organization making its first payment. This will be negative for users who joined after the first payment.'
+        sql: ${created_date} - ${organizations.first_payment_date}
+    ```
+  </Tab>
 </Tabs>
 
 
@@ -1471,6 +1793,16 @@ Usually you'll want to add `hidden:true` for the main JSON dimension since raw J
                 sql: JSON_VALUE(${metadata}, '$.version') # custom SQL applied to get the "version" value inside metadata
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: metadata # this is a jsonb column with metadata
+        hidden: true
+      - name: version
+        type: number
+        sql: JSON_VALUE(${metadata}, '$.version') # custom SQL applied to get the "version" value inside metadata
+    ```
+  </Tab>
 </Tabs>
 
 
@@ -1504,7 +1836,7 @@ You can use additional dimensions to convert a timestamp into multiple timezones
   columns:
     - name: created_at
       description: 'The time that the thing was created'
-      config: 
+      config:
         meta:
           dimension:
             label: 'Created (UTC)'
@@ -1515,6 +1847,20 @@ You can use additional dimensions to convert a timestamp into multiple timezones
               label: 'Created (EST)'
               description: 'The time that the thing was created, in EST'
               sql: "convert_timezone('UTC', 'America/New_York', ${TABLE}.created_at)"
+  ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+  ```yaml
+  dimensions:
+    - name: created_at
+      description: 'The time that the thing was created'
+      label: 'Created (UTC)'
+      type: timestamp
+    - name: created_at_est
+      type: timestamp
+      label: 'Created (EST)'
+      description: 'The time that the thing was created, in EST'
+      sql: "convert_timezone('UTC', 'America/New_York', ${TABLE}.created_at)"
   ```
   </Tab>
 </Tabs>
@@ -1579,6 +1925,27 @@ To define metrics based on additional dimensions, you need to add them to the mo
                   sql: ${version}
   ```
   </Tab>
+  <Tab title="Lightdash YAML">
+  ```yaml
+  type: model
+  name: users
+
+  dimensions:
+    - name: metadata
+      hidden: true
+    - name: version
+      type: number
+      sql: JSON_VALUE(${metadata}, '$.version')
+
+  metrics:
+    highest_version_model_metric_example:
+      type: max
+      sql: ${version}
+    highest_version:
+      type: max
+      sql: ${version}
+  ```
+  </Tab>
 </Tabs>
 
 
@@ -1611,10 +1978,10 @@ For example, you can create a tier based on whether a specific time interval has
           extra_session_start_tier:
             type: string
             sql: |
-              CASE 
-                WHEN ${session_start_month} IS NOT NULL THEN 'month' 
+              CASE
+                WHEN ${session_start_month} IS NOT NULL THEN 'month'
                 ELSE 'else' END
-  ```  
+  ```
   </Tab>
   <Tab title="dbt v1.10+">
   ```yaml
@@ -1635,9 +2002,30 @@ For example, you can create a tier based on whether a specific time interval has
             extra_session_start_tier:
               type: string
               sql: |
-                CASE 
-                  WHEN ${session_start_month} IS NOT NULL THEN 'month' 
+                CASE
+                  WHEN ${session_start_month} IS NOT NULL THEN 'month'
                   ELSE 'else' END
+  ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+  ```yaml
+  dimensions:
+    - name: session_start
+      type: timestamp
+      time_intervals:
+      - DAY_OF_WEEK_NAME
+      - WEEK
+      - MONTH
+      - RAW
+      - DAY
+      - HOUR_OF_DAY_NUM
+      - QUARTER
+    - name: extra_session_start_tier
+      type: string
+      sql: |
+        CASE
+          WHEN ${session_start_month} IS NOT NULL THEN 'month'
+          ELSE 'else' END
   ```
   </Tab>
 </Tabs>

@@ -260,7 +260,7 @@ To do this, you:
               default: "last 7 days"
     ```
     </Tab>
-    <Tab title="dbt v1.10+ and Fusion">
+    <Tab title="dbt v1.10+">
     ``` yaml
     models:
       - name: dbt_orders
@@ -276,6 +276,24 @@ To do this, you:
                   - "last 7 days"
                   - "last 30 days"
                 default: "last 7 days"
+    ```
+    </Tab>
+    <Tab title="Lightdash YAML">
+    ``` yaml
+    type: model
+    name: dbt_orders
+
+    description: 'This table contains information on all the confirmed orders and their status'
+
+    parameters:
+      date_range:
+        label: "Date Range"
+        description: "Choose a date range"
+        options:
+          - "yesterday"
+          - "last 7 days"
+          - "last 30 days"
+        default: "last 7 days"
     ```
     </Tab>
     </Tabs>
@@ -353,7 +371,7 @@ To do this, you:
                    end
     ```
     </Tab>
-    <Tab title="dbt v1.10+ and Fusion">
+    <Tab title="dbt v1.10+">
     ``` yaml
     models:
      - name: dbt_orders
@@ -378,8 +396,8 @@ To do this, you:
                dimension:
                  time_intervals: [
                    'HOUR', 'MINUTE_OF_HOUR_NUM', 'HOUR_OF_DAY_NUM',
-                   'DAY', 'DAY_OF_WEEK_INDEX', 'DAY_OF_MONTH_NUM', 'DAY_OF_YEAR_NUM', 
-                   'DAY_OF_WEEK_NAME', 'WEEK', 'WEEK_NUM', 
+                   'DAY', 'DAY_OF_WEEK_INDEX', 'DAY_OF_MONTH_NUM', 'DAY_OF_YEAR_NUM',
+                   'DAY_OF_WEEK_NAME', 'WEEK', 'WEEK_NUM',
                    'MONTH', 'MONTH_NUM', 'MONTH_NAME',
                    'QUARTER', 'QUARTER_NUM', 'QUARTER_NAME',
                    'YEAR' ]
@@ -416,6 +434,70 @@ To do this, you:
 
                        else 'out of range'
                      end
+    ```
+    </Tab>
+    <Tab title="Lightdash YAML">
+    ``` yaml
+    type: model
+    name: dbt_orders
+
+    description: 'This table contains information on all the confirmed orders and their status'
+
+    label: Orders
+
+    parameters:
+      date_range:
+        label: "Date Range"
+        description: "Choose a date range"
+        options:
+          - "yesterday"
+          - "last 7 days"
+          - "last 30 days"
+        default: "last 7 days"
+
+    dimensions:
+      - name: order_date
+        description: 'Timestamp of order placement by user.'
+        type: timestamp
+        time_intervals: [
+          'HOUR', 'MINUTE_OF_HOUR_NUM', 'HOUR_OF_DAY_NUM',
+          'DAY', 'DAY_OF_WEEK_INDEX', 'DAY_OF_MONTH_NUM', 'DAY_OF_YEAR_NUM',
+          'DAY_OF_WEEK_NAME', 'WEEK', 'WEEK_NUM',
+          'MONTH', 'MONTH_NUM', 'MONTH_NAME',
+          'QUARTER', 'QUARTER_NUM', 'QUARTER_NAME',
+          'YEAR' ]
+        additional_dimensions:
+          order_date_period:
+            description: Date period (current period or previous period or previous year or out of range) chosen by the date_range parameter
+            type: string
+            sql: >
+              case
+                -- current period
+                when (
+                  (${lightdash.parameters.dbt_orders.date_range} = 'yesterday' and date(${order_date}) = date_sub(current_date(), interval 1 day)) or
+                  (${lightdash.parameters.dbt_orders.date_range} = 'last 7 days' and date(${order_date}) between date_sub(current_date(), interval 7 day) and date_sub(current_date(), interval 1 day)) or
+                  (${lightdash.parameters.dbt_orders.date_range} = 'last 30 days' and date(${order_date}) between date_sub(current_date(), interval 30 day) and date_sub(current_date(), interval 1 day))
+                )
+                then 'current period'
+
+                -- previous period
+                when (
+                  (${lightdash.parameters.dbt_orders.date_range} = 'yesterday' and date(${order_date}) = date_sub(current_date(), interval 2 day)) or
+                  (${lightdash.parameters.dbt_orders.date_range} = 'last 7 days' and date(${order_date}) between date_sub(current_date(), interval 14 day) and date_sub(current_date(), interval 8 day)) or
+                  (${lightdash.parameters.dbt_orders.date_range} = 'last 30 days' and date(${order_date}) between date_sub(current_date(), interval 60 day) and date_sub(current_date(), interval 31 day))
+                )
+                then 'previous period'
+
+                -- previous year
+                when (
+                  (${lightdash.parameters.dbt_orders.date_range} = 'yesterday' and date(${order_date}) = date_sub(date_sub(current_date(), interval 1 year), interval 1 day)) or
+                  (${lightdash.parameters.dbt_orders.date_range} = 'last 7 days' and date(${order_date}) between date_sub(date_sub(current_date(), interval 1 year), interval 7 day) and date_sub(date_sub(current_date(), interval 1 year), interval 1 day)) or
+                  (${lightdash.parameters.dbt_orders.date_range} = 'last 30 days' and date(${order_date}) between date_sub(date_sub(current_date(), interval 1 year), interval 30 day) and date_sub(date_sub(current_date(), interval 1 year), interval 1 day))
+                )
+                then 'previous year'
+
+                else 'out of range'
+              end
     ```
     </Tab>
     </Tabs>
@@ -469,7 +551,7 @@ models:
           type: date
 ```
 </Tab>
-<Tab title="dbt v1.10+ and Fusion">
+<Tab title="dbt v1.10+">
 ``` yaml
 models:
   - name: dbt_orders
@@ -484,6 +566,22 @@ models:
             label: "End of custom date range"
             description: "The end of the custom date range"
             type: date
+```
+</Tab>
+<Tab title="Lightdash YAML">
+``` yaml
+type: model
+name: dbt_orders
+
+parameters:
+  custom_range_start:
+    label: "Start of custom date range"
+    description: "The start of the custom date range"
+    type: date
+  custom_range_end:
+    label: "End of custom date range"
+    description: "The end of the custom date range"
+    type: date
 ```
 </Tab>
 </Tabs>
@@ -544,7 +642,7 @@ columns:
             end
 ```
 </Tab>
-<Tab title="dbt v1.10+ and Fusion">
+<Tab title="dbt v1.10+">
 ``` yaml
 columns:
   - name: order_date
@@ -595,6 +693,56 @@ columns:
 
                 else 'out of range'
               end
+```
+</Tab>
+<Tab title="Lightdash YAML">
+``` yaml
+dimensions:
+  - name: order_date
+    description: 'Date of order placement by user.'
+    type: date
+    additional_dimensions:
+      order_date_custom_period:
+        description: Date period bucket based on custom Start date and End date parameters
+        type: string
+        sql: |
+          case
+            --invalid date range
+            when ${lightdash.parameters.dbt_orders.custom_range_start} is null
+              or ${lightdash.parameters.dbt_orders.custom_range_end} is null
+              or ${lightdash.parameters.dbt_orders.custom_range_start} > ${lightdash.parameters.dbt_orders.custom_range_end}
+              then 'invalid date range'
+
+            --current period
+            when ${order_date_day} >= ${lightdash.parameters.dbt_orders.custom_range_start}
+              and ${order_date_day} <= ${lightdash.parameters.dbt_orders.custom_range_end}
+              then 'current period'
+
+            --previous period
+            when ${order_date_day} between date_sub(
+              ${lightdash.parameters.dbt_orders.custom_range_start},
+              interval (date_diff(
+                ${lightdash.parameters.dbt_orders.custom_range_end},
+                ${lightdash.parameters.dbt_orders.custom_range_start},
+                day
+              ) + 1) day
+            ) and date_sub(
+              ${lightdash.parameters.dbt_orders.custom_range_end},
+              interval (date_diff(
+                ${lightdash.parameters.dbt_orders.custom_range_end},
+                ${lightdash.parameters.dbt_orders.custom_range_start},
+                day
+              ) + 1) day
+            )
+              then 'previous period'
+
+            --previous year
+            when date(${order_date_day}) between date_sub(${lightdash.parameters.dbt_orders.custom_range_start}, interval 1 year)
+              and date_sub(${lightdash.parameters.dbt_orders.custom_range_end}, interval 1 year)
+              then 'previous year'
+
+            else 'out of range'
+          end
 ```
 </Tab>
 </Tabs>

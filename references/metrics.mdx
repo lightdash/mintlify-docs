@@ -50,6 +50,24 @@ To add a metric to Lightdash using the `meta` tag, you define it in your dbt pro
                     type: sum # metric type
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders_model
+
+    dimensions:
+      - name: user_id # dimension your metric is aggregating
+      - name: revenue # dimension your metric is aggregating
+
+    metrics:
+      distinct_user_ids: # name of your metric
+        type: count_distinct # metric type
+        sql: ${TABLE}.user_id
+      sum_revenue: # name of your metric
+        type: sum # metric type
+        sql: ${TABLE}.revenue
+    ```
+  </Tab>
 </Tabs>
 
 Once you've got the hang of what these metrics look like, read more about the [metric types you can use below.](#metric-types)
@@ -86,6 +104,20 @@ Sometimes a metric references multiple columns, in these cases you can define th
               sum_total_paid:
                 type: sum
                 sql: ${revenue} + ${taxes_paid}
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders_model
+
+    metrics:
+      revenue_per_user:
+        type: number
+        sql: ${sum_revenue} / ${distinct_user_ids}
+      sum_total_paid:
+        type: sum
+        sql: ${revenue} + ${taxes_paid}
     ```
   </Tab>
 </Tabs>
@@ -207,6 +239,44 @@ You can customize your metrics in your dbt model's YAML file. Here's an example 
                       - is_adjusted: true
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: sales_stats
+
+    joins:
+      - join: web_sessions
+        sql_on: ${web_sessions.date} = ${sales_stats.date}
+
+    group_details:
+      product_details:
+        label: Product Details
+        description: 'Fields that have information about the products in the basket.'
+      item_details:
+        label: Item Details
+        description: 'Fields that have information about the items in the basket.'
+
+    dimensions:
+      - name: revenue
+        description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
+
+    metrics:
+      total_revenue:
+        label: 'Total revenue GBP'
+        type: SUM
+        description: 'Total revenue in GBP'
+        sql: 'IF(${revenue} IS NULL, 10, ${revenue})'
+        groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
+        hidden: false
+        format: '[$£]#,##0.00' # GBP rounded to two decimal points
+        show_underlying_values:
+          - revenue
+          - forecast_date
+          - web_sessions.session_id # field from joined table
+        filters:
+          - is_adjusted: true
+    ```
+  </Tab>
 </Tabs>
 
 Here are all of the properties you can customize:
@@ -277,6 +347,21 @@ For example, this creates a metric `median_price` by taking the 50% percentile o
                 percentile: 50
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: my_model
+
+    dimensions:
+      - name: item_price
+
+    metrics:
+      median_price:
+        type: percentile
+        percentile: 50
+        sql: ${TABLE}.item_price
+    ```
+  </Tab>
 </Tabs>
 
 ### median
@@ -309,6 +394,20 @@ For example, this creates a metric `median_price` by taking the 50% percentile o
                 type: median
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: my_model
+
+    dimensions:
+      - name: item_price
+
+    metrics:
+      median_price:
+        type: median
+        sql: ${TABLE}.item_price
+    ```
+  </Tab>
 </Tabs>
 
 ### average
@@ -339,6 +438,20 @@ For example, this creates a metric `avg_price` by taking the average of the `ite
             metrics:
               avg_price:
                 type: average
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: my_model
+
+    dimensions:
+      - name: item_price
+
+    metrics:
+      avg_price:
+        type: average
+        sql: ${TABLE}.item_price
     ```
   </Tab>
 </Tabs>
@@ -381,6 +494,23 @@ For example, the `avg_price` metric below is an average of all of the `item_pric
                 sql: 'IF(${avg_price} > 20, TRUE, FALSE)'
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: my_model
+
+    dimensions:
+      - name: item_price
+
+    metrics:
+      avg_price:
+        type: average
+        sql: ${TABLE}.item_price
+      is_avg_price_above_20:
+        type: boolean
+        sql: 'IF(${avg_price} > 20, TRUE, FALSE)'
+    ```
+  </Tab>
 </Tabs>
 
 ### count
@@ -413,6 +543,20 @@ For example, this creates a metric `number_of_users` by counting the number of `
                 type: count
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: my_model
+
+    dimensions:
+      - name: user_id
+
+    metrics:
+      number_of_users:
+        type: count
+        sql: ${TABLE}.user_id
+    ```
+  </Tab>
 </Tabs>
 
 ### count_distinct
@@ -443,6 +587,20 @@ For example, this creates a metric `number_of_unique_users` by counting the numb
             metrics:
               number_of_unique_users:
                 type: count_distinct
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: my_model
+
+    dimensions:
+      - name: user_id
+
+    metrics:
+      number_of_unique_users:
+        type: count_distinct
+        sql: ${TABLE}.user_id
     ```
   </Tab>
 </Tabs>
@@ -485,6 +643,21 @@ If you want to create a metric of a maximum or minimum date, you can't use `type
                 sql: MAX(${TABLE}.created_at_date)
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: my_model
+
+    dimensions:
+      - name: created_at_date
+        type: date
+
+    metrics:
+      max_created_at_date:
+        type: date
+        sql: MAX(${TABLE}.created_at_date)
+    ```
+  </Tab>
 </Tabs>
 
 
@@ -520,6 +693,20 @@ For example, this creates a metric `max_delivery_cost` by looking at the `delive
                 type: max
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: my_model
+
+    dimensions:
+      - name: delivery_cost
+
+    metrics:
+      max_delivery_cost:
+        type: max
+        sql: ${TABLE}.delivery_cost
+    ```
+  </Tab>
 </Tabs>
 
 ### min
@@ -552,6 +739,20 @@ For example, this creates a metric `min_delivery_cost` by looking at the `delive
             metrics:
               min_delivery_cost:
                 type: min
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: my_model
+
+    dimensions:
+      - name: delivery_cost
+
+    metrics:
+      min_delivery_cost:
+        type: min
+        sql: ${TABLE}.delivery_cost
     ```
   </Tab>
 </Tabs>
@@ -603,6 +804,27 @@ For example, this creates a metric called `total_gross_profit_margin_percentage`
                 sql: '(${total_gross_profit_margin}/ NULLIF(${total_sale_price},0))'
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: my_model
+
+    dimensions:
+      - name: sale_price
+      - name: gross_profit_margin
+
+    metrics:
+      total_sale_price:
+        type: sum
+        sql: ${TABLE}.sale_price
+      total_gross_profit_margin:
+        type: sum
+        sql: ${TABLE}.gross_profit_margin
+      total_gross_profit_margin_percentage:
+        type: number
+        sql: '(${total_gross_profit_margin}/ NULLIF(${total_sale_price},0))'
+    ```
+  </Tab>
 </Tabs>
 
 The example above also uses the NULLIF() SQL function to avoid division-by-zero errors.
@@ -637,6 +859,20 @@ For example, this creates a metric `total_revenue` by adding up the values in th
                 type: sum
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: my_model
+
+    dimensions:
+      - name: revenue
+
+    metrics:
+      total_revenue:
+        type: sum
+        sql: ${TABLE}.revenue
+    ```
+  </Tab>
 </Tabs>
 
 **What about sum distinct?** Lightdash does not have a `sum_distinct` metric type, but if your database supports it, you can call it directly by adding a number metric and using the `sql` argument (see example below).
@@ -665,6 +901,20 @@ For example, this creates a metric `total_revenue` by adding up the values in th
               total_revenue:
                 type: number
                 sql: 'SUM(DISTINCT ${revenue})'
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: my_model
+
+    dimensions:
+      - name: revenue
+
+    metrics:
+      total_revenue:
+        type: number
+        sql: 'SUM(DISTINCT ${revenue})'
     ```
   </Tab>
 </Tabs>
@@ -704,6 +954,20 @@ For example, this creates a metric `product_name_group` by combining the unique 
                 sql: 'GROUP_CONCAT(${TABLE}.product_name)'
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: my_model
+
+    dimensions:
+      - name: product_name
+
+    metrics:
+      product_name_group:
+        type: string
+        sql: 'GROUP_CONCAT(${TABLE}.product_name)'
+    ```
+  </Tab>
 </Tabs>
 
 ### percent_of_previous
@@ -740,6 +1004,21 @@ For example, to calculate the percent of the previous value of total revenue:
                 type: percent_of_previous
                 sql: ${total_revenue}
                 format: '0.00%'
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders_model
+
+    metrics:
+      total_revenue:
+        type: sum
+        sql: ${TABLE}.revenue
+      revenue_percent_of_previous:
+        type: percent_of_previous
+        sql: ${total_revenue}
+        format: '0.00%'
     ```
   </Tab>
 </Tabs>
@@ -785,6 +1064,21 @@ For example, to calculate each row's percent of total revenue:
                 format: '0.00%'
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders_model
+
+    metrics:
+      total_revenue:
+        type: sum
+        sql: ${TABLE}.revenue
+      revenue_percent_of_total:
+        type: percent_of_total
+        sql: ${total_revenue}
+        format: '0.00%'
+    ```
+  </Tab>
 </Tabs>
 
 <Warning>
@@ -823,6 +1117,20 @@ For example, to calculate a running total of revenue:
               running_total_revenue:
                 type: running_total
                 sql: ${total_revenue}
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders_model
+
+    metrics:
+      total_revenue:
+        type: sum
+        sql: ${TABLE}.revenue
+      running_total_revenue:
+        type: running_total
+        sql: ${total_revenue}
     ```
   </Tab>
 </Tabs>
@@ -1164,6 +1472,39 @@ To do this, you need to set up `group_details` in the model's configuration. The
                     groups: ['product_details'] # this would add the metric under the group label: `product_details`
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: baskets
+
+    group_details:
+      product_details:
+        label: Product Details
+        description: 'Fields that have information about the products in the basket.'
+      item_details:
+        label: Item Details
+        description: 'Fields that have information about the items in the basket.'
+
+    dimensions:
+      - name: basket_item_id
+        description: 'ID for the product item within the basket.'
+        groups: ['product_details', 'item_details'] # this would add the dimension to a nested group: `product details` --> `item details`
+      - name: product_name
+        description: 'Full name of the product.'
+        label: 'Product name'
+        groups: ['product_details'] # this would add the dimension under the group label: `product_details`
+
+    metrics:
+      count_total_basket_items:
+        type: count_distinct
+        sql: ${TABLE}.basket_item_id
+        groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
+      count_total_product_types:
+        type: count_distinct
+        sql: ${TABLE}.product_name
+        groups: ['product_details'] # this would add the metric under the group label: `product_details`
+    ```
+  </Tab>
 </Tabs>
 
 ## Filters
@@ -1206,6 +1547,24 @@ For example, we could add a filter to our users count to make sure it didn't inc
                     type: count_distinct
                     filters:
                       - is_closed_account: false
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: sales_stats
+
+    dimensions:
+      - name: user_id
+        description: 'Unique ID for users.'
+        type: string
+
+    metrics:
+      count_users:
+        type: count_distinct
+        sql: ${TABLE}.user_id
+        filters:
+          - is_closed_account: false
     ```
   </Tab>
 </Tabs>
@@ -1292,6 +1651,24 @@ To filter a field using a list of values you can supply them as an array for tha
                       - shipped
     ```
   </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: my_model
+
+    dimensions:
+      - name: order_id
+
+    metrics:
+      completed_or_shipped_order_count:
+        type: count_distinct
+        sql: ${TABLE}.order_id
+        filters:
+          - order_status:
+              - completed
+              - shipped
+    ```
+  </Tab>
 </Tabs>
 
 
@@ -1357,6 +1734,29 @@ To filter using a field from a joined model, just use the syntax `model_name.fie
                     filters:
                       - is_closed_account: false
                       - web_sessions.is_bot_user: false
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: sales_stats
+
+    joins:
+      - join: web_sessions
+        sql_on: ${web_sessions.date} = ${sales_stats.date}
+
+    dimensions:
+      - name: user_id
+        description: 'Unique ID for users.'
+        type: string
+
+    metrics:
+      count_users:
+        type: count_distinct
+        sql: ${TABLE}.user_id
+        filters:
+          - is_closed_account: false
+          - web_sessions.is_bot_user: false
     ```
   </Tab>
 </Tabs>
@@ -1455,6 +1855,41 @@ Here's an example: imagine you wanted to calculate the average cost per item tha
                     type: sum
                     filters:
                       - status: 'shipped'
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    dimensions:
+      - name: item_id
+        description: 'Unique ID for items ordered.'
+        type: string
+      - name: item_cost
+        description: 'Cost for each item ordered.'
+        type: number
+
+    metrics:
+      count_unique_items:
+        type: count_distinct
+        sql: ${TABLE}.item_id
+      count_unique_items_shipped:
+        type: count_distinct
+        sql: ${TABLE}.item_id
+        filters:
+          - status: 'shipped'
+      total_cost:
+        type: sum
+        sql: ${TABLE}.item_cost
+      total_cost_of_shipped:
+        type: sum
+        sql: ${TABLE}.item_cost
+        filters:
+          - status: 'shipped'
+      average_cost_per_item_shipped:
+        type: number
+        sql: ${total_cost_of_shipped} / ${count_unique_items_shipped}
     ```
   </Tab>
 </Tabs>
