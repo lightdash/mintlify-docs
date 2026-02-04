@@ -1,0 +1,101 @@
+---
+title: "Python SDK"
+description: "Query your semantic layer with native Python syntax."
+---
+
+The Lightdash Python SDK lets you query your semantic layer directly from Python. Use it in Jupyter notebooks, Python scripts, or anywhere you use Python to ensure everyone pulls from a single source of truth.
+
+## Installation
+
+```bash
+pip install lightdash
+```
+
+## Quick start
+
+```python
+from lightdash import Client
+
+client = Client(
+    instance_url="https://app.lightdash.cloud",
+    access_token="your-token",
+    project_uuid="your-uuid",
+)
+model = client.get_model("orders")
+
+# Build and execute a query
+result = (
+    model.query()
+    .metrics(model.metrics.revenue, model.metrics.profit)
+    .dimensions(model.dimensions.country)
+    .filter(model.dimensions.status == "active")
+    .sort(model.metrics.revenue.desc())
+    .limit(100)
+    .execute()
+)
+
+# Get results as a DataFrame
+df = result.to_df()
+
+# Or as a list of dictionaries
+records = result.to_records()
+```
+
+## Filters
+
+Use Python comparison operators on dimensions to create filters:
+
+```python
+# Equality and inequality
+model.dimensions.country == "USA"
+model.dimensions.country != "USA"
+
+# Numeric comparisons
+model.dimensions.amount > 1000
+model.dimensions.amount >= 1000
+model.dimensions.amount < 500
+model.dimensions.amount <= 500
+
+# String operations
+model.dimensions.name.starts_with("John")
+model.dimensions.name.ends_with("son")
+model.dimensions.name.contains("Smith")
+
+# List membership
+model.dimensions.country.in_(["USA", "UK", "Canada"])
+
+# Null checks
+model.dimensions.email.is_null()
+model.dimensions.email.is_not_null()
+```
+
+### Combining filters
+
+Use `&` (AND) and `|` (OR) to combine filters:
+
+```python
+# AND
+f = (model.dimensions.country == "USA") & (model.dimensions.amount > 1000)
+
+# OR
+f = (model.dimensions.status == "active") | (model.dimensions.status == "pending")
+
+# Complex combinations
+f = (
+    (model.dimensions.country == "USA") &
+    ((model.dimensions.amount > 1000) | (model.dimensions.priority == "high"))
+)
+```
+
+## Raw SQL
+
+Execute SQL queries directly against your data warehouse:
+
+```python
+result = client.sql("SELECT * FROM orders WHERE status = 'active' LIMIT 100")
+df = result.to_df()
+```
+
+---
+
+For detailed documentation, see the [SDK reference on GitHub](https://github.com/lightdash/python-sdk/tree/main/docs).
