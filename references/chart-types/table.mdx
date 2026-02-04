@@ -62,7 +62,7 @@ You can move up to 3 dimensions as columns.
 Pivot tables have a default limit of 200 columns to ensure good performance. Large pivot tables with many columns can significantly slow down query execution and rendering times, so this limit helps keep your dashboards responsive.
 
 <Tip>
-  If you have a Lightdash Pro or Enterprise account, this limit can be increased. Note that increasing the limit will have a negative impact on performance. [Contact us](https://www.lightdash.com/contact) to discuss your needs.
+  If you have a Lightdash Pro or Enterprise account, this limit can be increased at your request. If you are self-hosting, you can set the pivot column limit by updating the [`LIGHTDASH_PIVOT_TABLE_MAX_COLUMN_LIMIT`](/self-host/customize-deployment/environment-variables) environment variable.
 </Tip>
 
 The column limit works differently depending on whether you have metrics as rows or metrics as columns:
@@ -71,53 +71,50 @@ The column limit works differently depending on whether you have metrics as rows
 
 When metrics are displayed as columns (the default behavior), each pivoted dimension value creates a column for **every metric**. This means the total number of columns equals the number of unique dimension values multiplied by the number of metrics.
 
-For example, if you pivot by `created_at_month` (with 12 months of data) and have 6 metrics:
-- Total columns: 12 months × 6 metrics = **72 columns**
+For example, if you pivot by `order_date_month` (with 36 months of data) and have 3 metrics:
+- Total columns: 36 months × 3 metrics = 108 columns which is within the column limit of 200
 
-The column limit is divided by the number of metrics to determine how many dimension values you can display. With a column limit of 200 and 6 metrics:
-- Maximum dimension values: `floor(200 / 6)` = **33 months**
+The limit always applies to complete dimension values — a dimension value is either fully shown (with all of its metrics) or not shown at all. The number of dimension values displayed is determined by dividing the column limit by the number of metrics and rounding down.
 
-Here's what a pivoted table looks like with `created_at_month` as a column and 3 metrics:
+With a column limit of 200 and 3 metrics:
+- Maximum dimension values: `floor(200 / 3)` = 66 months
 
-| partner_name | Jan 2024 revenue | Jan 2024 orders | Jan 2024 margin | Feb 2024 revenue | Feb 2024 orders | Feb 2024 margin | ... |
-|--------------|------------------|-----------------|-----------------|------------------|-----------------|-----------------|-----|
-| Acme         | 1000             | 50              | 200             | 1200             | 60              | 240             | ... |
-| Beta         | 1500             | 75              | 300             | 1400             | 70              | 280             | ... |
+Here's what a pivoted table looks like with `order_date_month` pivoted to columns and 3 metrics:
 
-With 12 months and 3 metrics, this creates 36 columns (12 × 3).
+<img src="/images/references/chart-types/table/pivot_column_limit_example_1_light.png" alt="Pivot column limit example" className="block dark:hidden" />
+<img src="/images/references/chart-types/table/pivot_column_limit_example_1_dark.png" alt="Pivot column limit example" className="hidden dark:block" />
+
+If too many columns are generated as a result of your pivot configuration, you will see a warning that your results may be incomplete. This often happens when you pivot by multiple dimensions.
+
+For example, if you pivot by both `order_date_month` and `browser` (with 6 distinct values) and have 3 metrics, the maximum number of months displayed is:
+- Maximum dimension values: `floor(200 / (6*3))` = 11 months
+
+The warning looks like this:
+<img src="/images/references/chart-types/table/column_limit_exceeded_light.png" alt="Pivot column limit exceeded" className="block dark:hidden" />
+<img src="/images/references/chart-types/table/column_limit_exceeded_dark.png" alt="Pivot column limit exceeded" className="hidden dark:block" />
+
+To reduce the number of pivot columns, you can: 
+- filter your data, e.g., filter your months to only show data from the last year
+- reduce the number of dimensions you are pivoting on, e.g., decide whether splitting your data by both `order_date_month` and `browser` is necessary
+- reduce the granularity of your pivot dimensions, e.g., pivot by `order_date_year` instead of `order_date_month`
+- show metrics as rows instead of columns (see below)
 
 #### When metrics are rows
 
 When you enable **Show metrics as rows**, each pivoted dimension value creates only **one column**, regardless of how many metrics you have. The metrics are displayed as separate rows instead.
 
-For example, if you pivot by `created_at_month` (with 12 months of data) and have 6 metrics:
-- Total columns: **12 columns** (one per month)
-- Each metric appears as a row
+For example, if you have `partner_name` as a row dimension (with 5 partners), pivot by `order_date_month` (with 12 months of data), and have 3 metrics:
+- Total columns: 12 (one per month)
+- Each row is repeated once per metric — so you'll see 5 × 3 = 15 rows
 
-Here's what the same data looks like with metrics as rows:
+Here's what the same data looks like with metrics as rows, where the row dimension is `partner_name`:
 
-| partner_name | Metric  | Jan 2024 | Feb 2024 | Mar 2024 | ... |
-|--------------|---------|----------|----------|----------|-----|
-| Acme         | revenue | 1000     | 1200     | 1100     | ... |
-| Acme         | orders  | 50       | 60       | 55       | ... |
-| Acme         | margin  | 200      | 240      | 220      | ... |
-| Beta         | revenue | 1500     | 1400     | 1600     | ... |
-| Beta         | orders  | 75       | 70       | 80       | ... |
-| Beta         | margin  | 300      | 280      | 320      | ... |
+<img src="/images/references/chart-types/table/metrics_as_rows_light.png" alt="Metrics as rows" className="block dark:hidden" />
+<img src="/images/references/chart-types/table/metrics_as_rows_dark.png" alt="Metrics as rows" className="hidden dark:block" />
 
-With 12 months, this creates only 12 columns (plus the row label columns), compared to 72 columns when metrics are columns.
+With 12 months, this creates only 12 columns, compared to 36 columns when metrics are columns.
 
 This means you can display significantly more dimension values when using metrics as rows, which is useful when you have many metrics to compare across time periods or other dimensions.
-
-### Transposing your table
-
-You can transpose your table so that your metrics become rows in your table instead of columns. This can be helpful if you want to compare a lot of metrics to each other (e.g. how my metrics are changing over time).
-
-To move your metrics to rows in your table, you need to have at least 1 dimension as a column (i.e. at least one pivot) then, you can click on `show metrics as rows` in the table configuration.
-
-<Frame>
-  ![](/images/references/chart-types/metrics-as-rows-b7ce13b31232fdf3bd7500c4c4d3c1e6.jpg)
-</Frame>
 
 ## Totals
 
