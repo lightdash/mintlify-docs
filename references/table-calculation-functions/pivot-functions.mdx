@@ -1,0 +1,92 @@
+---
+title: "Pivot functions"
+description: "Built-in functions for accessing values across pivot columns in your table calculations."
+---
+
+Pivot functions let you work with values across pivot columns in your results table. When you pivot a dimension in Lightdash, the values of that dimension become separate columns — pivot functions give you a way to reference and aggregate across those columns.
+
+<Note>
+Pivot functions are only available when your query includes a pivoted dimension.
+</Note>
+
+## pivot_row
+
+Returns an array of all values across the pivot columns for the current row.
+
+```
+pivot_row(expression)
+```
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `expression` | column reference or SQL expression | The expression to evaluate for each pivot column |
+
+**Example**
+
+Get all pivoted revenue values for the current row:
+
+```
+pivot_row(${orders.total_revenue})
+```
+
+<Accordion title="Compiled SQL">
+```sql
+ARRAY_AGG(${orders.total_revenue}) OVER (
+  PARTITION BY "row_index"
+  ORDER BY "column_index"
+  ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+)
+```
+</Accordion>
+
+---
+
+## pivot_offset_list
+
+Returns an array of values from consecutive pivot columns starting at a relative offset from the current column.
+
+```
+pivot_offset_list(expression, columnOffset, numValues)
+```
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `expression` | column reference or SQL expression | The expression to evaluate |
+| `columnOffset` | integer | Starting column offset. Negative = previous columns, positive = next columns, 0 = current column |
+| `numValues` | integer | Number of consecutive pivot columns to include |
+
+Values are returned as `NULL` when the offset points to a non-adjacent pivot column (e.g., if columns were filtered out).
+
+**Example**
+
+Get the current and two previous pivot column values:
+
+```
+pivot_offset_list(${orders.total_revenue}, -2, 3)
+```
+
+<Accordion title="Compiled SQL">
+```sql
+ARRAY[
+  CASE WHEN LAG("column_index", 2) OVER (
+      PARTITION BY "row_index" ORDER BY "column_index"
+    ) = "column_index" + (-2)
+    THEN LAG(${orders.total_revenue}, 2) OVER (
+      PARTITION BY "row_index" ORDER BY "column_index"
+    )
+    ELSE NULL
+  END,
+  CASE WHEN LAG("column_index", 1) OVER (
+      PARTITION BY "row_index" ORDER BY "column_index"
+    ) = "column_index" + (-1)
+    THEN LAG(${orders.total_revenue}, 1) OVER (
+      PARTITION BY "row_index" ORDER BY "column_index"
+    )
+    ELSE NULL
+  END,
+  ${orders.total_revenue}
+]
+```
+
+Each element includes an adjacency guard — a `CASE WHEN` check that verifies the target column is actually adjacent. This prevents incorrect values when pivot columns have been filtered out and are non-contiguous.
+</Accordion>
