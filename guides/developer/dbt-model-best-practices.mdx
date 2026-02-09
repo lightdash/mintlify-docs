@@ -98,6 +98,40 @@ Views re-execute SQL on every query. [Tables](https://docs.getdbt.com/docs/build
 
 Schedule dbt runs (daily/hourly) to keep tables fresh while avoiding on-demand computation. For large datasets with append-only updates, consider [incremental models](https://docs.getdbt.com/docs/build/incremental-models).
 
+### Index and partition your data
+
+Proper indexing and partitioning in your data warehouse can dramatically improve query performance and reduce costs. These optimizations happen at the warehouse level and benefit all queries, including those from Lightdash.
+
+**Partitioning** divides large tables into smaller segments based on a column (typically a date). Queries that filter on the partition column only scan relevant partitions instead of the entire table.
+
+**Clustering/indexing** organizes data within partitions to speed up filtering and sorting on frequently queried columns.
+
+| Warehouse | Partitioning | Clustering/Indexing |
+|-----------|--------------|---------------------|
+| BigQuery | `partition_by` | `cluster_by` |
+| Snowflake | Automatic micro-partitions | `cluster_by` |
+| Redshift | `dist` and `sort` keys | `sort` keys |
+| Databricks | `partition_by` | `zorder` |
+
+Example dbt configuration for BigQuery:
+
+```yaml
+{{ config(
+    materialized='table',
+    partition_by={
+      "field": "created_at",
+      "data_type": "date",
+      "granularity": "day"
+    },
+    cluster_by=["customer_id", "status"]
+) }}
+```
+
+Best practices:
+- Partition by date columns used in time-based filters (e.g., `created_at`, `order_date`)
+- Cluster by columns frequently used in `WHERE` clauses or `GROUP BY`
+- Review your warehouse's query history to identify high-cost queries that could benefit from partitioning
+
 ### Minimize joins at query time
 
 Pre-join data in your dbt models rather than joining at query time. As discussed in [wide, flat tables](#use-wide-flat-tables-in-the-bi-layer), this approach outperforms runtime joins. 
