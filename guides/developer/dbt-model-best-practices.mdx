@@ -71,69 +71,56 @@ If you're using a star schema, keep in mind:
 
 One approach is to maintain your star schema upstream for data modeling purposes, then materialize wide summary tables for specific business use cases as needed. This gives you the best of both worlds: clean data modeling practices upstream and optimized tables for BI consumption.
 
-## Query performance considerations
+## Optimizing query performance and warehouse costs
 
-All queries in Lightdash are executed against your data warehouse, so optimizing query performance directly impacts both user experience and warehouse costs.
+All Lightdash queries run against your data warehouse. Beyond using wide, flat tables (covered above), these additional strategies help improve performance and reduce costs.
 
-### Minimize joins at query time
-
-For optimal query performance, handle data transformations and complex logic directly in your SQL models rather than relying heavily on joins at query time. Pre-joining related data during your data modeling process yields better performance than joining tables on-the-fly in dashboards and reports.
-
-If you do need joins, Lightdash offers [fanout protection](/references/joins#sql-fanouts) to help with complex relationships, but wide tables will generally perform better.
+| Strategy | Performance impact | Cost impact |
+|----------|-------------------|-------------|
+| [Materialize as tables](#materialize-models-as-tables) | High | High |
+| [Minimize joins](#minimize-joins-at-query-time) | High | Medium |
+| [Enable caching](#leverage-caching) | Medium | High |
+| [Limit exposed models](#limit-models-exposed-to-the-bi-layer) | Low | Medium |
+| [Monitor usage](#monitor-query-usage) | — | Visibility |
 
 ### Materialize models as tables
 
-We recommend materializing your dbt models as [tables](https://docs.getdbt.com/docs/build/materializations#table) instead of views, especially for models that are frequently queried in Lightdash. Views execute the underlying SQL each time they're queried, which increases query time and warehouse costs.
+Views re-execute SQL on every query. [Tables](https://docs.getdbt.com/docs/build/materializations#table) store pre-computed results.
 
 ```yaml
-# In your dbt model config
+# Recommended for frequently queried models
 {{ config(materialized='table') }}
-```
 
-For large datasets, consider using [incremental models](https://docs.getdbt.com/docs/build/incremental-models) to reduce build times while still maintaining table materialization:
-
-```yaml
+# For large datasets with append-only updates
 {{ config(materialized='incremental') }}
 ```
 
-Run your dbt models on a schedule (e.g., daily or hourly) to keep the materialized tables fresh while reducing the query load on your warehouse.
+Schedule dbt runs (daily/hourly) to keep tables fresh while avoiding on-demand computation. For large datasets with append-only updates, consider [incremental models](https://docs.getdbt.com/docs/build/incremental-models).
+
+### Minimize joins at query time
+
+Pre-join data in your dbt models rather than joining at query time. As discussed in [wide, flat tables](#use-wide-flat-tables-in-the-bi-layer), this approach outperforms runtime joins. 
 
 ### Leverage caching
 
-Lightdash supports [caching](/guides/developer/caching) to reduce the number of queries executed against your warehouse. Popular charts and dashboards load faster when caching is enabled, and subsequent visits use cached results instead of querying the warehouse again.
+[Caching](/guides/developer/caching) stores query results so repeat visits skip the warehouse entirely. Most effective for:
 
-Caching is particularly effective for:
 - Frequently accessed dashboards
-- Charts with stable queries (no dynamic time filters with second precision)
+- Charts without dynamic time filters
 - Scheduled deliveries
-
-### Reduce warehouse costs
-
-Since all Lightdash queries run against your data warehouse, consider these strategies to manage costs:
-
-- **Materialize frequently queried models as tables** to avoid repeated computation
-- **Use incremental models** for large datasets to reduce build times
-- **Enable caching** to reduce redundant queries
-- **Build wide, flat tables** to minimize expensive join operations at query time
-- **Schedule dbt runs** during off-peak hours when warehouse compute is cheaper (if your warehouse supports this)
-
-### Monitor query usage
-
-Use [query tags](/references/workspace/usage-analytics#query-tags) to monitor and analyze queries coming from Lightdash. Query tags help you:
-
-- **Identify heavily queried tables** that may benefit from materialization or indexing
-- **Spot expensive query execution plans** that could be optimized
-- **Track usage patterns** to inform decisions about caching and model structure
-- **Attribute warehouse costs** to specific dashboards, charts, or users
 
 ### Limit models exposed to the BI layer
 
-Not every dbt model needs to be available in Lightdash. Limiting the models exposed to end users helps reduce confusion and ensures users are querying optimized tables.
+Only surface production-ready models to end users:
 
-**Option 1: Use dbt model tags**
+- **[dbt tags](/get-started/develop-in-lightdash/adding-tables-to-lightdash#limiting-the-tables-in-lightdash-using-dbt-tags)**: Control which models appear in Lightdash
+- **[User attributes](/references/workspace/user-attributes)**: Restrict model access by role
 
-Use [dbt tags to limit which tables appear in Lightdash](/get-started/develop-in-lightdash/adding-tables-to-lightdash#limiting-the-tables-in-lightdash-using-dbt-tags). This allows you to explicitly control which models are surfaced in the BI layer, ensuring only production-ready, optimized models are available for querying.
+### Monitor query usage
 
-**Option 2: Use user attributes**
+[Query tags](/references/workspace/usage-analytics#query-tags) help you identify optimization opportunities:
 
-Use [user attributes](/references/workspace/user-attributes) to restrict access to specific models based on user roles or groups. This approach lets you limit end users to only the models that have been optimized for query performance, while giving power users or analysts access to a broader set of tables when needed.
+- Tables that need materialization or indexing
+- Expensive queries to optimize
+- Usage patterns for caching decisions
+- Cost attribution by dashboard, chart, or user
