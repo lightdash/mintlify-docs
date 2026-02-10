@@ -1,0 +1,214 @@
+---
+title: "Row functions"
+description: "Built-in functions for accessing values from other rows in your table calculations."
+---
+
+<Info>
+  **Table calculation functions are an Experimental feature.**
+
+  These functions may change or be updated without notice as we iterate. See [feature maturity levels](/references/workspace/feature-maturity-levels) for details.
+</Info>
+
+Row functions let you reference values from other rows without writing raw SQL window functions. They use the `${table.column}` syntax to reference fields in your results table.
+
+<Note>
+Row functions use your query's current sort order to determine row positions. Changing the sort order of your results will change the output of these functions.
+</Note>
+
+## row
+
+Returns the 1-based row number of the current row.
+
+```
+row()
+```
+
+**Parameters:** None
+
+**Example**
+
+Add a row number column to your results:
+
+```
+row()
+```
+
+<Accordion title="Compiled SQL">
+```sql
+ROW_NUMBER() OVER (ORDER BY ...)
+```
+
+The `ORDER BY` clause uses the sort order configured in your query.
+</Accordion>
+
+---
+
+## offset
+
+Returns the value of a column from a row at a relative offset from the current row.
+
+```
+offset(column, rowOffset)
+```
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `column` | column reference | The column to get the value from |
+| `rowOffset` | integer | Number of rows to offset. Negative = previous rows, positive = next rows, 0 = current row |
+
+**Example**
+
+Get the previous row's revenue to calculate period-over-period changes:
+
+```
+${orders.total_revenue} - offset(${orders.total_revenue}, -1)
+```
+
+<Accordion title="Compiled SQL">
+For negative offsets (previous rows):
+```sql
+LAG(${orders.total_revenue}, 1) OVER (ORDER BY ...)
+```
+
+For positive offsets (next rows):
+```sql
+LEAD(${orders.total_revenue}, 1) OVER (ORDER BY ...)
+```
+
+For an offset of 0, the column value is returned directly with no window function.
+</Accordion>
+
+---
+
+## index
+
+Returns the value of an expression from an absolute row position (1-based).
+
+```
+index(expression, rowIndex)
+```
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `expression` | column reference or SQL expression | The expression to evaluate |
+| `rowIndex` | integer (≥ 1) | The 1-based row position to get the value from |
+
+**Example**
+
+Compare every row's revenue against the first row's revenue:
+
+```
+${orders.total_revenue} / index(${orders.total_revenue}, 1)
+```
+
+<Accordion title="Compiled SQL">
+```sql
+NTH_VALUE(${orders.total_revenue}, 1) OVER (
+  ORDER BY ...
+  ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+)
+```
+</Accordion>
+
+---
+
+## lookup
+
+Finds a value in one column and returns the corresponding value from another column.
+
+```
+lookup(value, lookupColumn, resultColumn)
+```
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `value` | any | The value to search for |
+| `lookupColumn` | column reference | The column to search in |
+| `resultColumn` | column reference | The column to return the value from |
+
+If multiple rows match, the largest matching value from `resultColumn` is returned.
+
+**Example**
+
+Look up the revenue for a specific status:
+
+```
+lookup('completed', ${orders.status}, ${orders.total_revenue})
+```
+
+<Accordion title="Compiled SQL">
+```sql
+MAX(
+  CASE WHEN ${orders.status} = 'completed'
+    THEN ${orders.total_revenue}
+    ELSE NULL
+  END
+) OVER ()
+```
+</Accordion>
+
+---
+
+## offset_list
+
+Returns an array of values from consecutive rows starting at a relative offset.
+
+```
+offset_list(column, rowOffset, numValues)
+```
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `column` | column reference | The column to get values from |
+| `rowOffset` | integer | Starting row offset. Negative = previous rows, positive = next rows, 0 = current row |
+| `numValues` | integer | Number of consecutive values to include |
+
+**Example**
+
+Get the current and two previous revenue values (a 3-period window):
+
+```
+offset_list(${orders.total_revenue}, -2, 3)
+```
+
+<Accordion title="Compiled SQL">
+```sql
+ARRAY[
+  LAG(${orders.total_revenue}, 2) OVER (ORDER BY ...),
+  LAG(${orders.total_revenue}, 1) OVER (ORDER BY ...),
+  ${orders.total_revenue}
+]
+```
+</Accordion>
+
+---
+
+## list
+
+Constructs an array from multiple values. Unlike the other row functions, `list` does not use any windowing.
+
+```
+list(value1, value2, ..., valueN)
+```
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `value1...valueN` | any | Values or expressions to combine into an array |
+
+**Example**
+
+Create an array of specific column values:
+
+```
+list(${orders.total_revenue}, ${orders.total_cost}, ${orders.total_profit})
+```
+
+<Accordion title="Compiled SQL">
+```sql
+ARRAY[
+  ${orders.total_revenue},
+  ${orders.total_cost},
+  ${orders.total_profit}
+]
+```
+</Accordion>
