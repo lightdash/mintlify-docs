@@ -15,6 +15,157 @@ Pivot functions let you work with values across pivot columns in your results ta
 Pivot functions are only available when your query includes a pivoted dimension.
 </Note>
 
+## pivot_column
+
+Returns the 0-based index of the current pivot column.
+
+```
+pivot_column()
+```
+
+**Parameters:** None
+
+**Example**
+
+Use the column index to apply different logic per pivot column:
+
+```
+CASE WHEN pivot_column() = 0 THEN 'First' ELSE 'Other' END
+```
+
+<Accordion title="Compiled SQL">
+```sql
+"column_index"
+```
+
+The pivot column index is a field in the underlying pivoted results, so no window function is needed.
+</Accordion>
+
+---
+
+## pivot_offset
+
+Returns the value of an expression from a pivot column at a relative offset from the current column.
+
+```
+pivot_offset(expression, columnOffset)
+```
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `expression` | column reference or SQL expression | The expression to evaluate |
+| `columnOffset` | integer | Number of columns to offset. Negative = previous columns, positive = next columns, 0 = current column |
+
+Returns `NULL` if the target column is not adjacent (e.g., if intermediate columns were filtered out).
+
+**Example**
+
+Compare the current pivot column's revenue against the previous pivot column:
+
+```
+${orders.total_revenue} - pivot_offset(${orders.total_revenue}, -1)
+```
+
+<Accordion title="Compiled SQL">
+For negative offsets (previous columns):
+```sql
+CASE WHEN LAG("column_index", 1) OVER (
+    PARTITION BY "column_index" ORDER BY "row_index"
+  ) = "row_index" + (-1)
+  THEN LAG(${orders.total_revenue}, 1) OVER (
+    PARTITION BY "column_index" ORDER BY "row_index"
+  )
+  ELSE NULL
+END
+```
+
+For positive offsets (next columns), `LEAD` is used instead of `LAG`.
+
+For an offset of 0, the expression is returned directly with no window function.
+
+Each call includes an adjacency guard — a `CASE WHEN` check that verifies the target column is actually adjacent. This prevents incorrect values when pivot columns have been filtered out and are non-contiguous.
+</Accordion>
+
+---
+
+## pivot_index
+
+Returns the value of an expression from a specific pivot column by its 0-based index.
+
+```
+pivot_index(expression, pivotIndex)
+```
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `expression` | column reference or SQL expression | The expression to evaluate |
+| `pivotIndex` | integer (≥ 0) | The 0-based pivot column index |
+
+**Example**
+
+Compare every pivot column's revenue against the first pivot column's revenue:
+
+```
+${orders.total_revenue} / pivot_index(${orders.total_revenue}, 0)
+```
+
+<Accordion title="Compiled SQL">
+```sql
+MAX(
+  CASE WHEN "column_index" = 0
+    THEN ${orders.total_revenue}
+    ELSE NULL
+  END
+) OVER (PARTITION BY "row_index")
+```
+</Accordion>
+
+---
+
+## pivot_where
+
+Finds the first pivot column where a condition is true and returns a value from that column.
+
+```
+pivot_where(selectExpression, valueExpression)
+```
+
+| Parameter | Type | Description |
+| :--- | :--- | :--- |
+| `selectExpression` | SQL boolean expression | Condition to evaluate for each pivot column |
+| `valueExpression` | column reference or SQL expression | The expression to return from the matching column |
+
+If multiple columns match, the value from the column with the lowest index is returned.
+
+**Example**
+
+Find the revenue from the first pivot column where the count exceeds 100:
+
+```
+pivot_where(${orders.count} > 100, ${orders.total_revenue})
+```
+
+<Accordion title="Compiled SQL">
+```sql
+MAX(
+  CASE WHEN "column_index" = (
+    SELECT MIN("column_index")
+    FROM (
+      SELECT "column_index",
+        ${orders.count} > 100 AS condition
+      FROM DUAL
+    )
+    WHERE condition = TRUE
+  )
+  THEN ${orders.total_revenue}
+  ELSE NULL
+  END
+) OVER (PARTITION BY "row_index")
+```
+</Accordion>
+
+---
+
 ## pivot_row
 
 Returns an array of all values across the pivot columns for the current row.
