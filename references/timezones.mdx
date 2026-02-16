@@ -1,0 +1,183 @@
+---
+title: "Timezones"
+description: "How Lightdash handles timezones in date filters, what settings are available, and how to work around common timezone issues."
+sidebarTitle: "Timezones"
+---
+
+## How Lightdash uses timezones
+
+When you apply a relative date filter like "today", "last 1 completed day", or "in the current month", Lightdash needs to determine what "today" means. By default, Lightdash uses **UTC** for all relative date filter calculations.
+
+This means that for a user in California (Pacific Time, UTC-8), "today" rolls over at **4:00 PM local time** because that's when midnight UTC occurs. This applies to all relative date filters — "yesterday", "in the current week", "last 7 completed days", etc.
+
+**Absolute date filters** (e.g., "equals 2026-01-15" or "is between 2026-01-01 and 2026-01-31") are **not affected** by timezone settings since you're specifying exact dates.
+
+### What happens under the hood
+
+When a relative date filter is applied, Lightdash:
+
+1. Gets the current time in UTC (or the configured timezone, if changed — see [below](#changing-the-default-query-timezone))
+2. Calculates the start and end of the requested period (e.g., start of yesterday, end of yesterday)
+3. Converts those boundaries to UTC timestamps
+4. Generates a SQL `WHERE` clause using those boundaries
+
+For example, "last 1 completed day" queried on Feb 13 at 3 PM UTC becomes:
+
+```sql
+WHERE date >= '2026-02-12' AND date < '2026-02-13'
+```
+
+For the full list of date filter types and their SQL output, see the [Date/Timestamp Filter Reference Guide](/guides/filters#datetimestamp-filter-reference-guide).
+
+## Timezone settings in Lightdash
+
+### Scheduled delivery timezone
+
+Project admins can set a default timezone for scheduled deliveries in **Project Settings > Syncs & Scheduled Deliveries**. Users can also override the timezone per individual delivery.
+
+<Note>
+This setting only controls **when the scheduled delivery runs**. It does **not** change how queries interpret dates — relative date filters still use UTC (or the server-level query timezone) regardless of this setting.
+</Note>
+
+### Changing the default query timezone
+
+<Note>
+This setting is only available for **self-hosted** deployments. It is not available on Lightdash Cloud.
+</Note>
+
+The environment variable `LIGHTDASH_QUERY_TIMEZONE` changes the default timezone used for all relative date filter calculations across the entire Lightdash instance. For example, setting it to `America/New_York` means "today" would be calculated in Eastern Time rather than UTC.
+
+This is a server-wide setting — it applies to all users and all projects on the instance.
+
+### Per-user query timezone
+
+There is currently no way for individual users to set their own timezone for query calculations. This is one of the most requested timezone features and is being tracked internally.
+
+### Per-chart timezone picker
+
+There is currently no UI to select a timezone when building a query in the Explore view or on a saved chart.
+
+## Common timezone issues and workarounds
+
+### "Today" or "yesterday" shows unexpected data
+
+This is the most common timezone-related issue. If you're in a timezone behind UTC, relative date filters like "today" and "last 1 completed day" will roll over before your local midnight. For example, a user in California (UTC-8) filtering for "last 1 completed day" at 3 PM Pacific on Feb 13:
+
+- In UTC, it's already Feb 14
+- Lightdash calculates "last 1 completed day" as Feb 13 (UTC)
+- But the user expects "yesterday" to be Feb 12 in their local time
+- The entire day window is offset by 8 hours
+
+This isn't just a few rows being shifted — the filter boundaries are a full day off from what you'd expect.
+
+**Workarounds:**
+
+- **Self-hosted:** Set the [`LIGHTDASH_QUERY_TIMEZONE`](#changing-the-default-query-timezone) environment variable to your preferred timezone.
+- **Cast to date in dbt:** If you only need day-level granularity, cast your timestamp column to a `date` type in your dbt model. When a column uses `type: date`, there's no time component for Lightdash to apply UTC conversion to — `2026-02-12` is just `2026-02-12` regardless of timezone.
+
+  ```sql
+  -- In your dbt model
+  select
+    created_at::date as created_date
+  from your_table
+  ```
+
+  Then in your Lightdash YAML, set `type: date` for this dimension.
+
+  <Warning>
+  The tradeoff is that you lose intraday granularity — you won't be able to group by hour or minute on this dimension.
+  </Warning>
+
+- **Use absolute date filters:** If you know the exact dates you want, use absolute filters (e.g., "is between 2026-02-12 and 2026-02-13") instead of relative ones. These are not affected by timezone.
+
+### Timestamps are stored in a specific timezone and you don't want Lightdash to change them
+
+If your timestamps are stored in a local timezone (e.g., US Pacific Time) without timezone metadata, Lightdash still applies UTC-based filter logic. This can cause date filter boundaries to not line up with your data.
+
+**Workarounds:**
+
+- **Cast to date in dbt:** If you only need day-level granularity, cast to `date` type in your dbt model to remove the time component entirely (see the example above).
+- **Self-hosted:** Set `LIGHTDASH_QUERY_TIMEZONE` to match the timezone your data is stored in.
+
+### Timestamps are stored in UTC but you want to view them in a local timezone
+
+If your data is stored in UTC but you want to display it in a specific timezone (e.g., Eastern Time), you can use [additional dimensions](/references/dimensions#additional-dimensions) to create timezone-converted versions of a timestamp:
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+  ```yaml
+  columns:
+    - name: created_at
+      description: 'Timestamp in UTC'
+      meta:
+        dimension:
+          label: 'Created (UTC)'
+          type: timestamp
+        additional_dimensions:
+          created_at_est:
+            type: timestamp
+            label: 'Created (EST)'
+            description: 'Created timestamp converted to Eastern Time'
+            sql: "convert_timezone('UTC', 'America/New_York', ${TABLE}.created_at)"
+  ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+  ```yaml
+  columns:
+    - name: created_at
+      description: 'Timestamp in UTC'
+      config:
+        meta:
+          dimension:
+            label: 'Created (UTC)'
+            type: timestamp
+          additional_dimensions:
+            created_at_est:
+              type: timestamp
+              label: 'Created (EST)'
+              description: 'Created timestamp converted to Eastern Time'
+              sql: "convert_timezone('UTC', 'America/New_York', ${TABLE}.created_at)"
+  ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+  ```yaml
+  dimensions:
+    - name: created_at
+      description: 'Timestamp in UTC'
+      label: 'Created (UTC)'
+      type: timestamp
+    - name: created_at_est
+      type: timestamp
+      label: 'Created (EST)'
+      description: 'Created timestamp converted to Eastern Time'
+      sql: "convert_timezone('UTC', 'America/New_York', ${TABLE}.created_at)"
+  ```
+  </Tab>
+</Tabs>
+
+<Warning>
+This changes how the **data is displayed** but does **not** affect how relative date filters calculate "today." Filters applied to the converted dimension will still use UTC boundaries. If you need both timezone-correct display and timezone-correct filtering, convert the timestamp in your dbt model and use `type: date` if day-level granularity is sufficient.
+</Warning>
+
+If you need time-level analysis (e.g., grouping by hour) in a non-UTC timezone, there is currently no built-in workaround. You can do the timezone conversion in your dbt model, but relative date filters will still calculate boundaries in UTC. This is a known limitation.
+
+### Scheduled deliveries run at the wrong time
+
+If your scheduled delivery is running at an unexpected time, check both:
+
+1. The **project-level default timezone** in Project Settings > Syncs & Scheduled Deliveries
+2. Any **per-delivery timezone override** on the individual scheduled delivery
+
+The delivery timezone only controls when the delivery runs — the query results themselves still use UTC (or the server-level `LIGHTDASH_QUERY_TIMEZONE`) for date filter calculations.
+
+## Summary of workarounds
+
+| Scenario | Workaround | Limitation |
+|:---------|:-----------|:-----------|
+| "Today" shows wrong data | Set `LIGHTDASH_QUERY_TIMEZONE` (self-hosted) | Server-wide, not per-user |
+| "Today" shows wrong data | Cast to `date` type in dbt | Loses intraday granularity |
+| Timestamps in local TZ, don't want conversion | Cast to `date` type in dbt | Loses intraday granularity |
+| Timestamps in local TZ, don't want conversion | Set `LIGHTDASH_QUERY_TIMEZONE` to match (self-hosted) | Server-wide, not per-user |
+| Want to display data in a different timezone | Use additional dimensions with `convert_timezone()` | Display only — doesn't fix filter boundaries |
+| Want timezone-correct filtering at hour level | No built-in workaround | Known limitation |
+| Scheduled delivery runs at wrong time | Check project and per-delivery timezone settings | Only affects delivery timing, not query results |
