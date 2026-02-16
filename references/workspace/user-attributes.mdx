@@ -48,7 +48,8 @@ There are several places in Lightdash where you can customise behaviour based on
 User attributes can be used in these specific contexts within the model.yaml file:
 
 - `sql_filter:` - For row filtering at the model level
-- `required_attributes:` - For column and table access control
+- `required_attributes:` - For column and table access control (AND logic - all conditions must match)
+- `any_attributes:` - For column and table access control (OR logic - at least one condition must match)
 - `sql_on:` - For filtering joins
 
 <Info>
@@ -297,6 +298,112 @@ You can add multiple attributes for a single dimension. There are two ways to do
   Column filtering using `required_attributes` does not take into account intrinsic attributes of a user - `email`.
 </Info>
 
+### Column filtering with `any_attributes`
+
+While `required_attributes` uses AND logic (all conditions must match), `any_attributes` uses OR logic — a user only needs to match **at least one** of the conditions to access the dimension.
+
+In the example below, users with `department = "sales"` **OR** `department = "finance"` **OR** `role = "analyst"` can see the `revenue` dimension.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: revenue
+        description: Total revenue
+        meta:
+          dimension:
+            any_attributes:
+              department: ["sales", "finance"]
+              role: "analyst"
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: revenue
+        description: Total revenue
+        config:
+          meta:
+            dimension:
+              any_attributes:
+                department: ["sales", "finance"]
+                role: "analyst"
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    dimensions:
+      - name: revenue
+        description: Total revenue
+        any_attributes:
+          department: ["sales", "finance"]
+          role: "analyst"
+    ```
+  </Tab>
+</Tabs>
+
+Each entry in `any_attributes` is a separate condition. The user needs to satisfy **any one** of them. Array values on a single key (like `["sales", "finance"]`) mean any of those values is accepted for that key.
+
+### Combining `required_attributes` and `any_attributes`
+
+You can use both `required_attributes` and `any_attributes` together. When both are set, **both** checks must pass:
+
+1. All conditions in `required_attributes` must match (AND)
+2. At least one condition in `any_attributes` must match (OR)
+
+In the example below, a user must have `access_level = "2"` **AND** (`department = "sales"` **OR** `department = "finance"`).
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: revenue
+        description: Total revenue
+        meta:
+          dimension:
+            required_attributes:
+              access_level: "2"
+            any_attributes:
+              department: ["sales", "finance"]
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    columns:
+      - name: revenue
+        description: Total revenue
+        config:
+          meta:
+            dimension:
+              required_attributes:
+                access_level: "2"
+              any_attributes:
+                department: ["sales", "finance"]
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    dimensions:
+      - name: revenue
+        description: Total revenue
+        required_attributes:
+          access_level: "2"
+        any_attributes:
+          department: ["sales", "finance"]
+    ```
+  </Tab>
+</Tabs>
+
+<Info>
+  Column filtering using `any_attributes` does not take into account intrinsic attributes of a user - `email`.
+</Info>
+
 ### Table filtering with `required_attributes`
 
 You can use `user attributes` to limit some tables to some users.
@@ -338,6 +445,50 @@ Similar to [columns filtering](#column-filtering-with-required%5Fattributes), yo
 
 <Info>
   Table filtering using `required_attributes` does not take into account intrinsic attributes of a user - `email`.
+</Info>
+
+### Table filtering with `any_attributes`
+
+You can also use `any_attributes` at the table level with OR logic. In the example below, users with `department = "sales"` **OR** `department = "finance"` **OR** `role = "analyst"` can access the `payments` table.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: payments
+        meta:
+          any_attributes:
+            department: ["sales", "finance"]
+            role: "analyst"
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: payments
+        config:
+          meta:
+            any_attributes:
+              department: ["sales", "finance"]
+              role: "analyst"
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: payments
+
+    any_attributes:
+      department: ["sales", "finance"]
+      role: "analyst"
+    ```
+  </Tab>
+</Tabs>
+
+You can combine `required_attributes` and `any_attributes` on the same table. Both checks must pass — see [combining required and any attributes](#combining-required_attributes-and-any_attributes) for details.
+
+<Info>
+  Table filtering using `any_attributes` does not take into account intrinsic attributes of a user - `email`.
 </Info>
 
 ### Filtering joins with `sql_on`

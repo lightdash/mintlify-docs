@@ -161,7 +161,8 @@ The table below shows all the dimension properties you can customize:
 | [format](#format) | No       | string | This option will format the output value on the results table and CSV export. Supports spreadsheet-style formatting (e.g. #,##0.00). Use [this website](https://customformats.com) to help build your custom format. |
 | [groups](#groups) | No       | string or string[] | If you set this property, the dimension will be grouped in the sidebar with other dimensions with the same group label. |
 | [urls](#urls) | No       | Array of  `url`, `label`  | Adding urls to a dimension allows your users to click dimension values in the UI and take actions, like opening an external tool with a url, or open at a website. You can use liquid templates to customise the link based on the value of the dimension. |
-| [required_attributes](#required-attributes) | No    | Object with `user_attribute`, `value`  | Limits access to users with those attributes |
+| [required_attributes](#required-attributes) | No    | Object with `user_attribute`, `value`  | Limits access to users with those attributes (AND logic - all must match) |
+| [any_attributes](#any-attributes) | No    | Object with `user_attribute`, `value`  | Limits access to users with those attributes (OR logic - at least one must match) |
 | [colors](#color)  | No       | Object with `value`, `color`  | Color for the values in the chart |
 | [image](#image-display)  | No       | Object with `url`  | **[WIP]** Display images in table cells using URL templates. Supports LiquidJS templating for dynamic URLs. |
 
@@ -539,13 +540,13 @@ Lightdash breaks this out into the default intervals automatically. So, this is 
 
 The default time intervals that Lightdash adds are...
 
-**For `date` type**: 
+**For `date` type**:
 
 ```yaml
 ['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']
 ```
 
-**For `timestamp` type**: 
+**For `timestamp` type**:
 
 ```yaml
 ['RAW', 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR']
@@ -629,7 +630,7 @@ If you specify time intervals manually, then this overrides the default time int
   </Tab>
 </Tabs>
 
-You can see all of the standard interval options for date and timestamp fields below. You can also add custom intervals using _additional dimensions_, there's an example below the following tables. 
+You can see all of the standard interval options for date and timestamp fields below. You can also add custom intervals using _additional dimensions_, there's an example below the following tables.
 
 
 ### Date options
@@ -1092,6 +1093,52 @@ In the example below, only users with `is_admin` attribute `true` can use the `s
 </Tabs>
 
 If a user without access to this dimension runs a query that contains this dimension, they will get a `Forbidden` error.
+
+## Any attributes
+
+While `required_attributes` uses AND logic (all conditions must match), `any_attributes` uses OR logic — a user only needs to match **at least one** condition.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: salary
+        description: User salary
+        meta:
+          dimension:
+            any_attributes:
+              department: ["hr", "finance"]
+              role: "manager"
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    columns:
+      - name: salary
+        description: User salary
+        config:
+          meta:
+            dimension:
+              any_attributes:
+                department: ["hr", "finance"]
+                role: "manager"
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: salary
+        description: User salary
+        any_attributes:
+          department: ["hr", "finance"]
+          role: "manager"
+    ```
+  </Tab>
+</Tabs>
+
+In this example, users with `department = "hr"` OR `department = "finance"` OR `role = "manager"` can see the `salary` dimension.
+
+You can combine both `required_attributes` and `any_attributes` on the same dimension. When both are set, both checks must pass. See [user attributes](/references/workspace/user-attributes#combining-required_attributes-and-any_attributes) for details.
 
 
 ### Current limitations
