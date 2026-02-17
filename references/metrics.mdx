@@ -1893,3 +1893,196 @@ Here's an example: imagine you wanted to calculate the average cost per item tha
     ```
   </Tab>
 </Tabs>
+
+## Level of detail metrics
+
+When you build a query in Lightdash, every metric in the results is grouped by the dimensions you've selected. This is usually what you want, but sometimes you need a metric to be calculated at a different granularity than the rest of the query. For example, you might want a denominator that stays at a coarser grain even when you add more dimensions to the view.
+
+This is commonly known as a "level of detail" (LOD) calculation. The idea is that certain metrics should _ignore_ specific dimensions during aggregation, so their values remain stable regardless of how the data is sliced.
+
+_Coming to the [demo site](https://demo.lightdash.com/projects/d496d901-a76d-4916-9eae-b81bc7337013/home) soon._
+
+### The problem
+
+This comes up most often with percentage or ratio metrics. Consider this scenario: you want to calculate **"what % of accounts in each segment have Won deals?"** and you want to break this down by deal plan.
+
+The numerator (accounts with Won deals) should naturally vary by plan. But the denominator (total accounts in the segment) should not. There are 152 Enterprise accounts regardless of which plan you're analyzing.
+
+When you join accounts to deals and group by both segment and plan, the denominator gets scoped to only the accounts that have deals in that plan. This is the default behavior in any BI tool that uses a join-then-group approach.
+
+**Without level of detail (denominator grouped by plan):**
+
+| Segment | Plan | Accounts with Won Deals | Total Accounts | % |
+|---|---|---|---|---|
+| Enterprise | Basic | 36 | 107 | 33.6% |
+| Enterprise | Professional | 13 | 46 | 28.3% |
+
+The total accounts column shows **107** and **46** because only accounts that have deals in that specific plan are included in the count.
+
+**With level of detail (denominator independent of plan):**
+
+| Segment | Plan | Accounts with Won Deals | Total Accounts | % |
+|---|---|---|---|---|
+| Enterprise | Basic | 36 | 152 | 23.7% |
+| Enterprise | Professional | 13 | 152 | 8.6% |
+
+The total accounts column stays at **152** because the denominator is computed independently of the plan dimension. This is achieved by pre-computing the denominator in a separate CTE in your dbt model.
+
+### The workaround
+
+The solution is to pre-compute the coarser-grain metric (total accounts per segment) in your dbt model, so it is always correct regardless of which dimensions are selected in Lightdash.
+
+**Step 1: Pre-compute the denominator in your dbt model**
+
+<Accordion title="SQL model">
+```sql
+with segment_totals as (
+    select
+        segment,
+        count(distinct account_id) as total_accounts_in_segment
+    from {{ ref('accounts') }}
+    group by segment
+),
+
+account_deals as (
+    select
+        a.account_id,
+        a.segment,
+        d.deal_id,
+        d.plan,
+        d.stage
+    from {{ ref('accounts') }} a
+    inner join {{ ref('deals') }} d on a.account_id = d.account_id
+)
+
+select
+    ad.*,
+    st.total_accounts_in_segment
+from account_deals ad
+left join segment_totals st on ad.segment = st.segment
+```
+</Accordion>
+
+**Step 2: Define the metrics in your YAML**
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: account_deal_metrics
+        meta:
+          metrics:
+            pct_accounts_with_won_deals:
+              type: number
+              label: "% Accounts with Won Deals"
+              format: percent
+              sql: ${unique_accounts_with_won_deals} / NULLIF(${segment_total_accounts}, 0)
+        columns:
+          - name: account_id
+            meta:
+              dimension:
+                type: string
+                hidden: true
+              metrics:
+                unique_accounts_with_won_deals:
+                  type: count_distinct
+                  filters:
+                    - stage: 'Won'
+          - name: segment
+            meta:
+              dimension:
+                type: string
+          - name: plan
+            meta:
+              dimension:
+                type: string
+          - name: total_accounts_in_segment
+            meta:
+              dimension:
+                type: number
+              metrics:
+                segment_total_accounts:
+                  type: max
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: account_deal_metrics
+        config:
+          meta:
+            metrics:
+              pct_accounts_with_won_deals:
+                type: number
+                label: "% Accounts with Won Deals"
+                format: percent
+                sql: ${unique_accounts_with_won_deals} / NULLIF(${segment_total_accounts}, 0)
+        columns:
+          - name: account_id
+            config:
+              meta:
+                dimension:
+                  type: string
+                  hidden: true
+                metrics:
+                  unique_accounts_with_won_deals:
+                    type: count_distinct
+                    filters:
+                      - stage: 'Won'
+          - name: segment
+            config:
+              meta:
+                dimension:
+                  type: string
+          - name: plan
+            config:
+              meta:
+                dimension:
+                  type: string
+          - name: total_accounts_in_segment
+            config:
+              meta:
+                dimension:
+                  type: number
+                metrics:
+                  segment_total_accounts:
+                    type: max
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: account_deal_metrics
+
+    dimensions:
+      - name: account_id
+        type: string
+        hidden: true
+      - name: segment
+        type: string
+      - name: plan
+        type: string
+      - name: total_accounts_in_segment
+        type: number
+
+    metrics:
+      unique_accounts_with_won_deals:
+        type: count_distinct
+        sql: ${TABLE}.account_id
+        filters:
+          - stage: 'Won'
+      segment_total_accounts:
+        type: max
+        sql: ${TABLE}.total_accounts_in_segment
+      pct_accounts_with_won_deals:
+        type: number
+        label: "% Accounts with Won Deals"
+        format: percent
+        sql: ${unique_accounts_with_won_deals} / NULLIF(${segment_total_accounts}, 0)
+    ```
+  </Tab>
+</Tabs>
+
+The key insight is that `total_accounts_in_segment` is pre-computed in the SQL and is the same value for every row in a segment. Using `max` as the aggregation returns the correct segment-level total, regardless of what other dimensions (like `plan`) are in the query.
+
+The `pct_accounts_with_won_deals` metric then divides the numerator (which correctly varies by plan) by the denominator (which stays fixed per segment).
