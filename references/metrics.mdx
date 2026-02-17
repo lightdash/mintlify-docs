@@ -1893,3 +1893,110 @@ Here's an example: imagine you wanted to calculate the average cost per item tha
     ```
   </Tab>
 </Tabs>
+
+## Level of detail metrics
+
+Sometimes you need to calculate a percentage or ratio where the numerator and denominator require different levels of aggregation. This is commonly known as a "level of detail" calculation.
+
+### The problem
+
+Consider this scenario: you want to calculate **"what % of accounts in each segment have Won deals, broken down by deal plan?"**
+
+You have two tables:
+
+| **accounts** | | **deals** (sparse) | | |
+|---|---|---|---|---|
+| segment | total accounts | plan | segment | accounts with won deals |
+| Enterprise | 152 | Basic | Enterprise | 36 |
+| Midmarket | 293 | Professional | Enterprise | 13 |
+| SMB | 560 | Basic | Midmarket | 73 |
+| | | Professional | Midmarket | 27 |
+| | | Basic | SMB | 138 |
+| | | Professional | SMB | 54 |
+
+The denominator (total accounts per segment) should be **152** for Enterprise regardless of which plan you're looking at. But when you join accounts to deals and group by both segment and plan, the denominator gets incorrectly scoped — it only counts accounts that have deals with that specific plan, not all accounts in the segment.
+
+This produces wrong results: `36/107 = 33.6%` instead of the correct `36/152 = 23.7%`.
+
+### The workaround
+
+The solution is to pre-compute the coarser-grain metric (total accounts per segment) in your dbt model, so it's always correct regardless of which dimensions are selected in Lightdash.
+
+**Step 1: Pre-compute the denominator in your dbt model**
+
+```sql
+with segment_totals as (
+    select
+        segment,
+        count(distinct account_id) as total_accounts_in_segment
+    from {{ ref('accounts') }}
+    group by segment
+),
+
+account_deals as (
+    select
+        a.account_id,
+        a.segment,
+        d.deal_id,
+        d.plan,
+        d.stage
+    from {{ ref('accounts') }} a
+    inner join {{ ref('deals') }} d on a.account_id = d.account_id
+)
+
+select
+    ad.*,
+    st.total_accounts_in_segment
+from account_deals ad
+left join segment_totals st on ad.segment = st.segment
+```
+
+**Step 2: Define the metrics in your YAML**
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: account_deal_metrics
+        meta:
+          metrics:
+            pct_accounts_with_won_deals:
+              type: number
+              label: "% Accounts with Won Deals"
+              format: percent
+              sql: ${unique_accounts_with_won_deals} / NULLIF(${segment_total_accounts}, 0)
+        columns:
+          - name: account_id
+            meta:
+              dimension:
+                type: string
+                hidden: true
+              metrics:
+                unique_accounts_with_won_deals:
+                  type: count_distinct
+                  filters:
+                    - stage: 'Won'
+          - name: segment
+            meta:
+              dimension:
+                type: string
+          - name: plan
+            meta:
+              dimension:
+                type: string
+          - name: total_accounts_in_segment
+            meta:
+              dimension:
+                type: number
+              metrics:
+                segment_total_accounts:
+                  type: max
+    ```
+  </Tab>
+</Tabs>
+
+The key insight is that `total_accounts_in_segment` is pre-computed in the SQL and is the same value for every row in a segment. Using `max` as the aggregation returns the correct segment-level total, regardless of what other dimensions (like `plan`) are in the query.
+
+The `pct_accounts_with_won_deals` metric then divides the numerator (which correctly varies by plan) by the denominator (which stays fixed per segment).
+
+{/* TODO: Add link to live demo */}
