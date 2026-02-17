@@ -1896,15 +1896,19 @@ Here's an example: imagine you wanted to calculate the average cost per item tha
 
 ## Level of detail metrics
 
-Sometimes you need to calculate a percentage or ratio where the numerator and denominator require different levels of aggregation. This is commonly known as a "level of detail" calculation.
+When you build a query in Lightdash, every metric in the results is grouped by the dimensions you've selected. This is usually what you want, but sometimes you need a metric to be calculated at a different granularity than the rest of the query. For example, you might want a denominator that stays at a coarser grain even when you add more dimensions to the view.
+
+This is commonly known as a "level of detail" (LOD) calculation. The idea is that certain metrics should _ignore_ specific dimensions during aggregation, so their values remain stable regardless of how the data is sliced.
 
 _Coming to the [demo site](https://demo.lightdash.com/projects/d496d901-a76d-4916-9eae-b81bc7337013/home) soon._
 
 ### The problem
 
-Consider this scenario: you want to calculate **"what % of accounts in each segment have Won deals, broken down by deal plan?"**
+This comes up most often with percentage or ratio metrics. Consider this scenario: you want to calculate **"what % of accounts in each segment have Won deals?"** and you want to break this down by deal plan.
 
-You have an `accounts` table with 152 Enterprise accounts and a `deals` table that is sparse (not every account has deals in every plan). When you join accounts to deals and group by both segment and plan, the denominator gets incorrectly scoped. It only counts accounts that have deals in that specific plan, not all accounts in the segment.
+The numerator (accounts with Won deals) should naturally vary by plan. But the denominator (total accounts in the segment) should not -- there are 152 Enterprise accounts regardless of which plan you're analyzing.
+
+When you join accounts to deals and group by both segment and plan, the denominator gets scoped to only the accounts that have deals in that plan. This is the default behavior in any BI tool that uses a join-then-group approach.
 
 **Without level of detail (denominator grouped by plan):**
 
@@ -1913,7 +1917,7 @@ You have an `accounts` table with 152 Enterprise accounts and a `deals` table th
 | Enterprise | Basic | 36 | 107 | 33.6% |
 | Enterprise | Professional | 13 | 46 | 28.3% |
 
-Here, the total accounts column shows **107** and **46** because the denominator is scoped to accounts that have deals in that specific plan.
+The total accounts column shows **107** and **46** because only accounts that have deals in that specific plan are included in the count.
 
 **With level of detail (denominator independent of plan):**
 
@@ -1922,7 +1926,7 @@ Here, the total accounts column shows **107** and **46** because the denominator
 | Enterprise | Basic | 36 | 152 | 23.7% |
 | Enterprise | Professional | 13 | 152 | 8.6% |
 
-The total accounts column correctly stays at **152** regardless of which plan you're looking at. This is achieved by pre-computing the denominator in a separate CTE in your dbt model.
+The total accounts column stays at **152** because the denominator is computed independently of the plan dimension. This is achieved by pre-computing the denominator in a separate CTE in your dbt model.
 
 ### The workaround
 
