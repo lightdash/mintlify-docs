@@ -1898,31 +1898,31 @@ Here's an example: imagine you wanted to calculate the average cost per item tha
 
 Sometimes you need to calculate a percentage or ratio where the numerator and denominator require different levels of aggregation. This is commonly known as a "level of detail" calculation.
 
-{/* TODO: Add link to live demo dashboard */}
-
-<Frame>
-  ![](/images/references/lod-metrics-example.png)
-</Frame>
+_Coming to the [demo site](https://analytics.lightdash.cloud) soon._
 
 ### The problem
 
 Consider this scenario: you want to calculate **"what % of accounts in each segment have Won deals, broken down by deal plan?"**
 
-You have two tables:
+You have an `accounts` table with 152 Enterprise accounts and a `deals` table that is sparse (not every account has deals in every plan). When you join accounts to deals and group by both segment and plan, the denominator gets incorrectly scoped. It only counts accounts that have deals in that specific plan, not all accounts in the segment.
 
-| **accounts** | | **deals** (sparse) | | |
+**Without the workaround (wrong results):**
+
+| Segment | Plan | Accounts with Won Deals | Total Accounts | % |
 |---|---|---|---|---|
-| segment | total accounts | plan | segment | accounts with won deals |
-| Enterprise | 152 | Basic | Enterprise | 36 |
-| Midmarket | 293 | Professional | Enterprise | 13 |
-| SMB | 560 | Basic | Midmarket | 73 |
-| | | Professional | Midmarket | 27 |
-| | | Basic | SMB | 138 |
-| | | Professional | SMB | 54 |
+| Enterprise | Basic | 36 | 107 | 33.6% |
+| Enterprise | Professional | 13 | 46 | 28.3% |
 
-The denominator (total accounts per segment) should be **152** for Enterprise regardless of which plan you're looking at. But when you join accounts to deals and group by both segment and plan, the denominator gets incorrectly scoped. It only counts accounts that have deals with that specific plan, not all accounts in the segment.
+The total accounts column shows **107** and **46** instead of the true total of **152**. This is because the join to deals filters out accounts that don't have deals in that plan.
 
-This produces wrong results: `36/107 = 33.6%` instead of the correct `36/152 = 23.7%`.
+**With the workaround (correct results):**
+
+| Segment | Plan | Accounts with Won Deals | Total Accounts | % |
+|---|---|---|---|---|
+| Enterprise | Basic | 36 | 152 | 23.7% |
+| Enterprise | Professional | 13 | 152 | 8.6% |
+
+The total accounts column correctly stays at **152** regardless of which plan you're looking at. This is achieved by pre-computing the denominator in a separate CTE in your dbt model.
 
 ### The workaround
 
