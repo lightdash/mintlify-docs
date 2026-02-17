@@ -140,7 +140,8 @@ You can customize how Tables look in Lightdash by adding configuration to your Y
 | [sql_from](#sql-from)                                     | string             | Overrides dbt model relation_name                                                                                                       |
 | [sql_filter](#sql-filter-row-level-security)              | string             | A permanent filter that will always be applied when querying this table directly. [`Read about sql_filter.`](#sql-filter)               |
 | [sql_where](#sql-filter-row-level-security)               | string             | Alias for `sql_filter`                                                                                                                  |
-| [required_attributes](#required-attributes)               | object             | Limits access to users with those attributes. [Read about user attributes](/references/workspace/user-attributes)                                 |
+| [required_attributes](#required-attributes)               | object             | Limits access to users with those attributes (AND logic). [Read about user attributes](/references/workspace/user-attributes)                                 |
+| [any_attributes](#any-attributes)                         | object             | Limits access to users with those attributes (OR logic). [Read about user attributes](/references/workspace/user-attributes)                                 |
 | group_details                                             | object             | Describes the groups for dimensions and metrics                                                                                         |
 | [default_filters](#default-filters)                       | array              | Dimension filters that will be applied when no other filter on those dimension exists. [`Read about default_filters`](#default-filters) |
 | [default_show_underlying_values](#default-show-underlying-values) | array     | Default fields shown in "View underlying data" for all metrics in this model. [Read about default_show_underlying_values](#default-show-underlying-values) |
@@ -400,6 +401,46 @@ In the example below, only users with `is_admin` attribute `true` can use the `p
 </Tabs>
 
 If a user without access to this table runs a query that contains this table, they will get a `Forbidden` error.
+
+### Any attributes
+
+While `required_attributes` uses AND logic (all conditions must match), `any_attributes` uses OR logic — a user only needs to match **at least one** condition.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: payments
+        meta:
+          any_attributes:
+            department: ["sales", "finance"]
+            role: "analyst"
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: payments
+        config:
+          meta:
+            any_attributes:
+              department: ["sales", "finance"]
+              role: "analyst"
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: payments
+
+    any_attributes:
+      department: ["sales", "finance"]
+      role: "analyst"
+    ```
+  </Tab>
+</Tabs>
+
+You can combine `required_attributes` and `any_attributes` on the same table. When both are set, both checks must pass. See [user attributes](/references/workspace/user-attributes#combining-required_attributes-and-any_attributes) for details.
 
 
 ## Defining primary keys
@@ -1152,9 +1193,9 @@ Sometimes you may find that you're redeclaring the same set of fields for things
 
 ```yaml
 # Define a set
-sets: 
+sets:
   my_set:
-    fields: 
+    fields:
       - user_id
       - user_name
       - created_at
@@ -1390,4 +1431,4 @@ Within a model, you may join with other model tables. The sets you define can re
   </Tab>
 </Tabs>
 
-Remember, to use a fields from another table in your set, you need ensure it is joined with the model defining the `set`. 
+Remember, to use a fields from another table in your set, you need ensure it is joined with the model defining the `set`.
