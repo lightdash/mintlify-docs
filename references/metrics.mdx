@@ -311,6 +311,7 @@ Here are all of the properties you can customize:
 | [number](#number)                           | Non-aggregate                   | For adding calculations to metrics that return numbers.                         |
 | [string](#string)                           | Non-aggregate                   | For metrics that contain letters or special characters                          |
 | [sum](#sum)                                 | Aggregate                       | Generates a sum of values within a column                                       |
+| [sum_distinct](#sum_distinct)               | Aggregate                       | Generates a sum of values, deduplicating by specified keys                      |
 | [percent_of_previous](#percent_of_previous) | Post calculation (Experimental) | Current value as a percentage of the previous row's value                       |
 | [percent_of_total](#percent_of_total)       | Post calculation (Experimental) | Current value as a percentage of the total across the result set (or partition) |
 | [running_total](#running_total)             | Post calculation (Experimental) | Cumulative total                                                                |
@@ -875,49 +876,109 @@ For example, this creates a metric `total_revenue` by adding up the values in th
   </Tab>
 </Tabs>
 
-**What about sum distinct?** Lightdash does not have a `sum_distinct` metric type, but if your database supports it, you can call it directly by adding a number metric and using the `sql` argument (see example below).
+### sum_distinct
 
-<Warning>In most cases it will be more accurate to use [Lightdash fanout protection](/references/joins#handling-fanouts) to de-duplicate values before summing rather than using `SUM(DISTINCT ...)` in your SQL. This is because `SUM(DISTINCT ...)` can give incorrect results if there are multiple rows with the same value.</Warning>
+Adds up the values in a given field while deduplicating data based on one or more specified distinct keys. This is useful when you have wide tables where values are repeated across rows and you need to sum unique values only.
+
+<Info>
+Lightdash already supports [SQL fanout protection](/references/joins#handling-fanouts) to remove duplicates when joining tables together. `sum_distinct` allows you to remove duplicates from wide tables where deduplication cannot be handled at the join level.
+</Info>
+
+The `sum_distinct` metric requires:
+- `sql`: The field to sum
+- `distinct_keys`: An array of one or more fields to deduplicate by
+
+The metric orders by the value being summed and takes the first occurrence for each unique combination of distinct keys. If there are different values for the same distinct key combination, the first one encountered will be used.
+
+**Example: Summing order shipping costs**
+
+Consider a model containing `order_id`, `order_shipping_cost`, and `order_line_item_id`. If you want to sum shipping costs for all orders, you need to deduplicate by `order_id` since each order has multiple line items but only one shipping cost:
 
 <Tabs>
   <Tab title="dbt v1.9 and earlier">
     ```yaml
-    columns:
-      - name: revenue
+    models:
+      - name: order_line_items
         meta:
           metrics:
-            total_revenue:
-              type: number
-              sql: 'SUM(DISTINCT ${revenue})'
+            total_shipping_cost:
+              type: sum_distinct
+              sql: ${order_shipping_cost}
+              distinct_keys: [order_id]
+              description: >
+                Total shipping cost correctly deduped. Each order's shipping cost is
+                summed once, regardless of how many line items the order has.
+              format: usd
+              round: 2
     ```
   </Tab>
   <Tab title="dbt v1.10+ and Fusion">
     ```yaml
-    columns:
-      - name: revenue
+    models:
+      - name: order_line_items
         config:
           meta:
             metrics:
-              total_revenue:
-                type: number
-                sql: 'SUM(DISTINCT ${revenue})'
+              total_shipping_cost:
+                type: sum_distinct
+                sql: ${order_shipping_cost}
+                distinct_keys: [order_id]
+                description: >
+                  Total shipping cost correctly deduped. Each order's shipping cost is
+                  summed once, regardless of how many line items the order has.
+                format: usd
+                round: 2
     ```
   </Tab>
   <Tab title="Lightdash YAML">
     ```yaml
     type: model
-    name: my_model
-
-    dimensions:
-      - name: revenue
+    name: order_line_items
 
     metrics:
-      total_revenue:
-        type: number
-        sql: 'SUM(DISTINCT ${revenue})'
+      total_shipping_cost:
+        type: sum_distinct
+        sql: ${TABLE}.order_shipping_cost
+        distinct_keys: [order_id]
+        description: >
+          Total shipping cost correctly deduped. Each order's shipping cost is
+          summed once, regardless of how many line items the order has.
+        format: usd
+        round: 2
     ```
   </Tab>
 </Tabs>
+
+**Using multiple distinct keys**
+
+If you need to factor in multiple fields for deduplication, you can specify multiple keys. For example, if you want to sum values that are unique per combination of `order_id` AND `shipping_cost`:
+
+```yaml
+metrics:
+  total_line_item_revenue_deduped:
+    type: sum_distinct
+    sql: ${line_item_total}
+    distinct_keys: [line_item_id]
+    description: >
+      Total line item revenue correctly deduped. Each line item's total is
+      summed once, regardless of how many payments the order has.
+    format: usd
+    round: 2
+```
+
+Or to deduplicate by multiple fields:
+
+```yaml
+metrics:
+  total_shipping_cost:
+    type: sum_distinct
+    sql: ${order_shipping_cost}
+    distinct_keys: [order_id, order_shipping_cost]
+```
+
+<Note>
+When using multiple distinct keys, a row is considered unique only when the entire combination of key values is unique.
+</Note>
 
 
 ### string
