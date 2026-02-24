@@ -1,0 +1,182 @@
+---
+title: "How to use lightdash lint"
+sidebarTitle: "Linting your code"
+description: "Validate your Lightdash Code files against JSON schemas before deploying to catch errors early."
+---
+
+The `lightdash lint` command validates your Lightdash Code files (models, charts, dashboards) against JSON schemas. This helps you catch configuration errors before deploying changes.
+
+## Why use linting?
+
+Linting is especially valuable when:
+
+- **Developing with AI tools** - AI copilots like Cursor, Claude Code, or Kilo Code can generate Lightdash YAML files, but may produce invalid configurations. Running `lightdash lint` after each change validates the output.
+- **Working with dashboards as code** - When editing chart or dashboard YAML files manually, linting catches typos and structural errors.
+- **CI/CD pipelines** - Add linting to your deployment workflow to prevent invalid configurations from reaching production.
+
+## Basic usage
+
+Validate all Lightdash Code files in the current directory:
+
+```bash
+lightdash lint
+```
+
+Validate a specific file:
+
+```bash
+lightdash lint --path ./lightdash/charts/revenue-by-month.yml
+```
+
+Validate a specific directory:
+
+```bash
+lightdash lint --path ./lightdash
+```
+
+## Output formats
+
+### CLI output (default)
+
+The default output shows errors in a human-readable format with file paths and line numbers:
+
+```bash
+lightdash lint
+```
+
+Example output:
+
+```
+✗ ./lightdash/charts/my-chart.yml
+  Line 15: metricQuery.dimensions must be array
+
+Found 1 error in 1 file
+```
+
+### Verbose output
+
+Use `--verbose` to see all validated files, including those that passed:
+
+```bash
+lightdash lint --verbose
+```
+
+### SARIF JSON output
+
+For CI/CD integration, use SARIF (Static Analysis Results Interchange Format) output:
+
+```bash
+lightdash lint --format json
+```
+
+This outputs results in [SARIF format](https://sarifweb.azurewebsites.net/), which is supported by GitHub Actions, VS Code, and other tools.
+
+## What gets validated
+
+The lint command validates three types of files against their JSON schemas:
+
+| File type | Identified by | Schema |
+|-----------|---------------|--------|
+| Models | `type: model` in YAML | [model-as-code-1.0.json](https://github.com/lightdash/lightdash/blob/main/packages/common/src/schemas/json/model-as-code-1.0.json) |
+| Charts | `metricQuery` property | [chart-as-code-1.0.json](https://github.com/lightdash/lightdash/blob/main/packages/common/src/schemas/json/chart-as-code-1.0.json) |
+| Dashboards | `tiles` property | [dashboard-as-code-1.0.json](https://github.com/lightdash/lightdash/blob/main/packages/common/src/schemas/json/dashboard-as-code-1.0.json) |
+
+The command automatically detects the file type based on its content and applies the appropriate schema.
+
+## Using lint with AI coding tools
+
+<Note>
+**Recommended: Install Lightdash Skills first.** Before manually configuring your AI tool, run `lightdash install-skills` to install the [Lightdash Skills](/get-started/develop-in-lightdash/install-skills). The skills already know to use `lightdash lint` for validation, so you don't need to configure anything manually.
+</Note>
+
+If you're using Lightdash Skills, your AI copilot will automatically run `lightdash lint` to validate YAML files as part of its workflow. The skills include best practices for schema validation built-in.
+
+### Manual configuration (without skills)
+
+If you're not using Lightdash Skills, you can manually configure your AI copilot to use linting:
+
+1. **Prompt the AI to run lint after changes** - Add instructions like "Always run `lightdash lint` after making changes to validate the YAML."
+
+2. **Provide schema references** - Give your AI tool the schema URLs so it understands the expected format:
+   - Models: `https://raw.githubusercontent.com/lightdash/lightdash/main/packages/common/src/schemas/json/model-as-code-1.0.json`
+   - Charts: `https://raw.githubusercontent.com/lightdash/lightdash/main/packages/common/src/schemas/json/chart-as-code-1.0.json`
+   - Dashboards: `https://raw.githubusercontent.com/lightdash/lightdash/main/packages/common/src/schemas/json/dashboard-as-code-1.0.json`
+
+3. **Iterate on errors** - When lint reports errors, have the AI fix them before proceeding.
+
+<Tip>
+AI tools can run `lightdash lint` to validate their own output. This creates a feedback loop that catches errors automatically.
+</Tip>
+
+## CI/CD integration
+
+Add linting to your CI/CD pipeline to prevent invalid configurations from being deployed.
+
+### GitHub Actions example
+
+```yaml
+name: Validate Lightdash Code
+
+on:
+  pull_request:
+    paths:
+      - 'lightdash/**'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Lightdash CLI
+        run: npm install -g @lightdash/cli
+
+      - name: Lint Lightdash Code files
+        run: lightdash lint --path ./lightdash
+```
+
+### Using SARIF with GitHub Code Scanning
+
+To integrate lint results with GitHub's code scanning:
+
+```yaml
+- name: Lint with SARIF output
+  run: lightdash lint --format json > lint-results.sarif
+
+- name: Upload SARIF results
+  uses: github/codeql-action/upload-sarif@v2
+  with:
+    sarif_file: lint-results.sarif
+```
+
+## Common errors and fixes
+
+### Missing required properties
+
+```
+metricQuery.exploreName is required
+```
+
+**Fix:** Add the missing property to your YAML file.
+
+### Invalid property type
+
+```
+metricQuery.dimensions must be array
+```
+
+**Fix:** Ensure the property value matches the expected type.
+
+### Unknown properties
+
+```
+should NOT have additional property 'unknownField'
+```
+
+**Fix:** Remove the unrecognized property or check for typos.
+
+## Related
+
+- [Lightdash YAML](/guides/lightdash-yaml) - Define your semantic layer in YAML without dbt
+- [Dashboards as code](/guides/developer/dashboards-as-code) - Manage charts and dashboards as YAML files
+- [Lightdash CLI reference](/references/lightdash-cli#lightdash-lint) - Full command reference
