@@ -1,0 +1,159 @@
+---
+title: "Pre-aggregates reference"
+description: "Pre-aggregates materialize aggregated data inside Lightdash so queries can be served from pre-computed results instead of hitting your warehouse."
+sidebarTitle: "Pre-aggregates"
+---
+
+<Info>
+  **Availability:** Pre-aggregates are an [Early Access](/references/workspace/feature-maturity-levels) feature available on **Enterprise plans** only.
+</Info>
+
+## What are pre-aggregates?
+
+Pre-aggregates let you define materialized summaries of your data directly in your dbt YAML. When a user runs a query in Lightdash, the system checks if the query can be answered from a pre-aggregate instead of querying your warehouse. If it matches, the query is served from the pre-computed results — making it significantly faster and reducing warehouse load.
+
+This is especially useful for dashboards with high traffic or expensive aggregations that don't need real-time data.
+
+### How it works
+
+1. You define a pre-aggregate on a model, specifying which dimensions and metrics to include
+2. Lightdash materializes the aggregated data on a schedule
+3. When a user runs a query, Lightdash checks if all requested dimensions, metrics, and filters are covered by a pre-aggregate
+4. If a match is found, the query is served from the materialized data instead of your warehouse
+
+## Defining pre-aggregates
+
+Pre-aggregates are defined in your dbt model's YAML file under the `pre_aggregates` key in the model's `meta` (or `config.meta` for dbt v1.10+).
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
+        meta:
+          pre_aggregates:
+            - name: orders_daily_by_status
+              dimensions:
+                - status
+              metrics:
+                - total_order_amount
+                - average_order_size
+              time_dimension: order_date
+              granularity: day
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: orders
+        config:
+          meta:
+            pre_aggregates:
+              - name: orders_daily_by_status
+                dimensions:
+                  - status
+                metrics:
+                  - total_order_amount
+                  - average_order_size
+                time_dimension: order_date
+                granularity: day
+    ```
+  </Tab>
+</Tabs>
+
+### Configuration reference
+
+| Property | Required | Description |
+|---|---|---|
+| `name` | Yes | Unique identifier for the pre-aggregate. Must contain only letters, numbers, and underscores. |
+| `dimensions` | Yes | List of dimension names to include. Must contain at least one dimension. |
+| `metrics` | Yes | List of metric names to include. Must contain at least one metric. |
+| `time_dimension` | No | A time-based dimension to use for date grouping. Must be paired with `granularity`. |
+| `granularity` | No | Time granularity for the `time_dimension`. Must be paired with `time_dimension`. Valid values: `hour`, `day`, `week`, `month`, `year`. |
+
+<Note>
+  If you specify `time_dimension`, you **must** also specify `granularity`, and vice versa.
+</Note>
+
+## Query matching
+
+When a user runs a query, Lightdash automatically checks if a pre-aggregate can serve the results. A pre-aggregate matches when **all** of the following are true:
+
+- Every dimension in the query is included in the pre-aggregate
+- Every metric in the query is included in the pre-aggregate
+- Every dimension used in filters is included in the pre-aggregate
+- All metrics use [supported metric types](#supported-metric-types)
+- The query does not contain custom dimensions, custom metrics, or table calculations
+- If the query uses a time dimension, the requested granularity is **equal to or coarser** than the pre-aggregate's granularity (e.g., a `day` pre-aggregate can serve `day`, `week`, `month`, or `year` queries, but not `hour`)
+
+When multiple pre-aggregates match a query, Lightdash picks the smallest one (fewest dimensions, then fewest metrics as tiebreaker).
+
+### Dimensions from joined tables
+
+Pre-aggregates support dimensions from joined tables. Reference them by their full name (e.g., `customers.first_name`) in the `dimensions` list.
+
+## Supported metric types
+
+Pre-aggregates support metrics that can be re-aggregated from pre-computed results. The following metric types are supported:
+
+- `sum`
+- `count`
+- `min`
+- `max`
+- `average`
+
+Queries that include metrics with other types (e.g., `count_distinct`, `median`, `number`) will not match a pre-aggregate and will query the warehouse directly.
+
+## Example
+
+Here's a complete example showing a model with a pre-aggregate:
+
+```yaml
+models:
+  - name: orders
+    config:
+      meta:
+        joins:
+          - join: customers
+            sql_on: ${customers.customer_id} = ${orders.customer_id}
+        pre_aggregates:
+          - name: orders_daily_by_status
+            dimensions:
+              - status
+            metrics:
+              - total_order_amount
+              - average_order_size
+            time_dimension: order_date
+            granularity: day
+    columns:
+      - name: order_date
+        config:
+          meta:
+            dimension:
+              type: date
+      - name: status
+        config:
+          meta:
+            dimension:
+              type: string
+      - name: amount
+        config:
+          meta:
+            metrics:
+              total_order_amount:
+                type: sum
+              average_order_size:
+                type: average
+```
+
+With this pre-aggregate, the following queries would be served from materialized data:
+
+- Total order amount by status, grouped by day/week/month/year
+- Average order size by status, grouped by month
+- Total order amount filtered by status
+
+These queries would **not** match and would query the warehouse directly:
+
+- Queries including `count_distinct` metrics
+- Queries grouped by a dimension not in the pre-aggregate (e.g., `customer_id`)
+- Queries with hourly granularity (finer than the pre-aggregate's `day`)
