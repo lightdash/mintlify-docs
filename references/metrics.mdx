@@ -974,6 +974,82 @@ If the value you are aggregating is truly distinct based on the distinct key (e.
   </Tab>
 </Tabs>
 
+**Using multiple distinct keys**
+
+When you need to deduplicate by a combination of fields, you can specify multiple distinct keys. A row is considered unique only when the entire combination of key values is unique.
+
+For example, warehouse processing fees are charged per warehouse per order. If there are two items from the same warehouse in the same order, the fee should not be counted twice:
+
+| order_id | order_item_id | item_warehouse_location | warehouse_processing_fee_per_order |
+|----------|---------------|-------------------------|-------------------------------------|
+| 🟦 1     | 1             | US                      | 2.5                                 |
+| 🟦 1     | 2             | US                      | 2.5                                 |
+| 🟩 2     | 3             | US                      | 2.5                                 |
+| 🟩 2     | 4             | Canada                  | 3.0                                 |
+| 🟩 2     | 5             | Canada                  | 3.0                                 |
+| 🟩 2     | 6             | UK                      | 4.0                                 |
+
+With `distinct_keys: [order_id, item_warehouse_location]`:
+- Order 1 🟦: One unique warehouse (US) → 2.5
+- Order 2 🟩: Three unique warehouses (US, Canada, UK) → 2.5 + 3.0 + 4.0 = 9.5
+- **Total: 12.0**
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: warehouse_processing_fee_per_order
+        description: warehouse processing fee per order
+        meta:
+          dimension:
+            type: number
+          metrics:
+            total_processing_fee:
+              type: sum_distinct
+              distinct_keys: [order_id, item_warehouse_location]
+              description: >
+                Processing fees are charged per warehouse per order.
+                If there are two items from the same warehouse the fee
+                should not be counted twice.
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    columns:
+      - name: warehouse_processing_fee_per_order
+        description: warehouse processing fee per order
+        config:
+          meta:
+            dimension:
+              type: number
+            metrics:
+              total_processing_fee:
+                type: sum_distinct
+                distinct_keys: [order_id, item_warehouse_location]
+                description: >
+                  Processing fees are charged per warehouse per order.
+                  If there are two items from the same warehouse the fee
+                  should not be counted twice.
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: order_line_items
+
+    metrics:
+      total_processing_fee:
+        type: sum_distinct
+        sql: ${TABLE}.warehouse_processing_fee_per_order
+        distinct_keys: [order_id, item_warehouse_location]
+        description: >
+          Processing fees are charged per warehouse per order.
+          If there are two items from the same warehouse the fee
+          should not be counted twice.
+    ```
+  </Tab>
+</Tabs>
+
 ### string
 
 Used with fields that include letters or special characters.
