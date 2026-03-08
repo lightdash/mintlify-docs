@@ -312,6 +312,7 @@ Here are all of the properties you can customize:
 | [string](#string)                           | Non-aggregate                   | For metrics that contain letters or special characters                          |
 | [sum](#sum)                                 | Aggregate                       | Generates a sum of values within a column                                       |
 | [sum_distinct](#sum_distinct)               | Aggregate (Beta)                | Generates a sum of values, deduplicating by specified keys                      |
+| [average_distinct](#average_distinct)       | Aggregate (Beta)                | Generates an average of values, deduplicating by specified keys                 |
 | [percent_of_previous](#percent_of_previous) | Post calculation (Experimental) | Current value as a percentage of the previous row's value                       |
 | [percent_of_total](#percent_of_total)       | Post calculation (Experimental) | Current value as a percentage of the total across the result set (or partition) |
 | [running_total](#running_total)             | Post calculation (Experimental) | Cumulative total                                                                |
@@ -1046,6 +1047,184 @@ With `distinct_keys: [order_id, item_warehouse_location]`:
           Processing fees are charged per warehouse per order.
           If there are two items from the same warehouse the fee
           should not be counted twice.
+    ```
+  </Tab>
+</Tabs>
+
+### average_distinct
+
+<Warning>
+  **Beta:** `average_distinct` is currently in Beta. Learn what this means in our Feature Maturity Levels guide: [Feature Maturity Levels](/references/workspace/feature-maturity-levels).
+</Warning>
+
+Calculates the average of values in a given field while deduplicating data based on one or more specified distinct keys. This works the same way as [`sum_distinct`](#sum_distinct), but computes an average instead of a sum.
+
+<Info>
+Lightdash already supports [SQL fanout protection](/references/joins#handling-fanouts) to remove duplicates when joining tables together. `average_distinct` allows you to remove duplicates from wide tables where deduplication cannot be handled at the join level.
+</Info>
+
+The `average_distinct` metric requires:
+- `sql`: The field to average
+- `distinct_keys`: An array of one or more fields to deduplicate by
+
+The metric orders by the value being averaged and takes the first occurrence for each unique combination of distinct keys. If there are different values for the same distinct key combination, the first one encountered will be used.
+
+**Example: Averaging order shipping costs**
+
+Consider a model containing `order_id`, `order_item_id`, and `order_shipping_cost`:
+
+| order_id | order_item_id | order_shipping_cost |
+|----------|---------------|---------------------|
+| 1 🟦     | 1             | 10                  |
+| 1 🟦     | 2             | 10                  |
+| 2 🟩     | 3             | 20                  |
+| 2 🟩     | 4             | 20                  |
+| 2 🟩     | 5             | 20                  |
+| 2 🟩     | 6             | 30                  |
+
+To calculate the average shipping cost per order, you need to deduplicate by `order_id`:
+
+- When `order_id` is the distinct key, the first `order_shipping_cost` in ascending order is taken for each order
+- Order 1 🟦 contributes **10**
+- Order 2 🟩 contributes **20** (the first value when ordered ascending)
+- The `order_shipping_cost` of **30** for order 2 is ignored
+- **Average: (10 + 20) / 2 = 15**
+
+Without `average_distinct`, a naive `AVG` on this table would give `(10 + 10 + 20 + 20 + 20 + 30) / 6 = 18.33`, which is incorrect because duplicate rows inflate the result.
+
+<Note>
+If the value you are aggregating is truly distinct based on the distinct key (e.g., each order has only one shipping cost), this won't be a problem. However, if there are multiple different values for the same distinct key, only the first value in ascending order will be used.
+</Note>
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: order_line_items
+        meta:
+          metrics:
+            avg_shipping_cost:
+              type: average_distinct
+              sql: ${order_shipping_cost}
+              distinct_keys: [order_id]
+              description: >
+                Average shipping cost per order, correctly deduped. Each order's
+                shipping cost is counted once, regardless of how many line items
+                the order has.
+              format: usd
+              round: 2
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: order_line_items
+        config:
+          meta:
+            metrics:
+              avg_shipping_cost:
+                type: average_distinct
+                sql: ${order_shipping_cost}
+                distinct_keys: [order_id]
+                description: >
+                  Average shipping cost per order, correctly deduped. Each order's
+                  shipping cost is counted once, regardless of how many line items
+                  the order has.
+                format: usd
+                round: 2
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: order_line_items
+
+    metrics:
+      avg_shipping_cost:
+        type: average_distinct
+        sql: ${TABLE}.order_shipping_cost
+        distinct_keys: [order_id]
+        description: >
+          Average shipping cost per order, correctly deduped. Each order's
+          shipping cost is counted once, regardless of how many line items
+          the order has.
+        format: usd
+        round: 2
+    ```
+  </Tab>
+</Tabs>
+
+**Using multiple distinct keys**
+
+When you need to deduplicate by a combination of fields, you can specify multiple distinct keys. A row is considered unique only when the entire combination of key values is unique.
+
+For example, warehouse processing fees are charged per warehouse per order. To find the average processing fee per warehouse-order combination:
+
+| order_id | order_item_id | item_warehouse_location | warehouse_processing_fee_per_order |
+|----------|---------------|-------------------------|-------------------------------------|
+| 🟦 1     | 1             | US                      | 2.5                                 |
+| 🟦 1     | 2             | US                      | 2.5                                 |
+| 🟩 2     | 3             | US                      | 2.5                                 |
+| 🟩 2     | 4             | Canada                  | 3.0                                 |
+| 🟩 2     | 5             | Canada                  | 3.0                                 |
+| 🟩 2     | 6             | UK                      | 4.0                                 |
+
+With `distinct_keys: [order_id, item_warehouse_location]`:
+- Order 1 🟦, US → 2.5
+- Order 2 🟩, US → 2.5
+- Order 2 🟩, Canada → 3.0
+- Order 2 🟩, UK → 4.0
+- **Average: (2.5 + 2.5 + 3.0 + 4.0) / 4 = 3.0**
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: warehouse_processing_fee_per_order
+        description: warehouse processing fee per order
+        meta:
+          dimension:
+            type: number
+          metrics:
+            avg_processing_fee:
+              type: average_distinct
+              distinct_keys: [order_id, item_warehouse_location]
+              description: >
+                Average processing fee per warehouse-order combination.
+                Deduplicates so each warehouse-order pair is counted once.
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    columns:
+      - name: warehouse_processing_fee_per_order
+        description: warehouse processing fee per order
+        config:
+          meta:
+            dimension:
+              type: number
+            metrics:
+              avg_processing_fee:
+                type: average_distinct
+                distinct_keys: [order_id, item_warehouse_location]
+                description: >
+                  Average processing fee per warehouse-order combination.
+                  Deduplicates so each warehouse-order pair is counted once.
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: order_line_items
+
+    metrics:
+      avg_processing_fee:
+        type: average_distinct
+        sql: ${TABLE}.warehouse_processing_fee_per_order
+        distinct_keys: [order_id, item_warehouse_location]
+        description: >
+          Average processing fee per warehouse-order combination.
+          Deduplicates so each warehouse-order pair is counted once.
     ```
   </Tab>
 </Tabs>
