@@ -161,6 +161,7 @@ The table below shows all the dimension properties you can customize:
 | [format](#format) | No       | string | This option will format the output value on the results table and CSV export. Supports spreadsheet-style formatting (e.g. #,##0.00). Use [this website](https://customformats.com) to help build your custom format. |
 | [groups](#groups) | No       | string or string[] | If you set this property, the dimension will be grouped in the sidebar with other dimensions with the same group label. |
 | [urls](#urls) | No       | Array of  `url`, `label`  | Adding urls to a dimension allows your users to click dimension values in the UI and take actions, like opening an external tool with a url, or open at a website. You can use liquid templates to customise the link based on the value of the dimension. |
+| [richText](#rich-text) | No | string | Rich text template for displaying formatted content in table cells. Supports Markdown, HTML, and LiquidJS templating. |
 | [required_attributes](#required-attributes) | No    | Object with `user_attribute`, `value`  | Limits access to users with those attributes (AND logic - all must match) |
 | [any_attributes](#any-attributes) | No    | Object with `user_attribute`, `value`  | Limits access to users with those attributes (OR logic - at least one must match) |
 | [colors](#color)  | No       | Object with `value`, `color`  | Color for the values in the chart |
@@ -1008,42 +1009,136 @@ You can reference another dimension from your table in your URL. For these URLs 
 This URL will only work if I have `customer_id` included in my results table.
 
 
-### Liquid Templating
+### Liquid templating
 
-Use templates to configure the url values depending on the query, this allows your urls to depend on the results of queries.
+<Snippet file="liquid-templating.mdx" />
 
-**Available liquid tags**
 
-| Tag                                         | Description                                                                                 |
-| :------------------------------------------ | :------------------------------------------------------------------------------------------ |
-| `${ value.formatted }`                      | The exact value of the dimension as seen in the Lightdash UI. For example `$1,427.20`       |
-| `${ value.raw }`                            | The raw value of the dimension returned from the underlying SQL query. For example `1427.2` |
-| `${ row.table_name.column_name.formatted }` | The exact value of the column as seen in the Lightdash UI. For example `$1,427.20`          |
-| `${ row.table_name.column_name.raw }`       | The raw value of the dimension returned from the underlying SQL query. For example `1427.2` |
+## Rich text
 
-**Available liquid filters**
+The `richText` property allows you to define custom HTML/Markdown templates for displaying dimension and metric values in table cells. This enables sophisticated data presentation with formatting, styling, conditional logic, and external integrations.
 
-Filters can be used to make small transformations of your values:
+<Info>
+Rich text only affects UI display in table cells. It has no impact on value formatting, CSV exports, or the underlying data values.
+</Info>
 
-- `url_encode`: Encode a string as URL safe, for example it replaces spaces with `%20`.
+### Basic example
 
-  ```liquid
-  ${ value.formatted | url_encode }
-  ```
+Display a dimension value with custom formatting:
 
-- `downcase`: Convert a string to lowercase.
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: customer_id
+        description: 'Unique customer identifier'
+        meta:
+          dimension:
+            richText: |
+              **Customer ID:** `${ value.raw }`
+              
+              [View Profile](https://example.com/customer/${ value.raw })
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    columns:
+      - name: customer_id
+        description: 'Unique customer identifier'
+        config:
+          meta:
+            dimension:
+              richText: |
+                **Customer ID:** `${ value.raw }`
+                
+                [View Profile](https://example.com/customer/${ value.raw })
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: customer_id
+        description: 'Unique customer identifier'
+        richText: |
+          **Customer ID:** `${ value.raw }`
+          
+          [View Profile](https://example.com/customer/${ value.raw })
+    ```
+  </Tab>
+</Tabs>
 
-  ```liquid
-  ${ value.formatted | downcase }
-  ```
+### Conditional formatting
 
-- `append`: Append one string to another.
+Use Liquid control flow tags for conditional display based on values:
 
-  ```liquid
-  ${ value.formatted | append: ".html" }
-  ```
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: customer_lifetime_value
+        meta:
+          metrics:
+            average_clv:
+              type: average
+              richText: |
+                {% raw %}{% if value.raw >= 100 %}
+                ### 📈 ${ value.formatted }
+                **Excellent** Average CLV
+                {% elsif value.raw >= 50 %}
+                ### 📊 ${ value.formatted }
+                **Good** Average CLV
+                {% else %}
+                ### ⚠️ ${ value.formatted }
+                **Low** Average CLV
+                {% endif %}{% endraw %}
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    columns:
+      - name: customer_lifetime_value
+        config:
+          meta:
+            metrics:
+              average_clv:
+                type: average
+                richText: |
+                  {% raw %}{% if value.raw >= 100 %}
+                  ### 📈 ${ value.formatted }
+                  **Excellent** Average CLV
+                  {% elsif value.raw >= 50 %}
+                  ### 📊 ${ value.formatted }
+                  **Good** Average CLV
+                  {% else %}
+                  ### ⚠️ ${ value.formatted }
+                  **Low** Average CLV
+                  {% endif %}{% endraw %}
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    metrics:
+      - name: average_clv
+        type: average
+        sql: ${customer_lifetime_value}
+        richText: |
+          {% raw %}{% if value.raw >= 100 %}
+          ### 📈 ${ value.formatted }
+          **Excellent** Average CLV
+          {% elsif value.raw >= 50 %}
+          ### 📊 ${ value.formatted }
+          **Good** Average CLV
+          {% else %}
+          ### ⚠️ ${ value.formatted }
+          **Low** Average CLV
+          {% endif %}{% endraw %}
+    ```
+  </Tab>
+</Tabs>
 
-There are [many more filters available in the Liquid documentation](https://liquidjs.com/filters/overview.html).
+### Liquid templating in rich text
+
+<Snippet file="liquid-templating.mdx" />
 
 
 ## Required attributes
