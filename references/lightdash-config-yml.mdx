@@ -93,6 +93,10 @@ parameters:
 # Configuration for project-wide defaults
 defaults:
   # ...
+
+# Configuration for custom date granularities
+custom_granularities:
+  # ...
 ```
 
 
@@ -248,4 +252,78 @@ models:
 
 <Info>
   See [Tables reference](/references/tables#case-sensitive) for explore-level configuration and [Dimensions reference](/references/dimensions#case-sensitive) for dimension-level configuration.
+</Info>
+
+
+## Custom granularities configuration
+
+<Info>
+**Availability:** Custom granularities are an [Early Access](/references/workspace/feature-maturity-levels) feature.
+</Info>
+
+The `custom_granularities` section allows you to define reusable custom time granularities that appear in the date zoom dropdown alongside standard options (Day, Week, Month, Quarter, Year). This is useful for business-specific time periods like fiscal quarters, Monday-to-Sunday weeks, or other custom date groupings.
+
+```yaml
+custom_granularities:
+  fiscal_quarter:
+    label: "Fiscal Quarter"
+    sql: "DATE_TRUNC('quarter', ${COLUMN} + INTERVAL '1 month')"
+    type: date
+  week_monday:
+    label: "Week (Mon-Sun)"
+    sql: "DATE_TRUNC('week', ${COLUMN})"
+    type: date
+  fiscal_year:
+    label: "Fiscal Year"
+    sql: "EXTRACT(YEAR FROM ${COLUMN} + INTERVAL '1 month')"
+    type: string
+```
+
+Each custom granularity is defined as a key-value pair where the key is the granularity name (must be alphanumeric with underscores) and the value is an object with the following properties:
+
+| Property | Required | Value  | Description |
+| :------- | :------- | :----- | :---------- |
+| `label`  | Yes      | string | A user-friendly label for the granularity as it will be displayed in the date zoom dropdown. |
+| `sql`    | Yes      | string | SQL expression that defines how to truncate/transform the date. Use `${COLUMN}` as a placeholder for the actual date column - it will be replaced with the column's SQL at runtime. |
+| `type`   | No       | `date`, `timestamp`, or `string` | The output type of the SQL expression. Use `date` for truncated dates, `timestamp` for truncated timestamps, or `string` for formatted text output (e.g., fiscal year labels). Defaults to `date` if not specified. |
+
+### How custom granularities work
+
+Custom granularities are defined at the project level in `lightdash.config.yml` and become available on date dimensions through the `time_intervals` property. The `${COLUMN}` template in the SQL expression is automatically replaced with the actual column SQL when generating queries.
+
+**Example**: Define a fiscal quarter granularity and use it on a dimension:
+
+```yaml
+# lightdash.config.yml
+custom_granularities:
+  fiscal_quarter:
+    label: "Fiscal Quarter"
+    sql: "DATE_TRUNC('quarter', ${COLUMN} + INTERVAL '1 month')"
+    type: date
+```
+
+```yaml
+# In your model yml file
+columns:
+  - name: order_date
+    meta:
+      dimension:
+        type: date
+        time_intervals: ['DAY', 'WEEK', 'MONTH', 'fiscal_quarter', 'YEAR']
+```
+
+The custom granularity `fiscal_quarter` will now appear in the date zoom dropdown for `order_date`, alongside the standard intervals.
+
+<Info>
+  Custom granularities inherit `requiredAttributes` and `anyAttributes` from the parent dimension, so access controls are automatically applied.
+</Info>
+
+### Use cases
+
+- **Fiscal calendars**: Define fiscal quarters or years that don't align with calendar quarters
+- **Week start customization**: Create weeks that start on Monday or any other day
+- **Custom periods**: Define business-specific time periods like "retail weeks" or "academic terms"
+
+<Info>
+  See [Dimensions reference](/references/dimensions#time-intervals) for more information on configuring time intervals on dimensions, including how to reference custom granularities.
 </Info>

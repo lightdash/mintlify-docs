@@ -157,7 +157,7 @@ The table below shows all the dimension properties you can customize:
 | [type](#type) | No  | Dimension type | The dimension type is automatically pulled from your table schemas in Lightdash but you can override the type using this property. |
 | [description](#description) | No    | string | Description of the dimension in Lightdash. You can use this to override the description you have for the dimension in dbt. |
 | sql | No            | string | Custom SQL applied to the column used to define the dimension. |
-| [time_intervals](#time-intervals) | No | 'default' or OFF or an array[] containing elements of [date](#date-options), [numeric](#numeric-options) or [string](#string-options) options | 'default' (or not setting the time_intervals property) will be converted into ['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR'] for dates and ['RAW', 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR'] for timestamps; if you want no time intervals set 'OFF'. |
+| [time_intervals](#time-intervals) | No | 'default' or OFF or an array[] containing elements of [date](#date-options), [numeric](#numeric-options), [string](#string-options) options, or [custom granularity](#using-custom-granularities) names | 'default' (or not setting the time_intervals property) will be converted into ['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR'] for dates and ['RAW', 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR'] for timestamps; if you want no time intervals set 'OFF'. You can also include custom granularity names defined in `lightdash.config.yml`. |
 | hidden | No       | boolean | If set to true, the dimension is hidden from Lightdash. By default, this is set to false if you don't include this property. Hidden dimensions are also excluded from drilldowns (View underlying data). |
 | [compact](#compact) | No     | string | This option will compact the number value (e.g. 1,500 to 1.50K). Currently supports one of the following: ['thousands', 'millions', 'billions', 'trillions', 'kilobytes', 'megabytes', 'gigabytes', 'terabytes', 'petabytes', 'kibibytes', 'mebibytes', 'gibibytes', 'tebibytes', 'pebibytes'] |
 | [format](#format) | No       | string | This option will format the output value on the results table and CSV export. Supports spreadsheet-style formatting (e.g. #,##0.00). Use [this website](https://customformats.com) to help build your custom format. |
@@ -677,9 +677,77 @@ You can see all of the standard interval options for date and timestamp fields b
 | QUARTER_NAME     | Quarter name    | String | Q3              |
 
 
-### Custom time intervals
+### Using custom granularities
 
-You can set custom versions of time intervals by using additional dimensions and groups. Here's an example of how that might look if you wanted to add `year_of_week_iso` to your drop down list for the `delivery_date` dimension. Note that by definiting the `groups:` option, we ensure that the new "Year of week" options is displayed as expected.
+<Info>
+**Availability:** Custom granularities are an [Early Access](/references/workspace/feature-maturity-levels) feature.
+</Info>
+
+You can define reusable custom time granularities in your `lightdash.config.yml` file and reference them in the `time_intervals` array. Unlike [custom time intervals using additional dimensions](#custom-time-intervals-with-additional-dimensions), custom granularities **appear in the date zoom dropdown** alongside standard options (Day, Week, Month, etc.).
+
+**Step 1**: Define custom granularities in `lightdash.config.yml`:
+
+```yaml
+# lightdash.config.yml
+custom_granularities:
+  fiscal_quarter:
+    label: "Fiscal Quarter"
+    sql: "DATE_TRUNC('quarter', ${COLUMN} + INTERVAL '1 month')"
+  week_monday:
+    label: "Week (Mon-Sun)"
+    sql: "DATE_TRUNC('week', ${COLUMN})"
+```
+
+**Step 2**: Reference them in your dimension's `time_intervals`:
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    - name: order_date
+      description: 'Date the order was placed'
+      meta:
+        dimension:
+          type: date
+          time_intervals: ['DAY', 'WEEK', 'fiscal_quarter', 'YEAR']
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    - name: order_date
+      description: 'Date the order was placed'
+      config:
+        meta:
+          dimension:
+            type: date
+            time_intervals: ['DAY', 'WEEK', 'fiscal_quarter', 'YEAR']
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: order_date
+        description: 'Date the order was placed'
+        type: date
+        time_intervals: ['DAY', 'WEEK', 'fiscal_quarter', 'YEAR']
+    ```
+  </Tab>
+</Tabs>
+
+The `${COLUMN}` placeholder in the SQL expression is automatically replaced with the dimension's column SQL at runtime. Custom granularities also inherit `requiredAttributes` and `anyAttributes` from the parent dimension.
+
+<Info>
+  See [lightdash.config.yml reference](/references/lightdash-config-yml#custom-granularities-configuration) for the full configuration options for custom granularities.
+</Info>
+
+### Custom time intervals with additional dimensions
+
+You can also create custom time-based dimensions by using additional dimensions and groups. This approach groups custom dimensions with their parent date dimension in the sidebar, but **these dimensions do not appear in the date zoom dropdown** - they are only available as separate fields in the dimension list.
+
+<Note>
+  If you need custom time intervals to appear in the **date zoom dropdown**, use [custom granularities](#using-custom-granularities) defined in `lightdash.config.yml` instead.
+</Note>
+
+Here's an example of how that might look if you wanted to add `year_of_week_iso` grouped with the `delivery_date` dimension. Note that by defining the `groups:` option, we ensure that the new "Year of week" option is displayed grouped with the parent dimension in the sidebar.
 
 
 
