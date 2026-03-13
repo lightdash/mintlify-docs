@@ -6,13 +6,23 @@ description: Learn how to structure your dbt models for optimal performance and 
 
 When building your dbt models for Lightdash, following these best practices will help you create a better experience in Lightdash for your end users and improve query performance.
 
-## Use wide, flat tables in the BI layer
+## Choosing your data modeling approach
 
-We recommend using **wide, flat tables** in the BI layer because this minimizes complex joins that need to be handled at runtime.
+When deciding between wide materialized tables and smaller normalized tables that require multiple joins, you're balancing trade-offs across three dimensions: **performance**, **self-serve usability**, and **analytical depth**.
 
-### Why wide tables work better
+There's no one-size-fits-all answer—the right approach depends on your team's needs and how you want to empower your users.
 
-Modern columnar data warehouses (like Snowflake, BigQuery, and Redshift) are optimized for wide table formats. The star schema was initially introduced to optimize performance for row-based data warehouses, but with today's columnar warehouses, wide and flat is the way to go.
+### Wide tables vs. multi-join models
+
+| Factor | Wide tables | Multi-join models |
+|--------|-------------|-------------------|
+| **Performance** | Generally faster—materialized at the grain you need for specific analyses | Joins computed at query time; mitigated by fanout protection |
+| **Self-serve usability** | Easier for business users—all fields in one place, less overwhelming | Can be intimidating—10 joined tables on one page is a lot for most users |
+| **Analytical depth** | May require multiple wide tables for different use cases | More flexible for complex analyses across multiple dimensions |
+
+### When wide tables work best
+
+Wide tables are ideal when you want to **empower self-serve analytics**. Business users can navigate the "New chart" page without confusion, and all related fields appear together in the Lightdash sidebar.
 
 Wide tables offer several advantages:
 
@@ -20,6 +30,24 @@ Wide tables offer several advantages:
 - **Better user experience**: All related fields appear together in a single section in the Lightdash sidebar, making it easier for business users to find what they need
 - **Simpler to understand**: End users don't need to understand complex relationships between multiple tables
 - **More accurate [AI agents](/guides/ai-agents)**: AI agents have more context when working with wide tables, so they provide more accurate answers
+
+Modern columnar data warehouses (like Snowflake, BigQuery, and Redshift) are optimized for wide table formats. The star schema was initially introduced to optimize performance for row-based data warehouses, but with today's columnar warehouses, wide and flat often performs better.
+
+### When multi-join models are necessary
+
+Some analyses genuinely require multiple joins. For example, analyzing Bookings while filtering by an upstream dimension (like organic SEO traffic source) and breaking down by a downstream dimension (like a specific location) will likely require joins to be correct.
+
+Lightdash handles multi-join explores well technically—[fanout protection](/references/joins#many-to-many-or-one-to-many-with-fanout-protection) ensures accuracy. However, looking at a page with many joined tables can be overwhelming for business users who aren't familiar with the data model.
+
+### Common approaches
+
+Most Lightdash customers land on one of these patterns:
+
+- **Wide tables for self-serve**: Build wide, materialized tables for common business use cases. This is the most popular approach when the goal is enabling business users to explore data independently.
+
+- **Both pathways**: Maintain both wide tables (for business users) and complex multi-join explores (for power users or the data team). You can [hide the complex version](/references/workspace/user-attributes) from business users to reduce confusion.
+
+- **Multi-join only**: Some teams use only the normalized, multi-join approach. This works well technically, but means the data team (or AI agents) often remain a bottleneck since the ad hoc query page can be intimidating for business users. AI agents are getting better at handling multi-join explores, so this may become less of a concern over time.
 
 ### How to implement wide tables
 
@@ -59,27 +87,17 @@ models/
 
 While Lightdash supports having all model definitions in a single `schema.yml` file at the directory level, we've found that separate files per model scales better as your project grows.
 
-## What about star schema?
 
-While we recommend wide flat tables, **we do support joins in Lightdash** and via [AI agents](/guides/ai-agents), so you have the flexibility to build out your semantic layer in a way that works best for your team.
-
-If you're using a star schema, keep in mind:
-
-- Fields get split into multiple sections in the Lightdash sidebar, which can be less intuitive for business users
-- Cross-model references in underlying values become more complex to manage
-- Now that Lightdash has fanout protection, the main performance concern with joins is mitigated
-
-One approach is to maintain your star schema upstream for data modeling purposes, then materialize wide summary tables for specific business use cases as needed. This gives you the best of both worlds: clean data modeling practices upstream and optimized tables for BI consumption.
 
 ## Optimizing query performance and warehouse costs
 
-All Lightdash queries run against your data warehouse. Beyond using wide, flat tables (covered above), these additional strategies help improve performance and reduce costs.
+All Lightdash queries run against your data warehouse. These strategies help improve performance and reduce costs.
 
 | Strategy | Performance impact | Cost impact |
 |----------|-------------------|-------------|
 | [Materialize as tables](#materialize-models-as-tables) | High | High |
 | [Index and partition data](#index-and-partition-your-data) | High | High |
-| [Minimize joins](#minimize-joins-at-query-time) | High | Medium |
+| [Use pre-aggregates](#use-pre-aggregates) | High | High |
 | [Enable caching](#leverage-caching) | Medium | High |
 | [Limit exposed models](#limit-models-exposed-to-the-bi-layer) | Low | Medium |
 | [Monitor usage](#monitor-query-usage) | — | Visibility |
@@ -132,9 +150,18 @@ Best practices:
 - Cluster by columns frequently used in `WHERE` clauses or `GROUP BY`
 - Review your warehouse's query history to identify high-cost queries that could benefit from partitioning
 
-### Minimize joins at query time
+### Use pre-aggregates
 
-Pre-join data in your dbt models rather than joining at query time. As discussed in [wide, flat tables](#use-wide-flat-tables-in-the-bi-layer), this approach outperforms runtime joins. 
+Pre-aggregates are summary tables that compute metrics at a coarser grain ahead of time. They're separate from the wide-vs-normalized architecture decision, but they can provide significant performance improvements regardless of which modeling approach you choose.
+
+For example, if users frequently query daily revenue by region, a pre-aggregated `daily_revenue_by_region` table will be much faster than computing it from raw transaction data at query time.
+
+Pre-aggregates are especially useful for:
+- Dashboard queries that aggregate large datasets
+- Commonly used metric combinations
+- Time-series data at standard intervals (daily, weekly, monthly)
+
+The trade-off is maintenance overhead—you need to keep pre-aggregates in sync with your source data and ensure users understand when to use them vs. the detailed tables.
 
 ### Leverage caching
 
