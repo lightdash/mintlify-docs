@@ -1,0 +1,186 @@
+---
+title: "Simplify CLI commands with a Makefile"
+description: "Use a Makefile to centralize repetitive dbt and Lightdash CLI commands into short, memorable targets."
+---
+
+If you find yourself typing `--profiles-dir`, `--project-dir`, or long `cd` sequences over and over, a Makefile can help. It gives every contributor a single place to discover and run project commands - no task-runner install required.
+
+<Info>
+`make` ships with macOS and virtually every Linux distribution. On Windows, it is available through WSL, Git Bash, or [GnuWin32](http://gnuwin32.sourceforge.net/packages/make.htm).
+</Info>
+
+## Why a Makefile?
+
+- **Zero dependencies** - no extra CLI tool to install
+- **Self-documenting** - a `help` target lists every available command
+- **DRY** - shared flags like `--profiles-dir` are defined once
+- **Composable** - chain targets to build higher-level workflows
+- **CI-friendly** - the same `make deploy` works locally and in GitHub Actions
+
+## Starter Makefile
+
+Create a file called `Makefile` at the root of your repository. Copy the template below and adjust the three configuration variables at the top to match your project layout.
+
+```makefile Makefile
+.DEFAULT_GOAL := help
+
+# ──────────────────────────────────────────────
+# Config - adjust these to match your project
+# ──────────────────────────────────────────────
+DBT_DIR       := dbt
+PROFILES_DIR  := ../profiles
+LIGHTDASH_DIR := ./lightdash
+
+DBT := cd $(DBT_DIR) && dbt
+LD  := lightdash
+
+# ──────────────────────────────────────────────
+# Help
+# ──────────────────────────────────────────────
+.PHONY: help
+help: ## Show available commands
+	@printf "\n\033[1mAvailable commands:\033[0m\n\n"
+	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | \
+		awk -F ':.*## ' '{printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+
+# ──────────────────────────────────────────────
+# dbt
+# ──────────────────────────────────────────────
+.PHONY: seed
+seed: ## Load CSV seed files into your warehouse
+	$(DBT) seed --profiles-dir $(PROFILES_DIR)
+
+.PHONY: run
+run: ## Run all dbt models
+	$(DBT) run --profiles-dir $(PROFILES_DIR)
+
+.PHONY: build
+build: ## Run dbt build (seed + run + test)
+	$(DBT) build --profiles-dir $(PROFILES_DIR)
+
+.PHONY: test
+test: ## Run dbt tests
+	$(DBT) test --profiles-dir $(PROFILES_DIR)
+
+.PHONY: parse
+parse: ## Parse the dbt project (syntax check)
+	$(DBT) parse --profiles-dir $(PROFILES_DIR)
+
+.PHONY: compile
+compile: ## Compile dbt models (generate SQL)
+	$(DBT) compile --profiles-dir $(PROFILES_DIR)
+
+.PHONY: docs
+docs: ## Generate and serve dbt docs locally
+	$(DBT) docs generate --profiles-dir $(PROFILES_DIR)
+	$(DBT) docs serve --profiles-dir $(PROFILES_DIR)
+
+.PHONY: clean
+clean: ## Remove dbt artifacts (target/, logs/)
+	$(DBT) clean --profiles-dir $(PROFILES_DIR)
+
+# ──────────────────────────────────────────────
+# Lightdash
+# ──────────────────────────────────────────────
+.PHONY: lint
+lint: ## Lint Lightdash charts and dashboards
+	$(LD) lint $(LIGHTDASH_DIR)
+
+.PHONY: deploy
+deploy: ## Deploy the semantic layer to Lightdash
+	cd $(DBT_DIR) && $(LD) deploy --profiles-dir $(PROFILES_DIR)
+
+.PHONY: upload
+upload: ## Upload charts and dashboards to Lightdash
+	$(LD) upload --force -p $(LIGHTDASH_DIR)
+
+.PHONY: preview
+preview: ## Start a Lightdash preview environment
+	cd $(DBT_DIR) && $(LD) preview --profiles-dir $(PROFILES_DIR)
+
+.PHONY: stop-preview
+stop-preview: ## Stop running Lightdash preview
+	$(LD) stop-preview
+```
+
+### Understanding the config variables
+
+| Variable | Purpose | Example |
+|---|---|---|
+| `DBT_DIR` | Relative path to your dbt project | `dbt`, `.`, `transform/dbt` |
+| `PROFILES_DIR` | Path to your `profiles.yml`, **relative to `DBT_DIR`** | `../profiles`, `~/.dbt` |
+| `LIGHTDASH_DIR` | Path to your Lightdash content-as-code directory | `./lightdash`, `./dbt/lightdash` |
+
+<Tip>
+If your `profiles.yml` lives in the default `~/.dbt` directory, you can drop `--profiles-dir` entirely and simplify the `DBT` variable to just `cd $(DBT_DIR) && dbt`.
+</Tip>
+
+## Using it
+
+Run `make` (or `make help`) to see every available command:
+
+```bash
+$ make
+
+Available commands:
+
+  help                 Show available commands
+  seed                 Load CSV seed files into your warehouse
+  run                  Run all dbt models
+  build                Run dbt build (seed + run + test)
+  test                 Run dbt tests
+  ...
+```
+
+Then run any target:
+
+```bash
+make build          # full dbt build
+make lint           # lint Lightdash content
+make deploy         # deploy semantic layer
+```
+
+### Passing extra flags
+
+You can append dbt flags using a variable override:
+
+```bash
+make run DBT_FLAGS="--select my_model+"
+```
+
+To support this, update the `DBT` line and targets in your Makefile:
+
+```makefile
+DBT := cd $(DBT_DIR) && dbt
+DBT_FLAGS :=
+
+run:
+	$(DBT) run --profiles-dir $(PROFILES_DIR) $(DBT_FLAGS)
+```
+
+### Chaining targets
+
+Run multiple targets in sequence:
+
+```bash
+make build deploy upload
+```
+
+Or create a composite target in the Makefile:
+
+```makefile
+.PHONY: all
+all: build deploy upload ## Build, deploy, and upload in one step
+```
+
+## Alternatives
+
+A Makefile is not the only option. Here are two popular alternatives if you prefer a more modern syntax:
+
+| Tool | Install | Config file | Highlights |
+|---|---|---|---|
+| [just](https://github.com/casey/just) | `brew install just` | `justfile` | Similar to Make but with cleaner syntax, no tab requirement, built-in argument handling |
+| [Task](https://taskfile.dev) | `brew install go-task` | `Taskfile.yml` | YAML-based, cross-platform, dependency graph support |
+
+All three approaches solve the same core problem - pick whichever your team is most comfortable with.
