@@ -238,3 +238,122 @@ USER_PERMS_FILEPATH = '~/Documents/user_permission_list.csv'
 ```
 python assign_project_access_to_user_list.py
 ```
+
+## Filter metrics by tag using the data catalog API
+
+The `/api/v2/projects/{projectUuid}/dataCatalog/metrics-with-time-dimensions` endpoint returns metrics from your project's data catalog. You can filter the results by field-level tags using the `tags` query parameter, which makes it possible to retrieve only the metrics relevant to a specific workflow — such as a headless metrics store pipeline or a semantic layer integration.
+
+<Info>
+  Field-level tags are set in your dbt YAML under individual metrics and dimensions. See the [metrics reference](/references/metrics#tags) and [dimensions reference](/references/dimensions#tags) for syntax details.
+</Info>
+
+### Step 1: Tag your metrics in dbt
+
+Add tags to specific metrics in your dbt YAML:
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
+        columns:
+          - name: amount
+            meta:
+              metrics:
+                total_order_amount:
+                  type: sum
+                  tags: ["core", "finance"]
+                average_order_amount:
+                  type: average
+                  tags: ["core"]
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: orders
+        columns:
+          - name: amount
+            config:
+              meta:
+                metrics:
+                  total_order_amount:
+                    type: sum
+                    tags: ["core", "finance"]
+                  average_order_amount:
+                    type: average
+                    tags: ["core"]
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    metrics:
+      total_order_amount:
+        type: sum
+        sql: ${TABLE}.amount
+        tags: ["core", "finance"]
+      average_order_amount:
+        type: average
+        sql: ${TABLE}.amount
+        tags: ["core"]
+    ```
+  </Tab>
+</Tabs>
+
+### Step 2: Fetch metrics filtered by tag
+
+Use the `tags` query parameter to retrieve only metrics with matching tags. You can pass multiple `tags` parameters to filter by more than one tag (OR logic — metrics matching **any** of the provided tags are returned).
+
+```bash
+curl -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+  "https://{{your.lightdash.instance}}/api/v2/projects/{{your_project_uuid}}/dataCatalog/metrics-with-time-dimensions?page=1&pageSize=10&sort=label&order=asc&tags=core&tags=finance"
+```
+
+### Example response
+
+Each metric in the response includes a `tags` array showing all tags assigned to it:
+
+```json
+{
+  "status": "ok",
+  "results": {
+    "data": [
+      {
+        "name": "total_order_amount",
+        "label": "Total order amount",
+        "tags": ["core", "finance"],
+        "categories": [],
+        "tableName": "orders",
+        "tableLabel": "Orders",
+        ...
+      },
+      {
+        "name": "average_order_amount",
+        "label": "Average order amount",
+        "tags": ["core"],
+        "categories": [],
+        "tableName": "orders",
+        "tableLabel": "Orders",
+        ...
+      }
+    ]
+  }
+}
+```
+
+### Supported query parameters
+
+| Parameter  | Type   | Description                                                                 |
+| :--------- | :----- | :-------------------------------------------------------------------------- |
+| `page`     | number | Page number for pagination (starts at 1)                                    |
+| `pageSize` | number | Number of results per page                                                  |
+| `sort`     | string | Field to sort by (e.g., `label`)                                            |
+| `order`    | string | Sort order: `asc` or `desc`                                                 |
+| `tags`     | string | Filter by tag. Repeat the parameter to filter by multiple tags (OR logic).  |
+
+<Tip>
+  Tags are a backend-only mechanism — they are **not** displayed as Spotlight categories in the Lightdash UI. This makes them suitable for controlling API-driven workflows without affecting the end-user experience.
+</Tip>
