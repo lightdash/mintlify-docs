@@ -1,0 +1,84 @@
+---
+title: "Pre-aggregates"
+description: "Deploy Lightdash with pre-aggregates using the Helm chart to serve queries from DuckDB instead of your data warehouse."
+sidebarTitle: "Pre-aggregates"
+---
+
+<Badge color="purple" size="md" shape="pill">Enterprise plan</Badge> <Badge color="blue" size="md" shape="pill">Helm chart</Badge>
+
+<Callout icon="wrench" color="#6B7280">
+  This page is for engineering teams self-hosting their own Lightdash instance. If you want to get started with pre-aggregates, see the [pre-aggregates reference](/references/pre-aggregates).
+</Callout>
+
+We recommend deploying Lightdash with pre-aggregates using the [Helm chart](/self-host/self-host-lightdash). The Helm chart handles the required service dependencies and environment variable wiring automatically.
+
+## Enabling pre-aggregates
+
+Pre-aggregates materialize query results so that repeated queries are served from DuckDB instead of hitting your data warehouse. This requires NATS for async job processing and S3-compatible storage for materialized results.
+
+### Prerequisites
+
+- A valid Lightdash license key
+- An S3-compatible bucket (AWS S3, GCS, MinIO, etc.)
+
+### Helm values
+
+Setting these three values in your Helm values is the minimum required configuration:
+
+```yaml
+# Enable NATS and workers
+nats:
+  enabled: true
+warehouseNatsWorker:
+  enabled: true
+preAggregateNatsWorker:
+  enabled: true
+
+# License key
+secrets:
+  LIGHTDASH_LICENSE_KEY: "your-license-key"
+
+# S3 storage for materialized results
+configMap:
+  S3_ENDPOINT: "https://s3.us-east-1.amazonaws.com"
+  S3_REGION: "us-east-1"
+  PRE_AGGREGATE_RESULTS_S3_BUCKET: "my-lightdash-pre-aggs"
+
+secrets:
+  S3_ACCESS_KEY: "your-access-key"
+  S3_SECRET_KEY: "your-secret-key"
+```
+
+The chart auto-configures `NATS_ENABLED`, `PRE_AGGREGATES_ENABLED`, `NATS_URL`, and `PRE_AGGREGATES_PARQUET_ENABLED` from the flags above.
+
+## What gets deployed
+
+| Component | Purpose |
+| --- | --- |
+| NATS JetStream | Message broker for async query jobs |
+| Warehouse worker | Processes interactive queries from users |
+| Pre-aggregate worker | Materializes pre-aggregates and processes DuckDB queries |
+
+Warehouse and pre-aggregate workers are separate deployments so they don't compete for resources.
+
+## Scaling
+
+The defaults are tuned for typical workloads. The main levers if you need to adjust:
+
+```yaml
+warehouseNatsWorker:
+  replicas: 1        # scale horizontally for more concurrent queries
+  concurrency: 100   # concurrent jobs per pod
+
+preAggregateNatsWorker:
+  replicas: 1
+  concurrency: 100
+```
+
+Pre-aggregate workers are more resource-intensive than warehouse workers because they run DuckDB. The default resource requests reflect this:
+
+| | Warehouse worker | Pre-aggregate worker |
+| --- | --- | --- |
+| CPU | 250m | 650m |
+| Memory | 1.5Gi | 4Gi |
+| Ephemeral storage | 9Gi | 9Gi |
