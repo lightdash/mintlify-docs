@@ -1,0 +1,153 @@
+---
+title: 'Semantic Layer roadmap'
+---
+
+
+> ✅ Composable — analyst can do this at query time without a dbt model
+> 🟡 Partial — exists but limited, experimental, or workaround only
+> ❌ Requires materialization — analyst is blocked; needs a dbt model or raw SQL
+
+---
+
+## Joins & Fan-Out
+
+| Feature | Status | Notes |
+|---|---|---|
+| Dimensional lookups (M:1 join) | ✅ | YAML joins with relationship declarations |
+| Multi-fact joins (M:M / fan-out) | ✅ | Automatic CTE dedup via symmetric aggregates |
+| Self-joins | ✅ | Alias property |
+| Chained joins (A→B→C) | ✅ | Fan-out protection propagates |
+| Cross joins | ❌ | Not a valid join type |
+| Ad-hoc joins (user-defined at query time) | ❌ | Must be pre-defined in YAML |
+
+## Aggregations
+
+| Feature | Status | Notes |
+|---|---|---|
+| Basic aggregates (sum, count, avg, min, max) | ✅ | |
+| Count distinct | ✅ | |
+| Median / percentile | ✅ | Configurable N |
+| Approximate count distinct (HLL) | ❌ | No native type |
+| Conditional aggregates (filtered metrics) | ✅ | `filters:` on metrics |
+| Derived metrics / ratios (metric ÷ metric) | ✅ | `type: number` referencing other metrics |
+
+## Level of Detail (mixed-grain analysis)
+
+| Feature | Status | Notes |
+|---|---|---|
+| Fixed-grain metric (e.g. total revenue alongside per-order rows) | ❌ | No FIXED equivalent; must pre-compute in dbt |
+| Exclude dimensions from aggregation | ❌ | No EXCLUDE equivalent |
+| Include extra dimensions in aggregation | ❌ | No INCLUDE equivalent |
+| Percent of total (as semantic metric) | 🟡 | Experimental `type: percent_of_total` |
+| Metric at coarser grain for benchmarks / ratios | ❌ | Can't express "company avg" alongside "rep total" |
+
+## Time Intelligence
+
+| Feature | Status | Notes |
+|---|---|---|
+| Date granularity switching (zoom) | ✅ | Auto-generated DAY/WEEK/MONTH/QUARTER/YEAR |
+| Period-over-period (single comparison) | 🟡 | Beta; one comparison per chart |
+| Multiple PoP comparisons on one chart | 🟡 | Workaround via parameters; not native |
+| Rolling/trailing window (e.g. 7-day avg) | 🟡 | Table calc only; row-based, breaks with date gaps |
+| Cumulative / running total | 🟡 | Experimental metric type |
+| Semi-additive metrics (balance at end of period) | ❌ | Must pre-compute in dbt |
+| Date spine / fill missing dates | ❌ | Must use `dbt_utils.date_spine` |
+| Fiscal calendar | 🟡 | Custom granularities (Early Access); no project-wide offset |
+
+## Post-Query Calculations (table calcs)
+
+| Feature | Status | Notes |
+|---|---|---|
+| Row-level math on results | ✅ | Raw SQL on result set |
+| Window functions (LAG, LEAD, RANK, SUM OVER) | ✅ | Full warehouse window function support |
+| Running total (table calc) | ✅ | |
+| Percent of total (table calc) | ✅ | |
+| Percent change from previous | ✅ | |
+| Rank | ✅ | |
+| Moving/rolling average | 🟡 | Row-based only; not calendar-day-based |
+
+## Merged Queries / Blended Data
+
+| Feature | Status | Notes |
+|---|---|---|
+| Combine results from unrelated queries | ❌ | No merged results or data blending |
+| Cross-explore queries | ❌ | Each explore = one base table + its joins |
+| Virtual Views (SQL workaround) | 🟡 | Saves raw SQL as explore; exits semantic layer |
+
+## Pivoting & Presentation
+
+| Feature | Status | Notes |
+|---|---|---|
+| Pivot (dimensions as columns) | ✅ | Up to 3 dimensions, 200 column limit |
+| Subtotals and totals | ✅ | |
+| Transpose (metrics as rows) | ✅ | |
+
+## Sorting & Filtering
+
+| Feature | Status | Notes |
+|---|---|---|
+| Dimension filters (WHERE) | ✅ | |
+| Measure filters (HAVING) | ✅ | |
+| Top N (limit + sort) | ✅ | |
+| AND/OR filter logic (nested groups) | ✅ | |
+| Cross-filtering (dashboard tiles) | ✅ | |
+| Model-enforced filters (sql_filter) | ✅ | Permanent, non-removable |
+| Default filters (removable) | ✅ | |
+
+## Row-Level Security
+
+| Feature | Status | Notes |
+|---|---|---|
+| User-attribute-based row filtering | ✅ | `sql_filter` + `${lightdash.attributes.*}` |
+| Field-level access control | ✅ | `required_attributes` on fields/tables |
+| Dynamic RLS in embeds | ✅ | JWT userAttributes |
+
+## Parameters & Dynamic Queries
+
+| Feature | Status | Notes |
+|---|---|---|
+| User-injectable parameters (change SQL) | ✅ | String, number, date types |
+| Dynamic parameter options from data | ✅ | `options_from_dimension` |
+| What-if numeric scenario sliders | ❌ | No slider widget; dropdowns only |
+
+## Custom Dimensions
+
+| Feature | Status | Notes |
+|---|---|---|
+| Explore-scoped computed dimensions | ✅ | `additional_dimensions` with full SQL |
+| Bins / custom groupings | ✅ | UI-created by any user |
+| CASE/WHEN logic | ✅ | Arbitrary SQL in dimension definitions |
+
+## Subqueries & Nesting
+
+| Feature | Status | Notes |
+|---|---|---|
+| Correlated subqueries (e.g. filter to customers with LTV > X) | ❌ | Must pre-compute in dbt |
+| Nested metric references (metric referencing metric) | 🟡 | One level only; no deep chaining |
+
+## Aggregate Awareness
+
+| Feature | Status | Notes |
+|---|---|---|
+| Auto-route queries to pre-aggregated tables | ❌ | No automatic detection or routing |
+
+---
+
+## Summary
+
+| Category | ✅ | 🟡 | ❌ |
+|---|---|---|---|
+| Joins & Fan-Out | 4 | 0 | 2 |
+| Aggregations | 5 | 0 | 1 |
+| Level of Detail | 0 | 1 | 4 |
+| Time Intelligence | 1 | 5 | 2 |
+| Table Calculations | 6 | 1 | 0 |
+| Merged Queries | 0 | 1 | 2 |
+| Pivoting | 3 | 0 | 0 |
+| Filtering | 7 | 0 | 0 |
+| Row-Level Security | 3 | 0 | 0 |
+| Parameters | 2 | 0 | 1 |
+| Custom Dimensions | 3 | 0 | 0 |
+| Subqueries | 0 | 1 | 1 |
+| Aggregate Awareness | 0 | 0 | 1 |
+| **TOTAL** | **34** | **9** | **14** |

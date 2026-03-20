@@ -1,0 +1,406 @@
+---
+title: Query Recipe Book
+---
+
+# The Lightdash Query Recipe Book
+
+Every analysis you'll ever run in a BI tool follows one of these patterns. This guide shows you which ones Lightdash handles out of the box — and what to do when you need something more.
+
+---
+
+## 1. The Roll-Up
+
+**What you're trying to do:** Group your data by a category and get a total, average, or count for each group.
+
+**Example question:** *"What's our total revenue by country?"*
+
+**Lightdash features used:**
+- Pick a dimension (Country) and a metric (Total Revenue) in the Explore view
+- Lightdash generates the `GROUP BY` and aggregation for you
+
+**Status:** ✅ Fully supported — this is bread-and-butter Lightdash.
+
+---
+
+## 2. The Lookup
+
+**What you're trying to do:** Pull in a column from a related table. You have orders, but you want to see the customer's plan tier next to each order.
+
+**Example question:** *"Show me order revenue with each customer's plan tier."*
+
+**Lightdash features used:**
+- Joins defined in your YAML model (e.g. orders → customers)
+- Select dimensions from the joined table alongside your base metrics
+
+**Status:** ✅ Fully supported — Lightdash's join system handles M:1 lookups cleanly.
+
+---
+
+## 3. The Filter Drill
+
+**What you're trying to do:** Start broad, then drill down into specifics. Click on a region to see cities, click a city to see individual reps.
+
+**Example question:** *"Revenue by region → just EMEA → by city → by rep."*
+
+**Lightdash features used:**
+- Dashboard cross-filtering (click a chart value to filter all tiles)
+- Dimension filters with AND/OR logic
+- Drill into underlying data from any chart
+
+**Status:** ✅ Fully supported.
+
+---
+
+## 4. The Conditional Metric
+
+**What you're trying to do:** Count or sum only the rows that match a condition. Like counting only paid users, or summing revenue from just one product line.
+
+**Example question:** *"How many users signed up last month who are on the Pro plan?"*
+
+**Lightdash features used:**
+- Metric filters (`filters:` in YAML) — e.g. a "Pro Users" metric that only counts users where `plan = 'pro'`
+- Or use custom metrics in the Explore UI to add a filter on the fly
+
+**Status:** ✅ Fully supported.
+
+---
+
+## 5. The Ratio
+
+**What you're trying to do:** Divide one metric by another. Revenue per user, cost per acquisition, average order value.
+
+**Example question:** *"What's our revenue per active user by month?"*
+
+**Lightdash features used:**
+- Derived metrics (`type: number`) that reference other metrics: `sql: ${total_revenue} / NULLIF(${active_users}, 0)`
+- Both metrics are computed in the same query, then divided
+
+**Status:** ✅ Fully supported — as long as both metrics are at the same grain (see The Benchmark for when they're not).
+
+---
+
+## 6. The Pivot
+
+**What you're trying to do:** Turn row values into columns. Instead of one row per month, you want months as column headers with products down the side.
+
+**Example question:** *"Show me revenue by product, with each month as a column."*
+
+**Lightdash features used:**
+- Pivot button in the results table — drag a dimension to columns
+- Supports up to 3 pivot dimensions and 200 columns
+- Subtotals and totals available
+
+**Status:** ✅ Fully supported.
+
+---
+
+## 7. The Period Comparison
+
+**What you're trying to do:** Compare this month to last month, or this quarter to the same quarter last year.
+
+**Example question:** *"How does this month's revenue compare to the same month last year?"*
+
+**Lightdash features used:**
+- Period comparison (Beta) — click a metric column → "Add period comparison" → choose your offset
+- Or use Spotlight's built-in "Compare to: This time last year"
+
+**Status:** 🟡 Supported (Beta) — one comparison per chart. If you need multiple comparisons on the same chart (e.g. vs last month AND vs last year simultaneously), use a parameters-based workaround or table calculations with `LAG()`.
+
+---
+
+## 8. The Running Total
+
+**What you're trying to do:** Show a cumulative sum that grows row by row. Useful for tracking progress toward a target.
+
+**Example question:** *"What's our cumulative revenue over the quarter?"*
+
+**Lightdash features used:**
+- `type: running_total` metric (Experimental) — define in YAML and it accumulates automatically
+- Or add a table calculation: `SUM(${orders.total_revenue}) OVER (ORDER BY ${orders.order_date_month} ROWS UNBOUNDED PRECEDING)`
+
+**Status:** 🟡 Supported (Experimental metric type) or via table calculation.
+
+---
+
+## 9. The Trailing Window
+
+**What you're trying to do:** Smooth out noisy daily data with a rolling average. Show a 7-day moving average of signups instead of the spiky daily numbers.
+
+**Example question:** *"What's our 7-day rolling average of daily active users?"*
+
+**Lightdash features used:**
+- Table calculation: `AVG(${metrics.daily_active_users}) OVER (ORDER BY ${dim.date_day} ROWS 6 PRECEDING)`
+
+**Status:** 🟡 Partial — works as a table calculation, but it's row-based, not calendar-day-based. If there are gaps in your dates (e.g. no data on weekends), the window will span more than 7 calendar days. There's no date spine or fill-missing-dates feature yet.
+
+**If you need calendar-accurate rolling windows:** Build a dbt model using `dbt_utils.date_spine` to fill in missing dates with zeros, then define your metric on that model.
+
+---
+
+## 10. The Mix
+
+**What you're trying to do:** See what percentage each segment contributes to the whole. What share of revenue comes from each product line?
+
+**Example question:** *"What percentage of total revenue does each product represent?"*
+
+**Lightdash features used:**
+- `type: percent_of_total` metric (Experimental) — automatically computes each row as a share of the total
+- Or table calculation: `${orders.total_revenue} / SUM(${orders.total_revenue}) OVER ()`
+
+**Status:** 🟡 Supported (Experimental metric) or via table calculation. The metric type is the cleaner option.
+
+---
+
+## 11. The Benchmark
+
+**What you're trying to do:** Compare each row to a group average or total. Is this sales rep above or below the team average? Is this region's growth better than the company-wide growth?
+
+**Example question:** *"Show each rep's revenue alongside the overall team average."*
+
+**Lightdash features used:**
+- This requires computing a metric at a different grain than the query (team average = no rep dimension, rep revenue = with rep dimension). Lightdash doesn't yet have a native way to mix these grains.
+
+**Status:** ❌ Not yet composable in the semantic layer.
+
+**What to do instead:** Build a dbt model that pre-computes the benchmark value (e.g. a CTE with `AVG(revenue) OVER ()` or a separate summary table), then expose it as a dimension or metric in Lightdash. Example:
+
+```sql
+-- in your dbt model
+SELECT
+  rep_name,
+  revenue,
+  AVG(revenue) OVER () AS team_avg_revenue
+FROM {{ ref('sales_by_rep') }}
+```
+
+---
+
+## 12. The Leaderboard
+
+**What you're trying to do:** Rank items and show the Top N (or Bottom N). Who are the top 10 customers by spend? Which products have the lowest margins?
+
+**Example question:** *"Who are our top 10 customers by lifetime spend?"*
+
+**Lightdash features used:**
+- Sort by your metric (descending), set the row limit to 10
+- Add a Rank table calculation: `ROW_NUMBER() OVER (ORDER BY ${customers.lifetime_spend} DESC)`
+
+**Status:** ✅ Fully supported for simple Top N. For "Top N per group" (e.g. top 3 products per region), you need a table calculation with `PARTITION BY`, which works but gets complex.
+
+---
+
+## 13. The Snapshot
+
+**What you're trying to do:** Get the value of something at a point in time. What was our ARR at the end of each month? What was the account balance on the last day of the quarter?
+
+**Example question:** *"What was our MRR at the end of each month this year?"*
+
+**Lightdash features used:**
+- This is a semi-additive metric — you can't SUM a balance across months (that would double-count). You need the last value per period. Lightdash doesn't have a native semi-additive metric type.
+
+**Status:** ❌ Not yet composable in the semantic layer.
+
+**What to do instead:** Build a dbt model that extracts the end-of-period value. Common patterns:
+
+```sql
+-- Option A: Filter to last day of each month
+SELECT * FROM {{ ref('daily_mrr') }}
+WHERE date = LAST_DAY(date)
+
+-- Option B: Window function for latest value per period
+SELECT DISTINCT
+  DATE_TRUNC('month', date) AS month,
+  LAST_VALUE(mrr) OVER (
+    PARTITION BY DATE_TRUNC('month', date)
+    ORDER BY date
+    ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+  ) AS end_of_month_mrr
+FROM {{ ref('daily_mrr') }}
+```
+
+Then define a simple `type: max` or `type: sum` metric on the pre-filtered model.
+
+---
+
+## 14. The Funnel
+
+**What you're trying to do:** Track drop-off through sequential steps. How many users started signup → completed profile → made first purchase?
+
+**Example question:** *"What's our signup-to-purchase conversion rate?"*
+
+**Lightdash features used:**
+- If your steps are already modeled as columns (e.g. `signed_up`, `activated`, `purchased` as booleans or counts), you can use conditional metrics and a ratio:
+  - `conversion_rate: type: number, sql: ${purchased_users} / NULLIF(${signed_up_users}, 0)`
+- Funnel chart type available for visualization
+
+**Status:** 🟡 Supported if your funnel is pre-modeled as metrics. The semantic layer doesn't natively express "count users who did A then B then C in order." For event-sequence funnels, you'll need a dbt model.
+
+**What to do instead for event-sequence funnels:** Build a dbt model that sessionizes events and flags each step:
+
+```sql
+-- Simplified funnel model
+SELECT
+  user_id,
+  MIN(CASE WHEN event = 'signup' THEN event_date END) AS signed_up_at,
+  MIN(CASE WHEN event = 'activate' THEN event_date END) AS activated_at,
+  MIN(CASE WHEN event = 'purchase' THEN event_date END) AS purchased_at
+FROM {{ ref('events') }}
+GROUP BY 1
+```
+
+---
+
+## 15. The Cohort
+
+**What you're trying to do:** Group users by when they started (signup month, first purchase date), then track their behavior over time. Classic retention analysis.
+
+**Example question:** *"What's our monthly retention by signup cohort?"*
+
+**Lightdash features used:**
+- This requires a cohort dimension (signup month) and a "periods since cohort" axis. If pre-modeled, you can explore it with dimensions and metrics.
+- Pivot the cohort month into columns for the classic retention triangle
+
+**Status:** 🟡 Supported if your cohort model exists in dbt. The semantic layer doesn't generate cohort-based time offsets on its own.
+
+**What to do instead:** Build a dbt model that creates the cohort grid:
+
+```sql
+SELECT
+  DATE_TRUNC('month', first_order_date) AS cohort_month,
+  DATEDIFF('month', first_order_date, order_date) AS months_since_first,
+  COUNT(DISTINCT user_id) AS active_users
+FROM {{ ref('orders') }}
+JOIN {{ ref('users') }} USING (user_id)
+GROUP BY 1, 2
+```
+
+---
+
+## 16. The Fan-Out Trap
+
+**What you're trying to do:** Join two fact tables through a shared dimension without inflating your numbers. Orders and support tickets both link to customers — if you join them, a customer with 3 orders and 2 tickets creates 6 rows.
+
+**Example question:** *"Show total order revenue and total support tickets per customer."*
+
+**Lightdash features used:**
+- Symmetric aggregates — Lightdash automatically detects fan-out risk when you've declared `primary_key` and `relationship` on your joins
+- Generates separate CTEs to aggregate each fact table independently before combining
+- Works transparently — you just pick fields from both tables and get correct numbers
+
+**Status:** ✅ Fully supported — this is one of Lightdash's strongest features. Many BI tools get this wrong.
+
+---
+
+## 17. The Blended Report
+
+**What you're trying to do:** Put metrics from completely different data sources side by side. Marketing spend from your ad platform alongside revenue from your orders table, both broken down by channel.
+
+**Example question:** *"Show me marketing spend vs revenue by channel for last quarter."*
+
+**Lightdash features used:**
+- If both tables can be joined (even through a shared dimension table), use Lightdash joins
+- If they can't be joined at all, there's no way to combine them in a single Explore query
+
+**Status:** ❌ Not yet composable for truly unrelated tables.
+
+**What to do instead:** Build a dbt model that unions or joins the sources:
+
+```sql
+-- Option A: Pre-join on shared dimension
+SELECT
+  c.channel_name,
+  COALESCE(m.total_spend, 0) AS marketing_spend,
+  COALESCE(r.total_revenue, 0) AS revenue
+FROM {{ ref('channels') }} c
+LEFT JOIN {{ ref('marketing_spend_by_channel') }} m USING (channel_id)
+LEFT JOIN {{ ref('revenue_by_channel') }} r USING (channel_id)
+
+-- Option B: If you can find a shared join key, define both as joins in YAML
+-- and let symmetric aggregates handle the fan-out
+```
+
+---
+
+## 18. The What-If
+
+**What you're trying to do:** Change an assumption and see how it affects the numbers. If we raise prices 10%, what happens to projected revenue? If churn drops by 2 points, what's the impact on ARR?
+
+**Example question:** *"What would revenue look like if we increased prices by 5%, 10%, or 15%?"*
+
+**Lightdash features used:**
+- Parameters — define a parameter with preset options (e.g. `price_multiplier: [1.05, 1.10, 1.15]`)
+- Reference it in a metric: `sql: ${TABLE}.revenue * ${lightdash.parameters.price_multiplier}`
+- Users select the scenario from a dropdown
+
+**Status:** ✅ Supported for discrete scenarios (dropdown selection). Not yet supported for continuous sliders (e.g. "drag to adjust price from 1% to 50%").
+
+---
+
+## 19. The Dynamic Group
+
+**What you're trying to do:** Let the user choose how to slice the data. Instead of hard-coding "by country," let them pick whether to see it by country, by product, by plan tier — without building separate charts.
+
+**Example question:** *"Let me toggle between viewing revenue by region, by product, or by segment."*
+
+**Lightdash features used:**
+- Parameters combined with `additional_dimensions` — define a parameter that controls which column is used as the group-by dimension
+- Or use `CASE/WHEN` in a dimension's SQL to switch based on parameter value
+
+**Status:** ✅ Supported via parameters + additional_dimensions.
+
+---
+
+## 20. The Restricted View
+
+**What you're trying to do:** Make sure each team only sees their own data. The EMEA team sees EMEA numbers, the US team sees US numbers — same dashboard, different data.
+
+**Example question:** *"Each regional manager should only see revenue for their own region."*
+
+**Lightdash features used:**
+- Row-Level Security via user attributes: `sql_filter: ${TABLE}.region IN (${lightdash.attributes.allowed_regions})`
+- Field-level access with `required_attributes` — hide sensitive columns from certain roles
+- Works the same in embeds (JWT passes user attributes)
+
+**Status:** ✅ Fully supported — no need to build separate dbt models per team.
+
+---
+
+## 21. The Big Wide Table
+
+**What you're trying to do:** Throw everything into one giant denormalized table so anyone can slice any dimension against any metric. The "I just want to explore everything" approach.
+
+**Example question:** *"I want to be able to break down any metric by any dimension without thinking about joins."*
+
+**Lightdash features used:**
+- This is what joins are for — instead of one massive dbt model, define your relationships in YAML and let Lightdash join on demand
+- Users see all dimensions from all joined tables in one Explore, but Lightdash only joins the tables it needs for the current query
+
+**Status:** ✅ This is the whole point of the semantic layer. You shouldn't need to build wide tables if your joins and relationships are defined properly. Lightdash's symmetric aggregates ensure the numbers stay correct even when joining multiple fact tables.
+
+---
+
+## Quick Reference
+
+| Recipe | Status | Key Lightdash Feature |
+|---|---|---|
+| 1. The Roll-Up | ✅ | Dimensions + metrics |
+| 2. The Lookup | ✅ | YAML joins |
+| 3. The Filter Drill | ✅ | Cross-filtering, nested filters |
+| 4. The Conditional Metric | ✅ | Metric filters |
+| 5. The Ratio | ✅ | Derived metrics (`type: number`) |
+| 6. The Pivot | ✅ | Pivot table |
+| 7. The Period Comparison | 🟡 | Period comparison (Beta) |
+| 8. The Running Total | 🟡 | `type: running_total` (Experimental) / table calc |
+| 9. The Trailing Window | 🟡 | Table calc (row-based only) |
+| 10. The Mix | 🟡 | `type: percent_of_total` (Experimental) / table calc |
+| 11. The Benchmark | ❌ | Needs Level of Detail metrics |
+| 12. The Leaderboard | ✅ | Sort + limit + rank table calc |
+| 13. The Snapshot | ❌ | Needs semi-additive metrics |
+| 14. The Funnel | 🟡 | Works if funnel is pre-modeled |
+| 15. The Cohort | 🟡 | Works if cohort model exists |
+| 16. The Fan-Out Trap | ✅ | Symmetric aggregates |
+| 17. The Blended Report | ❌ | Needs merged queries |
+| 18. The What-If | ✅ | Parameters |
+| 19. The Dynamic Group | ✅ | Parameters + additional_dimensions |
+| 20. The Restricted View | ✅ | Row-Level Security / user attributes |
+| 21. The Big Wide Table | ✅ | Joins + symmetric aggregates (replaces wide tables) |
