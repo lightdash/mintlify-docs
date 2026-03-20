@@ -1,0 +1,126 @@
+---
+title: "Swappable Metrics: Let Users Choose Which Measure to Plot"
+sidebarTitle: "Swappable Metrics"
+description: "Use parameters to let dashboard viewers switch between metrics — revenue, orders, margin — on the same chart without duplicating anything."
+---
+
+Same chart, different measure. A parameter lets users swap the metric being plotted — revenue today, order count tomorrow — from a single dropdown.
+
+<Info>**Status:** ✅ Supported via parameters + derived metrics.</Info>
+
+## The question
+
+> "Build me one chart where I can toggle between revenue, order count, and average order value."
+
+## Why it matters
+
+Three metrics means three charts — unless you parameterise. Swappable metrics keep dashboards lean while giving stakeholders the flexibility to explore whichever KPI matters most right now. Fewer tiles, faster load times, less maintenance.
+
+## Example
+
+An e-commerce team wants a single trend chart that works for any of their three core KPIs.
+
+### Source data
+
+| month | order_id | order_total |
+|-------|----------|-------------|
+| 2025-01 | 4001 | 89.00 |
+| 2025-01 | 4002 | 142.00 |
+| 2025-01 | 4003 | 67.50 |
+| 2025-02 | 4004 | 210.00 |
+| 2025-02 | 4005 | 55.00 |
+| 2025-03 | 4006 | 178.00 |
+| 2025-03 | 4007 | 93.00 |
+| 2025-03 | 4008 | 124.00 |
+
+### YAML
+
+Define the parameter in `lightdash.config.yml`:
+
+```yaml
+parameters:
+  selected_metric:
+    label: "Metric"
+    description: "Choose which KPI to display"
+    type: string
+    default: "revenue"
+    options:
+      - "revenue"
+      - "order_count"
+      - "aov"
+```
+
+Reference it in the model with a `case` expression:
+
+```yaml
+type: model
+name: orders
+
+dimensions:
+  - name: month
+    type: date
+    time_intervals: ['month']
+
+metrics:
+  total_revenue:
+    type: sum
+    sql: ${TABLE}.order_total
+    format: "usd"
+  order_count:
+    type: count
+  aov:
+    label: "Avg Order Value"
+    type: number
+    sql: ${total_revenue} / nullif(${order_count}, 0)
+    format: "usd"
+    round: 2
+  selected_kpi:
+    label: "Selected KPI"
+    type: number
+    sql: |
+      case
+        when ${lightdash.parameters.selected_metric} = 'revenue' then ${total_revenue}
+        when ${lightdash.parameters.selected_metric} = 'order_count' then ${order_count}
+        when ${lightdash.parameters.selected_metric} = 'aov' then ${aov}
+      end
+```
+
+### Result
+
+**User selects "revenue":**
+
+| month | Selected KPI |
+|-------|-------------|
+| 2025-01 | $298,500 |
+| 2025-02 | $265,000 |
+| 2025-03 | $395,000 |
+
+**User switches to "order_count":**
+
+| month | Selected KPI |
+|-------|-------------|
+| 2025-01 | 3,420 |
+| 2025-02 | 2,980 |
+| 2025-03 | 4,150 |
+
+**User switches to "aov":**
+
+| month | Selected KPI |
+|-------|-------------|
+| 2025-01 | $87.28 |
+| 2025-02 | $88.93 |
+| 2025-03 | $95.18 |
+
+One chart. Three KPIs. Zero duplication.
+
+## How to set it up
+
+1. Define the base metrics you want to make swappable (`total_revenue`, `order_count`, `aov`).
+2. Add a `selected_metric` parameter to `lightdash.config.yml` with one option per metric.
+3. Create a derived `selected_kpi` metric that uses a `case` expression to return whichever base metric matches the parameter value.
+4. Build a chart using the `selected_kpi` metric and save it to a dashboard. The parameter dropdown appears automatically.
+
+## Tips
+
+- Format gets tricky — revenue wants `$`, counts want no decimals, AOV wants two decimals. Consider keeping separate charts if formatting matters a lot, or use a consistent format like "number with 1 decimal."
+- Combine with [Swappable Dimensions](/semantic-layer/dynamic-group) for full flexibility: users pick both the metric and the breakdown.
