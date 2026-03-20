@@ -1,0 +1,61 @@
+---
+title: Events & Lifecycle
+---
+
+# Events & Lifecycle
+
+Patterns for tracking users through sequences of actions — funnels, cohorts, and retention analysis.
+
+---
+
+## 14. The Funnel
+
+**What you're trying to do:** Track drop-off through sequential steps. How many users started signup → completed profile → made first purchase?
+
+**Example question:** *"What's our signup-to-purchase conversion rate?"*
+
+**Lightdash features used:**
+- If your steps are already modeled as columns (e.g. `signed_up`, `activated`, `purchased` as booleans or counts), you can use conditional metrics and a ratio:
+  - `conversion_rate: type: number, sql: ${purchased_users} / nullif(${signed_up_users}, 0)`
+- Funnel chart type available for visualization
+
+**Status:** 🟡 Supported if your funnel is pre-modeled as metrics. The semantic layer doesn't natively express "count users who did A then B then C in order." For event-sequence funnels, you'll need a dbt model.
+
+**What to do instead for event-sequence funnels:** Build a dbt model that sessionizes events and flags each step:
+
+```sql
+-- Simplified funnel model
+select
+  user_id,
+  min(case when event = 'signup' then event_date end) as signed_up_at,
+  min(case when event = 'activate' then event_date end) as activated_at,
+  min(case when event = 'purchase' then event_date end) as purchased_at
+from {{ ref('events') }}
+group by 1
+```
+
+---
+
+## 15. The Cohort
+
+**What you're trying to do:** Group users by when they started (signup month, first purchase date), then track their behavior over time. Classic retention analysis.
+
+**Example question:** *"What's our monthly retention by signup cohort?"*
+
+**Lightdash features used:**
+- This requires a cohort dimension (signup month) and a "periods since cohort" axis. If pre-modeled, you can explore it with dimensions and metrics.
+- Pivot the cohort month into columns for the classic retention triangle
+
+**Status:** 🟡 Supported if your cohort model exists in dbt. The semantic layer doesn't generate cohort-based time offsets on its own.
+
+**What to do instead:** Build a dbt model that creates the cohort grid:
+
+```sql
+select
+  date_trunc('month', first_order_date) as cohort_month,
+  datediff('month', first_order_date, order_date) as months_since_first,
+  count(distinct user_id) as active_users
+from {{ ref('orders') }}
+join {{ ref('users') }} using (user_id)
+group by 1, 2
+```

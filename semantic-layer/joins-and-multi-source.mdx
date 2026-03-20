@@ -1,0 +1,66 @@
+---
+title: Joins & Multi-Source
+---
+
+# Joins & Multi-Source
+
+Patterns for combining data from multiple tables — handling fan-outs, blending unrelated sources, and replacing wide denormalized tables.
+
+---
+
+## 16. The Fan-Out Trap
+
+**What you're trying to do:** Join two fact tables through a shared dimension without inflating your numbers. Orders and support tickets both link to customers — if you join them, a customer with 3 orders and 2 tickets creates 6 rows.
+
+**Example question:** *"Show total order revenue and total support tickets per customer."*
+
+**Lightdash features used:**
+- Symmetric aggregates — Lightdash automatically detects fan-out risk when you've declared `primary_key` and `relationship` on your joins
+- Generates separate CTEs to aggregate each fact table independently before combining
+- Works transparently — you just pick fields from both tables and get correct numbers
+
+**Status:** ✅ Fully supported — this is one of Lightdash's strongest features. Many BI tools get this wrong.
+
+---
+
+## 17. The Blended Report
+
+**What you're trying to do:** Put metrics from completely different data sources side by side. Marketing spend from your ad platform alongside revenue from your orders table, both broken down by channel.
+
+**Example question:** *"Show me marketing spend vs revenue by channel for last quarter."*
+
+**Lightdash features used:**
+- If both tables can be joined (even through a shared dimension table), use Lightdash joins
+- If they can't be joined at all, there's no way to combine them in a single Explore query
+
+**Status:** 🗺️ On roadmap for truly unrelated tables.
+
+**What to do instead:** Build a dbt model that unions or joins the sources:
+
+```sql
+-- Option A: Pre-join on shared dimension
+select
+  c.channel_name,
+  coalesce(m.total_spend, 0) as marketing_spend,
+  coalesce(r.total_revenue, 0) as revenue
+from {{ ref('channels') }} c
+left join {{ ref('marketing_spend_by_channel') }} m using (channel_id)
+left join {{ ref('revenue_by_channel') }} r using (channel_id)
+
+-- Option B: If you can find a shared join key, define both as joins in YAML
+-- and let symmetric aggregates handle the fan-out
+```
+
+---
+
+## 21. The Big Wide Table
+
+**What you're trying to do:** Throw everything into one giant denormalized table so anyone can slice any dimension against any metric. The "I just want to explore everything" approach.
+
+**Example question:** *"I want to be able to break down any metric by any dimension without thinking about joins."*
+
+**Lightdash features used:**
+- This is what joins are for — instead of one massive dbt model, define your relationships in YAML and let Lightdash join on demand
+- Users see all dimensions from all joined tables in one Explore, but Lightdash only joins the tables it needs for the current query
+
+**Status:** ✅ This is the whole point of the semantic layer. You shouldn't need to build wide tables if your joins and relationships are defined properly. Lightdash's symmetric aggregates ensure the numbers stay correct even when joining multiple fact tables.

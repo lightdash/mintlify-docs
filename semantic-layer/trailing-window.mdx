@@ -55,9 +55,9 @@ models:
 Then add a **table calculation** in the Explore view:
 
 ```sql
-AVG(${daily_activity.daily_active_users}) OVER (
-  ORDER BY ${daily_activity.activity_date}
-  ROWS 6 PRECEDING
+avg(${daily_activity.daily_active_users}) over (
+  order by ${daily_activity.activity_date}
+  rows 6 preceding
 )
 ```
 
@@ -82,41 +82,41 @@ _* Fewer than 7 rows available — average is over the available window._
 
 1. Define a date dimension and a daily metric in your YAML model.
 2. Open Explore, select the date (by day) and the metric.
-3. Click **+ Table calculation** and enter the `AVG(...) OVER (... ROWS 6 PRECEDING)` window function.
+3. Click **+ Table calculation** and enter the `avg(...) over (... rows 6 preceding)` window function.
 4. Sort by date ascending.
 5. Visualise as a line chart with both the raw metric and the rolling average as separate series.
 
 ## Workaround
 
-The table calculation is **row-based**: if your data has no row for Saturday and Sunday, `ROWS 6 PRECEDING` will cover 9 calendar days, not 7. For calendar-accurate windows, build a dbt model that fills gaps first:
+The table calculation is **row-based**: if your data has no row for Saturday and Sunday, `rows 6 preceding` will cover 9 calendar days, not 7. For calendar-accurate windows, build a dbt model that fills gaps first:
 
 ```sql
-WITH date_spine AS (
-  SELECT date_day
-  FROM {{ dbt_utils.date_spine(
+with date_spine as (
+  select date_day
+  from {{ dbt_utils.date_spine(
     datepart="day",
     start_date="'2024-03-01'",
     end_date="'2024-03-31'"
   ) }}
 ),
 
-filled AS (
-  SELECT
+filled as (
+  select
     ds.date_day,
-    COALESCE(da.daily_active_users, 0) AS daily_active_users
-  FROM date_spine ds
-  LEFT JOIN {{ ref('daily_activity') }} da
-    ON ds.date_day = da.activity_date
+    coalesce(da.daily_active_users, 0) as daily_active_users
+  from date_spine ds
+  left join {{ ref('daily_activity') }} da
+    on ds.date_day = da.activity_date
 )
 
-SELECT
+select
   date_day,
   daily_active_users,
-  AVG(daily_active_users) OVER (
-    ORDER BY date_day
-    ROWS 6 PRECEDING
-  ) AS rolling_7d_avg
-FROM filled
+  avg(daily_active_users) over (
+    order by date_day
+    rows 6 preceding
+  ) as rolling_7d_avg
+from filled
 ```
 
 Define your Lightdash metrics on this gap-filled model instead.

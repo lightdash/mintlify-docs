@@ -1,0 +1,83 @@
+---
+title: Time Series
+---
+
+# Time Series Patterns
+
+Patterns for analyzing data over time — comparisons, running totals, rolling averages, and point-in-time snapshots.
+
+---
+
+## 7. The Period Comparison
+
+**What you're trying to do:** Compare this month to last month, or this quarter to the same quarter last year.
+
+**Example question:** *"How does this month's revenue compare to the same month last year?"*
+
+**Lightdash features used:**
+- Period comparison (Beta) — click a metric column → "Add period comparison" → choose your offset
+- Or use Spotlight's built-in "Compare to: This time last year"
+
+**Status:** 🟡 Supported (Beta) — one comparison per chart. If you need multiple comparisons on the same chart (e.g. vs last month AND vs last year simultaneously), use a parameters-based workaround or table calculations with `lag()`.
+
+---
+
+## 8. The Running Total
+
+**What you're trying to do:** Show a cumulative sum that grows row by row. Useful for tracking progress toward a target.
+
+**Example question:** *"What's our cumulative revenue over the quarter?"*
+
+**Lightdash features used:**
+- `type: running_total` metric (Experimental) — define in YAML and it accumulates automatically
+- Or add a table calculation: `sum(${orders.total_revenue}) over (order by ${orders.order_date_month} rows unbounded preceding)`
+
+**Status:** 🟡 Supported (Experimental metric type) or via table calculation.
+
+---
+
+## 9. The Trailing Window
+
+**What you're trying to do:** Smooth out noisy daily data with a rolling average. Show a 7-day moving average of signups instead of the spiky daily numbers.
+
+**Example question:** *"What's our 7-day rolling average of daily active users?"*
+
+**Lightdash features used:**
+- Table calculation: `avg(${metrics.daily_active_users}) over (order by ${dim.date_day} rows 6 preceding)`
+
+**Status:** 🟡 Partial — works as a table calculation, but it's row-based, not calendar-day-based. If there are gaps in your dates (e.g. no data on weekends), the window will span more than 7 calendar days. There's no date spine or fill-missing-dates feature yet.
+
+**If you need calendar-accurate rolling windows:** Build a dbt model using `dbt_utils.date_spine` to fill in missing dates with zeros, then define your metric on that model.
+
+---
+
+## 13. The Snapshot
+
+**What you're trying to do:** Get the value of something at a point in time. What was our ARR at the end of each month? What was the account balance on the last day of the quarter?
+
+**Example question:** *"What was our MRR at the end of each month this year?"*
+
+**Lightdash features used:**
+- This is a semi-additive metric — you can't `sum` a balance across months (that would double-count). You need the last value per period. Lightdash doesn't have a native semi-additive metric type.
+
+**Status:** 🗺️ On roadmap.
+
+**What to do instead:** Build a dbt model that extracts the end-of-period value. Common patterns:
+
+```sql
+-- Option A: Filter to last day of each month
+select * from {{ ref('daily_mrr') }}
+where date = last_day(date)
+
+-- Option B: Window function for latest value per period
+select distinct
+  date_trunc('month', date) as month,
+  last_value(mrr) over (
+    partition by date_trunc('month', date)
+    order by date
+    rows between unbounded preceding and unbounded following
+  ) as end_of_month_mrr
+from {{ ref('daily_mrr') }}
+```
+
+Then define a simple `type: max` or `type: sum` metric on the pre-filtered model.

@@ -6,7 +6,7 @@ description: "Rank rows by a metric and show the Top N or Bottom N — customer 
 
 Sort, cut, number. The leaderboard is the simplest way to focus attention on what matters most.
 
-<Info>**Status:** ✅ Fully supported for simple Top N. Top N per group (e.g. top 3 products per region) requires a `PARTITION BY` table calculation.</Info>
+<Info>**Status:** ✅ Fully supported for simple Top N. Top N per group (e.g. top 3 products per region) requires a `partition by` table calculation.</Info>
 
 ## The question
 
@@ -59,7 +59,7 @@ models:
 Add a table calculation for the rank column:
 
 ```
-ROW_NUMBER() OVER (ORDER BY ${customers.lifetime_spend} DESC)
+row_number() over (order by ${customers.lifetime_spend} desc)
 ```
 
 ### Result
@@ -82,7 +82,7 @@ ROW_NUMBER() OVER (ORDER BY ${customers.lifetime_spend} DESC)
 1. Define a dimension for the entity you're ranking (e.g. `customer_name`) and a metric to rank by (e.g. `lifetime_spend`).
 2. In the Explore view, select both, then **sort by the metric descending**.
 3. Set the **row limit to 10** (or your desired N) in the query settings.
-4. Add a table calculation with `ROW_NUMBER() OVER (ORDER BY ${customers.lifetime_spend} DESC)` to display explicit rank numbers.
+4. Add a table calculation with `row_number() over (order by ${customers.lifetime_spend} desc)` to display explicit rank numbers.
 5. Save as a table chart or horizontal bar chart on your dashboard.
 
 ## Top N per group
@@ -90,23 +90,23 @@ ROW_NUMBER() OVER (ORDER BY ${customers.lifetime_spend} DESC)
 For "top 3 products per region" style queries, you need a partitioned rank:
 
 ```
-ROW_NUMBER() OVER (PARTITION BY ${orders.region} ORDER BY ${orders.total_revenue} DESC)
+row_number() over (partition by ${orders.region} order by ${orders.total_revenue} desc)
 ```
 
 Then filter the table calculation to keep only rows where `rank <= 3`. This works but gets unwieldy with many groups. If you hit that wall, pre-compute the rank in a dbt model:
 
 ```sql
 -- models/top_products_by_region.sql
-SELECT *
-FROM (
-  SELECT
+select *
+from (
+  select
     region,
     product_name,
     revenue,
-    ROW_NUMBER() OVER (
-      PARTITION BY region ORDER BY revenue DESC
-    ) AS rank
-  FROM {{ ref('product_sales') }}
+    row_number() over (
+      partition by region order by revenue desc
+    ) as rank
+  from {{ ref('product_sales') }}
 )
-WHERE rank <= 3
+where rank <= 3
 ```

@@ -1,0 +1,59 @@
+---
+title: Proportions & Rankings
+---
+
+# Proportions & Rankings
+
+Patterns for understanding relative performance — percentages of totals, benchmarks against averages, and ranked lists.
+
+---
+
+## 10. The Mix
+
+**What you're trying to do:** See what percentage each segment contributes to the whole. What share of revenue comes from each product line?
+
+**Example question:** *"What percentage of total revenue does each product represent?"*
+
+**Lightdash features used:**
+- `type: percent_of_total` metric (Experimental) — automatically computes each row as a share of the total
+- Or table calculation: `${orders.total_revenue} / sum(${orders.total_revenue}) over ()`
+
+**Status:** 🟡 Supported (Experimental metric) or via table calculation. The metric type is the cleaner option.
+
+---
+
+## 11. The Benchmark
+
+**What you're trying to do:** Compare each row to a group average or total. Is this sales rep above or below the team average? Is this region's growth better than the company-wide growth?
+
+**Example question:** *"Show each rep's revenue alongside the overall team average."*
+
+**Lightdash features used:**
+- This requires computing a metric at a different grain than the query (team average = no rep dimension, rep revenue = with rep dimension). Lightdash doesn't yet have a native way to mix these grains.
+
+**Status:** 🗺️ On roadmap.
+
+**What to do instead:** Build a dbt model that pre-computes the benchmark value (e.g. a CTE with `avg(revenue) over ()` or a separate summary table), then expose it as a dimension or metric in Lightdash. Example:
+
+```sql
+-- in your dbt model
+select
+  rep_name,
+  revenue,
+  avg(revenue) over () as team_avg_revenue
+from {{ ref('sales_by_rep') }}
+```
+
+---
+
+## 12. The Leaderboard
+
+**What you're trying to do:** Rank items and show the Top N (or Bottom N). Who are the top 10 customers by spend? Which products have the lowest margins?
+
+**Example question:** *"Who are our top 10 customers by lifetime spend?"*
+
+**Lightdash features used:**
+- Sort by your metric (descending), set the row limit to 10
+- Add a Rank table calculation: `row_number() over (order by ${customers.lifetime_spend} desc)`
+
+**Status:** ✅ Fully supported for simple Top N. For "Top N per group" (e.g. top 3 products per region), you need a table calculation with `partition by`, which works but gets complex.

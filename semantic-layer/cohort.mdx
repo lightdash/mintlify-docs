@@ -69,7 +69,7 @@ models:
           metrics:
             retention_rate:
               type: number
-              sql: "${total_active_users} / NULLIF(${cohort_size}, 0)"
+              sql: "${total_active_users} / nullif(${cohort_size}, 0)"
               format: "percent"
 ```
 
@@ -97,33 +97,33 @@ Pivot `cohort_month` into rows and `months_since_signup` into columns:
 Build a dbt model that computes the cohort grid from raw data:
 
 ```sql
-WITH user_cohorts AS (
-  SELECT
+with user_cohorts as (
+  select
     user_id,
-    DATE_TRUNC('month', created_at) AS cohort_month
-  FROM {{ ref('users') }}
+    date_trunc('month', created_at) as cohort_month
+  from {{ ref('users') }}
 ),
 
-monthly_activity AS (
-  SELECT
+monthly_activity as (
+  select
     u.user_id,
     u.cohort_month,
-    DATEDIFF('month', u.cohort_month, DATE_TRUNC('month', e.activity_date))
-      AS months_since_signup,
-    COUNT(DISTINCT u.user_id) AS active_users
-  FROM user_cohorts u
-  INNER JOIN {{ ref('events') }} e ON u.user_id = e.user_id
-  GROUP BY 1, 2, 3
+    datediff('month', u.cohort_month, date_trunc('month', e.activity_date))
+      as months_since_signup,
+    count(distinct u.user_id) as active_users
+  from user_cohorts u
+  inner join {{ ref('events') }} e on u.user_id = e.user_id
+  group by 1, 2, 3
 )
 
-SELECT
+select
   cohort_month,
   months_since_signup,
-  COUNT(DISTINCT user_id) AS active_users,
-  MAX(COUNT(DISTINCT user_id)) OVER (PARTITION BY cohort_month) AS cohort_size
-FROM monthly_activity
-WHERE months_since_signup >= 0
-GROUP BY 1, 2
+  count(distinct user_id) as active_users,
+  max(count(distinct user_id)) over (partition by cohort_month) as cohort_size
+from monthly_activity
+where months_since_signup >= 0
+group by 1, 2
 ```
 
 Point your Lightdash YAML at this model. The retention triangle appears in the Explore view with a single pivot.

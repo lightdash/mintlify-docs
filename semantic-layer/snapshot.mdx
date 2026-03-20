@@ -6,7 +6,7 @@ description: "Extract point-in-time values like end-of-month MRR and ARR — sem
 
 Get the value of a metric at a specific point in time — not summed, not averaged, but the actual value on that date.
 
-<Info>**Status:** ❌ Not yet composable — Lightdash has no native semi-additive metric type. Use a dbt model.</Info>
+<Info>**Status:** 🗺️ On roadmap — Lightdash has no native semi-additive metric type yet. Use a dbt model.</Info>
 
 ## The question
 
@@ -14,7 +14,7 @@ Get the value of a metric at a specific point in time — not summed, not averag
 
 ## Why it matters
 
-MRR of $82K on January 15th and $86K on January 31st does not mean January's MRR was $168K. Semi-additive metrics like MRR, ARR, and account balances represent a state, not a flow. Summing them across days is a classic analytics mistake — and one that's easy to make when your tool defaults to `SUM`.
+MRR of $82K on January 15th and $86K on January 31st does not mean January's MRR was $168K. Semi-additive metrics like MRR, ARR, and account balances represent a state, not a flow. Summing them across days is a classic analytics mistake — and one that's easy to make when your tool defaults to `sum`.
 
 ## Example
 
@@ -63,11 +63,11 @@ The simplest approach — works when you have data for every month-end date:
 
 ```sql
 -- models/monthly_mrr_snapshot.sql
-SELECT
-  DATE_TRUNC('month', date) AS month,
-  mrr AS end_of_month_mrr
-FROM {{ ref('daily_mrr') }}
-WHERE date = LAST_DAY(date)
+select
+  date_trunc('month', date) as month,
+  mrr as end_of_month_mrr
+from {{ ref('daily_mrr') }}
+where date = last_day(date)
 ```
 
 ### Option B: Window function for latest value per period
@@ -76,22 +76,22 @@ More robust — handles cases where the last day of the month might be missing:
 
 ```sql
 -- models/monthly_mrr_snapshot.sql
-WITH ranked AS (
-  SELECT
-    DATE_TRUNC('month', date) AS month,
+with ranked as (
+  select
+    date_trunc('month', date) as month,
     mrr,
-    ROW_NUMBER() OVER (
-      PARTITION BY DATE_TRUNC('month', date)
-      ORDER BY date DESC
-    ) AS rn
-  FROM {{ ref('daily_mrr') }}
+    row_number() over (
+      partition by date_trunc('month', date)
+      order by date desc
+    ) as rn
+  from {{ ref('daily_mrr') }}
 )
 
-SELECT
+select
   month,
-  mrr AS end_of_month_mrr
-FROM ranked
-WHERE rn = 1
+  mrr as end_of_month_mrr
+from ranked
+where rn = 1
 ```
 
 ### YAML for the snapshot model
