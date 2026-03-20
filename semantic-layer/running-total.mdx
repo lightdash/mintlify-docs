@@ -1,0 +1,80 @@
+---
+title: "The Running Total: Track Cumulative Progress"
+sidebarTitle: "The Running Total"
+description: "Build cumulative sums that grow row by row — track progress toward quarterly targets and visualise momentum in Lightdash."
+---
+
+A cumulative sum that grows with each row, turning individual period values into a running tally of progress.
+
+<Info>**Status:** 🟡 Supported (Experimental) — via `running_total` metric type or table calculation.</Info>
+
+## The question
+
+> "What's our cumulative revenue across Q1 2024, and when did we pass the $250K mark?"
+
+## Why it matters
+
+Monthly revenue tells you how each month performed. A running total tells you whether you'll hit your quarterly target. It turns discrete snapshots into a trajectory — and makes shortfalls visible weeks earlier.
+
+## Example
+
+### Source data
+
+`orders` table — monthly totals for Q1 2024:
+
+| order_month | monthly_revenue |
+|-------------|-----------------|
+| 2024-01-01  | $120,400        |
+| 2024-02-01  | $95,200         |
+| 2024-03-01  | $124,800        |
+
+### YAML — Approach A: `running_total` metric
+
+```yaml
+models:
+  - name: orders
+    columns:
+      - name: order_month
+        meta:
+          dimension:
+            type: date
+      - name: amount
+        meta:
+          dimension:
+            type: number
+          metrics:
+            monthly_revenue:
+              type: sum
+            cumulative_revenue:
+              type: running_total
+              sql: ${monthly_revenue}
+```
+
+### YAML — Approach B: Table calculation
+
+No YAML changes needed. In the Explore view, add a **table calculation**:
+
+```sql
+SUM(${orders.monthly_revenue}) OVER (
+  ORDER BY ${orders.order_month}
+  ROWS UNBOUNDED PRECEDING
+)
+```
+
+### Result
+
+| Month    | Monthly Revenue | Cumulative Revenue |
+|----------|-----------------|-------------------|
+| January  | $120,400        | $120,400          |
+| February | $95,200         | $215,600          |
+| March    | $124,800        | $340,400          |
+
+The $250K mark was crossed in February — with room to spare by quarter's end.
+
+## How to set it up
+
+1. Define a summable metric (e.g. `monthly_revenue` with `type: sum`) in your YAML.
+2. **Option A:** Add a second metric with `type: running_total` referencing the first metric. Then select both the date dimension and the cumulative metric in Explore.
+3. **Option B:** Query the date dimension and the base metric, then click **+ Table calculation** and enter the `SUM(...) OVER (...)` window function.
+4. Sort by date ascending — running totals only make sense in chronological order.
+5. Add a reference line at your target value to see when the cumulative line crosses it.

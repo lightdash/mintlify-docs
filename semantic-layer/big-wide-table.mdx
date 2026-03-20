@@ -1,0 +1,128 @@
+---
+title: "The Big Wide Table: Why You Don't Need One Anymore"
+sidebarTitle: "The Big Wide Table"
+description: "Replace massive denormalized tables with on-demand joins. Lightdash only joins what each query needs, keeping your warehouse lean and your numbers correct."
+---
+
+A semantic layer replaces the "throw everything into one table" approach with on-demand joins that fire only when needed.
+
+<Info>**Status:** ✅ This is the whole point of the semantic layer.</Info>
+
+## The question
+
+> "I want analysts to break down any metric by any dimension — without a 50-column mega-table."
+
+## Why it matters
+
+Wide tables seem convenient until you maintain them. Every new column means reprocessing the entire table. Unrelated facts get cross-joined. Storage bloats. And when two fact tables meet in one row, metrics inflate (see [The Fan-Out Trap](/semantic-layer/fan-out-trap)). Lightdash's join system gives users the same "everything at your fingertips" experience, but only joins the tables each query actually touches.
+
+## Example
+
+An e-commerce company currently maintains this denormalized monster:
+
+### The wide table (what you have today)
+
+| order_id | order_date | order_total | customer_id | customer_name | plan_tier | signup_date | country | product_id | product_name | category | sku | supplier | ticket_id | ticket_date | priority |
+|----------|------------|-------------|-------------|---------------|-----------|-------------|---------|------------|--------------|----------|-----|----------|-----------|-------------|----------|
+| 501 | 2025-03-01 | 89.00 | 42 | Bolt Inc | Pro | 2024-06-15 | US | 301 | Widget A | Widgets | W-301 | Acme | 801 | 2025-03-02 | high |
+| ... | ... | ... | ... | ... | ... | ... | ... | ... | ... | ... | ... | ... | ... | ... | ... |
+
+15+ columns. Every nightly rebuild takes 45 minutes and costs $12 in compute.
+
+### The clean alternative: 3 small tables + joins
+
+**orders** (4 columns)
+
+| order_id | customer_id | product_id | order_total |
+|----------|-------------|------------|-------------|
+| 501 | 42 | 301 | 89.00 |
+| 502 | 42 | 302 | 134.50 |
+| 503 | 17 | 301 | 67.00 |
+
+**customers** (5 columns)
+
+| customer_id | name | plan_tier | signup_date | country |
+|-------------|----------|-----------|-------------|---------|
+| 17 | Acme Corp | Free | 2024-01-10 | UK |
+| 42 | Bolt Inc | Pro | 2024-06-15 | US |
+
+**products** (4 columns)
+
+| product_id | product_name | category | sku |
+|------------|--------------|----------|-------|
+| 301 | Widget A | Widgets | W-301 |
+| 302 | Gadget B | Gadgets | G-302 |
+
+### YAML
+
+```yaml
+version: 2
+models:
+  - name: orders
+    meta:
+      primary_key: order_id
+      joins:
+        - join: customers
+          sql_on: ${orders.customer_id} = ${customers.customer_id}
+          relationship: many-to-one
+        - join: products
+          sql_on: ${orders.product_id} = ${products.product_id}
+          relationship: many-to-one
+    columns:
+      - name: order_total
+        meta:
+          metrics:
+            total_revenue:
+              type: sum
+              format: "usd"
+            order_count:
+              type: count
+
+  - name: customers
+    meta:
+      primary_key: customer_id
+    columns:
+      - name: plan_tier
+        meta:
+          dimension:
+            type: string
+      - name: country
+        meta:
+          dimension:
+            type: string
+
+  - name: products
+    meta:
+      primary_key: product_id
+    columns:
+      - name: category
+        meta:
+          dimension:
+            type: string
+```
+
+### Result
+
+An analyst selects `country` and `total_revenue`. Lightdash joins only `orders → customers` — the `products` table is never touched:
+
+| country | total_revenue |
+|---------|---------------|
+| US | $142,380 |
+| UK | $89,210 |
+
+A different analyst selects `category` and `order_count`. Now Lightdash joins only `orders → products`:
+
+| category | order_count |
+|----------|-------------|
+| Widgets | 1,204 |
+| Gadgets | 876 |
+
+Same Explore, different queries, different joins. No 15-column rebuild required.
+
+## How to set it up
+
+1. Break your wide table into normalized models in dbt — one per entity (orders, customers, products).
+2. Declare `primary_key` on each model.
+3. Define joins with the correct `relationship` (`many-to-one` for lookups, `one-to-many` for fact tables).
+4. Users open one Explore and see dimensions from all joined tables — Lightdash only fires the joins their query needs.
+5. For fact-to-fact joins (e.g. orders + tickets through customers), use `one-to-many` on both sides so symmetric aggregates kick in.

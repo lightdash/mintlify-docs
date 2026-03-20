@@ -1,0 +1,129 @@
+---
+title: "The Cohort: Retention Analysis by Signup Month"
+sidebarTitle: "The Cohort"
+description: "Group users by signup month and track retention over time — build the classic retention triangle with dbt and Lightdash."
+---
+
+Cohort analysis groups users by when they arrived, then tracks how many remain active as time passes.
+
+<Info>**Status:** 🟡 Supported if your cohort model exists in dbt — the semantic layer doesn't generate cohort-based time offsets on its own.</Info>
+
+## The question
+
+> "What percentage of users who signed up in January are still active three months later?"
+
+## Why it matters
+
+Overall retention rates are misleading. A company with 70% monthly retention might actually be improving — January's cohort retained 60%, but March's retained 78%. Without cohort isolation, a growing user base masks a deteriorating (or improving) product. The retention triangle is the only honest view.
+
+## Example
+
+A SaaS app tracking monthly active users by signup cohort.
+
+### Source data
+
+One row per cohort-month combination, produced by a dbt model.
+
+| cohort_month | months_since_signup | active_users |
+|--------------|---------------------|--------------|
+| 2025-01      | 0                   | 1,200        |
+| 2025-01      | 1                   | 840          |
+| 2025-01      | 2                   | 620          |
+| 2025-01      | 3                   | 510          |
+| 2025-02      | 0                   | 1,450        |
+| 2025-02      | 1                   | 1,015        |
+| 2025-02      | 2                   | 770          |
+| 2025-03      | 0                   | 1,680        |
+| 2025-03      | 1                   | 1,210        |
+| 2025-04      | 0                   | 1,920        |
+
+### YAML
+
+```yaml
+version: 2
+models:
+  - name: cohort_retention
+    meta:
+      joins: []
+    columns:
+      - name: cohort_month
+        meta:
+          dimension:
+            type: date
+            time_intervals:
+              - month
+      - name: months_since_signup
+        meta:
+          dimension:
+            type: number
+      - name: active_users
+        meta:
+          metrics:
+            total_active_users:
+              type: sum
+      - name: cohort_size
+        description: "Users at month 0 — joined via a window function in dbt"
+        meta:
+          dimension:
+            type: number
+          metrics:
+            retention_rate:
+              type: number
+              sql: "${total_active_users} / NULLIF(${cohort_size}, 0)"
+              format: "percent"
+```
+
+### Result — the retention triangle
+
+Pivot `cohort_month` into rows and `months_since_signup` into columns:
+
+| cohort_month | Month 0 | Month 1 | Month 2 | Month 3 |
+|--------------|---------|---------|---------|---------|
+| 2025-01      | 100%    | 70.0%   | 51.7%   | 42.5%   |
+| 2025-02      | 100%    | 70.0%   | 53.1%   | —       |
+| 2025-03      | 100%    | 72.0%   | —       | —       |
+| 2025-04      | 100%    | —       | —       | —       |
+
+## How to set it up
+
+1. Build a dbt model that creates the cohort grid (see workaround below).
+2. Define `cohort_month` and `months_since_signup` as **dimensions**.
+3. Define `total_active_users` as a **sum metric** and `retention_rate` as a **ratio metric** dividing active users by cohort size.
+4. In Lightdash, select `cohort_month`, `months_since_signup`, and `retention_rate`. Use the **Pivot** button to move `months_since_signup` to columns.
+5. Apply a `format: "percent"` to display clean percentages.
+
+## Workaround
+
+Build a dbt model that computes the cohort grid from raw data:
+
+```sql
+WITH user_cohorts AS (
+  SELECT
+    user_id,
+    DATE_TRUNC('month', created_at) AS cohort_month
+  FROM {{ ref('users') }}
+),
+
+monthly_activity AS (
+  SELECT
+    u.user_id,
+    u.cohort_month,
+    DATEDIFF('month', u.cohort_month, DATE_TRUNC('month', e.activity_date))
+      AS months_since_signup,
+    COUNT(DISTINCT u.user_id) AS active_users
+  FROM user_cohorts u
+  INNER JOIN {{ ref('events') }} e ON u.user_id = e.user_id
+  GROUP BY 1, 2, 3
+)
+
+SELECT
+  cohort_month,
+  months_since_signup,
+  COUNT(DISTINCT user_id) AS active_users,
+  MAX(COUNT(DISTINCT user_id)) OVER (PARTITION BY cohort_month) AS cohort_size
+FROM monthly_activity
+WHERE months_since_signup >= 0
+GROUP BY 1, 2
+```
+
+Point your Lightdash YAML at this model. The retention triangle appears in the Explore view with a single pivot.

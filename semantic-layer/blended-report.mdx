@@ -1,0 +1,129 @@
+---
+title: "The Blended Report: Combine Metrics from Different Sources"
+sidebarTitle: "The Blended Report"
+description: "Put metrics from unrelated data sources side by side — marketing spend alongside revenue, broken down by a shared dimension like channel."
+---
+
+A blended report places metrics from different systems into a single view, aligned on a shared dimension.
+
+<Info>**Status:** ❌ Not yet composable for truly unrelated tables — works when sources share a joinable dimension.</Info>
+
+## The question
+
+> "Show me marketing spend vs revenue by channel for last quarter."
+
+## Why it matters
+
+Marketing spend lives in your ad platform data. Revenue lives in your orders table. Executives want both in one chart to calculate ROI by channel. If the two tables share a join path — even through an intermediate dimension table — Lightdash can combine them. If they share nothing at all, you need a workaround.
+
+## Example
+
+A SaaS company tracks ad spend and order revenue across the same three acquisition channels.
+
+### Source data
+
+**marketing_spend**
+
+| spend_id | channel_id | amount |
+|----------|------------|--------|
+| 1 | 10 | 4,200 |
+| 2 | 20 | 7,800 |
+| 3 | 30 | 2,500 |
+
+**orders**
+
+| order_id | channel_id | order_total |
+|----------|------------|-------------|
+| 501 | 10 | 12,400 |
+| 502 | 10 | 8,300 |
+| 503 | 20 | 15,600 |
+| 504 | 30 | 6,100 |
+
+**channels**
+
+| channel_id | channel_name |
+|------------|--------------|
+| 10 | Paid Search |
+| 20 | Social |
+| 30 | Email |
+
+### Desired result
+
+| channel_name | total_spend | total_revenue | ROI |
+|--------------|-------------|---------------|------|
+| Paid Search | $4,200 | $20,700 | 4.9× |
+| Social | $7,800 | $15,600 | 2.0× |
+| Email | $2,500 | $6,100 | 2.4× |
+
+### YAML
+
+Because both fact tables join to `channels`, Lightdash can blend them with symmetric aggregates:
+
+```yaml
+version: 2
+models:
+  - name: channels
+    meta:
+      primary_key: channel_id
+      joins:
+        - join: marketing_spend
+          sql_on: ${channels.channel_id} = ${marketing_spend.channel_id}
+          relationship: one-to-many
+        - join: orders
+          sql_on: ${channels.channel_id} = ${orders.channel_id}
+          relationship: one-to-many
+    columns:
+      - name: channel_name
+        meta:
+          dimension:
+            type: string
+
+  - name: marketing_spend
+    meta:
+      primary_key: spend_id
+    columns:
+      - name: amount
+        meta:
+          metrics:
+            total_spend:
+              type: sum
+              format: "usd"
+
+  - name: orders
+    meta:
+      primary_key: order_id
+    columns:
+      - name: order_total
+        meta:
+          metrics:
+            total_revenue:
+              type: sum
+              format: "usd"
+```
+
+### Result
+
+Explore `channels`, select `channel_name`, `total_spend`, and `total_revenue`. Lightdash aggregates each fact table in its own CTE — no fan-out.
+
+## How to set it up
+
+1. Identify a shared dimension both sources can join to (here, `channels`).
+2. Declare `primary_key` on every model and `relationship: one-to-many` on the joins.
+3. Explore from the shared dimension table and select metrics from both fact tables.
+4. Add a derived metric for ROI if needed: `sql: ${total_revenue} / NULLIF(${total_spend}, 0)`.
+
+## Workaround: no shared dimension
+
+If the two sources share no join path at all, Lightdash cannot combine them in a single Explore query today. Pre-join in dbt instead:
+
+```sql
+SELECT
+  COALESCE(s.channel, r.channel) AS channel,
+  s.total_spend,
+  r.total_revenue
+FROM {{ ref('spend_by_channel') }} s
+FULL OUTER JOIN {{ ref('revenue_by_channel') }} r
+  ON s.channel = r.channel
+```
+
+Define this staging model in Lightdash and explore it directly. Merged queries across unrelated Explores are on the roadmap.

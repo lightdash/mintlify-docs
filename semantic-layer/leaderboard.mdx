@@ -1,0 +1,112 @@
+---
+title: "The Leaderboard: Rank and Filter to Top N"
+sidebarTitle: "The Leaderboard"
+description: "Rank rows by a metric and show the Top N or Bottom N — customer leaderboards, product rankings, rep performance tables."
+---
+
+Sort, cut, number. The leaderboard is the simplest way to focus attention on what matters most.
+
+<Info>**Status:** ✅ Fully supported for simple Top N. Top N per group (e.g. top 3 products per region) requires a `PARTITION BY` table calculation.</Info>
+
+## The question
+
+> "Who are our top 10 customers by lifetime spend?"
+
+## Why it matters
+
+Pareto rules most businesses: a small share of customers drives a large share of revenue. A leaderboard makes that concentration visible and actionable — protect these accounts, model look-alikes, flag churn risk. Lightdash handles this natively with sort and row limits.
+
+## Example
+
+A B2B SaaS company ranking customers by total contract value.
+
+### Source data
+
+| customer_id | customer_name | total_spend |
+|-------------|---------------------|-------------|
+| C-201 | Acme Corp | 284,500 |
+| C-202 | Globex Inc | 192,300 |
+| C-203 | Initech | 178,400 |
+| C-204 | Umbrella Ltd | 156,200 |
+| C-205 | Wayne Enterprises | 143,800 |
+| C-206 | Stark Industries | 131,500 |
+| C-207 | Wonka Co | 98,200 |
+| C-208 | Dunder Mifflin | 87,600 |
+| C-209 | Hooli | 72,400 |
+| C-210 | Pied Piper | 64,900 |
+| C-211 | Bluth Company | 41,300 |
+| C-212 | Sterling Cooper | 38,700 |
+
+### YAML
+
+```yaml
+version: 2
+models:
+  - name: customers
+    columns:
+      - name: customer_name
+        meta:
+          dimension:
+            type: string
+      - name: total_spend
+        meta:
+          metrics:
+            lifetime_spend:
+              type: sum
+              format: "usd"
+```
+
+Add a table calculation for the rank column:
+
+```
+ROW_NUMBER() OVER (ORDER BY ${customers.lifetime_spend} DESC)
+```
+
+### Result
+
+| rank | customer_name | lifetime_spend |
+|------|---------------------|----------------|
+| 1 | Acme Corp | $284,500 |
+| 2 | Globex Inc | $192,300 |
+| 3 | Initech | $178,400 |
+| 4 | Umbrella Ltd | $156,200 |
+| 5 | Wayne Enterprises | $143,800 |
+| 6 | Stark Industries | $131,500 |
+| 7 | Wonka Co | $98,200 |
+| 8 | Dunder Mifflin | $87,600 |
+| 9 | Hooli | $72,400 |
+| 10 | Pied Piper | $64,900 |
+
+## How to set it up
+
+1. Define a dimension for the entity you're ranking (e.g. `customer_name`) and a metric to rank by (e.g. `lifetime_spend`).
+2. In the Explore view, select both, then **sort by the metric descending**.
+3. Set the **row limit to 10** (or your desired N) in the query settings.
+4. Add a table calculation with `ROW_NUMBER() OVER (ORDER BY ${customers.lifetime_spend} DESC)` to display explicit rank numbers.
+5. Save as a table chart or horizontal bar chart on your dashboard.
+
+## Top N per group
+
+For "top 3 products per region" style queries, you need a partitioned rank:
+
+```
+ROW_NUMBER() OVER (PARTITION BY ${orders.region} ORDER BY ${orders.total_revenue} DESC)
+```
+
+Then filter the table calculation to keep only rows where `rank <= 3`. This works but gets unwieldy with many groups. If you hit that wall, pre-compute the rank in a dbt model:
+
+```sql
+-- models/top_products_by_region.sql
+SELECT *
+FROM (
+  SELECT
+    region,
+    product_name,
+    revenue,
+    ROW_NUMBER() OVER (
+      PARTITION BY region ORDER BY revenue DESC
+    ) AS rank
+  FROM {{ ref('product_sales') }}
+)
+WHERE rank <= 3
+```

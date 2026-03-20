@@ -1,0 +1,95 @@
+---
+title: "The Lookup: Enrich Data Across Tables"
+sidebarTitle: "The Lookup"
+description: "Pull columns from related tables via joins — enrich orders with customer details, products with categories, or any many-to-one relationship."
+---
+
+Most interesting questions span more than one table. The Lookup joins related data so you can slice metrics by dimensions that live elsewhere.
+
+<Info>**Status:** ✅ Fully supported — Lightdash's join system handles many-to-one lookups cleanly.</Info>
+
+## The question
+
+> "Show me order revenue alongside each customer's plan tier."
+
+## Why it matters
+
+Your orders table knows what was bought. Your customers table knows who bought it and what plan they're on. Without a join, you can't answer "Do Pro-plan customers spend more?" Lightdash lets you define the relationship once in YAML, then any analyst can pull fields from either table without writing SQL.
+
+## Example
+
+Orders enriched with customer plan tier.
+
+### Source data
+
+**orders**
+
+| order_id | customer_id | order_total |
+|----------|-------------|-------------|
+| 1001 | 42 | 189.00 |
+| 1002 | 17 | 67.50 |
+| 1003 | 42 | 312.00 |
+| 1004 | 85 | 45.00 |
+| 1005 | 17 | 220.00 |
+
+**customers**
+
+| customer_id | name | plan_tier |
+|-------------|------|-----------|
+| 17 | Acme Corp | Free |
+| 42 | Bolt Inc | Pro |
+| 85 | Nova Ltd | Enterprise |
+
+### YAML
+
+```yaml
+version: 2
+models:
+  - name: orders
+    meta:
+      joins:
+        - join: customers
+          sql_on: ${orders.customer_id} = ${customers.customer_id}
+    columns:
+      - name: order_id
+        meta:
+          dimension:
+            type: number
+      - name: order_total
+        meta:
+          metrics:
+            total_revenue:
+              type: sum
+              format: "usd"
+
+  - name: customers
+    columns:
+      - name: customer_id
+        meta:
+          dimension:
+            type: number
+      - name: plan_tier
+        meta:
+          dimension:
+            type: string
+```
+
+### Result
+
+| plan_tier | total_revenue |
+|-----------|---------------|
+| Pro | $48,320 |
+| Enterprise | $31,870 |
+| Free | $12,450 |
+
+## How to set it up
+
+1. Add a `joins` entry under your base model's `meta`, specifying the target model and the `sql_on` condition.
+2. Define dimensions on the columns you want to pull from the joined table.
+3. In the Explore view, expand the joined model in the sidebar and select its dimensions alongside your base metrics.
+4. Run the query — Lightdash generates the `LEFT JOIN` automatically.
+
+## Tips
+
+- Joins are many-to-one by default. For one-to-many, the metric aggregation handles the fan-out correctly.
+- You can chain joins: orders → customers → accounts. Just define each hop in the respective model.

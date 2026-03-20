@@ -1,0 +1,84 @@
+---
+title: "The Ratio: Divide Metrics for Unit Economics"
+sidebarTitle: "The Ratio"
+description: "Divide one metric by another to get unit economics — revenue per user, conversion rate, average order value — using derived metrics in YAML."
+---
+
+Raw totals tell you scale. Ratios tell you efficiency. The Ratio pattern divides one metric by another, computed in a single query.
+
+<Info>**Status:** ✅ Fully supported — both metrics must be at the same grain.</Info>
+
+## The question
+
+> "What's our revenue per active user by month?"
+
+## Why it matters
+
+Revenue growing 20% sounds great — unless your user base grew 40%. Unit economics (revenue per user, cost per acquisition, conversion rate) separate healthy growth from expensive growth. Derived metrics let you define the formula once rather than recalculating it in every chart.
+
+## Example
+
+Monthly revenue and active users for an online store.
+
+### Source data
+
+| month | customer_id | order_total | is_active |
+|-------|-------------|-------------|-----------|
+| 2025-01 | 42 | 189.00 | true |
+| 2025-01 | 17 | 67.50 | true |
+| 2025-02 | 42 | 312.00 | true |
+| 2025-02 | 85 | 45.00 | true |
+| 2025-02 | 17 | 220.00 | true |
+| 2025-03 | 42 | 95.00 | true |
+
+### YAML
+
+```yaml
+version: 2
+models:
+  - name: monthly_activity
+    columns:
+      - name: month
+        meta:
+          dimension:
+            type: date
+      - name: order_total
+        meta:
+          metrics:
+            total_revenue:
+              type: sum
+              format: "usd"
+      - name: customer_id
+        meta:
+          metrics:
+            active_users:
+              type: count_distinct
+    meta:
+      metrics:
+        revenue_per_user:
+          type: number
+          sql: "${total_revenue} / NULLIF(${active_users}, 0)"
+          format: "usd"
+          round: 2
+```
+
+### Result
+
+| month | total_revenue | active_users | revenue_per_user |
+|-------|---------------|--------------|------------------|
+| 2025-01 | $24,800 | 312 | $79.49 |
+| 2025-02 | $31,200 | 408 | $76.47 |
+| 2025-03 | $28,600 | 395 | $72.41 |
+
+## How to set it up
+
+1. Define the numerator metric (e.g. `total_revenue: type: sum`).
+2. Define the denominator metric (e.g. `active_users: type: count_distinct`).
+3. Create a derived metric at the model level with `type: number` and a `sql` expression referencing both metrics.
+4. Wrap the denominator in `NULLIF(..., 0)` to avoid division-by-zero errors.
+5. Select all three metrics in the Explore view to see the components and the ratio together.
+
+## Tips
+
+- Use `round: 2` to keep decimal places tidy.
+- Derived metrics can reference other derived metrics, so you can chain calculations like `gross_margin / revenue_per_user`.

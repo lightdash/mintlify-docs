@@ -1,0 +1,119 @@
+---
+title: "The Snapshot: Point-in-Time Values Like ARR and MRR"
+sidebarTitle: "The Snapshot"
+description: "Extract point-in-time values like end-of-month MRR and ARR — semi-additive metrics that can't be summed across time."
+---
+
+Get the value of a metric at a specific point in time — not summed, not averaged, but the actual value on that date.
+
+<Info>**Status:** ❌ Not yet composable — Lightdash has no native semi-additive metric type. Use a dbt model.</Info>
+
+## The question
+
+> "What was our MRR at the end of each month in 2024?"
+
+## Why it matters
+
+MRR of $82K on January 15th and $86K on January 31st does not mean January's MRR was $168K. Semi-additive metrics like MRR, ARR, and account balances represent a state, not a flow. Summing them across days is a classic analytics mistake — and one that's easy to make when your tool defaults to `SUM`.
+
+## Example
+
+### Source data
+
+`daily_mrr` table — a row for each day's MRR value:
+
+| date       | mrr      |
+|------------|----------|
+| 2024-01-29 | $81,200  |
+| 2024-01-30 | $81,600  |
+| 2024-01-31 | $82,400  |
+| 2024-02-27 | $84,100  |
+| 2024-02-28 | $85,300  |
+| 2024-02-29 | $85,900  |
+| 2024-03-29 | $88,200  |
+| 2024-03-30 | $88,700  |
+| 2024-03-31 | $89,400  |
+
+### What you need
+
+The last value per month — not a sum, not an average:
+
+### Result
+
+| Month    | End-of-Month MRR |
+|----------|------------------|
+| January  | $82,400          |
+| February | $85,900          |
+| March    | $89,400          |
+
+## How to set it up
+
+There is no YAML-only path for this today. You need a dbt model to extract the point-in-time value before Lightdash sees it.
+
+1. Create a dbt model that filters or window-functions to the end-of-period row (see below).
+2. Add the model to your Lightdash project with a simple `type: sum` or `type: max` metric — since there's only one row per month, both produce the correct result.
+3. Use the month dimension and the metric in Explore as normal.
+4. Refresh your project to pick up the new model.
+
+## Workaround
+
+### Option A: Filter to last day of month
+
+The simplest approach — works when you have data for every month-end date:
+
+```sql
+-- models/monthly_mrr_snapshot.sql
+SELECT
+  DATE_TRUNC('month', date) AS month,
+  mrr AS end_of_month_mrr
+FROM {{ ref('daily_mrr') }}
+WHERE date = LAST_DAY(date)
+```
+
+### Option B: Window function for latest value per period
+
+More robust — handles cases where the last day of the month might be missing:
+
+```sql
+-- models/monthly_mrr_snapshot.sql
+WITH ranked AS (
+  SELECT
+    DATE_TRUNC('month', date) AS month,
+    mrr,
+    ROW_NUMBER() OVER (
+      PARTITION BY DATE_TRUNC('month', date)
+      ORDER BY date DESC
+    ) AS rn
+  FROM {{ ref('daily_mrr') }}
+)
+
+SELECT
+  month,
+  mrr AS end_of_month_mrr
+FROM ranked
+WHERE rn = 1
+```
+
+### YAML for the snapshot model
+
+```yaml
+models:
+  - name: monthly_mrr_snapshot
+    columns:
+      - name: month
+        meta:
+          dimension:
+            type: date
+            time_intervals: ['month', 'quarter', 'year']
+      - name: end_of_month_mrr
+        meta:
+          dimension:
+            type: number
+          metrics:
+            mrr:
+              type: max
+              label: "End-of-Month MRR"
+              format: usd
+```
+
+Since the dbt model produces exactly one row per month, `type: max` simply returns the value. No double-counting, no aggregation surprises.

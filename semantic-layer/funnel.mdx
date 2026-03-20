@@ -1,0 +1,115 @@
+---
+title: "The Funnel: Measure Conversion Step by Step"
+sidebarTitle: "The Funnel"
+description: "Track drop-off through sequential steps — from signup to purchase — using conditional metrics and ratios in Lightdash."
+---
+
+Funnels measure how many users survive each step of a process, exposing exactly where you lose them.
+
+<Info>**Status:** 🟡 Supported if pre-modeled — the semantic layer doesn't natively express "did A then B then C in order." Pre-model your funnel steps in dbt and Lightdash handles the rest.</Info>
+
+## The question
+
+> "Of 10,000 signups last quarter, how many completed a profile and then made a first purchase?"
+
+## Why it matters
+
+Averages hide bottlenecks. A 21% end-to-end conversion rate sounds low, but the funnel reveals the real story: 62% complete their profile (reasonable), yet only 34% of those go on to purchase (the leak). Without step-by-step visibility, you'd throw money at the wrong stage.
+
+## Example
+
+An e-commerce app tracking three onboarding steps.
+
+### Source data
+
+Each row represents one user with boolean flags set by a dbt model.
+
+| user_id | signed_up | profile_completed | first_purchase |
+|---------|-----------|-------------------|----------------|
+| u_001   | true      | true              | true           |
+| u_002   | true      | true              | false          |
+| u_003   | true      | false             | false          |
+| u_004   | true      | true              | true           |
+| u_005   | true      | true              | false          |
+| ...     | ...       | ...               | ...            |
+
+### YAML
+
+```yaml
+version: 2
+models:
+  - name: user_funnel
+    meta:
+      joins: []
+    columns:
+      - name: signed_up
+        meta:
+          metrics:
+            signed_up_users:
+              type: count
+              filters:
+                - field: signed_up
+                  operator: equals
+                  value: true
+      - name: profile_completed
+        meta:
+          metrics:
+            profile_completed_users:
+              type: count
+              filters:
+                - field: profile_completed
+                  operator: equals
+                  value: true
+      - name: first_purchase
+        meta:
+          metrics:
+            purchased_users:
+              type: count
+              filters:
+                - field: first_purchase
+                  operator: equals
+                  value: true
+            signup_to_profile_rate:
+              type: number
+              sql: "${profile_completed_users} / NULLIF(${signed_up_users}, 0)"
+              format: "percent"
+            profile_to_purchase_rate:
+              type: number
+              sql: "${purchased_users} / NULLIF(${profile_completed_users}, 0)"
+              format: "percent"
+```
+
+### Result
+
+| step              | users  | step conversion | cumulative conversion |
+|-------------------|--------|-----------------|-----------------------|
+| Signed Up         | 10,000 | —               | 100%                  |
+| Profile Completed | 6,200  | 62.0%           | 62.0%                 |
+| First Purchase    | 2,100  | 33.9%           | 21.0%                 |
+
+## How to set it up
+
+1. Build a dbt model that collapses your event stream into one row per user with boolean or date columns for each funnel step.
+2. Define a **conditional count metric** for each step (filtered to `true`).
+3. Add **ratio metrics** dividing each step by the previous one.
+4. In Lightdash, select all step metrics and visualise with the **Funnel chart** type.
+5. Add a date dimension (e.g. `signup_week`) to track how conversion evolves over time.
+
+## Workaround
+
+If your data lives in a raw events table, create a dbt model that sessionizes events and flags each step:
+
+```sql
+SELECT
+  user_id,
+  MIN(CASE WHEN event = 'signup' THEN event_date END)   AS signed_up_at,
+  MIN(CASE WHEN event = 'profile_complete' THEN event_date END) AS profile_completed_at,
+  MIN(CASE WHEN event = 'purchase' THEN event_date END)  AS purchased_at,
+  event = 'signup'           IS NOT NULL AS signed_up,
+  MIN(CASE WHEN event = 'profile_complete' THEN event_date END) IS NOT NULL AS profile_completed,
+  MIN(CASE WHEN event = 'purchase' THEN event_date END)  IS NOT NULL AS first_purchase
+FROM {{ ref('events') }}
+GROUP BY 1
+```
+
+Point your Lightdash YAML at this model and the metrics above work as-is.

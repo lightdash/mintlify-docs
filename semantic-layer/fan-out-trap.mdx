@@ -1,0 +1,122 @@
+---
+title: "The Fan-Out Trap: Join Fact Tables Without Inflating Numbers"
+sidebarTitle: "The Fan-Out Trap"
+description: "Join two fact tables through a shared dimension without inflating metrics. Lightdash's symmetric aggregates keep your numbers correct automatically."
+---
+
+When two fact tables share a dimension, a naive join multiplies rows and inflates every metric. Symmetric aggregates fix this.
+
+<Info>**Status:** ✅ Fully supported — one of Lightdash's strongest features. Many BI tools get this wrong.</Info>
+
+## The question
+
+> "Show total order revenue and total support tickets per customer."
+
+## Why it matters
+
+Customer #42 placed 3 orders and filed 2 support tickets. A standard `LEFT JOIN` through the `customers` table produces 3 × 2 = 6 rows, doubling the ticket count and doubling the revenue. The numbers look plausible — which is what makes this bug so dangerous. Lightdash detects the fan-out risk from your `primary_key` and `relationship` declarations, then generates separate CTEs that aggregate each fact table independently before combining results.
+
+## Example
+
+An e-commerce company wants revenue and support load side by side, per customer.
+
+### Source data
+
+**orders**
+
+| order_id | customer_id | order_total |
+|----------|-------------|-------------|
+| 501 | 42 | 50.00 |
+| 502 | 42 | 75.00 |
+| 503 | 42 | 100.00 |
+
+**support_tickets**
+
+| ticket_id | customer_id | priority |
+|------------|-------------|----------|
+| 801 | 42 | high |
+| 802 | 42 | low |
+
+**customers**
+
+| customer_id | name |
+|-------------|------------|
+| 42 | Bolt Inc |
+
+### The wrong result (naive join)
+
+A single `LEFT JOIN` through customers fans out to 6 rows:
+
+| name | order_total | ticket_id |
+|----------|-------------|-----------|
+| Bolt Inc | 50.00 | 801 |
+| Bolt Inc | 50.00 | 802 |
+| Bolt Inc | 75.00 | 801 |
+| Bolt Inc | 75.00 | 802 |
+| Bolt Inc | 100.00 | 801 |
+| Bolt Inc | 100.00 | 802 |
+
+Aggregating this gives **$450 revenue** (doubled) and **6 tickets** (tripled). Both wrong.
+
+### YAML
+
+```yaml
+version: 2
+models:
+  - name: customers
+    meta:
+      primary_key: customer_id
+      joins:
+        - join: orders
+          sql_on: ${customers.customer_id} = ${orders.customer_id}
+          relationship: one-to-many
+        - join: support_tickets
+          sql_on: ${customers.customer_id} = ${support_tickets.customer_id}
+          relationship: one-to-many
+    columns:
+      - name: customer_id
+        meta:
+          dimension:
+            type: number
+      - name: name
+        meta:
+          dimension:
+            type: string
+
+  - name: orders
+    meta:
+      primary_key: order_id
+    columns:
+      - name: order_total
+        meta:
+          metrics:
+            total_revenue:
+              type: sum
+              format: "usd"
+
+  - name: support_tickets
+    meta:
+      primary_key: ticket_id
+    columns:
+      - name: ticket_id
+        meta:
+          metrics:
+            total_tickets:
+              type: count
+```
+
+### The correct result (symmetric aggregates)
+
+| name | total_revenue | total_tickets |
+|----------|---------------|---------------|
+| Bolt Inc | $225.00 | 2 |
+
+Lightdash aggregates orders and tickets in separate CTEs, then joins the pre-aggregated results. No inflation.
+
+## How to set it up
+
+1. Declare `primary_key` on every model — this tells Lightdash how to de-duplicate.
+2. Set `relationship: one-to-many` on each join from the shared dimension to its fact table.
+3. Define metrics (`sum`, `count`, etc.) on the fact tables as usual.
+4. Open the Explore view on the shared dimension (e.g. `customers`), select metrics from both fact tables, and run.
+5. Lightdash generates separate CTEs per fact table automatically — no extra configuration needed.

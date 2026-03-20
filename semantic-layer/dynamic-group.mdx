@@ -1,0 +1,122 @@
+---
+title: "The Dynamic Group: Let Users Choose Their Own Breakdown"
+sidebarTitle: "The Dynamic Group"
+description: "Use parameters and additional_dimensions to let users pick how data is sliced — by region, product, or segment — from a single chart."
+---
+
+One chart, many lenses. Instead of building three bar charts (by region, by product, by tier), define a parameter that swaps the GROUP BY dimension at query time.
+
+<Info>**Status:** ✅ Supported via parameters + additional_dimensions.</Info>
+
+## The question
+
+> "Show me total revenue — but let me toggle between viewing it by region, by product, or by plan tier."
+
+## Why it matters
+
+Dashboard sprawl is the silent killer of adoption. Stakeholders want flexibility; data teams want maintainability. A dynamic group gives users a dropdown to re-slice data on the fly, cutting the number of charts by 3-5x while keeping the dashboard clean.
+
+## Example
+
+A SaaS company tracks revenue across regions, products, and plan tiers.
+
+### Source data
+
+| order_id | region | product | plan_tier | revenue |
+|----------|--------|---------|-----------|---------|
+| 3001 | EMEA | Analytics | Pro | 1,200 |
+| 3002 | US | Dashboards | Enterprise | 4,800 |
+| 3003 | APAC | Analytics | Starter | 350 |
+| 3004 | US | Integrations | Pro | 2,100 |
+| 3005 | EMEA | Dashboards | Enterprise | 5,500 |
+| 3006 | US | Analytics | Pro | 1,800 |
+
+### YAML
+
+Define the parameter in `lightdash.config.yml`:
+
+```yaml
+parameters:
+  group_by_field:
+    label: "Group by"
+    description: "Choose how to break down revenue"
+    type: string
+    default: "region"
+    options:
+      - "region"
+      - "product"
+      - "plan_tier"
+```
+
+Use an additional dimension with a `CASE` expression to resolve the selected grouping:
+
+```yaml
+type: model
+name: orders
+
+dimensions:
+  - name: region
+    type: string
+  - name: product
+    type: string
+  - name: plan_tier
+    type: string
+  - name: revenue
+
+additional_dimensions:
+  dynamic_group:
+    label: "Dynamic Group"
+    type: string
+    sql: |
+      CASE
+        WHEN ${lightdash.parameters.group_by_field} = 'region' THEN ${TABLE}.region
+        WHEN ${lightdash.parameters.group_by_field} = 'product' THEN ${TABLE}.product
+        WHEN ${lightdash.parameters.group_by_field} = 'plan_tier' THEN ${TABLE}.plan_tier
+      END
+
+metrics:
+  total_revenue:
+    type: sum
+    sql: ${TABLE}.revenue
+    format: "usd"
+```
+
+### Result
+
+**User selects "region":**
+
+| dynamic_group | total_revenue |
+|---------------|---------------|
+| US | $4,310,000 |
+| EMEA | $2,180,000 |
+| APAC | $870,000 |
+
+**User switches to "product":**
+
+| dynamic_group | total_revenue |
+|---------------|---------------|
+| Dashboards | $3,420,000 |
+| Analytics | $2,190,000 |
+| Integrations | $1,750,000 |
+
+**User switches to "plan_tier":**
+
+| dynamic_group | total_revenue |
+|---------------|---------------|
+| Enterprise | $4,100,000 |
+| Pro | $2,380,000 |
+| Starter | $880,000 |
+
+Same chart, three perspectives — zero duplication.
+
+## How to set it up
+
+1. Add a `group_by_field` parameter to `lightdash.config.yml` with one option per dimension you want users to choose from.
+2. Define an `additional_dimensions` entry on the model that uses a `CASE` statement referencing `${lightdash.parameters.group_by_field}` to select the right column.
+3. Build a chart using the `dynamic_group` additional dimension and your revenue metric.
+4. Save the chart to a dashboard. The parameter dropdown appears automatically — users pick their breakdown without editing anything.
+
+## Tips
+
+- Keep `options` to 3-5 choices. Too many makes the dropdown overwhelming and the `CASE` statement unwieldy.
+- Label carefully: set `label` on the additional dimension to something users understand (e.g. "Breakdown" rather than "dynamic_group").

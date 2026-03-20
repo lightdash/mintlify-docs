@@ -1,0 +1,97 @@
+---
+title: "The Period Comparison: Month-over-Month and Year-over-Year"
+sidebarTitle: "The Period Comparison"
+description: "Compare metrics across time periods — month-over-month, year-over-year — to spot trends and measure growth in Lightdash."
+---
+
+Compare a metric in one period against the same metric in a prior period, side by side, with percentage change.
+
+<Info>**Status:** 🟡 Supported (Beta) — one comparison per chart. Multiple simultaneous comparisons need workarounds.</Info>
+
+## The question
+
+> "How does our monthly revenue in Q1 2024 compare to the same months in 2023?"
+
+## Why it matters
+
+Raw numbers in isolation are meaningless. Revenue of $142K in February sounds fine — until you learn it was $168K a year ago. Period comparisons turn static metrics into a growth story.
+
+## Example
+
+### Source data
+
+`orders` table — monthly revenue already aggregated:
+
+| order_month | total_revenue |
+|-------------|---------------|
+| 2023-01-01  | $131,200      |
+| 2023-02-01  | $168,400      |
+| 2023-03-01  | $144,900      |
+| 2024-01-01  | $152,800      |
+| 2024-02-01  | $142,100      |
+| 2024-03-01  | $178,600      |
+
+### YAML
+
+```yaml
+models:
+  - name: orders
+    meta:
+      joins: []
+    columns:
+      - name: order_month
+        meta:
+          dimension:
+            type: date
+            time_intervals: ['month', 'year']
+      - name: total_revenue
+        meta:
+          dimension:
+            type: number
+          metrics:
+            total_revenue:
+              type: sum
+```
+
+In the Explore view, click the `total_revenue` metric column header → **Add period comparison** → select **Previous year**.
+
+### Result
+
+| Month    | Revenue (2024) | Revenue (2023) | % Change |
+|----------|----------------|----------------|----------|
+| January  | $152,800       | $131,200       | +16.5%   |
+| February | $142,100       | $168,400       | −15.6%   |
+| March    | $178,600       | $144,900       | +23.3%   |
+
+## How to set it up
+
+1. Define a date dimension and a summable metric in your YAML model.
+2. Open an Explore chart with the date dimension (grouped by month) and your metric.
+3. Click the metric column header and select **Add period comparison**.
+4. Choose the offset: _Previous period_, _Previous year_, or a custom range.
+5. The comparison column and % change column appear automatically.
+
+Alternatively, in **Spotlight**, ask your question and use **Compare to: This time last year** to get the same result conversationally.
+
+## Workaround
+
+For multiple simultaneous comparisons (e.g. vs last month AND vs last year on the same chart), use a table calculation with `LAG()`:
+
+```sql
+-- vs previous month
+LAG(${orders.total_revenue}, 1) OVER (ORDER BY ${orders.order_month})
+
+-- vs same month last year
+LAG(${orders.total_revenue}, 12) OVER (ORDER BY ${orders.order_month})
+```
+
+Or build a dbt model that pivots prior periods into separate columns:
+
+```sql
+SELECT
+  order_month,
+  total_revenue,
+  LAG(total_revenue, 1) OVER (ORDER BY order_month) AS prev_month_revenue,
+  LAG(total_revenue, 12) OVER (ORDER BY order_month) AS prev_year_revenue
+FROM {{ ref('monthly_revenue') }}
+```

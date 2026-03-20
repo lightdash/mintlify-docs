@@ -1,0 +1,101 @@
+---
+title: "The Conditional Metric: Filtered Aggregations"
+sidebarTitle: "The Conditional Metric"
+description: "Count or sum only the rows that match a condition — like Pro plan users or Electronics revenue — using metric-level filters in your YAML."
+---
+
+Sometimes you need two numbers from the same table with different filters: total users and Pro users, total revenue and Electronics revenue. Conditional metrics solve this without subqueries.
+
+<Info>**Status:** ✅ Fully supported.</Info>
+
+## The question
+
+> "How many users are on the Pro plan versus total users, and what's our revenue from just Electronics?"
+
+## Why it matters
+
+A plain `COUNT(*)` counts everything. But stakeholders ask segmented questions: "How many paying customers? How much revenue from subscriptions only?" Without filtered metrics, you end up with brittle `CASE WHEN` logic scattered across queries. Define it once in YAML, reuse it everywhere.
+
+## Example
+
+An online store tracking users by plan and orders by category.
+
+### Source data
+
+**customers**
+
+| customer_id | name | plan_tier |
+|-------------|------|-----------|
+| 1 | Acme Corp | Pro |
+| 2 | Bolt Inc | Free |
+| 3 | Nova Ltd | Pro |
+| 4 | Dash Co | Enterprise |
+| 5 | Edge LLC | Free |
+
+**orders**
+
+| order_id | category | order_total |
+|----------|----------|-------------|
+| 1001 | Electronics | 349.00 |
+| 1002 | Apparel | 89.00 |
+| 1003 | Electronics | 129.00 |
+| 1004 | Home | 215.00 |
+| 1005 | Electronics | 599.00 |
+
+### YAML
+
+```yaml
+version: 2
+models:
+  - name: customers
+    columns:
+      - name: customer_id
+        meta:
+          metrics:
+            total_users:
+              type: count
+            pro_users:
+              type: count
+              filters:
+                - plan_tier: "Pro"
+      - name: plan_tier
+        meta:
+          dimension:
+            type: string
+
+  - name: orders
+    columns:
+      - name: order_total
+        meta:
+          metrics:
+            total_revenue:
+              type: sum
+              format: "usd"
+            electronics_revenue:
+              type: sum
+              format: "usd"
+              filters:
+                - category: "Electronics"
+      - name: category
+        meta:
+          dimension:
+            type: string
+```
+
+### Result
+
+| total_users | pro_users | total_revenue | electronics_revenue |
+|-------------|-----------|---------------|---------------------|
+| 1,248 | 487 | $284,600 | $118,900 |
+
+## How to set it up
+
+1. Define a standard metric (e.g. `total_users: type: count`).
+2. Duplicate it with a new name and add a `filters:` block specifying the condition.
+3. The filter uses the column name and the value to match: `- plan_tier: "Pro"`.
+4. Both metrics can be selected in the same query — Lightdash generates the appropriate `CASE WHEN` or `FILTER(WHERE ...)` clause.
+
+## Tips
+
+- You can combine multiple filter conditions — each list item is ANDed together.
+- For OR logic, create separate filtered metrics and add them with a derived metric.

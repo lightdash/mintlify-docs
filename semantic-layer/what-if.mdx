@@ -1,0 +1,95 @@
+---
+title: "The What-If: Scenario Analysis with Parameters"
+sidebarTitle: "The What-If"
+description: "Model discrete scenarios — like a 10% price increase — using Lightdash parameters. Users pick a scenario from a dropdown and see projected numbers instantly."
+---
+
+Change one assumption, see the ripple. Parameters let you bake scenario logic into a metric so business users can test "what if?" without touching SQL.
+
+<Info>**Status:** ✅ Supported for discrete scenarios (dropdown selection). No continuous sliders yet.</Info>
+
+## The question
+
+> "What would revenue look like if we raised prices by 5%, 10%, or 15%?"
+
+## Why it matters
+
+Pricing decisions are high-stakes and low-intuition. A 10% price hike sounds modest until you see it adds $640K across the product line. Parameters turn a static revenue report into a sandbox where finance can stress-test assumptions before committing.
+
+## Example
+
+A SaaS company with three subscription tiers wants to model a uniform price increase.
+
+### Source data
+
+| product | current_revenue |
+|---------|-----------------|
+| Starter Plan | $180,000 |
+| Pro Plan | $450,000 |
+| Enterprise Plan | $820,000 |
+
+### YAML
+
+Define the parameter in your `lightdash.config.yml`:
+
+```yaml
+parameters:
+  price_multiplier:
+    label: "Price increase scenario"
+    description: "Simulate a uniform price increase across all plans"
+    type: number
+    default: 1.0
+    options:
+      - 1.0
+      - 1.05
+      - 1.10
+      - 1.15
+```
+
+Reference it in your model:
+
+```yaml
+type: model
+name: subscriptions
+
+dimensions:
+  - name: product
+    type: string
+
+metrics:
+  current_revenue:
+    type: sum
+    sql: ${TABLE}.revenue
+    format: "usd"
+  projected_revenue:
+    label: "Projected Revenue"
+    type: number
+    sql: ${current_revenue} * ${lightdash.parameters.price_multiplier}
+    format: "usd"
+```
+
+### Result
+
+**User selects "1.10" (10% increase) from the dropdown:**
+
+| product | current_revenue | projected_revenue |
+|---------|-----------------|-------------------|
+| Starter Plan | $180,000 | $198,000 |
+| Pro Plan | $450,000 | $495,000 |
+| Enterprise Plan | $820,000 | $902,000 |
+| **Total** | **$1,450,000** | **$1,595,000** |
+
+The 10% increase adds $145K in projected annual revenue.
+
+## How to set it up
+
+1. Add a `parameters` block to `lightdash.config.yml` (project-wide) or to the model's `parameters` section (model-scoped). Define `options` for each scenario you want in the dropdown.
+2. Create a metric that references the parameter using `${lightdash.parameters.price_multiplier}` in its `sql`.
+3. Deploy your changes — Lightdash will surface the parameter as a dropdown in the Explore view.
+4. Build a chart with both `current_revenue` and `projected_revenue`, then save it to a dashboard. Users toggle scenarios without leaving the page.
+5. For dashboards, pin the parameter dropdown so it filters every tile that references the parameter.
+
+## Tips
+
+- Use descriptive `options` labels in your parameter (e.g. map `1.10` to "10% increase") by pairing with a string parameter and a `CASE` statement if you need friendlier names.
+- Combine with time-series metrics to project forward: "10% price increase applied to next quarter's forecast."

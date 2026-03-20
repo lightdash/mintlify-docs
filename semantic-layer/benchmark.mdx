@@ -1,0 +1,98 @@
+---
+title: "The Benchmark: Compare Each Row to the Group Average"
+sidebarTitle: "The Benchmark"
+description: "Compare individual performance against a group-level average or total — spot which reps, regions, or products beat the benchmark."
+---
+
+The question behind every performance review: how does this individual compare to the group?
+
+<Info>**Status:** ❌ Not yet composable — requires computing a metric at a different grain than the query. Use a dbt workaround.</Info>
+
+## The question
+
+> "Show each sales rep's quarterly revenue alongside the team average. Who's above, who's below?"
+
+## Why it matters
+
+A rep closing $82k sounds impressive until you learn the team averages $110k. Benchmarking turns isolated numbers into relative performance. It's the difference between reporting and managing. Lightdash can't yet mix grains in a single query (rep-level revenue next to team-level average), so you pre-compute the benchmark in dbt.
+
+## Example
+
+A SaaS company's Q4 sales team results.
+
+### Source data
+
+| rep_name | quarterly_revenue |
+|----------------|-------------------|
+| Alice Chen | 142,000 |
+| Bob Martinez | 98,500 |
+| Carol Wu | 115,200 |
+| David Okafor | 67,800 |
+| Emma Singh | 131,400 |
+
+Team average: **$110,980**
+
+### dbt model (the workaround)
+
+```sql
+-- models/sales_rep_benchmarked.sql
+SELECT
+  rep_name,
+  quarterly_revenue,
+  AVG(quarterly_revenue) OVER () AS team_avg_revenue,
+  quarterly_revenue - AVG(quarterly_revenue) OVER () AS vs_team_avg
+FROM {{ ref('sales_by_rep') }}
+```
+
+### YAML
+
+```yaml
+version: 2
+models:
+  - name: sales_rep_benchmarked
+    columns:
+      - name: rep_name
+        meta:
+          dimension:
+            type: string
+      - name: quarterly_revenue
+        meta:
+          metrics:
+            rep_revenue:
+              type: sum
+              format: "usd"
+      - name: team_avg_revenue
+        meta:
+          dimension:
+            type: number
+            format: "usd"
+      - name: vs_team_avg
+        meta:
+          dimension:
+            type: number
+            format: "usd"
+```
+
+### Result
+
+| rep_name | rep_revenue | team_avg_revenue | vs_team_avg |
+|----------------|-------------|------------------|-------------|
+| Alice Chen | $142,000 | $110,980 | +$31,020 |
+| Emma Singh | $131,400 | $110,980 | +$20,420 |
+| Carol Wu | $115,200 | $110,980 | +$4,220 |
+| Bob Martinez | $98,500 | $110,980 | −$12,480 |
+| David Okafor | $67,800 | $110,980 | −$43,180 |
+
+## How to set it up
+
+1. Create a dbt model that computes the benchmark using a window function (`AVG(...) OVER ()` for a flat average, or `PARTITION BY team` for per-group benchmarks).
+2. Include the difference column (`vs_team_avg`) so users don't have to calculate it mentally.
+3. Expose the pre-computed columns in your YAML as dimensions (they're already at the right grain).
+4. In Lightdash, select the rep dimension, the revenue metric, and the benchmark dimensions.
+5. Add a bar chart with a reference line at the team average for visual impact.
+
+## Workaround notes
+
+- The dbt model recalculates on every run, so the benchmark stays current.
+- For dynamic benchmarks (e.g. "compare to the median" vs "compare to the mean"), use a Lightdash parameter to toggle between pre-computed columns.
+- When Lightdash adds Level of Detail (LoD) metrics, this pattern will become native — no dbt model required.

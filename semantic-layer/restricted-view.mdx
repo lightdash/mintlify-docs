@@ -1,0 +1,106 @@
+---
+title: "The Restricted View: Row-Level Security for Multi-Tenant Dashboards"
+sidebarTitle: "The Restricted View"
+description: "Use user attributes and sql_filter to ensure each team sees only their own data — same dashboard, different rows. Works natively in embeds via JWT."
+---
+
+One dashboard, many audiences. Row-level security filters data at query time based on who is viewing, so the EMEA manager never sees US numbers and vice versa.
+
+<Info>**Status:** ✅ Fully supported — no need to build separate models per team.</Info>
+
+## The question
+
+> "Each regional manager should only see revenue for their own region."
+
+## Why it matters
+
+Without row-level security, you either build one dashboard per team (maintenance nightmare) or show everyone everything (compliance nightmare). User attributes solve both: a single dashboard automatically scopes data to the viewer. This is critical for embedded analytics where external customers must never see each other's data.
+
+## Example
+
+A SaaS company shares a revenue dashboard across three regional managers.
+
+### Source data
+
+| order_id | region | product | revenue |
+|----------|--------|---------|---------|
+| 5001 | US | Analytics | 89,000 |
+| 5002 | EMEA | Dashboards | 134,000 |
+| 5003 | US | Integrations | 212,000 |
+| 5004 | APAC | Analytics | 67,000 |
+| 5005 | EMEA | Analytics | 98,000 |
+| 5006 | US | Dashboards | 156,000 |
+
+### YAML
+
+Add `sql_filter` to the model using the `allowed_regions` user attribute:
+
+```yaml
+type: model
+name: orders
+
+sql_filter: ${TABLE}.region IN (${lightdash.attributes.allowed_regions})
+
+dimensions:
+  - name: region
+    type: string
+  - name: product
+    type: string
+
+metrics:
+  total_revenue:
+    type: sum
+    sql: ${TABLE}.revenue
+    format: "usd"
+```
+
+To restrict a sensitive field (e.g. `deal_margin`) to finance users only, use `required_attributes`:
+
+```yaml
+dimensions:
+  - name: deal_margin
+    type: number
+    required_attributes:
+      department: "finance"
+```
+
+### Result
+
+**EMEA manager logs in** (user attribute: `allowed_regions: ['EMEA']`):
+
+| region | product | total_revenue |
+|--------|---------|---------------|
+| EMEA | Dashboards | $1,340,000 |
+| EMEA | Analytics | $780,000 |
+| | **Total** | **$2,120,000** |
+
+**US manager logs in** (user attribute: `allowed_regions: ['US']`):
+
+| region | product | total_revenue |
+|--------|---------|---------------|
+| US | Integrations | $1,890,000 |
+| US | Dashboards | $1,560,000 |
+| US | Analytics | $890,000 |
+| | **Total** | **$4,340,000** |
+
+Same dashboard URL. Completely different data.
+
+## How to set it up
+
+1. **Create a user attribute** in Lightdash settings (e.g. `allowed_regions`). Assign values per user — `['EMEA']` for the EMEA manager, `['US', 'APAC']` for someone who covers both.
+2. **Add `sql_filter`** to your model referencing the attribute: `${TABLE}.region IN (${lightdash.attributes.allowed_regions})`. This filter is injected into every query automatically and cannot be removed by the user.
+3. **Use `required_attributes`** on any dimension that should be hidden from certain roles (e.g. margin data visible only to finance).
+4. **For embedded dashboards**, pass user attributes in the JWT when generating the embed URL:
+   ```js
+   const token = jwt.sign({
+     content: { type: 'dashboard', dashboardUuid: 'abc-123' },
+     userAttributes: { allowed_regions: ['EMEA'] }
+   }, LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
+   ```
+5. **Test** by switching between user accounts (or embed tokens) and confirming each sees only their scoped data.
+
+## Tips
+
+- Use the `IN` operator in `sql_filter` since user attributes can hold multiple values.
+- Combine row-level (`sql_filter`) and field-level (`required_attributes`) security for defence in depth.
+- User attributes flow through to AI agent queries automatically — no extra configuration needed.
