@@ -960,6 +960,121 @@ If you get the following error: `Model "TABLE" has a metric reference: ${TABLE.D
   Check out our [dimensions](/references/dimensions) and [metrics](/references/metrics) reference docs to see all of the other configurations you can use with your joined fields.
 </Warning>
 
+## Joins are not transitive
+
+Joins defined on one model are **not automatically available** when that model is joined to another model. Each explore only knows about the joins explicitly defined on the model you are exploring from.
+
+For example, if `products` joins `inventory` and `reviews` joins `products`, the `inventory` join is **not** carried over to the `reviews` explore. Any dimension or metric on `products` that references an `inventory` field (like `${ld_inventory.in_stock}`) will fail to compile when exploring from `reviews`.
+
+```
+reviews → products     ✅ works
+reviews → products → inventory   ❌ not automatic
+```
+
+This commonly surfaces when you define a metric on one model using a dimension from a joined table, and then join that model elsewhere. The metric references a field that doesn't exist in the new context.
+
+### How to resolve cross-join field references
+
+There are three approaches, depending on your use case:
+
+**Option 1: Materialize the field in dbt (recommended)**
+
+Compute the value as a real column in your dbt model so it has no cross-model dependency. This is the cleanest approach and avoids the issue entirely.
+
+```sql
+-- in your dbt model for products
+SELECT
+  *,
+  COALESCE(inventory.in_stock, 0) > 0 AS inventory_in_stock
+FROM products
+LEFT JOIN inventory ON products.sku = inventory.sku
+```
+
+**Option 2: Add a chained join to the other explore**
+
+Explicitly add the missing table as a [chained join](#chained-join-example) on any explore that needs it. This makes the referenced fields available in that context.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: reviews
+        meta:
+          joins:
+            - join: products
+              sql_on: ${reviews.sku} = ${products.sku}
+            - join: inventory
+              sql_on: ${products.sku} = ${inventory.sku}
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: reviews
+        config:
+          meta:
+            joins:
+              - join: products
+                sql_on: ${reviews.sku} = ${products.sku}
+              - join: inventory
+                sql_on: ${products.sku} = ${inventory.sku}
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: reviews
+
+    joins:
+      - join: products
+        sql_on: ${reviews.sku} = ${products.sku}
+      - join: inventory
+        sql_on: ${products.sku} = ${inventory.sku}
+    ```
+  </Tab>
+</Tabs>
+
+**Option 3: Exclude the dependent metrics with `fields`**
+
+Use the [`fields` tag](#only-select-a-subset-of-fields-from-a-join) on the join to omit metrics that depend on unavailable tables. The metric won't be accessible in the explore, but the error is suppressed.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: reviews
+        meta:
+          joins:
+            - join: products
+              sql_on: ${reviews.sku} = ${products.sku}
+              fields: [sku, product_title]  # omit metrics that reference inventory
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: reviews
+        config:
+          meta:
+            joins:
+              - join: products
+                sql_on: ${reviews.sku} = ${products.sku}
+                fields: [sku, product_title]  # omit metrics that reference inventory
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: reviews
+
+    joins:
+      - join: products
+        sql_on: ${reviews.sku} = ${products.sku}
+        fields: [sku, product_title]  # omit metrics that reference inventory
+    ```
+  </Tab>
+</Tabs>
+
 ## Hide joined tables
 
 Sometimes, you need to use an intermediate model to join two models together and don't want to show its columns in the list of available metrics/dimensions. You can add a `hidden: true` tag to joins, like this to hide these intermediate models:
