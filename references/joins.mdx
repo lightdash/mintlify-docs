@@ -964,11 +964,11 @@ If you get the following error: `Model "TABLE" has a metric reference: ${TABLE.D
 
 Joins defined on one model are **not automatically available** when that model is joined to another model. Each explore only knows about the joins explicitly defined on the model you are exploring from.
 
-For example, if `products` joins `inventory` and `reviews` joins `products`, the `inventory` join is **not** carried over to the `reviews` explore. Any dimension or metric on `products` that references an `inventory` field (like `${ld_inventory.in_stock}`) will fail to compile when exploring from `reviews`.
+For example, if `accounts` joins `deals` and `users` joins `accounts`, the `deals` join is **not** carried over to the `users` explore. Any dimension or metric on `accounts` that references a `deals` field (like `${deals.stage}`) will fail to compile when exploring from `users`.
 
 ```
-reviews → products     ✅ works
-reviews → products → inventory   ❌ not automatic
+users → accounts          ✅ works
+users → accounts → deals  ❌ not automatic
 ```
 
 This commonly surfaces when you define a metric on one model using a dimension from a joined table, and then join that model elsewhere. The metric references a field that doesn't exist in the new context.
@@ -982,12 +982,11 @@ There are three approaches, depending on your use case:
 Compute the value as a real column in your dbt model so it has no cross-model dependency. This is the cleanest approach and avoids the issue entirely.
 
 ```sql
--- in your dbt model for products
+-- in your dbt model for accounts
 SELECT
   *,
-  COALESCE(inventory.in_stock, 0) > 0 AS inventory_in_stock
-FROM products
-LEFT JOIN inventory ON products.sku = inventory.sku
+  (SELECT COUNT(*) FROM deals WHERE deals.account_id = accounts.id AND deals.stage = 'Won') AS won_deals_count
+FROM accounts
 ```
 
 **Option 2: Add a chained join to the other explore**
@@ -998,38 +997,38 @@ Explicitly add the missing table as a [chained join](#chained-join-example) on a
   <Tab title="dbt v1.9 and earlier">
     ```yaml
     models:
-      - name: reviews
+      - name: users
         meta:
           joins:
-            - join: products
-              sql_on: ${reviews.sku} = ${products.sku}
-            - join: inventory
-              sql_on: ${products.sku} = ${inventory.sku}
+            - join: accounts
+              sql_on: ${users.account_id} = ${accounts.id}
+            - join: deals
+              sql_on: ${accounts.id} = ${deals.account_id}
     ```
   </Tab>
   <Tab title="dbt v1.10+ and Fusion">
     ```yaml
     models:
-      - name: reviews
+      - name: users
         config:
           meta:
             joins:
-              - join: products
-                sql_on: ${reviews.sku} = ${products.sku}
-              - join: inventory
-                sql_on: ${products.sku} = ${inventory.sku}
+              - join: accounts
+                sql_on: ${users.account_id} = ${accounts.id}
+              - join: deals
+                sql_on: ${accounts.id} = ${deals.account_id}
     ```
   </Tab>
   <Tab title="Lightdash YAML">
     ```yaml
     type: model
-    name: reviews
+    name: users
 
     joins:
-      - join: products
-        sql_on: ${reviews.sku} = ${products.sku}
-      - join: inventory
-        sql_on: ${products.sku} = ${inventory.sku}
+      - join: accounts
+        sql_on: ${users.account_id} = ${accounts.id}
+      - join: deals
+        sql_on: ${accounts.id} = ${deals.account_id}
     ```
   </Tab>
 </Tabs>
@@ -1042,35 +1041,35 @@ Use the [`fields` tag](#only-select-a-subset-of-fields-from-a-join) on the join 
   <Tab title="dbt v1.9 and earlier">
     ```yaml
     models:
-      - name: reviews
+      - name: users
         meta:
           joins:
-            - join: products
-              sql_on: ${reviews.sku} = ${products.sku}
-              fields: [sku, product_title]  # omit metrics that reference inventory
+            - join: accounts
+              sql_on: ${users.account_id} = ${accounts.id}
+              fields: [id, name]  # omit metrics that reference deals
     ```
   </Tab>
   <Tab title="dbt v1.10+ and Fusion">
     ```yaml
     models:
-      - name: reviews
+      - name: users
         config:
           meta:
             joins:
-              - join: products
-                sql_on: ${reviews.sku} = ${products.sku}
-                fields: [sku, product_title]  # omit metrics that reference inventory
+              - join: accounts
+                sql_on: ${users.account_id} = ${accounts.id}
+                fields: [id, name]  # omit metrics that reference deals
     ```
   </Tab>
   <Tab title="Lightdash YAML">
     ```yaml
     type: model
-    name: reviews
+    name: users
 
     joins:
-      - join: products
-        sql_on: ${reviews.sku} = ${products.sku}
-        fields: [sku, product_title]  # omit metrics that reference inventory
+      - join: accounts
+        sql_on: ${users.account_id} = ${accounts.id}
+        fields: [id, name]  # omit metrics that reference deals
     ```
   </Tab>
 </Tabs>
