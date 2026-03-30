@@ -1,0 +1,187 @@
+---
+title: "Getting started with pre-aggregates"
+sidebarTitle: "Getting started"
+description: "Define pre-aggregates in your dbt YAML, configure scheduling, and start serving queries from materialized data."
+---
+
+## Defining pre-aggregates
+
+Pre-aggregates are defined in your dbt model's YAML file under the `pre_aggregates` key in the model's `meta` (or `config.meta` for dbt v1.10+).
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
+        meta:
+          pre_aggregates:
+            - name: orders_daily_by_status
+              dimensions:
+                - status
+              metrics:
+                - total_order_amount
+                - average_order_size
+              time_dimension: order_date
+              granularity: day
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: orders
+        config:
+          meta:
+            pre_aggregates:
+              - name: orders_daily_by_status
+                dimensions:
+                  - status
+                metrics:
+                  - total_order_amount
+                  - average_order_size
+                time_dimension: order_date
+                granularity: day
+    ```
+  </Tab>
+</Tabs>
+
+## Configuration reference
+
+| Property | Required | Description |
+|---|---|---|
+| `name` | Yes | Unique identifier for the pre-aggregate. Must contain only letters, numbers, and underscores. |
+| `dimensions` | Yes | List of dimension names to include. Must contain at least one dimension. |
+| `metrics` | Yes | List of metric names to include. Must contain at least one metric. |
+| `time_dimension` | No | A time-based dimension for date grouping. Must be paired with `granularity`. |
+| `granularity` | No | Time granularity for the `time_dimension`. Valid values: `hour`, `day`, `week`, `month`, `quarter`, `year`. Must be paired with `time_dimension`. |
+| `max_rows` | No | Maximum number of rows to store in the materialization. If the aggregation exceeds this limit, the result is truncated. Must be a positive integer. |
+| `refresh` | No | Schedule configuration for automatic re-materialization. See [Scheduling refreshes](#scheduling-refreshes). |
+
+<Note>
+  If you specify `time_dimension`, you **must** also specify `granularity`, and vice versa.
+</Note>
+
+## Multiple pre-aggregates per model
+
+You can define multiple pre-aggregates on the same model, each targeting different query patterns. For example, you might want a fine-grained daily pre-aggregate for detailed dashboards and a coarser monthly one for summary views:
+
+```yaml
+models:
+  - name: orders
+    config:
+      meta:
+        pre_aggregates:
+          - name: orders_daily_by_status
+            dimensions:
+              - status
+            metrics:
+              - total_order_amount
+              - order_count
+            time_dimension: order_date
+            granularity: day
+          - name: orders_monthly_summary
+            dimensions:
+              - status
+            metrics:
+              - total_order_amount
+            time_dimension: order_date
+            granularity: month
+            max_rows: 1000000
+```
+
+When a query matches multiple pre-aggregates, Lightdash picks the smallest one.
+
+## Scheduling refreshes
+
+By default, pre-aggregates are materialized when your dbt project compiles. You can also schedule automatic refreshes using cron expressions, using your project's configured timezone (defaults to UTC):
+
+```yaml
+pre_aggregates:
+  - name: orders_daily_by_status
+    dimensions:
+      - status
+    metrics:
+      - total_order_amount
+    time_dimension: order_date
+    granularity: day
+    refresh:
+      cron: "0 6 * * *"  # Every day at 6:00 AM UTC
+```
+
+### Materialization triggers
+
+Pre-aggregates can be materialized through four different triggers:
+
+| Trigger | When it happens |
+|---|---|
+| **Compile** | Automatically when your dbt project is compiled |
+| **Cron** | On the schedule you define in `refresh.cron` |
+| **Manual** | When you trigger a refresh from the Lightdash UI |
+
+## Row limits
+
+You can set `max_rows` to cap the size of a materialization. If the aggregation produces more rows than the limit, the result is truncated.
+
+<Warning>
+  When `max_rows` is applied, some data is excluded from the materialization. Queries that match the pre-aggregate may return incomplete results. Use this setting carefully and monitor for the "max rows applied" warning in the [monitoring UI](/references/pre-aggregates/monitoring).
+</Warning>
+
+
+## Complete example
+
+Here's a full model definition with a pre-aggregate, including joins, scheduling, and row limits:
+
+```yaml
+models:
+  - name: orders
+    config:
+      meta:
+        joins:
+          - join: customers
+            sql_on: ${customers.customer_id} = ${orders.customer_id}
+        pre_aggregates:
+          - name: orders_daily_by_status
+            dimensions:
+              - status
+              - customers.country
+            metrics:
+              - total_order_amount
+              - average_order_size
+            time_dimension: order_date
+            granularity: day
+            max_rows: 5000000
+            refresh:
+              cron: "0 6 * * *"
+    columns:
+      - name: order_date
+        config:
+          meta:
+            dimension:
+              type: date
+      - name: status
+        config:
+          meta:
+            dimension:
+              type: string
+      - name: amount
+        config:
+          meta:
+            metrics:
+              total_order_amount:
+                type: sum
+              average_order_size:
+                type: average
+```
+
+With this pre-aggregate, the following queries would be served from materialized data:
+
+- Total order amount by status, grouped by day, week, month, or year
+- Average order size by status, grouped by month
+- Total order amount filtered by status or customer country
+- Order amount by customer country, grouped by quarter
+
+These queries would **not** match and would query the warehouse directly:
+
+- Queries including `count_distinct` metrics
+- Queries grouped by a dimension not in the pre-aggregate (for example, `customer_id`)
+- Queries with hourly granularity (finer than the pre-aggregate's `day`)
+- Queries with custom dimensions, custom metrics, or table calculations
