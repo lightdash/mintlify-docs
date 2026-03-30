@@ -8,7 +8,7 @@ description: "Speed up dashboards and reduce warehouse costs by serving queries 
   **Availability:** Pre-aggregates are an [Early Access](/references/workspace/feature-maturity-levels) feature available on **Enterprise plans** only.
 </Info>
 
-Pre-aggregates let you define materialized summaries of your data directly in your dbt YAML. When a user runs a query in Lightdash, the system checks if the query can be answered from a pre-aggregate instead of querying your warehouse. If it matches, the query is served from the pre-computed results — making it significantly faster and reducing warehouse load.
+Pre-aggregates let you define materialized summaries of your data directly in your dbt YAML. When a user runs a query in Lightdash, the system checks if the query can be answered from a pre-aggregate instead of querying your warehouse. If it matches, the query is served from the pre-computed results, making it significantly faster and reducing warehouse load.
 
 This is especially useful for dashboards with high traffic or expensive aggregations that don't need real-time data.
 
@@ -30,7 +30,38 @@ Pre-aggregates follow a four-step cycle:
 3. **Match** — When a user runs a query, Lightdash checks if every requested dimension, metric, and filter is covered by a pre-aggregate.
 4. **Serve** — If a match is found, the query is served from the materialized data instead of hitting your warehouse.
 
-{/* TODO: Add architecture diagram here showing the define → materialize → match → serve cycle */}
+### Example
+
+Suppose you have an `orders` table with thousands of rows, and you define a pre-aggregate with dimensions `status` and metrics `total_amount` (sum) and `order_count` (count), with a `day` granularity on `order_date`.
+
+**Your warehouse data:**
+
+| order_date | status  | customer | amount |
+|---|---|---|---|
+| 2024-01-15 | shipped | Alice    | $100   |
+| 2024-01-15 | shipped | Bob      | $50    |
+| 2024-01-15 | pending | Charlie  | $75    |
+| 2024-01-16 | shipped | Alice    | $200   |
+| 2024-01-16 | pending | Charlie  | $30    |
+| ... | ... | ... | ... |
+
+**Lightdash materializes this into a pre-aggregate:**
+
+| order_date_day | status  | total_amount | order_count |
+|---|---|---|---|
+| 2024-01-15     | shipped | $150         | 2           |
+| 2024-01-15     | pending | $75          | 1           |
+| 2024-01-16     | shipped | $200         | 1           |
+| 2024-01-16     | pending | $30          | 1           |
+
+Now when a user queries "total amount by status, grouped by **month**", Lightdash re-aggregates from the daily pre-aggregate instead of scanning the full table:
+
+| order_date_month | status  | total_amount |
+|---|---|---|
+| January 2024     | shipped | $350         |
+| January 2024     | pending | $105         |
+
+This works because `sum` can be re-aggregated — summing daily sums gives the correct monthly sum.
 
 ## Query matching
 
@@ -41,7 +72,7 @@ When a user runs a query, Lightdash automatically checks if a pre-aggregate can 
 - Every dimension used in **filters** is included in the pre-aggregate
 - All metrics use [supported metric types](#supported-metric-types)
 - The query does not contain custom dimensions, custom metrics, or table calculations
-- If the query uses a time dimension, the requested granularity is **equal to or coarser** than the pre-aggregate's granularity (for example, a `day` pre-aggregate can serve `day`, `week`, `month`, or `year` queries — but not `hour`)
+- If the query uses a time dimension, the requested granularity is **equal to or coarser** than the pre-aggregate's granularity (for example, a `day` pre-aggregate can serve `day`, `week`, `month`, or `year` queries, but not `hour`)
 
 When multiple pre-aggregates match a query, Lightdash picks the smallest one (fewest dimensions, then fewest metrics as tiebreaker).
 
@@ -59,13 +90,26 @@ Pre-aggregates support metrics that can be re-aggregated from pre-computed resul
 - `max`
 - `average`
 
-### Unsupported metric types
+### Current limitations
 
-Queries that include any of the following metric types will **not** match a pre-aggregate and will query the warehouse directly:
+Not all metrics work this way. Consider `count_distinct` with the same daily pre-aggregate from above. If a daily pre-aggregate stores "2 distinct customers on 2024-01-15" and "1 distinct customer on 2024-01-16", you can't sum those to get the monthly distinct count — Alice ordered on both days and would be counted twice:
 
-- `count_distinct`, `sum_distinct`, `average_distinct`
+| order_date_day | status  | distinct_customers |
+|---|---|---|
+| 2024-01-15     | shipped | 2 (Alice, Bob)     |
+| 2024-01-16     | shipped | 1 (Alice)          |
+
+Re-aggregating: 2 + 1 = **3**, but the correct monthly answer is **2** (Alice, Bob). The pre-aggregate lost track of *which* customers were counted.
+
+We're investigating supporting `count_distinct` through approximation algorithms. [Follow this issue](https://github.com/lightdash/lightdash/issues/21536) for updates.
+
+For similar reasons, the following metric types are also not supported:
+
+- `sum_distinct`, `average_distinct`
 - `median`, `percentile`
 - `percent_of_total`, `percent_of_previous`
 - `running_total`
+- Custom SQL metrics — [Follow this issue](https://github.com/lightdash/lightdash/issues/21537)
 - `number`, `string`, `date`, `timestamp`, `boolean`
-- Metrics with custom SQL expressions
+
+For metrics that can't be pre-aggregated, consider using [caching](/guides/developer/caching) instead.
