@@ -1,0 +1,71 @@
+---
+title: "Pre-aggregates"
+sidebarTitle: "Overview"
+description: "Speed up dashboards and reduce warehouse costs by serving queries from pre-computed, materialized summaries."
+---
+
+<Info>
+  **Availability:** Pre-aggregates are an [Early Access](/references/workspace/feature-maturity-levels) feature available on **Enterprise plans** only.
+</Info>
+
+Pre-aggregates let you define materialized summaries of your data directly in your dbt YAML. When a user runs a query in Lightdash, the system checks if the query can be answered from a pre-aggregate instead of querying your warehouse. If it matches, the query is served from the pre-computed results — making it significantly faster and reducing warehouse load.
+
+This is especially useful for dashboards with high traffic or expensive aggregations that don't need real-time data.
+
+<CardGroup cols={2}>
+  <Card title="Getting started" icon="rocket" horizontal href="/references/pre-aggregates/getting-started">
+    Define pre-aggregates in your dbt project and configure scheduling.
+  </Card>
+  <Card title="Monitoring and debugging" icon="chart-mixed" horizontal href="/references/pre-aggregates/monitoring">
+    Track materialization status, debug query matching, and view hit/miss stats.
+  </Card>
+</CardGroup>
+
+## How it works
+
+Pre-aggregates follow a four-step cycle:
+
+1. **Define** — You add a `pre_aggregates` block to your dbt model YAML, specifying which dimensions and metrics to include.
+2. **Materialize** — Lightdash runs the aggregation query against your warehouse and stores the results. This happens automatically on compile, on a cron schedule you define, or when you trigger it manually.
+3. **Match** — When a user runs a query, Lightdash checks if every requested dimension, metric, and filter is covered by a pre-aggregate.
+4. **Serve** — If a match is found, the query is served from the materialized data instead of hitting your warehouse.
+
+{/* TODO: Add architecture diagram here showing the define → materialize → match → serve cycle */}
+
+## Query matching
+
+When a user runs a query, Lightdash automatically checks if a pre-aggregate can serve the results. A pre-aggregate matches when **all** of the following are true:
+
+- Every dimension in the query is included in the pre-aggregate
+- Every metric in the query is included in the pre-aggregate
+- Every dimension used in **filters** is included in the pre-aggregate
+- All metrics use [supported metric types](#supported-metric-types)
+- The query does not contain custom dimensions, custom metrics, or table calculations
+- If the query uses a time dimension, the requested granularity is **equal to or coarser** than the pre-aggregate's granularity (for example, a `day` pre-aggregate can serve `day`, `week`, `month`, or `year` queries — but not `hour`)
+
+When multiple pre-aggregates match a query, Lightdash picks the smallest one (fewest dimensions, then fewest metrics as tiebreaker).
+
+### Dimensions from joined tables
+
+Pre-aggregates support dimensions from joined tables. Reference them by their full name (for example, `customers.first_name`) in the `dimensions` list.
+
+## Supported metric types
+
+Pre-aggregates support metrics that can be re-aggregated from pre-computed results:
+
+- `sum`
+- `count`
+- `min`
+- `max`
+- `average`
+
+### Unsupported metric types
+
+Queries that include any of the following metric types will **not** match a pre-aggregate and will query the warehouse directly:
+
+- `count_distinct`, `sum_distinct`, `average_distinct`
+- `median`, `percentile`
+- `percent_of_total`, `percent_of_previous`
+- `running_total`
+- `number`, `string`, `date`, `timestamp`, `boolean`
+- Metrics with custom SQL expressions
