@@ -6,7 +6,7 @@ description: "Define pre-aggregates in your dbt YAML, configure scheduling, and 
 
 ## Defining pre-aggregates
 
-Pre-aggregates are defined in your dbt model's YAML file under the `pre_aggregates` key in the model's `meta` (or `config.meta` for dbt v1.10+).
+Pre-aggregates are defined under the `pre_aggregates` key in your model configuration.
 
 <Tabs>
   <Tab title="dbt v1.9 and earlier">
@@ -40,6 +40,22 @@ Pre-aggregates are defined in your dbt model's YAML file under the `pre_aggregat
                   - average_order_size
                 time_dimension: order_date
                 granularity: day
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    pre_aggregates:
+      - name: orders_daily_by_status
+        dimensions:
+          - status
+        metrics:
+          - total_order_amount
+          - average_order_size
+        time_dimension: order_date
+        granularity: day
     ```
   </Tab>
 </Tabs>
@@ -130,47 +146,128 @@ You can set `max_rows` to cap the size of a materialization. If the aggregation 
 
 Here's a full model definition with a pre-aggregate, including joins, scheduling, and row limits:
 
-```yaml
-models:
-  - name: orders
-    config:
-      meta:
-        joins:
-          - join: customers
-            sql_on: ${customers.customer_id} = ${orders.customer_id}
-        pre_aggregates:
-          - name: orders_daily_by_status
-            dimensions:
-              - status
-              - customers.country
-            metrics:
-              - total_order_amount
-              - average_order_size
-            time_dimension: order_date
-            granularity: day
-            max_rows: 5000000
-            refresh:
-              cron: "0 6 * * *"
-    columns:
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
+        meta:
+          joins:
+            - join: customers
+              sql_on: ${customers.customer_id} = ${orders.customer_id}
+          pre_aggregates:
+            - name: orders_daily_by_status
+              dimensions:
+                - status
+                - customers.country
+              metrics:
+                - total_order_amount
+                - average_order_size
+              time_dimension: order_date
+              granularity: day
+              max_rows: 5000000
+              refresh:
+                cron: "0 6 * * *"
+        columns:
+          - name: order_date
+            meta:
+              dimension:
+                type: date
+          - name: status
+            meta:
+              dimension:
+                type: string
+          - name: amount
+            meta:
+              metrics:
+                total_order_amount:
+                  type: sum
+                average_order_size:
+                  type: average
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: orders
+        config:
+          meta:
+            joins:
+              - join: customers
+                sql_on: ${customers.customer_id} = ${orders.customer_id}
+            pre_aggregates:
+              - name: orders_daily_by_status
+                dimensions:
+                  - status
+                  - customers.country
+                metrics:
+                  - total_order_amount
+                  - average_order_size
+                time_dimension: order_date
+                granularity: day
+                max_rows: 5000000
+                refresh:
+                  cron: "0 6 * * *"
+        columns:
+          - name: order_date
+            config:
+              meta:
+                dimension:
+                  type: date
+          - name: status
+            config:
+              meta:
+                dimension:
+                  type: string
+          - name: amount
+            config:
+              meta:
+                metrics:
+                  total_order_amount:
+                    type: sum
+                  average_order_size:
+                    type: average
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    joins:
+      - join: customers
+        sql_on: ${customers.customer_id} = ${orders.customer_id}
+
+    pre_aggregates:
+      - name: orders_daily_by_status
+        dimensions:
+          - status
+          - customers.country
+        metrics:
+          - total_order_amount
+          - average_order_size
+        time_dimension: order_date
+        granularity: day
+        max_rows: 5000000
+        refresh:
+          cron: "0 6 * * *"
+
+    dimensions:
       - name: order_date
-        config:
-          meta:
-            dimension:
-              type: date
+        type: date
       - name: status
-        config:
-          meta:
-            dimension:
-              type: string
-      - name: amount
-        config:
-          meta:
-            metrics:
-              total_order_amount:
-                type: sum
-              average_order_size:
-                type: average
-```
+        type: string
+
+    metrics:
+      total_order_amount:
+        type: sum
+        sql: ${TABLE}.amount
+      average_order_size:
+        type: average
+        sql: ${TABLE}.amount
+    ```
+  </Tab>
+</Tabs>
 
 With this pre-aggregate, the following queries would be served from materialized data:
 
