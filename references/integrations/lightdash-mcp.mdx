@@ -7,12 +7,14 @@ icon: "hexagon-nodes"
   Available to all Lightdash Cloud users.
 </Check>
 
-The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) enables AI assistants (e.g. ChatGPT, Claude) and custom agents to directly interact with your Lightdash data. This integration allows MCP clients to explore your data models, search for metrics and dimensions, and provide data-driven insights - all through natural conversation. You can use MCP with existing AI assistants or integrate it into your own custom agents and automated workflows. MCP uses secure OAuth authentication and respects all your existing access controls, ensuring data remains protected.
+The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) enables AI assistants (e.g. ChatGPT, Claude, OpenAI Codex) and custom agents to directly interact with your Lightdash data. This integration allows MCP clients to explore your data models, search for metrics and dimensions, and provide data-driven insights - all through natural conversation. You can use MCP with existing AI assistants or integrate it into your own custom agents and automated workflows. MCP uses secure OAuth authentication and respects all your existing access controls, ensuring data remains protected.
 
 With MCP, your AI assistant becomes a data analyst that can:
 
 - Browse and understand your data models
 - Find relevant metrics and dimensions
+- Run queries and generate visualizations
+- Leverage your AI agents' domain expertise and verified answers
 - Switch between different projects seamlessly
 - Respect your data governance and access controls
 
@@ -29,7 +31,7 @@ Setting up MCP is quick and straightforward. You can connect your AI assistant t
 ### Prerequisites
 
 - A Lightdash Cloud account or Enterprise account with MCP enabled
-- An MCP-compatible AI assistant (e.g., Claude.ai, Claude Desktop, ChatGPT)
+- An MCP-compatible AI assistant (e.g., Claude.ai, Claude Desktop, ChatGPT, OpenAI Codex)
 
 ### Network requirements
 
@@ -148,6 +150,31 @@ ChatGPT support for MCP is coming soon\! Stay tuned for updates.
 </Accordion>
 */}
 
+#### OpenAI Codex
+
+<Accordion title="Setup instructions">
+  1. **Navigate to Settings**
+
+     Go to **Settings > MCP Servers** and click **Add Server**.
+
+  2. **Configure Connection**
+
+     Select **Streamable HTTP** as the transport type and enter your Lightdash MCP URL.
+
+     <Frame>
+       ![Select Streamable HTTP and enter your Lightdash instance MCP URL](/images/references/integrations/lightdash-mcp/codex-01-add-mcp-server.png)
+     </Frame>
+     - **URL:** `https://<your_instance_name>.lightdash.cloud/api/v1/mcp`
+
+  3. **Authenticate**
+
+     Once the server is created, an **Authenticate** option will appear in the MCP Servers list. Click it to complete the OAuth flow with your Lightdash account.
+
+     <Frame>
+       ![Click Authenticate next to the Lightdash server to complete the OAuth flow](/images/references/integrations/lightdash-mcp/codex-02-oauth-flow.png)
+     </Frame>
+</Accordion>
+
 #### Claude Code CLI
 
 For developers using Claude Code CLI:
@@ -216,57 +243,11 @@ This will open an interactive inspector where you can explore available tools an
 
 {/* TODO: Add screenshots of the MCP inspector interface */}
 
-## Configuring your AI assistant
-
-Since MCP provides raw tools without built-in intelligence, your AI assistant needs proper instructions to use Lightdash MCP effectively. We recommend adding custom instructions to guide the AI in using the tools correctly.
-
-<Accordion title="Setting up custom instructions for Claude">
-  <Frame>
-    ![Setting up custom instructions for Lightdash MCP in Claude](/images/references/integrations/lightdash-mcp/setting-up-custom-instructions-01-claude.png)
-  </Frame>
-  Here's a suggested template for optimizing Lightdash MCP usage. Feel free to modify these instructions based on your specific needs and use cases:
-
-  ```
-  ## Lightdash Tool Usage Best Practices
-  
-  ### Initial Data Discovery Pattern
-  1. **Start with explore discovery**: Use `find_explores` with `exploreName: null` to see all available tables
-  2. **Examine table descriptions** to identify the most relevant explore for your query
-  3. **Search for specific fields** using `find_fields` with descriptive search terms
-  4. **Execute queries** once you have the correct field IDs
-  
-  ### Common Parameter Mistakes to Avoid
-  - **find_explores**: Pass `null` (not boolean `true`) for exploreName to get all explores
-  - **find_explores**: Pass _exact explore name_ as `exploreName` if you want to zoom in on particular explore
-  - **find_fields**: Always use the exact `fieldId` values returned from field searches
-  - **Page parameters**: Use numbers (e.g., `1` by default) . NEVER use `NaN`or `"null"` (null as a string)
-  
-  ### Field Search Strategy
-  - Search for business terms (e.g., "basket total", "partner name") not technical field names
-  - Use multiple search queries in one call to find related fields efficiently
-  - Look for both dimensions (for grouping) and metrics (for aggregation)
-
-  ### When to Use run_sql vs run_metric_query
-  - **Prefer `run_metric_query`** for standard analysis using defined metrics and dimensions — it leverages the semantic layer and ensures consistent definitions
-  - **Use `run_sql`** for ad-hoc queries, cross-table joins not modeled in explores, or when the user explicitly requests raw SQL
-  - `run_sql` defaults to 500 rows (max 5000) — use the `limit` parameter to control result size
-  - Use the SQL dialect appropriate for the connected warehouse (e.g., PostgreSQL, BigQuery, Snowflake)
-  ```
-
-  <Info>
-    For Claude Code CLI users, you can add these instructions to your project's `CLAUDE.md` file instead of configuring them in the web interface.
-  </Info>
-</Accordion>
-
 ## What it can do
 
 ### Core capabilities
 
 MCP provides AI assistants with powerful tools to interact with your Lightdash data:
-
-#### System information
-
-- **Get Lightdash version** - Check the current version of your Lightdash instance
 
 #### Project management
 
@@ -275,19 +256,20 @@ MCP provides AI assistants with powerful tools to interact with your Lightdash d
 - **Get current project** - Check which project is currently active
 
 <Info>
-  **Important:** An active project must be set before MCP can retrieve any data. Your AI assistant will typically handle this automatically by listing available projects and asking you to select one if none is currently active.
+  An active project must be set before MCP can retrieve any data. Your AI assistant will typically handle this automatically by listing available projects and asking you to select one.
 </Info>
 
-#### Data exploration tools
+#### Data exploration
 
-- **Find explores** - Browse available data models (explores) and understand their structure
-- **Find fields** - Search for specific metrics and dimensions across your data models
-- **Find dashboards** - Locate existing dashboards by name or content
-- **Find charts** - Search through saved charts and visualizations
+- **List explores** - See all available data models in the current project at a glance
+- **Find explores** - Search for relevant data models using natural language (e.g., "customer orders")
+- **Find fields** - Search for specific metrics and dimensions by business terms (e.g., "total revenue", "order date")
+- **Search field values** - Look up valid values for a field, useful for building filters
+- **Find content** - Search for existing charts and dashboards by name or description
 
 #### Query execution
 
-- **Run metric query** - Execute queries using your semantic layer's metrics and dimensions
+- **Run metric query** - Execute queries using your semantic layer's metrics and dimensions, and generate visualizations (tables, bar charts, line charts, pie charts, and more)
 - **Run SQL** - Execute arbitrary SQL queries directly against the project's data warehouse. Useful for ad-hoc analysis or queries that don't fit the explore-based model. Returns up to 500 rows by default (configurable up to 5,000).
 
 <Info>
@@ -298,27 +280,142 @@ MCP provides AI assistants with powerful tools to interact with your Lightdash d
   **Security best practice:** Ensure the database credentials configured in your Lightdash connection have **read-only (viewer) access** to your warehouse. Since `run_sql` executes arbitrary SQL, a connection with write permissions could allow AI agents to modify or delete warehouse data.
 </Warning>
 
+#### Agent context
+
+- **List agents** - Discover available AI agents and their areas of expertise
+- **Set agent** - Activate an agent to scope your session to its explores, instructions, and verified answers
+- **Get current agent** - Check which agent is active and view its full context
+- **Clear agent** - Remove agent scoping and return to the full project context
+
+These tools are covered in detail in the [Using AI agent context](#using-ai-agent-context) section below.
+
 ### Example conversations
 
 Here are some examples of how you can interact with AI assistants using MCP:
 
-<AccordionGroup>
-  <Accordion title="Verifying MCP connection">
-    <Frame>
-      ![Verifying MCP connection and listing available tools](/images/references/integrations/lightdash-mcp/examples-01-verifying-mcp-connection.png)
-    </Frame>
-  </Accordion>
-  <Accordion title="Setting up project and finding dashboards">
-    <Frame>
-      ![Setting up project context and finding dashboards](/images/references/integrations/lightdash-mcp/examples-02-setting-up-project-and-finding-dashboards.png)
-    </Frame>
-  </Accordion>
-  <Accordion title="Finding explores and fields, and executing metric queries">
-    <Frame>
-      ![Finding explores and fields, then executing metric queries to analyze data](/images/references/integrations/lightdash-mcp/examples-03-finding-explores-and-fields-and-executing-metric-query-to-analyze-data.png)
-    </Frame>
-  </Accordion>
-</AccordionGroup>
+#### Example 1: Verifying your MCP connection
+
+After connecting, verify that the MCP integration is working by asking your AI assistant to list available tools.
+
+**Prompt:** _"What Lightdash tools do you have access to?"_
+
+The assistant will confirm the connection and list the available MCP tools, such as `list_projects`, `find_fields`, `run_metric_query`, `run_sql`, and others. This is a quick way to verify that authentication succeeded and the MCP server is reachable.
+
+<Accordion title="See screenshot">
+  <Frame>
+    ![Verifying MCP connection and listing available tools](/images/references/integrations/lightdash-mcp/examples-01-verifying-mcp-connection.png)
+  </Frame>
+</Accordion>
+
+#### Example 2: Setting up a project and finding dashboards
+
+Before querying data, you need to set an active project. Then you can search for existing dashboards and charts.
+
+**Prompt:** _"What projects do I have access to? Set the Jaffle Shop project, then show me all dashboards related to revenue."_
+
+The assistant will:
+1. Call `list_projects` to show your available projects
+2. Call `set_project` to activate "Jaffle Shop"
+3. Call `find_content` with your search term to find matching dashboards and charts
+
+**Expected output:** A list of dashboards and charts matching "revenue", including their names, descriptions, and direct links to view them in Lightdash.
+
+<Accordion title="See screenshot">
+  <Frame>
+    ![Setting up project context and finding dashboards](/images/references/integrations/lightdash-mcp/examples-02-setting-up-project-and-finding-dashboards.png)
+  </Frame>
+</Accordion>
+
+#### Example 3: Exploring data and running a metric query
+
+Once a project is active, you can explore data models and run queries using your semantic layer.
+
+**Prompt:** _"What metrics do we have for orders? Show me total revenue by month for the last 6 months as a bar chart."_
+
+The assistant will:
+1. Call `find_fields` to search for order-related metrics and dimensions (e.g., `orders_total_revenue`, `orders_order_date`)
+2. Call `run_metric_query` with the appropriate explore, metrics, dimensions, filters, and sort order to fetch the data and render a visualization
+
+**Expected output:** A bar chart showing monthly revenue for the last 6 months, along with the underlying data table. The query uses your semantic layer definitions, so metric calculations and joins are handled automatically.
+
+<Accordion title="See screenshot">
+  <Frame>
+    ![Finding explores and fields, then executing metric queries to analyze data](/images/references/integrations/lightdash-mcp/examples-03-finding-explores-and-fields-and-executing-metric-query-to-analyze-data.png)
+  </Frame>
+</Accordion>
+
+## Using AI agent context
+
+If your organization has [Lightdash AI agents](/guides/ai-agents) configured, you can reuse their configuration in your MCP sessions — so you get consistent guidance regardless of where you're working.
+
+### How is this different from Lightdash AI agents?
+
+[Lightdash AI agents](/guides/ai-agents) are a fully managed experience inside Lightdash and Slack. They handle everything end-to-end: interpreting your question, picking the right data, running queries, and presenting results.
+
+With MCP, you can use Lightdash data in other contexts, but the AI assistant driving an MCP session doesn't have the same specialized tuning that Lightdash AI agents provide out of the box. Agent context via MCP bridges that gap: it brings your agents' domain knowledge into any MCP session.
+
+### What you get from agent context
+
+When you activate an agent in your MCP session, your AI assistant receives:
+
+- **[Specialized content](/guides/ai-agents/best-practices#think-specialized-not-general)**: only the data models relevant to that agent's domain
+- **[Verified answers](/guides/ai-agents/verified-answers#how-verified-answers-work)**: curated example queries that demonstrate correct usage of the data model
+- **[Custom instructions](/guides/ai-agents/getting-started#instructions)**: domain-specific rules like _"Always filter orders by status = 'completed'"_
+
+### Example workflow
+
+1. **Set your project** with `set_project`
+2. **Browse available agents** with `list_agents` (e.g., "Sales Analyst", "Marketing Metrics")
+3. **Activate an agent** with `set_agent` to load its context
+4. **Ask your questions** — the agent's context automatically guides queries
+
+**Prompt:** _"What AI agents are available?"_
+
+<Accordion title="See screenshot: listing agents">
+  <Frame>
+    ![Listing available AI agents in a project](/images/references/integrations/lightdash-mcp/examples-04-list-agents.png)
+  </Frame>
+</Accordion>
+
+**Prompt:** _"Use the Sales Analyst agent."_
+
+<Accordion title="See screenshot: setting agent and viewing explores">
+  <Frame>
+    ![Setting an AI agent and viewing its available explores](/images/references/integrations/lightdash-mcp/examples-05-set-agent-and-see-explores.png)
+  </Frame>
+</Accordion>
+
+Once an agent is active, your queries automatically follow its instructions. For example, with a Sales Analyst agent configured with these instructions:
+
+```
+You are a Sales analyst for Jaffle Shop. Your role is to answer questions
+about revenue, orders, customers and subscriptions.
+
+Key guidelines:
+- Use the orders explore as the starting point for revenue and order
+  volume questions.
+- Always include a time dimension when showing trends. Default to monthly
+  granularity unless the user specifies otherwise.
+- Format currency values in CAD.
+```
+
+**Prompt:** _"Can you show me revenue so far?"_
+
+The assistant will automatically use the `orders` explore, include a monthly time dimension, and format values in CAD — all without you specifying these details, because the agent's instructions guide the query.
+
+<Accordion title="See screenshot: querying with agent context">
+  <Frame>
+    ![Asking a question with agent context applied for better results](/images/references/integrations/lightdash-mcp/examples-06-ask-question-with-agent-context.png)
+  </Frame>
+</Accordion>
+
+## Built-in prompt
+
+The Lightdash MCP server includes a built-in **`lightdash-analyst`** prompt with guidelines for querying data effectively. MCP clients that support prompts can use this automatically, so you don't need to configure custom instructions manually.
+
+<Info>
+  When an [AI agent](#using-ai-agent-context) is active, the prompt automatically adapts to include the agent's context.
+</Info>
 
 ## Best practices
 
@@ -328,6 +425,8 @@ To get the most value from MCP, ensure your Lightdash data is well-organized and
 - Writing effective documentation and AI hints
 - Optimizing for AI assistant performance
 - Security and permissions considerations
+
+---
 
 ## Lightdash Docs MCP
 
