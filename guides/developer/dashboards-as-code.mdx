@@ -3,9 +3,22 @@ title: "Dashboards as code"
 description: "You can download your charts and dashboards as code, make changes, then upload your changes back to your Lightdash project using the CLI. Content as code is also useful for creating new Lightdash projects where you want the content to be copied from an existing project and added to your new project."
 ---
 
-## Recommended workflow: Disposable editing
+## Choosing a workflow
 
-When using dashboards as code with AI agents or CLI tools, we recommend treating the downloaded files as **temporary working files** rather than a permanent source of truth.
+There are two main approaches to working with dashboards as code. You can mix and match these within your organization — for example, using disposable editing for quick changes and Git-managed dashboards for production-critical content.
+
+| | Disposable editing | Git-managed dashboards |
+|---|---|---|
+| **Source of truth** | Lightdash UI | Git repository |
+| **UI editing** | Anyone can edit freely | Restricted to view-only for managed content |
+| **Version history** | Lightdash's built-in history | Full Git audit trail with diffs and blame |
+| **Review process** | None required | Pull requests with approvals |
+| **Setup complexity** | Minimal — just the CLI | Requires CI/CD and space permissions |
+| **Best for** | Quick edits, AI-assisted changes, ad-hoc updates | Regulated environments, multi-instance deployments, teams that want strict change control |
+
+## Disposable editing (recommended)
+
+When using dashboards as code with AI agents or CLI tools, we recommend treating the downloaded files as **temporary working files** rather than a permanent source of truth. This is the best starting point for most teams.
 
 ### The disposable workflow
 
@@ -20,12 +33,50 @@ This approach keeps the Lightdash application as your source of truth while stil
 
 Treating dashboards as code as disposable config files provides flexibility:
 
-- **UI changes remain easy** - Team members can continue making updates directly in the Lightdash UI without needing to sync a codebase
-- **No repository maintenance** - You avoid the overhead of keeping code files synchronized with UI changes
-- **Best of both worlds** - You get the power of code-based editing and AI assistance without the rigidity of a code-first workflow
+- **UI changes remain easy** — team members can continue making updates directly in the Lightdash UI without needing to sync a codebase
+- **No repository maintenance** — you avoid the overhead of keeping code files synchronized with UI changes
+- **Best of both worlds** — you get the power of code-based editing and AI assistance without the rigidity of a code-first workflow
 
+## Git-managed dashboards
 
-This is the recommended practice for most organizations. However, if your team prefers a code-first approach where all changes flow through version control, that pattern works too. For example, you might want to define a chart once in code, and then push it to several Lightdash instances - it would make sense to commit that file! Choose what fits your team's goals and workflows.
+An alternative approach where your **Git repository is the single source of truth** for charts and dashboards. All changes flow through version control, and the UI is read-only for managed content.
+
+### When to use this workflow
+
+- You want a full audit trail of every dashboard change via Git history
+- You want to enforce review processes (pull requests, approvals) before changes reach production
+- You're comfortable with all edits happening in code rather than the UI
+- You want to validate dashboard changes in [preview environments](/guides/developer/preview-projects) before merging
+- You're deploying the same content across multiple Lightdash instances
+
+### Lock down the UI
+
+For this workflow to succeed, you need to prevent ad-hoc UI edits from drifting out of sync with your repository. Use **space permissions** to enforce this:
+
+- Set the spaces containing your code-managed dashboards and charts to **view-only** for all non-admin roles
+- This ensures the YAML files in your repository are always the definitive version of the content
+
+You don't have to manage everything this way. Organize code-managed content into specific spaces with restricted permissions, and leave other spaces open for UI editing.
+
+### Making changes
+
+The typical workflow for editing Git-managed dashboards:
+
+1. **Branch** — create a feature branch in your repository
+2. **Preview** — spin up a [preview environment](/guides/developer/preview-projects) to test against
+3. **Edit the YAML files** — make changes to chart and dashboard files in the `lightdash/` directory. This is where AI coding assistants are especially useful — you can describe changes in natural language and have the assistant edit the YAML for you
+4. **Upload to the preview** — run `lightdash upload --force` to push your changes to the preview environment and verify everything looks right
+5. **Open a pull request** — once the changes look good in the preview, commit and open a PR for review
+6. **Merge and deploy** — on merge to your main branch, a CI job runs `lightdash deploy` and `lightdash upload --force` to push changes to production
+
+### CI/CD setup
+
+To fully automate this workflow, set up two CI jobs:
+
+- **Deploy on merge to main** — install the Lightdash CLI and dbt, then run `lightdash deploy` (to sync the semantic layer) followed by `lightdash upload --force` (to push chart and dashboard changes to production). You'll need `LIGHTDASH_API_KEY`, `LIGHTDASH_URL`, and `LIGHTDASH_PROJECT` configured as secrets in your CI environment.
+- **Preview environments on PRs** (optional) — automatically create a preview environment on every PR so reviewers can see dashboard changes before approving. On PR open or update, run `lightdash start-preview` and `lightdash upload --force`, then post the preview link as a PR comment. On PR close, run `lightdash stop-preview` to clean up.
+
+See the [Lightdash CLI reference](/references/lightdash-cli) for full details on available commands.
 
 
 ## `lightdash download`
