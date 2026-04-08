@@ -8,6 +8,8 @@ description: "Define pre-aggregates in your dbt YAML, configure scheduling, and 
 
 Pre-aggregates are defined under the `pre_aggregates` key in your model configuration.
 
+If you're using Lightdash YAML instead of dbt model YAML, see the [Lightdash YAML syntax guide](/guides/lightdash-yaml) for the surrounding model structure.
+
 <Tabs>
   <Tab title="dbt v1.9 and earlier">
     ```yaml
@@ -21,6 +23,8 @@ Pre-aggregates are defined under the `pre_aggregates` key in your model configur
               metrics:
                 - total_order_amount
                 - average_order_size
+              filters:
+                - order_date: inThePast 52 weeks
               time_dimension: order_date
               granularity: day
     ```
@@ -38,6 +42,8 @@ Pre-aggregates are defined under the `pre_aggregates` key in your model configur
                 metrics:
                   - total_order_amount
                   - average_order_size
+                filters:
+                  - order_date: inThePast 52 weeks
                 time_dimension: order_date
                 granularity: day
     ```
@@ -54,6 +60,8 @@ Pre-aggregates are defined under the `pre_aggregates` key in your model configur
         metrics:
           - total_order_amount
           - average_order_size
+        filters:
+          - order_date: inThePast 52 weeks
         time_dimension: order_date
         granularity: day
     ```
@@ -67,6 +75,7 @@ Pre-aggregates are defined under the `pre_aggregates` key in your model configur
 | `name` | Yes | Unique identifier for the pre-aggregate. Must contain only letters, numbers, and underscores. |
 | `dimensions` | Yes | List of dimension names to include. Must contain at least one dimension. |
 | `metrics` | Yes | List of metric names to include. Must contain at least one metric. |
+| `filters` | No | Static filters applied when materializing the pre-aggregate. Matching queries must include an equivalent or narrower filter to use this pre-aggregate. |
 | `time_dimension` | No | A time-based dimension for date grouping. Must be paired with `granularity`. |
 | `granularity` | No | Time granularity for the `time_dimension`. Valid values: `hour`, `day`, `week`, `month`, `quarter`, `year`. Must be paired with `time_dimension`. |
 | `max_rows` | No | Maximum number of rows to store in the materialization. If the aggregation exceeds this limit, the result is truncated. Must be a positive integer. |
@@ -76,6 +85,90 @@ Pre-aggregates are defined under the `pre_aggregates` key in your model configur
 <Note>
   If you specify `time_dimension`, you **must** also specify `granularity`, and vice versa.
 </Note>
+
+## Filtered pre-aggregates
+
+Use `filters` when you want a pre-aggregate to materialize only a subset of the source data.
+
+For example, this pre-aggregate only stores data for the last 52 weeks:
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
+        meta:
+          pre_aggregates:
+            - name: recent_orders_daily
+              dimensions:
+                - status
+              metrics:
+                - total_order_amount
+                - order_count
+              filters:
+                - order_date: inThePast 52 weeks
+              time_dimension: order_date
+              granularity: day
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: orders
+        config:
+          meta:
+            pre_aggregates:
+              - name: recent_orders_daily
+                dimensions:
+                  - status
+                metrics:
+                  - total_order_amount
+                  - order_count
+                filters:
+                  - order_date: inThePast 52 weeks
+                time_dimension: order_date
+                granularity: day
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    pre_aggregates:
+      - name: recent_orders_daily
+        dimensions:
+          - status
+        metrics:
+          - total_order_amount
+          - order_count
+        filters:
+          - order_date: inThePast 52 weeks
+        time_dimension: order_date
+        granularity: day
+    ```
+  </Tab>
+</Tabs>
+
+This is useful when a rolling time window is queried frequently and deserves its own smaller materialization.
+
+### How query matching works with filters
+
+Filtered pre-aggregates are only used when the query filters are compatible with the pre-aggregate definition:
+
+- A query with the same or narrower filter can use the pre-aggregate
+- A query without the filter, or with a broader or incompatible filter, falls back to another pre-aggregate or the warehouse
+
+For the example above:
+
+- `order_date inThePast 12 weeks` can use the pre-aggregate
+- `order_date inThePast 52 weeks` can use the pre-aggregate
+- `order_date inThePast 104 weeks` cannot use the pre-aggregate
+- no `order_date` filter: cannot use the pre-aggregate
+
+<Tip>
+  If a field is only used for filtering, you should still include it in the pre-aggregate's `dimensions` list so Lightdash can match and re-aggregate queries correctly.
+</Tip>
 
 ## Multiple pre-aggregates per model
 
@@ -231,6 +324,8 @@ Here's a full model definition with a pre-aggregate, including joins, scheduling
               metrics:
                 - total_order_amount
                 - average_order_size
+              filters:
+                - status: completed
               time_dimension: order_date
               granularity: day
               max_rows: 5000000
@@ -271,6 +366,8 @@ Here's a full model definition with a pre-aggregate, including joins, scheduling
                 metrics:
                   - total_order_amount
                   - average_order_size
+                filters:
+                  - status: completed
                 time_dimension: order_date
                 granularity: day
                 max_rows: 5000000
@@ -314,6 +411,8 @@ Here's a full model definition with a pre-aggregate, including joins, scheduling
         metrics:
           - total_order_amount
           - average_order_size
+        filters:
+          - status: completed
         time_dimension: order_date
         granularity: day
         max_rows: 5000000
@@ -341,7 +440,7 @@ With this pre-aggregate, the following queries would be served from materialized
 
 - Total order amount by status, grouped by day, week, month, or year
 - Average order size by status, grouped by month
-- Total order amount filtered by status or customer country
+- Total order amount filtered to completed orders
 - Order amount by customer country, grouped by quarter
 
 These queries would **not** match and would query the warehouse directly:
@@ -349,4 +448,5 @@ These queries would **not** match and would query the warehouse directly:
 - Queries including `count_distinct` metrics
 - Queries grouped by a dimension not in the pre-aggregate (for example, `customer_id`)
 - Queries with hourly granularity (finer than the pre-aggregate's `day`)
+- Queries without `status = completed` or with a broader `status` filter
 - Queries with custom dimensions, custom metrics, or table calculations
