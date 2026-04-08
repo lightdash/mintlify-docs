@@ -71,6 +71,7 @@ Pre-aggregates are defined under the `pre_aggregates` key in your model configur
 | `granularity` | No | Time granularity for the `time_dimension`. Valid values: `hour`, `day`, `week`, `month`, `quarter`, `year`. Must be paired with `time_dimension`. |
 | `max_rows` | No | Maximum number of rows to store in the materialization. If the aggregation exceeds this limit, the result is truncated. Must be a positive integer. |
 | `refresh` | No | Schedule configuration for automatic re-materialization. See [Scheduling refreshes](#scheduling-refreshes). |
+| `materialization_role` | No | Fixed user attributes to use when materializing the pre-aggregate. See [Materialization role](#materialization-role). |
 
 <Note>
   If you specify `time_dimension`, you **must** also specify `granularity`, and vice versa.
@@ -143,6 +144,71 @@ You can set `max_rows` to cap the size of a materialization. If the aggregation 
   When `max_rows` is applied, some data is excluded from the materialization. Queries that match the pre-aggregate may return incomplete results. Use this setting carefully and monitor for the "max rows applied" warning in the [monitoring UI](/references/pre-aggregates/monitoring).
 </Warning>
 
+## Materialization role
+
+If your model uses user attributes in SQL, the user who triggers the materialization can affect what gets stored in the pre-aggregate.
+
+For example, if the model has `sql_filter: "customers.region IN (${ld.attr.allowed_regions})"`, the materialized table will only contain the regions that the admin who triggered the materialization happens to have access to. If that admin has `allowed_regions: ["EMEA"]`, the pre-aggregate will only contain EMEA rows.
+
+Use `materialization_role` to define a fixed set of user attributes for materializing the pre-aggregate. At query time, Lightdash ignores `materialization_role` and uses the real viewer user's attributes instead, so a user with `allowed_regions: ["EMEA"]` still only sees EMEA rows.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
+        meta:
+          joins:
+            - join: customers
+              sql_on: ${customers.customer_id} = ${orders.customer_id}
+          sql_filter: "customers.region IN (${ld.attr.allowed_regions})"
+          pre_aggregates:
+            - name: orders_daily_by_region
+              dimensions:
+                - customers.region
+              metrics:
+                - total_order_amount
+              time_dimension: order_date
+              granularity: day
+              materialization_role:
+                email: materialize@acme.com
+                attributes:
+                  allowed_regions:
+                    - EMEA
+                    - APAC
+                    - NA
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: orders
+        config:
+          meta:
+            joins:
+              - join: customers
+                sql_on: ${customers.customer_id} = ${orders.customer_id}
+            sql_filter: "customers.region IN (${ld.attr.allowed_regions})"
+            pre_aggregates:
+              - name: orders_daily_by_region
+                dimensions:
+                  - customers.region
+                metrics:
+                  - total_order_amount
+                time_dimension: order_date
+                granularity: day
+                materialization_role:
+                  email: materialize@acme.com
+                  attributes:
+                    allowed_regions:
+                      - EMEA
+                      - APAC
+                      - NA
+    ```
+  </Tab>
+</Tabs>
+
+With this setup, the materialized table always contains EMEA, APAC, and NA rows regardless of who triggered the materialization. When a viewer queries the pre-aggregate, Lightdash applies their own user attributes to the query, not the `materialization_role`.
 
 ## Complete example
 
