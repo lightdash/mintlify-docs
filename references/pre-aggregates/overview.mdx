@@ -108,6 +108,21 @@ Pre-aggregates support metrics that can be re-aggregated from pre-computed resul
 - `max`
 - `average`
 
+### Personal warehouse connections
+
+<Warning>
+  Pre-aggregates are **not compatible** with [personal warehouse connections](/references/workspace/personal-warehouse-connections). If your project requires users to connect with their own warehouse credentials, pre-aggregates will not work as expected.
+</Warning>
+
+Materialization runs as a background job and uses the credentials of a single user, not the credentials of each person viewing the results:
+
+- **Scheduled (cron):** the scheduler uses the credentials of the user who created the pre-aggregate definition. If those personal credentials expire or are not stored, the materialization fails.
+- **Manual (UI):** the materialization uses the credentials of the user who triggered the refresh.
+
+Because the materialized data is produced by one user's credentials, any row-level or column-level access rules in your warehouse are evaluated against the materializing user, not the person querying the pre-aggregate. This can lead to data leakage if different users are expected to see different subsets of data.
+
+If you rely on personal warehouse connections to enforce data access in the warehouse, use [results caching](/guides/developer/caching) instead.
+
 ### Current limitations
 
 Not all metrics work this way. Consider `count_distinct` with the same daily pre-aggregate from above. If a daily pre-aggregate stores "2 distinct customers on 2024-01-15" and "1 distinct customer on 2024-01-16", you can't sum those to get the monthly distinct count — Alice ordered on both days and would be counted twice:
