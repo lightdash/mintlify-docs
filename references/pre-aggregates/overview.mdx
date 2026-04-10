@@ -158,7 +158,7 @@ A single pre-aggregate can serve many different queries. A daily pre-aggregate w
 | **Trigger**                  | First query runs against warehouse, then cached    | Materialized on compile, cron, or manual refresh                       |
 | **Storage**                  | Query result (row set)                             | Pre-computed summary table                                             |
 | **Query execution**          | Exact cached result is returned                    | DuckDB workers re-aggregate at query time                              |
-| **Warehouse hit on first query?** | Yes                                           | No                                                                     |
+| **Warehouse hit on first query?** | Yes                                           | No — only materialization hits the warehouse, not query-time serving    |
 | **Coverage**                 | All metric types, all query shapes                 | Only re-aggregatable metrics (sum, count, min, max, average)           |
 | **Scope**                    | One cache entry per unique SQL                     | One pre-aggregate can serve many query shapes                          |
 | **Availability**             | Cloud Pro+ or self-hosted with license             | Enterprise (Early Access)                                              |
@@ -182,3 +182,7 @@ A single pre-aggregate can serve many different queries. A daily pre-aggregate w
 <Tip>
   In most cases, both should be enabled. Pre-aggregates handle your heaviest, most predictable workloads. Results caching is the safety net for everything else.
 </Tip>
+
+### Using both together
+
+When both systems are enabled, they act as two layers of caching. A query that matches a pre-aggregate is served from the materialized data by DuckDB workers. The result of that DuckDB query can then be stored in the results cache, so subsequent identical requests skip even the DuckDB step and return the cached result directly. This means pre-aggregates eliminate the warehouse hit, and results caching eliminates repeated computation on top of that.
