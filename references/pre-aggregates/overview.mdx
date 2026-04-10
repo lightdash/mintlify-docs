@@ -131,3 +131,58 @@ For similar reasons, the following metric types are also not supported:
 - `number`, `string`, `date`, `timestamp`, `boolean`
 
 For metrics that can't be pre-aggregated, consider using [caching](/guides/developer/caching) instead.
+
+## Pre-aggregates vs results caching
+
+Lightdash has two independent systems for speeding up queries: **results caching** and **pre-aggregates**. They work differently and are designed to be used together, not as replacements for each other.
+
+### Results caching
+
+Results caching stores the exact result of any query that runs through Lightdash, keyed by a hash of the generated SQL. The first time a query runs, Lightdash executes it against your warehouse and caches the result in S3. Subsequent identical queries are served from the cache until it expires (24 hours by default).
+
+Any change to the query — a different filter, column, limit, or user attribute — produces a new SQL hash, a new cache entry, and another warehouse query. Results caching covers every query shape, including custom metrics, table calculations, and SQL runner queries.
+
+See the [caching guide](/guides/developer/caching) for details.
+
+### Pre-aggregates
+
+Pre-aggregates are summary tables you define in your dbt YAML. Lightdash materializes them on a schedule (or on compile, or manually) and stores the results in S3. When a user query matches the pre-aggregate's dimensions, metrics, filters, and granularity, Lightdash serves the query from the materialized data using in-memory DuckDB workers. The warehouse is not touched at query time, even on the first query.
+
+A single pre-aggregate can serve many different queries. A daily pre-aggregate with five dimensions can answer day, week, month, quarter, and year queries across any subset of those dimensions and with any narrower filter. Results caching, in contrast, needs one cache entry per unique SQL.
+
+### Key differences
+
+|                              | Results caching                                    | Pre-aggregates                                                         |
+| ---------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------- |
+| **Configuration**            | Automatic once enabled for your instance           | Defined in dbt YAML                                                    |
+| **Trigger**                  | First query runs against warehouse, then cached    | Materialized on compile, cron, or manual refresh                       |
+| **Storage**                  | Query result (row set)                             | Pre-computed summary table                                             |
+| **Query execution**          | Exact cached result is returned                    | DuckDB workers re-aggregate at query time                              |
+| **Warehouse hit on first query?** | Yes                                           | No — only materialization hits the warehouse, not query-time serving    |
+| **Coverage**                 | All metric types, all query shapes                 | Only re-aggregatable metrics (sum, count, min, max, average)           |
+| **Scope**                    | One cache entry per unique SQL                     | One pre-aggregate can serve many query shapes                          |
+| **Availability**             | Cloud Pro+ or self-hosted with license             | Enterprise (Early Access)                                              |
+
+### When to use which
+
+**Use pre-aggregates when:**
+
+- You have high-traffic dashboards with predictable query patterns
+- You want to reduce warehouse cost or improve latency on the first query, not just repeat visits
+- The metrics are re-aggregatable (sum, count, min, max, average)
+- You're willing to design and schedule the materializations
+
+**Use results caching when:**
+
+- Query patterns are ad-hoc or unpredictable
+- You need count_distinct, median, percentile, custom SQL metrics, table calculations, or custom dimensions/metrics
+- You're using the SQL runner
+- You don't want upfront configuration work
+
+<Tip>
+  In most cases, both should be enabled. Pre-aggregates handle your heaviest, most predictable workloads. Results caching is the safety net for everything else.
+</Tip>
+
+### Using both together
+
+When both systems are enabled, they act as two layers of caching. A query that matches a pre-aggregate is served from the materialized data by DuckDB workers. The result of that DuckDB query can then be stored in the results cache, so subsequent identical requests skip even the DuckDB step and return the cached result directly. This means pre-aggregates eliminate the warehouse hit, and results caching eliminates repeated computation on top of that.
