@@ -46,3 +46,42 @@ In order to make this work, there are a few key ENV variables that need to be co
 
   This means that if you are using docker locally, make sure the headless browser pod can reach the lightdash pod. Or follow the [docker documentation](https://docs.docker.com/compose/compose-file/compose-file-v3/#network_mode) to enable `network:host`
 </Info>
+
+## Timeouts and retries
+
+If you're exporting large dashboards via scheduled deliveries or Slack, you may need
+to tune timeout and retry settings. There are two layers of configuration: the
+Browserless container and the Lightdash backend.
+
+### Browserless container
+
+Set these environment variables on the **headless browser pod/container** (the
+`ghcr.io/browserless/chromium` image):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TIMEOUT` | `30000` | Maximum time (ms) Browserless allows a browser session to run before terminating it. Increase this if large dashboards time out during export. A value of `120000` (2 minutes) works well for most cases. |
+
+### Lightdash backend
+
+Set these environment variables on the **Lightdash backend** (the main app or
+scheduler worker):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HEADLESS_BROWSER_MAX_SCREENSHOT_RETRIES` | `5` | Number of times Lightdash retries a failed screenshot before giving up. |
+| `HEADLESS_BROWSER_RETRY_BASE_DELAY_MS` | `3000` | Base delay (ms) between screenshot retries. Uses exponential backoff. |
+| `SCHEDULER_JOB_TIMEOUT` | `600000` (10 min) | Maximum time (ms) for any scheduler job (including screenshot exports) to complete. |
+
+### Troubleshooting large dashboard exports
+
+If scheduled deliveries fail for large dashboards, try the following in order:
+
+1. **Increase `TIMEOUT` on the Browserless container** to at least `120000` (2 minutes).
+   This is the most common fix.
+2. **Check that `SITE_URL` is reachable** from the headless browser container. The
+   browser needs to load the full dashboard page, including all chart queries.
+3. If exports still fail intermittently, increase `HEADLESS_BROWSER_MAX_SCREENSHOT_RETRIES`
+   to give it more attempts.
+4. If jobs are timing out entirely, increase `SCHEDULER_JOB_TIMEOUT`. The default
+   of 10 minutes should be sufficient for most dashboards.
