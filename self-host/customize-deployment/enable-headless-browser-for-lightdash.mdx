@@ -46,3 +46,35 @@ In order to make this work, there are a few key ENV variables that need to be co
 
   This means that if you are using docker locally, make sure the headless browser pod can reach the lightdash pod. Or follow the [docker documentation](https://docs.docker.com/compose/compose-file/compose-file-v3/#network_mode) to enable `network:host`
 </Info>
+
+## Configure timeouts for large dashboards
+
+When exporting large dashboards via [scheduled deliveries](/guides/how-to-create-scheduled-deliveries), the default timeout values may not be sufficient. If you're seeing consistent errors when exporting dashboards with many charts or complex visualizations, you likely need to increase the timeout settings.
+
+There are two timeout values to consider:
+
+### Headless browser timeout
+
+The Browserless container has its own `TIMEOUT` environment variable that controls how long it allows a single browser session to run. If your dashboards take a long time to fully render, the browser session may be terminated before Lightdash can capture the screenshot.
+
+Set the `TIMEOUT` environment variable on the headless browser container (the `ghcr.io/browserless/chromium` image) to a higher value in milliseconds. For example, to allow up to 5 minutes:
+
+```yaml
+headless-browser:
+  image: ghcr.io/browserless/chromium:v2.24.3
+  environment:
+    - TIMEOUT=300000
+```
+
+### Lightdash scheduler timeouts
+
+You should also ensure that the Lightdash scheduler timeout values are high enough to accommodate the longer render times. Set these environment variables on the Lightdash application:
+
+| Variable | Description | Default |
+|---|---|---|
+| `SCHEDULER_JOB_TIMEOUT` | Maximum time in milliseconds before a scheduled delivery job is timed out. | `600000` (10 min) |
+| `SCHEDULER_SCREENSHOT_TIMEOUT` | Maximum time in milliseconds for taking a screenshot of a chart or dashboard. | — |
+
+<Tip>
+  If you're exporting large dashboards on a schedule, start by increasing the headless browser `TIMEOUT` first. If exports still fail, also increase `SCHEDULER_JOB_TIMEOUT` and `SCHEDULER_SCREENSHOT_TIMEOUT` on the Lightdash side.
+</Tip>
