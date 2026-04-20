@@ -538,3 +538,138 @@ On server start, we will check the following variables, and update some configur
 | `LD_SETUP_DBT_VERSION`               | Version of dbt to use (eg: v1.8) (default=latest)                                                                                                 |
 | `LD_SETUP_GITHUB_PAT`                | GitHub personal access token                                                                                                                      |
 | `LD_SETUP_SERVICE_ACCOUNT_TOKEN`     | A pre-set token for the service account, must start with `ldsvc_` prefix                                                                          |
+
+## Initialize multiple projects
+
+Set `LD_SETUP_PROJECTS` to a JSON array to provision **multiple projects at once**. This is a drop-in replacement for the single-project `LD_SETUP_PROJECT_*` variables described in [Initialize instance](#initialize-instance) — when `LD_SETUP_PROJECTS` is set, the legacy `LD_SETUP_PROJECT_*` and `LD_SETUP_GITHUB_*` variables are ignored.
+
+On every boot, Lightdash matches each entry to an existing project **by `name`**: new names are created, existing names are updated in place.
+
+<Info>
+  Currently we only support Databricks project types and GitHub dbt configuration for multi-project setup.
+</Info>
+
+<Note>
+  **Project names are the primary key.** Renaming an entry creates a new project rather than renaming the existing one — charts and dashboards will stay on the old project.
+</Note>
+
+### Required companion variables
+
+The admin, organization, and API key variables from [Initialize instance](#initialize-instance) still apply. `LD_SETUP_ADMIN_EMAIL` is required — without it, `LD_SETUP_PROJECTS` is ignored.
+
+### Schema
+
+`LD_SETUP_PROJECTS` must be a JSON array. Each entry has the following shape:
+
+| Field                 | Required | Description                                                                        |
+| :-------------------- | :------- | :--------------------------------------------------------------------------------- |
+| `name`                | Yes      | Project name. Must be non-empty and **unique within the array**.                   |
+| `warehouseConnection` | Yes      | Object with a valid `type` and the fields required by that warehouse (see below).  |
+| `dbtConnection`       | Yes      | Object with a valid `type` and the fields required by that dbt connection (below). |
+| `dbtVersion`          | No       | Version of dbt to use (eg: `v1.8`). Defaults to latest.                            |
+| `embed`               | No       | Embed config: `{ "secret": "...", "allowAllDashboards": true }`.                   |
+
+### Databricks warehouse fields
+
+| Field                 | Required                                      | Description                                                                      |
+| :-------------------- | :-------------------------------------------- | :------------------------------------------------------------------------------- |
+| `type`                | Yes                                           | Must be `"databricks"`.                                                          |
+| `serverHostName`      | Yes                                           | Databricks host, no protocol. Example: `dbc-xxxx.cloud.databricks.com`.          |
+| `httpPath`            | Yes                                           | SQL warehouse HTTP path, e.g. `/sql/1.0/warehouses/abc123`.                      |
+| `database`            | Yes                                           | Schema name. (Historical naming — this is the dbt schema, not the Unity Catalog.)|
+| `catalog`             | No                                            | Unity Catalog name.                                                              |
+| `authenticationType`  | No                                            | One of `personal_access_token` (default), `oauth_m2m`, `oauth_u2m`.              |
+| `personalAccessToken` | If `authenticationType=personal_access_token` | Databricks PAT (starts with `dapi_`).                                            |
+| `oauthClientId`       | If `authenticationType=oauth_m2m`             | Service Principal client ID.                                                     |
+| `oauthClientSecret`   | If `authenticationType=oauth_m2m`             | Service Principal client secret.                                                 |
+| `compute`             | No                                            | Array of extra SQL warehouses: `[{ "name": "...", "httpPath": "..." }]`.         |
+| `startOfWeek`         | No                                            | Day to use as start of week (default=`SUNDAY`).                                  |
+| `dataTimezone`        | No                                            | Project-level timezone override.                                                 |
+
+### GitHub dbt connection fields
+
+| Field                   | Required | Description                                                    |
+| :---------------------- | :------- | :------------------------------------------------------------- |
+| `type`                  | Yes      | Must be `"github"`.                                            |
+| `authorization_method`  | Yes      | Use `"personal_access_token"`.                                 |
+| `personal_access_token` | Yes      | GitHub personal access token.                                  |
+| `repository`            | Yes      | Repository in `org/repo` format.                               |
+| `branch`                | Yes      | Branch name to pull the dbt project from.                      |
+| `project_sub_path`      | Yes      | Subdirectory path within the repo (use `/` for the root).      |
+
+### Example
+
+```bash
+export LD_SETUP_ADMIN_EMAIL="admin@example.com"
+export LD_SETUP_PROJECTS='[
+  {
+    "name": "Sample Project Alpha",
+    "warehouseConnection": {
+      "type": "databricks",
+      "serverHostName": "alpha.cloud.databricks.com",
+      "httpPath": "/sql/1.0/warehouses/abc123",
+      "database": "alpha_db",
+      "personalAccessToken": "dapi_alpha_fake_token"
+    },
+    "dbtConnection": {
+      "type": "github",
+      "authorization_method": "personal_access_token",
+      "personal_access_token": "ghp_fake_alpha_token",
+      "repository": "myorg/alpha-repo",
+      "branch": "main",
+      "project_sub_path": "/"
+    }
+  },
+  {
+    "name": "Sample Project Beta",
+    "warehouseConnection": {
+      "type": "databricks",
+      "serverHostName": "beta.cloud.databricks.com",
+      "httpPath": "/sql/1.0/warehouses/def456",
+      "database": "beta_db",
+      "personalAccessToken": "dapi_beta_fake_token"
+    },
+    "dbtConnection": {
+      "type": "github",
+      "authorization_method": "personal_access_token",
+      "personal_access_token": "ghp_fake_beta_token",
+      "repository": "myorg/beta-repo",
+      "branch": "main",
+      "project_sub_path": "/"
+    }
+  }
+]'
+```
+
+<Note>
+  **Quote the whole value in single quotes** in your shell so that `$`, backticks, and double quotes inside the JSON are not re-interpreted. When injecting via a secret manager or Kubernetes `Secret`, no escaping is needed — just paste the JSON as-is.
+</Note>
+
+### Validation
+
+`LD_SETUP_PROJECTS` is parsed and validated at boot. Lightdash will **fail to start with a descriptive error** if any of the following are true:
+
+| Error                                                       | Cause                                                                                              |
+| :---------------------------------------------------------- | :------------------------------------------------------------------------------------------------- |
+| `Failed to parse LD_SETUP_PROJECTS`                         | The value is not valid JSON. Check your shell quoting.                                             |
+| `Invalid LD_SETUP_PROJECTS: expected array`                 | The top-level JSON is not an array.                                                                |
+| `name: Project name cannot be empty`                        | An entry has a missing or empty `name`.                                                            |
+| `warehouseConnection: Required` / `dbtConnection: Required` | An entry is missing one of the two connection blocks.                                              |
+| `Invalid warehouse type`                                    | `warehouseConnection.type` is not a supported warehouse.                                           |
+| `Invalid dbt connection type`                               | `dbtConnection.type` is not a supported dbt connection.                                            |
+| `Duplicate project name "X" in LD_SETUP_PROJECTS`           | Two entries share the same `name`.                                                                 |
+| `Multiple projects found with name "X"`                     | Two pre-existing projects in the DB share the same name — rename one in the UI before redeploying. |
+
+<Warning>
+  **Credentials in `LD_SETUP_PROJECTS` are the source of truth on every boot.** If an admin rotates a PAT or OAuth secret in the UI, the next restart will overwrite it with the value from this variable. Keep the variable in sync with your secret manager, or omit a project from the array once you no longer want it managed via env.
+</Warning>
+
+### Migrating from `LD_SETUP_PROJECT_*`
+
+`LD_SETUP_PROJECTS` replaces the single-project `LD_SETUP_PROJECT_NAME`, `LD_SETUP_PROJECT_HOST`, `LD_SETUP_PROJECT_HTTP_PATH`, `LD_SETUP_PROJECT_PAT`, `LD_SETUP_PROJECT_SCHEMA`, `LD_SETUP_PROJECT_CATALOG`, `LD_SETUP_PROJECT_COMPUTE`, `LD_SETUP_GITHUB_*`, and `LD_SETUP_DBT_VERSION` variables. When both are set, `LD_SETUP_PROJECTS` takes precedence and the legacy variables are ignored.
+
+To migrate:
+
+1. Move your existing project config into a JSON object (use the existing project's exact `name` so it is updated in place rather than recreated).
+2. Set `LD_SETUP_PROJECTS` to a single-element array containing that object.
+3. Remove the legacy `LD_SETUP_PROJECT_*` and `LD_SETUP_GITHUB_*` variables from your deployment.
