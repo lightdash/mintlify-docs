@@ -1,0 +1,235 @@
+---
+title: "Formula table calculations"
+description: "Build table calculations using a spreadsheet-style formula syntax instead of raw SQL."
+sidebarTitle: "Formula table calculations"
+---
+
+<Info>
+  **Formula table calculations are in Beta (Early Access).**
+
+  The feature is enabled by default on supported warehouses — no flag
+  required — and we're actively expanding the function catalog. We'd
+  love your feedback while we iterate. See [feature maturity levels](/references/workspace/feature-maturity-levels)
+  for details.
+</Info>
+
+Formula table calculations let you write table calculations in a
+Google Sheets–style formula syntax instead of raw SQL. When you create
+a new [table calculation](/guides/table-calculations) on a supported
+warehouse, **Formula** is the default input mode — toggle to SQL any
+time if you'd rather write raw SQL.
+
+## Why use formulas?
+
+- **Faster to write** for common calculations — no `OVER (…)`, no
+  `CASE WHEN` boilerplate.
+- **Familiar** if you've used Google Sheets, Excel, or Airtable.
+- **Portable** — the same formula compiles to the correct SQL for
+  whichever warehouse your project is connected to.
+
+You can still reach for the SQL editor any time — just switch to SQL
+when creating a new table calculation.
+
+## Supported warehouses
+
+| Warehouse   | Formula support |
+| ----------- | --------------- |
+| BigQuery    | ✅              |
+| ClickHouse  | ✅              |
+| Databricks  | ✅              |
+| DuckDB      | ✅              |
+| PostgreSQL  | ✅              |
+| Redshift    | ✅              |
+| Snowflake   | ✅              |
+| Athena      | 🚧 Not yet      |
+| Trino       | 🚧 Not yet      |
+
+On warehouses where formulas aren't supported yet, the Formula toggle
+is hidden and the SQL editor works exactly as it always has.
+
+## Writing your first formula
+
+Every formula starts with `=`. Reference a field by its column name
+(the same name you see in the results table header):
+
+```
+=orders_total_order_amount * 1.2
+```
+
+You can use:
+
+- **Numbers** — `42`, `3.14`, `-1.5`
+- **Strings** — `"hello"` or `'hello'`
+- **Booleans** — `TRUE`, `FALSE`
+- **Column references** — any field present in your results table
+- **Operators** — `+`, `-`, `*`, `/`, `%` (modulo), and comparison operators `=`, `<>`, `>`, `<`, `>=`, `<=`
+- **Boolean operators** — `AND`, `OR`, `NOT`
+
+## Function reference
+
+### Math
+
+| Function                    | Description                     |
+| --------------------------- | ------------------------------- |
+| `ABS(x)`                    | Absolute value                  |
+| `ROUND(x, [digits])`        | Round to N decimal places       |
+| `CEIL(x)` / `CEILING(x)`    | Round up to nearest integer     |
+| `FLOOR(x)`                  | Round down to nearest integer   |
+| `MIN(x, [y])`               | Minimum (scalar or aggregate)   |
+| `MAX(x, [y])`               | Maximum (scalar or aggregate)   |
+
+### Logical
+
+| Function                        | Description            |
+| ------------------------------- | ---------------------- |
+| `IF(condition, then, [else])`   | Conditional expression |
+| `AND`, `OR`, `NOT`              | Boolean operators      |
+| `=`, `<>`, `>`, `<`, `>=`, `<=` | Comparison operators   |
+
+### String
+
+| Function                 | Description             |
+| ------------------------ | ----------------------- |
+| `CONCAT(a, b, …)`        | Concatenate strings     |
+| `LEN(s)` / `LENGTH(s)`   | String length           |
+| `TRIM(s)`                | Remove whitespace       |
+| `LOWER(s)`               | Convert to lowercase    |
+| `UPPER(s)`               | Convert to uppercase    |
+
+### Date
+
+| Function     | Description           |
+| ------------ | --------------------- |
+| `TODAY()`    | Current date          |
+| `NOW()`      | Current timestamp     |
+| `YEAR(d)`    | Extract year          |
+| `MONTH(d)`   | Extract month         |
+| `DAY(d)`     | Extract day           |
+
+### Aggregation
+
+| Function                   | Description                 |
+| -------------------------- | --------------------------- |
+| `SUM(x)`                   | Sum values                  |
+| `AVG(x)` / `AVERAGE(x)`    | Average values              |
+| `COUNT([x])`               | Count rows (or non-null x)  |
+| `SUMIF(condition, x)`      | Sum where condition is true |
+| `AVERAGEIF(condition, x)`  | Avg where condition is true |
+| `COUNTIF(condition)`       | Count where condition true  |
+
+### Window
+
+| Function                         | Description                       |
+| -------------------------------- | --------------------------------- |
+| `RUNNING_TOTAL(x)`               | Running (cumulative) total        |
+| `ROW_NUMBER()`                   | Sequential row number             |
+| `RANK()`                         | Rank with gaps                    |
+| `DENSE_RANK()`                   | Rank without gaps                 |
+| `LAG(x, [offset], [default])`    | Previous row's value              |
+| `LEAD(x, [offset], [default])`   | Next row's value                  |
+| `FIRST(x)`                       | First value in window             |
+| `LAST(x)`                        | Last value in window              |
+| `NTILE(n)`                       | Distribute rows into N buckets    |
+| `MOVING_SUM(x, n)`               | Sum of the last N rows            |
+| `MOVING_AVG(x, n)`               | Average of the last N rows        |
+
+### Null handling
+
+| Function               | Description                      |
+| ---------------------- | -------------------------------- |
+| `COALESCE(a, b, …)`    | First non-null argument          |
+| `ISNULL(x)`            | `TRUE` if x is null              |
+
+## Examples
+
+**Gross margin as a percentage**
+
+```
+=ROUND((orders_revenue - orders_cost) / orders_revenue * 100, 2)
+```
+
+**Flag high-value orders**
+
+```
+=IF(orders_total_amount > 1000, "VIP", "Standard")
+```
+
+**Running total of revenue**
+
+```
+=RUNNING_TOTAL(orders_revenue)
+```
+
+**Period-over-period growth %**
+
+```
+=(orders_revenue - LAG(orders_revenue, 1, 0)) / LAG(orders_revenue, 1, 0) * 100
+```
+
+**Bucket customers by spend**
+
+```
+=IF(customers_lifetime_value > 10000, "Platinum",
+   IF(customers_lifetime_value > 5000, "Gold",
+   IF(customers_lifetime_value > 1000, "Silver", "Bronze")))
+```
+
+**Percent of total**
+
+```
+=orders_revenue / SUM(orders_revenue) * 100
+```
+
+## FAQ
+
+<AccordionGroup>
+
+<Accordion title="Can I switch between SQL and Formula on the same table calculation?">
+No. The input mode is chosen when you create the table calculation
+and can't be changed afterwards — formulas and SQL aren't always
+losslessly interconvertible. If you need to move a SQL calc to a
+formula (or vice versa), delete the old one and create a new one in
+the mode you want.
+</Accordion>
+
+<Accordion title="What happens if my warehouse isn't supported yet?">
+The Formula toggle is hidden and the SQL editor is the only option.
+Existing SQL table calculations keep working on every warehouse —
+the beta is strictly additive.
+</Accordion>
+
+<Accordion title="Does the formula run on my warehouse?">
+Yes. Lightdash compiles your formula to SQL using the right syntax
+for your warehouse and runs it alongside the rest of your query.
+There's no separate formula engine or extra round-trip — the
+generated SQL is part of the same query as your metrics and
+dimensions.
+</Accordion>
+
+<Accordion title="Can I mix aggregates and scalar expressions in the same formula?">
+Yes. When you use `SUM`, `AVG`, `COUNT`, etc. in a formula, we
+compile them to the correct aggregate SQL for your warehouse
+(including the window semantics expected in a table calculation).
+Mixing aggregates and scalar expressions is supported.
+</Accordion>
+
+<Accordion title="How do I reference a field with unusual characters in the name?">
+Use the exact column name shown in the results table header. If your
+field contains characters that aren't valid in a formula identifier,
+use the SQL editor for that specific calculation.
+</Accordion>
+
+<Accordion title="I found a bug or want a function that isn't listed">
+Please let us know — reach out through your CSM, the Slack community,
+or file a GitHub issue. We're actively growing the function catalog
+through the beta.
+</Accordion>
+
+</AccordionGroup>
+
+## Related
+
+- [Table calculations overview](/guides/table-calculations)
+- [Table calculation functions](/references/table-calculation-functions/row-functions)
+- [SQL templates for table calculations](/guides/table-calculations/sql-templates)
+- [Feature maturity levels](/references/workspace/feature-maturity-levels)
