@@ -1089,13 +1089,17 @@ This URL will only work if I have `customer_id` included in my results table.
 
 The `richText` property allows you to define custom HTML/Markdown templates for displaying dimension and metric values in table cells. This enables sophisticated data presentation with formatting, styling, conditional logic, and external integrations.
 
+![Rich text examples rendered in a Table chart](/images/references/rich-text-hero.png)
+
 <Info>
-Rich text only affects UI display in table cells. It has no impact on value formatting, CSV exports, or the underlying data values.
+Rich text only renders in the **Table chart visualization**. It does not affect the Results panel below the explore, CSV/Excel exports, or the underlying data values. To see your `richText` take effect, switch the chart type to **Table**.
 </Info>
+
+`richText` is supported on both **dimensions** and **metrics**. It accepts Markdown, inline HTML, and [LiquidJS](https://liquidjs.com/) templating. HTML is sanitized with a GitHub-safe allowlist that permits inline `style` attributes but strips `<script>`, `<iframe>`, and event handlers (e.g. `onclick`). External links automatically open in a new tab.
 
 ### Basic example
 
-Display a dimension value with custom formatting:
+Display a dimension value with bold text, an inline code span, and clickable links:
 
 <Tabs>
   <Tab title="dbt v1.9 and earlier">
@@ -1107,8 +1111,8 @@ Display a dimension value with custom formatting:
           dimension:
             richText: |
               **Customer ID:** `${ value.raw }`
-              
-              [View Profile](https://example.com/customer/${ value.raw })
+
+              [View Profile](https://example.com/customer/${ value.raw }) | [Search Google](https://google.com/search?q=customer%20${ value.formatted | url_encode })
     ```
   </Tab>
   <Tab title="dbt v1.10+ and Fusion">
@@ -1121,8 +1125,8 @@ Display a dimension value with custom formatting:
             dimension:
               richText: |
                 **Customer ID:** `${ value.raw }`
-                
-                [View Profile](https://example.com/customer/${ value.raw })
+
+                [View Profile](https://example.com/customer/${ value.raw }) | [Search Google](https://google.com/search?q=customer%20${ value.formatted | url_encode })
     ```
   </Tab>
   <Tab title="Lightdash YAML">
@@ -1132,15 +1136,17 @@ Display a dimension value with custom formatting:
         description: 'Unique customer identifier'
         richText: |
           **Customer ID:** `${ value.raw }`
-          
-          [View Profile](https://example.com/customer/${ value.raw })
+
+          [View Profile](https://example.com/customer/${ value.raw }) | [Search Google](https://google.com/search?q=customer%20${ value.formatted | url_encode })
     ```
   </Tab>
 </Tabs>
 
+![Cells rendered with a bold "Customer ID:" label, a code-style ID, and two inline links per row](/images/references/rich-text-basic-markdown-links.png)
+
 ### Conditional formatting
 
-Use Liquid control flow tags for conditional display based on values:
+Use Liquid control flow tags to switch rendering based on the value — for example, to tier a metric with emoji indicators and a matching text label. Always guard against `nil` so empty cells render gracefully:
 
 <Tabs>
   <Tab title="dbt v1.9 and earlier">
@@ -1152,7 +1158,9 @@ Use Liquid control flow tags for conditional display based on values:
             average_clv:
               type: average
               richText: |
-                {% raw %}{% if value.raw >= 100 %}
+                {% raw %}{% if value.raw == nil %}
+                <span style="color: #999;">No data</span>
+                {% elsif value.raw >= 100 %}
                 ### 📈 ${ value.formatted }
                 **Excellent** Average CLV
                 {% elsif value.raw >= 50 %}
@@ -1160,7 +1168,7 @@ Use Liquid control flow tags for conditional display based on values:
                 **Good** Average CLV
                 {% else %}
                 ### ⚠️ ${ value.formatted }
-                **Low** Average CLV
+                **Low** Average CLV - _Needs attention!_
                 {% endif %}{% endraw %}
     ```
   </Tab>
@@ -1174,7 +1182,9 @@ Use Liquid control flow tags for conditional display based on values:
               average_clv:
                 type: average
                 richText: |
-                  {% raw %}{% if value.raw >= 100 %}
+                  {% raw %}{% if value.raw == nil %}
+                  <span style="color: #999;">No data</span>
+                  {% elsif value.raw >= 100 %}
                   ### 📈 ${ value.formatted }
                   **Excellent** Average CLV
                   {% elsif value.raw >= 50 %}
@@ -1182,7 +1192,7 @@ Use Liquid control flow tags for conditional display based on values:
                   **Good** Average CLV
                   {% else %}
                   ### ⚠️ ${ value.formatted }
-                  **Low** Average CLV
+                  **Low** Average CLV - _Needs attention!_
                   {% endif %}{% endraw %}
     ```
   </Tab>
@@ -1193,7 +1203,9 @@ Use Liquid control flow tags for conditional display based on values:
         type: average
         sql: ${customer_lifetime_value}
         richText: |
-          {% raw %}{% if value.raw >= 100 %}
+          {% raw %}{% if value.raw == nil %}
+          <span style="color: #999;">No data</span>
+          {% elsif value.raw >= 100 %}
           ### 📈 ${ value.formatted }
           **Excellent** Average CLV
           {% elsif value.raw >= 50 %}
@@ -1201,11 +1213,106 @@ Use Liquid control flow tags for conditional display based on values:
           **Good** Average CLV
           {% else %}
           ### ⚠️ ${ value.formatted }
-          **Low** Average CLV
+          **Low** Average CLV - _Needs attention!_
           {% endif %}{% endraw %}
     ```
   </Tab>
 </Tabs>
+
+![Conditional tiers rendered with emoji, bold and italic text, and a grey "No data" fallback for null values](/images/references/rich-text-conditional-tiers.png)
+
+<Note>
+Liquid blocks inside dbt YAML must be wrapped in `{% raw %}...{% endraw %}` so dbt's Jinja engine passes the template through to Lightdash untouched.
+</Note>
+
+### HTML, images, and inline styles
+
+For richer layouts, combine inline HTML with images and `style` attributes. This example renders an avatar image alongside the name with a secondary link underneath:
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: full_name
+        description: 'Customer full name'
+        meta:
+          dimension:
+            type: string
+            richText: |
+              {% raw %}{% if value.raw == nil %}
+              <span style="color: #999;">-</span>
+              {% else %}
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <img src="https://ui-avatars.com/api/?name=${ value.formatted | url_encode }&background=random&size=32&rounded=true"
+                     width="32" height="32"
+                     style="border-radius: 50%;"
+                     alt="${ value.formatted }" />
+                <p>
+                  <strong style="float:left">${ value.formatted }</strong><br/>
+                  <span style="color: #666; font-size: 0.9em;">
+                    <a style="float:left;" href="https://www.linkedin.com/search/results/people/?keywords=${ value.formatted | url_encode }" target="_blank">LinkedIn</a>
+                  </span>
+                </p>
+              </div>
+              {% endif %}{% endraw %}
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    columns:
+      - name: full_name
+        description: 'Customer full name'
+        config:
+          meta:
+            dimension:
+              type: string
+              richText: |
+                {% raw %}{% if value.raw == nil %}
+                <span style="color: #999;">-</span>
+                {% else %}
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <img src="https://ui-avatars.com/api/?name=${ value.formatted | url_encode }&background=random&size=32&rounded=true"
+                       width="32" height="32"
+                       style="border-radius: 50%;"
+                       alt="${ value.formatted }" />
+                  <p>
+                    <strong style="float:left">${ value.formatted }</strong><br/>
+                    <span style="color: #666; font-size: 0.9em;">
+                      <a style="float:left;" href="https://www.linkedin.com/search/results/people/?keywords=${ value.formatted | url_encode }" target="_blank">LinkedIn</a>
+                    </span>
+                  </p>
+                </div>
+                {% endif %}{% endraw %}
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: full_name
+        description: 'Customer full name'
+        type: string
+        richText: |
+          {% raw %}{% if value.raw == nil %}
+          <span style="color: #999;">-</span>
+          {% else %}
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <img src="https://ui-avatars.com/api/?name=${ value.formatted | url_encode }&background=random&size=32&rounded=true"
+                 width="32" height="32"
+                 style="border-radius: 50%;"
+                 alt="${ value.formatted }" />
+            <p>
+              <strong style="float:left">${ value.formatted }</strong><br/>
+              <span style="color: #666; font-size: 0.9em;">
+                <a style="float:left;" href="https://www.linkedin.com/search/results/people/?keywords=${ value.formatted | url_encode }" target="_blank">LinkedIn</a>
+              </span>
+            </p>
+          </div>
+          {% endif %}{% endraw %}
+    ```
+  </Tab>
+</Tabs>
+
+![Avatar image with colored initials, bold name, and a LinkedIn link rendered per row](/images/references/rich-text-html-avatars.png)
 
 ### Liquid templating in rich text
 
