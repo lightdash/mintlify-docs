@@ -584,8 +584,8 @@ The admin, organization, and API key variables from [Initialize instance](#initi
 | `catalog`             | No                                            | Unity Catalog name.                                                              |
 | `authenticationType`  | No                                            | One of `personal_access_token` (default), `oauth_m2m`, `oauth_u2m`.              |
 | `personalAccessToken` | If `authenticationType=personal_access_token` | Databricks PAT (starts with `dapi_`).                                            |
-| `oauthClientId`       | If `authenticationType=oauth_m2m`             | Service Principal client ID.                                                     |
-| `oauthClientSecret`   | If `authenticationType=oauth_m2m`             | Service Principal client secret.                                                 |
+| `oauthClientId`       | If `authenticationType=oauth_m2m`             | Databricks Service Principal client ID (a UUID).                                 |
+| `oauthClientSecret`   | If `authenticationType=oauth_m2m`             | Databricks Service Principal client secret.                                      |
 | `compute`             | No                                            | Array of extra SQL warehouses: `[{ "name": "...", "httpPath": "..." }]`.         |
 | `startOfWeek`         | No                                            | Day to use as start of week (default=`SUNDAY`).                                  |
 | `dataTimezone`        | No                                            | Project-level timezone override.                                                 |
@@ -647,6 +647,53 @@ export LD_SETUP_PROJECTS='[
 
 <Note>
   **Quote the whole value in single quotes** in your shell so that `$`, backticks, and double quotes inside the JSON are not re-interpreted. When injecting via a secret manager or Kubernetes `Secret`, no escaping is needed — just paste the JSON as-is.
+</Note>
+
+### Databricks M2M OAuth example
+
+Use a [Databricks Service Principal](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-m2m) when you want non-interactive, machine-to-machine authentication instead of a PAT. Lightdash exchanges the `client_id` + `client_secret` for an access token automatically on the first compile and refreshes it as needed — no user interaction is required.
+
+```bash
+export LD_SETUP_ADMIN_EMAIL="admin@example.com"
+export LD_SETUP_PROJECTS='[
+  {
+    "name": "Sales (Databricks M2M)",
+    "warehouseConnection": {
+      "type": "databricks",
+      "serverHostName": "dbc-xxxx.cloud.databricks.com",
+      "httpPath": "/sql/1.0/warehouses/abc123",
+      "catalog": "lightdash_prod",
+      "database": "sales",
+      "authenticationType": "oauth_m2m",
+      "oauthClientId": "00000000-0000-0000-0000-000000000000",
+      "oauthClientSecret": "dose...secret..."
+    },
+    "dbtConnection": {
+      "type": "github",
+      "authorization_method": "personal_access_token",
+      "personal_access_token": "ghp_...",
+      "repository": "myorg/dbt-sales",
+      "branch": "main",
+      "project_sub_path": "/"
+    }
+  }
+]'
+```
+
+If you already have an M2M Service Principal configured for dbt, the field names are different. Map your dbt profile fields to Lightdash's `warehouseConnection` like this:
+
+| `profiles.yml` (dbt)      | `LD_SETUP_PROJECTS` (Lightdash) |
+| :------------------------ | :------------------------------ |
+| `host`                    | `serverHostName`                |
+| `http_path`               | `httpPath`                      |
+| `catalog`                 | `catalog`                       |
+| `schema`                  | `database`                      |
+| `auth_type: oauth`        | `authenticationType: "oauth_m2m"` |
+| `client_id`               | `oauthClientId`                 |
+| `client_secret`           | `oauthClientSecret`             |
+
+<Note>
+  M2M is non-interactive by design — Lightdash uses the OAuth client-credentials grant. No browser popup, no per-user sign-in. The Service Principal needs `CAN USE` on the SQL warehouse and the appropriate `SELECT`/`USE CATALOG`/`USE SCHEMA` grants on your data.
 </Note>
 
 ### Validation
