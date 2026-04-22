@@ -52,12 +52,56 @@ This guarantees that a verified badge always reflects content that an admin has 
 
 ## Verification in charts and dashboards as code
 
-Verification status is included in [charts and dashboards as code](/guides/developer/dashboards-as-code). When you run `lightdash download`, verified content includes verification metadata right in the YAML, so you can see which downloaded files represent approved content.
+Verification status is included in [charts and dashboards as code](/guides/developer/dashboards-as-code). When you run `lightdash download`, verified content includes verification metadata in the YAML, and `lightdash upload` can apply or remove the verified badge based on what your YAML says.
 
-<Note>
-Verification metadata is currently **read-only** in content-as-code workflows. Running `lightdash download` includes verification status in the YAML, but `lightdash upload` does not write verification back. To apply or remove the verified badge, use the three-dot menu on a chart or dashboard in the Lightdash UI.
+### Two fields: `verification` and `verified`
 
-Full CLI support for writing verification status is being tracked in [this issue](https://github.com/lightdash/lightdash/issues/22138).
-</Note>
+Verified content has two related fields in the YAML:
 
-Even though verification is read-only in the CLI today, you can still build on top of verified content. Anything marked as verified in the UI is visible in the downloaded YAML, so your trusted repository can reference those charts and dashboards as the source of truth for downstream work. This is especially useful when you're using an AI agent, the [Lightdash CLI](/references/lightdash-cli), or [agent skills](/guides/developer/agent-skills) to build on top of trusted content.
+- **`verification`** — read-only audit metadata showing who verified the content and when. Emitted on download for visibility in version control. Ignored on upload.
+- **`verified`** — a boolean that controls verification state on upload. This is the field you edit to change verification.
+
+Here's what a verified chart looks like after `lightdash download`:
+
+```yaml
+name: Total orders
+slug: total-orders
+description: Count of all orders
+# ... other chart fields ...
+verification:
+  verifiedAt: "2026-04-22T17:48:43.394Z"
+  verifiedBy:
+    firstName: David
+    lastName: Attenborough
+    userUuid: b264d83a-9000-426a-85ec-3f9c20f368ce
+verified: true
+```
+
+### How `verified` behaves on upload
+
+The `verified` field has three states:
+
+| Value | Behavior on upload |
+|---|---|
+| `verified: true` | Verifies the content. No-op if already verified. |
+| `verified: false` | Unverifies the content. No-op if already unverified. |
+| `verified` absent | Leaves verification state unchanged. |
+
+The "absent = leave alone" semantic means that downloading and re-uploading a YAML file you haven't touched will not unintentionally change verification state, even if you delete the `verified` line.
+
+### Permissions
+
+Only users with permission to verify content (organization admins and project admins) can change verification state via the CLI. If you upload a YAML containing `verified: true` or `verified: false` but you don't have verify permissions, the upload still succeeds — the rest of your changes go through, but the verification field is silently skipped and a warning is logged on the server.
+
+This means CI pipelines run by non-admin deployers (for example, with the `developer` role) won't fail just because a YAML file contains a `verified` field they can't act on.
+
+### Example workflow
+
+A typical workflow for promoting verified content from one project to another:
+
+1. Run `lightdash download` from a project where the content is already verified
+2. Inspect the YAML — verified items will have `verified: true`
+3. Copy or move the files into another project's `lightdash/` directory
+4. Run `lightdash upload --force` as an admin user to push the content (with verification) to the destination project
+
+To unverify content via the CLI, edit `verified: true` to `verified: false` in the YAML and re-upload.
