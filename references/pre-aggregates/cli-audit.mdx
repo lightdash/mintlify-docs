@@ -1,0 +1,141 @@
+---
+title: "Auditing pre-aggregates from the CLI"
+sidebarTitle: "CLI audit"
+description: "Use lightdash pre-aggregate-audit to inspect coverage, find gaps in your YAML, and gate CI on dashboard hit rates."
+---
+
+<Info>
+  **Availability:** Pre-aggregates are an [Early Access](/references/workspace/feature-maturity-levels) feature available on **Enterprise plans** only.
+</Info>
+
+`lightdash pre-aggregate-audit` reports, for one dashboard or every dashboard in a project, which tiles are served from a pre-aggregate, which ones miss (and why), and which ones are ineligible for pre-aggregates entirely. It calls the same audit data as the in-app **Pre-aggregation audit** menu (see [Dashboard pre-aggregate view](/references/pre-aggregates/monitoring#dashboard-pre-aggregate-view)) but exposes it for scripting, automation, and CI.
+
+## When to use it
+
+The CLI audit is the right tool when you want to:
+
+- Iterate on pre-aggregate YAML and verify that misses you've targeted are now hits, without clicking through dashboards in the UI
+- Run a project-wide sweep to find dashboards that aren't benefitting from pre-aggregates yet
+- Get machine-readable JSON for custom reporting (for example, exporting coverage to a BI tool or Slack)
+- Block merges in CI when a critical dashboard regresses to warehouse queries
+
+For a quick spot-check on one dashboard, the in-app audit menu is usually faster.
+
+## Prerequisites
+
+- Lightdash Enterprise plan
+- [Install the Lightdash CLI](/guides/cli/how-to-install-the-lightdash-cli)
+- [Authenticate](/guides/cli/cli-authentication) with `lightdash login`
+
+## Auditing a single dashboard
+
+Pass the dashboard's UUID or its URL slug:
+
+```bash
+lightdash pre-aggregate-audit --dashboard sales-overview
+```
+
+The output groups tiles by tab and tags each one with its status:
+
+```text
+Dashboard: Sales Overview (sales-overview)  4 hit  2 miss  — 1 ineligible
+  Tab: Q1
+    HIT  Total revenue        (pre-aggregate: orders_daily_by_status)
+    HIT  Average order value  (pre-aggregate: orders_daily_by_status)
+    MISS New customers        (Metric not in pre-aggregate)
+    MISS Revenue by hour      (Granularity too fine)
+    1 ineligible tile(s) hidden (pass --verbose to show)
+```
+
+Each tile is one of:
+
+- **Hit** — the chart is served from the named pre-aggregate
+- **Miss** — the chart is eligible to use pre-aggregates but no pre-aggregate matches. The output prints the miss reason
+- **Ineligible** — the tile cannot use pre-aggregates at all (markdown tile, SQL chart, orphaned chart, broken explore). Hidden by default; pass `--verbose` to expand
+
+## Auditing every dashboard
+
+```bash
+lightdash pre-aggregate-audit --all
+```
+
+The CLI fetches every dashboard in the project and audits each one. This is the workflow for project-wide health checks or CI gates.
+
+## Selecting the project
+
+The CLI resolves the project in this order:
+
+1. `--project <uuid>` flag
+2. `LIGHTDASH_PROJECT_UUID` environment variable
+3. The project saved by your last `lightdash login` / `lightdash config set-project`
+
+```bash
+lightdash pre-aggregate-audit --all --project <project-uuid>
+```
+
+## JSON output for scripting
+
+```bash
+lightdash pre-aggregate-audit --dashboard sales-overview --json
+```
+
+Returns the full audit object per dashboard (`{ "dashboards": [...] }` when combined with `--all`). Pipe into `jq` to extract what you care about — for example, every dashboard with at least one miss:
+
+```bash
+lightdash pre-aggregate-audit --all --json \
+  | jq '.dashboards[] | select(.summary.missCount > 0) | .dashboardName'
+```
+
+## Using audit results to improve your YAML
+
+Each miss reason maps to a specific YAML edit. The miss labels printed by the CLI are the same ones documented in [Why a query misses a pre-aggregate](/references/pre-aggregates/monitoring#why-a-query-misses-a-pre-aggregate). The most common mappings:
+
+| Miss output | YAML action |
+|---|---|
+| `Dimension not in pre-aggregate` | Add the dimension to the pre-aggregate's `dimensions` list |
+| `Metric not in pre-aggregate` | Add the metric to the pre-aggregate's `metrics` list |
+| `Filter dimension not in pre-aggregate` | Add the filter dimension to `dimensions` — filter-only fields still need to be listed |
+| `Pre-aggregate filter not satisfied` | Add or narrow the dashboard filter to match the pre-aggregate, or define a separate pre-aggregate without the static filter |
+| `Granularity too fine` | Lower the pre-aggregate's `granularity` (for example, `month` → `day`) |
+| `No pre-aggregates defined` | Add a `pre_aggregates` block to the explore's source model. See [Getting started](/references/pre-aggregates/getting-started) |
+| `No active materialization` | Trigger a refresh from **Project Settings > Pre-aggregates** or wait for the next scheduled run |
+| `Non-additive metric`, `Custom SQL metric`, `Custom dimension detected`, `Custom metric detected`, `SQL Table calculation detected` | Not supported by pre-aggregates. See [supported metric types](/references/pre-aggregates/overview#supported-metric-types) and [current limitations](/references/pre-aggregates/overview#current-limitations) |
+| `Bypassed by user` | Intentional cache bypass — no action needed |
+
+A typical iteration loop:
+
+1. `lightdash pre-aggregate-audit --dashboard <slug>` to see the current misses
+2. Edit your dbt model YAML to address each miss
+3. `lightdash deploy` to push the change
+4. Trigger a refresh from **Project Settings > Pre-aggregates** if the pre-aggregate definition changed
+5. Re-run the audit to confirm the misses are now hits
+
+## CI integration with `--fail-on-miss`
+
+`--fail-on-miss` makes the command exit with code 1 if any tile is a miss, so CI can block changes that regress pre-aggregate coverage:
+
+```yaml
+- name: Audit pre-aggregate coverage
+  run: lightdash pre-aggregate-audit --dashboard executive-summary --fail-on-miss
+  env:
+    LIGHTDASH_API_KEY: ${{ secrets.LIGHTDASH_API_KEY }}
+    LIGHTDASH_URL: ${{ vars.LIGHTDASH_URL }}
+    LIGHTDASH_PROJECT_UUID: ${{ vars.LIGHTDASH_PROJECT_UUID }}
+```
+
+Ineligible tiles do not count as misses — only eligible tiles that failed to match contribute to the failure.
+
+<Tip>
+  Gating an entire project with `--all --fail-on-miss` is usually too strict, since most projects have at least one dashboard with unsupported features. Pin the gate to the high-traffic dashboards you care about with `--dashboard <slug> --fail-on-miss`, or use `--json` and filter the dashboards you want to enforce.
+</Tip>
+
+## Flag reference
+
+| Flag | Description |
+|---|---|
+| `--dashboard <uuid-or-slug>` | Audit a specific dashboard. Required unless `--all` is set. |
+| `--all` | Audit every dashboard in the project. |
+| `--project <uuid>` | Override the active project. Falls back to `LIGHTDASH_PROJECT_UUID`, then to the CLI config. |
+| `--json` | Emit machine-readable JSON instead of the human-friendly text output. |
+| `--fail-on-miss` | Exit 1 if any eligible tile misses. Ineligible tiles do not trigger a failure. |
+| `--verbose` | Include ineligible tiles (and their reason) in the human output. |
