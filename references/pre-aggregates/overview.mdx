@@ -112,12 +112,6 @@ Pre-aggregates support metrics that can be re-aggregated from pre-computed resul
 - `max`
 - `average`
 
-### Personal warehouse connections
-
-<Warning>
-  Pre-aggregates are **not compatible** with [personal warehouse connections](/references/workspace/personal-warehouse-connections). Materialization always runs under a single user's credentials, so warehouse-level access rules are not applied per viewer. If you rely on personal warehouse connections to enforce data access, use [results caching](/guides/developer/caching) instead.
-</Warning>
-
 ## Current limitations
 
 Pre-aggregates support a narrower subset of the Lightdash semantic layer than regular warehouse queries.
@@ -126,12 +120,19 @@ Pre-aggregates support a narrower subset of the Lightdash semantic layer than re
 
 Pre-aggregates do not support:
 
-- [Parameters](/references/lightdash-config-yml#parameters-configuration)
-- [`sql_filter`](/references/tables#sql-filter-row-level-security) and [`sql_where`](/references/tables#sql-filter-row-level-security)
-- [User attributes](/references/workspace/user-attributes) when referenced from SQL. [`required_attributes`](/references/tables#required-attributes) and [`any_attributes`](/references/tables#any-attributes) are still supported through `materialization_role`.
+- [Personal warehouse connections](/references/workspace/personal-warehouse-connections). Materialization always runs under a single user's credentials, so warehouse-level access rules are not applied per viewer. If you rely on personal warehouse connections to enforce data access, use [results caching](/guides/developer/caching) instead.
+- [Parameters](/references/lightdash-config-yml#parameters-configuration) — parameter values are picked at query time, so they cannot be resolved during materialization. Queries that use parameters fall back to the warehouse.
+- [User attributes](/references/workspace/user-attributes) when referenced from SQL. [`required_attributes`](/references/tables#required-attributes) and [`any_attributes`](/references/tables#any-attributes) are still supported through [`materialization_role`](/references/pre-aggregates/getting-started#materialization-role).
 - [Custom metrics](/guides/custom-fields#custom-metrics) created in the Explorer
 - [Custom SQL dimensions](/guides/custom-fields#custom-sql) created in the Explorer ([Custom bin dimensions](/guides/custom-fields#bin) are supported)
 - SQL table calculations ([Formula table calculations](/guides/formula-table-calculations#formula-table-calculations) are supported)
+
+### SQL compatibility
+
+[`sql_filter`](/references/tables#sql-filter-row-level-security) (and its alias `sql_where`) runs both at materialization time and at query time on top of the materialized data.
+
+- **At materialization time**, the filter is evaluated against your warehouse. If the SQL references [Parameters](/references/lightdash-config-yml#parameters-configuration) or [user attributes](/references/workspace/user-attributes), the values injected come from the materialization context — you can pin this to a fixed identity or attribute set with [`materialization_role`](/references/pre-aggregates/getting-started#materialization-role) so the materialization captures the rows you need.
+- **At query time**, the same filter is re-applied against the materialized data, which is served by DuckDB. If the `sql_filter` SQL uses warehouse-specific syntax that DuckDB doesn't understand, the query will fail to run against the pre-aggregate and fall back to the warehouse.
 
 ### Metrics that can't be pre-aggregated
 
