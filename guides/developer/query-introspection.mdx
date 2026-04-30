@@ -26,7 +26,7 @@ You can use either `ld.query` or the longer `lightdash.query` — they're aliase
 
 ## Where you can use it
 
-Query introspection works anywhere `sql:` is evaluated at query time:
+Query introspection works in these places:
 
 1. **Dimension SQL** in your [dbt YAML](/references/dimensions)
 2. **Metric SQL** in your [dbt YAML](/references/metrics)
@@ -240,6 +240,13 @@ Query introspection isn't only for fields defined in YAML. Any user with edit ac
 
 **Open the explore → Dimensions sidebar → Add → Custom dimension → Custom SQL.** Paste the Liquid block directly into the SQL field. **No `{% raw %}` wrapper needed** — the SQL goes straight to Lightdash without passing through dbt.
 
+<img
+  src="/images/guides/developer/query-introspection-custom-dimension.png"
+  alt="Create Custom Dimension dialog with a Liquid query introspection block"
+  className="mx-auto"
+  style={{ width:"80%" }}
+/>
+
 ```liquid
 {% if ld.query.fields contains "orders.status" %}
   CASE WHEN ${TABLE}.status = 'returned' THEN 'returned'
@@ -264,14 +271,15 @@ This is the workflow query introspection unlocks for analysts who don't write db
 
 The dotted id is `{explore_table_name}.{field_name}`:
 
-- **`explore_table_name`** is the dbt model name. For a joined table, it's the value under `join:` in the explore's joins config — not the join's `label`.
+- **`explore_table_name`** is the dbt model name. For a joined table, use the `alias:` value if one is set on the join — otherwise the value under `join:`. It's never the join's `label`.
 - **`field_name`** is the YAML key for the dimension or metric — not the label.
 
-If you're not sure, hover the field in the Lightdash sidebar — the field id appears in the URL when the field is added to a query (e.g. `dimensions=["orders_status"]` becomes `"orders.status"` for the `contains` check).
+If you're not sure, hover a field in the Lightdash sidebar — the tooltip shows the underlying YAML name and the table it belongs to. Combine them as `{table}.{field}` (with a dot, not the underscore that appears in URLs and CSS ids).
 
 ## Things to know
 
 - **`else` is safe by default.** If the field id you reference doesn't exist in the explore, the check returns false and the `else` branch fires. A typo in the field name will not throw an error.
+- **Date dimensions are expanded into per-interval field ids.** A column like `event_date` with time intervals enabled becomes `event_date_day`, `event_date_week`, `event_date_month`, etc. — each is its own id. `ld.query.filters contains "events.event_date"` will not match a filter on `events.event_date_day`. Use `or` to match every interval you care about, or check the specific one you expect.
 - **Both checks see the full query.** The introspection covers every dimension, metric, and filter in the query — not just the field you're branching from.
 - **Combine with parameters.** Liquid blocks can mix `ld.query.*` checks with `ld.parameters.*` checks in the same template. Both are resolved before the SQL leaves Lightdash.
 - **No effect on existing SQL.** If a field's `sql:` doesn't contain a Liquid block, nothing changes — the renderer skips it entirely. Adopting query introspection on one field doesn't affect any others.
