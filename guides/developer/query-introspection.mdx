@@ -1,0 +1,289 @@
+---
+title: "How to use query introspection"
+sidebarTitle: Query introspection
+---
+
+**Query introspection** lets a dimension or metric branch its SQL based on what's in the current query — which fields the user selected, and which fields they filtered on. The same definition can produce a different `SELECT` clause for every query.
+
+This is useful for "smart" metrics that adapt to the question being asked. For example, a `total_revenue` metric that defaults to completed orders only — but stops applying that filter the moment the user filters status themselves.
+
+## What you can check
+
+Inside a `sql:` block, two new Liquid checks are available:
+
+| Check | Returns true when… |
+| :--- | :--- |
+| `{% if ld.query.fields contains "table.field" %}` | The named field is selected or grouped in the current query |
+| `{% if ld.query.filters contains "table.field" %}` | A filter is applied to the named field in the current query |
+
+Both checks accept the **dotted field id** in the form `{table_name}.{field_name}` — same identifier you'd see in the URL of an explore. The check covers **both dimensions and metrics**, so `ld.query.fields contains "orders.total_order_amount"` works for a metric being selected.
+
+You can use either `ld.query` or the longer `lightdash.query` — they're aliases.
+
+<Note>
+  These are **Liquid template tags** (`{% %}`), not the Lightdash parameter substitution syntax (`${...}`). They're evaluated server-side when a query runs, before the SQL is sent to your warehouse.
+</Note>
+
+## Where you can use it
+
+Query introspection works anywhere `sql:` is evaluated at query time:
+
+1. **Dimension SQL** in your [dbt YAML](/references/dimensions)
+2. **Metric SQL** in your [dbt YAML](/references/metrics)
+3. **Additional dimensions** in your dbt YAML
+4. **Custom dimensions** created via the UI ([custom fields](/guides/custom-fields))
+
+It does **not** work in:
+
+- **Table calculations** — these run client-side after results return, not in the query SQL.
+- **Rich text templates** — those use a different engine (`${value.formatted}`) and run after the query, not before.
+
+## Wrapping in `{% raw %}` for dbt YAML
+
+dbt's Jinja engine also uses `{% %}` delimiters, and it will choke on Liquid-specific tags like `{% elsif %}`. You must wrap any Liquid block in `{% raw %} ... {% endraw %}` so dbt passes it through untouched. Lightdash then evaluates the unwrapped Liquid at query time.
+
+```yaml
+sql: |
+  {% raw %}{% if ld.query.filters contains "orders.status" %}
+    SUM(${TABLE}.amount)
+  {% else %}
+    SUM(CASE WHEN ${TABLE}.status = 'completed' THEN ${TABLE}.amount ELSE 0 END)
+  {% endif %}{% endraw %}
+```
+
+<Note>
+  When you create a **custom dimension via the UI**, no `{% raw %}` wrapper is needed — the SQL goes straight to Lightdash without passing through dbt.
+</Note>
+
+## Examples
+
+### Smart-default filter (filter-aware metric)
+
+A revenue metric that defaults to "completed orders only" — but if the user filters on status themselves, the metric respects their filter instead.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
+        columns:
+          - name: amount
+            meta:
+              metrics:
+                smart_revenue:
+                  type: number
+                  label: Smart Revenue (filter-aware)
+                  format: usd
+                  sql: |
+                    {% raw %}{% if ld.query.filters contains "orders.status" %}
+                      SUM(${TABLE}.amount)
+                    {% else %}
+                      SUM(CASE WHEN ${TABLE}.status = 'completed' THEN ${TABLE}.amount ELSE 0 END)
+                    {% endif %}{% endraw %}
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: orders
+        columns:
+          - name: amount
+            config:
+              meta:
+                metrics:
+                  smart_revenue:
+                    type: number
+                    label: Smart Revenue (filter-aware)
+                    format: usd
+                    sql: |
+                      {% raw %}{% if ld.query.filters contains "orders.status" %}
+                        SUM(${TABLE}.amount)
+                      {% else %}
+                        SUM(CASE WHEN ${TABLE}.status = 'completed' THEN ${TABLE}.amount ELSE 0 END)
+                      {% endif %}{% endraw %}
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    metrics:
+      smart_revenue:
+        type: number
+        label: Smart Revenue (filter-aware)
+        format: usd
+        sql: |
+          {% raw %}{% if ld.query.filters contains "orders.status" %}
+            SUM(${TABLE}.amount)
+          {% else %}
+            SUM(CASE WHEN ${TABLE}.status = 'completed' THEN ${TABLE}.amount ELSE 0 END)
+          {% endif %}{% endraw %}
+    ```
+  </Tab>
+</Tabs>
+
+**Result:**
+
+| The user's query | SQL Lightdash sends to the warehouse |
+| :--- | :--- |
+| No filter on `status` | `SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END)` |
+| `status IN ('returned')` | `SUM(amount)` |
+
+The `CASE WHEN` disappears entirely once the user applies their own filter — the metric stops second-guessing them.
+
+### Default to a parameter, but back off when the user filters
+
+A common pattern: a metric should default to some sensible time window — the last 30 days, say — but if the user applies their own date filter, the default shouldn't fight them. This composes a [parameter](/guides/developer/using-parameters) for the default with a `ld.query.filters` check for the override.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: events
+        meta:
+          parameters:
+            lookback_days:
+              label: Lookback days
+              type: number
+              default: 30
+        columns:
+          - name: user_id
+            meta:
+              metrics:
+                active_users:
+                  type: count_distinct
+                  description: |
+                    Distinct users in the lookback window. The lookback
+                    window comes from the `lookback_days` parameter — but
+                    if the user filters event_date themselves, that filter
+                    wins.
+                  sql: |
+                    {% raw %}{% if ld.query.filters contains "events.event_date" %}
+                      ${TABLE}.user_id
+                    {% else %}
+                      CASE
+                        WHEN ${TABLE}.event_date >= CURRENT_DATE - INTERVAL '{{ ld.parameters.events.lookback_days }} days'
+                          THEN ${TABLE}.user_id
+                      END
+                    {% endif %}{% endraw %}
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: events
+        config:
+          meta:
+            parameters:
+              lookback_days:
+                label: Lookback days
+                type: number
+                default: 30
+        columns:
+          - name: user_id
+            config:
+              meta:
+                metrics:
+                  active_users:
+                    type: count_distinct
+                    description: |
+                      Distinct users in the lookback window. The lookback
+                      window comes from the `lookback_days` parameter — but
+                      if the user filters event_date themselves, that filter
+                      wins.
+                    sql: |
+                      {% raw %}{% if ld.query.filters contains "events.event_date" %}
+                        ${TABLE}.user_id
+                      {% else %}
+                        CASE
+                          WHEN ${TABLE}.event_date >= CURRENT_DATE - INTERVAL '{{ ld.parameters.events.lookback_days }} days'
+                            THEN ${TABLE}.user_id
+                        END
+                      {% endif %}{% endraw %}
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: events
+
+    parameters:
+      lookback_days:
+        label: Lookback days
+        type: number
+        default: 30
+
+    metrics:
+      active_users:
+        type: count_distinct
+        sql: |
+          {% raw %}{% if ld.query.filters contains "events.event_date" %}
+            ${TABLE}.user_id
+          {% else %}
+            CASE
+              WHEN ${TABLE}.event_date >= CURRENT_DATE - INTERVAL '{{ ld.parameters.events.lookback_days }} days'
+                THEN ${TABLE}.user_id
+            END
+          {% endif %}{% endraw %}
+    ```
+  </Tab>
+</Tabs>
+
+**Result:**
+
+| The user's query | What `active_users` counts |
+| :--- | :--- |
+| No filter on `event_date` | Users active in the last `lookback_days` (default 30) |
+| `event_date >= '2026-01-01'` | Users active in the user-selected window — parameter ignored |
+
+The parameter sets the default; introspection lets the user override. Two systems composing in one block — both `ld.parameters.x` and `ld.query.filters` are resolved before the SQL leaves Lightdash.
+
+### A custom dimension built in the UI, no PR required
+
+Query introspection isn't only for fields defined in YAML. Any user with edit access to a chart can spin up a one-off introspection-aware dimension from the explore, save it with the chart, and share it — without touching dbt or opening a PR.
+
+**Open the explore → Dimensions sidebar → Add → Custom dimension → Custom SQL.** Paste the Liquid block directly into the SQL field. **No `{% raw %}` wrapper needed** — the SQL goes straight to Lightdash without passing through dbt.
+
+```liquid
+{% if ld.query.fields contains "orders.status" %}
+  CASE WHEN ${TABLE}.status = 'returned' THEN 'returned'
+       WHEN ${TABLE}.status = 'completed' THEN 'completed'
+       ELSE 'in flight' END
+{% else %}
+  'all orders'
+{% endif %}
+```
+
+**The use case:** an analyst on a customer call gets asked *"can we group by completion state real quick?"* They open the explore, paste this in, save the chart, share the link. No model PR, no merge, no waiting on CI. The custom dimension lives on the saved chart and goes through the same query-time renderer as a YAML-defined field.
+
+This is the workflow query introspection unlocks for analysts who don't write dbt.
+
+### More patterns
+
+- **Skip an expensive operation when not needed** — wrap a window function or a `LEFT JOIN`-driven calculation in `{% if ld.query.fields contains "joined_table.field" %}` so the cost only shows up when the user has selected something that needs it.
+- **Drill-aware defaults** — a `time_grain` dimension that returns `DATE_TRUNC('day', ...)` when the user is grouping at day level, but `${TABLE}.event_date` when they're not, avoiding a needless function call.
+- **Self-narrating labels** — a string dimension that returns a different value depending on what's filtered, useful for embedded tiles and exports where the viewer can't see filter chips.
+
+## How to find a field's dotted id
+
+The dotted id is `{explore_table_name}.{field_name}`:
+
+- **`explore_table_name`** is the name of the model in the explore (the dbt model name, or the joined-table label/key)
+- **`field_name`** is the YAML key for the dimension or metric (not the label)
+
+If you're not sure, hover the field in the Lightdash sidebar — the field id appears in the URL when the field is added to a query (e.g. `dimensions=["orders_status"]` becomes `"orders.status"` for the `contains` check).
+
+## Things to know
+
+- **`else` is safe by default.** If the field id you reference doesn't exist in the explore, the check returns false and the `else` branch fires. A typo in the field name will not throw an error.
+- **Both checks see the full query.** The introspection covers every dimension, metric, and filter in the query — not just the field you're branching from.
+- **Combine with parameters.** Liquid blocks can mix `ld.query.*` checks with `ld.parameters.*` checks in the same template. Both are resolved before the SQL leaves Lightdash.
+- **No effect on existing SQL.** If a field's `sql:` doesn't contain a Liquid block, nothing changes — the renderer skips it entirely. Adopting query introspection on one field doesn't affect any others.
+
+## Related
+
+- [How to use parameters](/guides/developer/using-parameters) — the companion feature for `${ld.parameters.x}` substitution and `{% if ld.parameters.x == ... %}` Liquid blocks
+- [Dimensions reference](/references/dimensions)
+- [Metrics reference](/references/metrics)
+- [Custom fields](/guides/custom-fields) — using query introspection in UI-created custom dimensions
