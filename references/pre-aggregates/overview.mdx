@@ -5,7 +5,7 @@ description: "Speed up dashboards and reduce warehouse costs by serving queries 
 ---
 
 <Info>
-  **Availability:** Pre-aggregates are an [Early Access](/references/workspace/feature-maturity-levels) feature available on **Enterprise plans** only.
+  **Availability:** Pre-aggregates are a [Beta](/references/workspace/feature-maturity-levels) feature available on **Enterprise plans** only.
 </Info>
 
 Pre-aggregates let you define materialized summaries of your data directly in your dbt YAML. When a user runs a query in Lightdash, the system checks if the query can be answered from a pre-aggregate instead of querying your warehouse. If it matches, the query is served from the pre-computed results, making it significantly faster and reducing warehouse load.
@@ -14,12 +14,21 @@ This is especially useful for dashboards with high traffic or expensive aggregat
 
 Any query that goes through the Lightdash semantic layer can hit a pre-aggregate — this includes the Lightdash app, the [API](/api-reference/v1/introduction), [MCP](/references/integrations/lightdash-mcp), [AI agents](/guides/ai-agents), the [Embed SDK](/references/embedding), and the [React SDK](/references/react-sdk).
 
+Watch this video walkthrough for an overview of how to get started with pre-aggregates:
+
+<Frame>
+  <iframe width="100%" height="420" src="https://www.loom.com/embed/91133871cd994723b4f9ca4b5b35228b" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen />
+</Frame>
+
 <CardGroup cols={2}>
   <Card title="Getting started" icon="rocket" horizontal href="/references/pre-aggregates/getting-started">
     Define pre-aggregates in your dbt project and configure scheduling.
   </Card>
   <Card title="Monitoring and debugging" icon="chart-mixed" horizontal href="/references/pre-aggregates/monitoring">
     Track materialization status, debug query matching, and view hit/miss stats.
+  </Card>
+  <Card title="CLI audit" icon="terminal" horizontal href="/references/pre-aggregates/cli-audit">
+    Inspect dashboard coverage from the terminal and gate CI on hit rates.
   </Card>
 </CardGroup>
 
@@ -74,7 +83,8 @@ When a user runs a query, Lightdash automatically checks if a pre-aggregate can 
 - Every dimension used in **filters** is included in the pre-aggregate
 - If the pre-aggregate itself defines `filters`, the query must include an equivalent or narrower filter
 - All metrics use [supported metric types](#supported-metric-types)
-- The query does not contain custom dimensions, custom metrics, or table calculations
+- The query does not contain raw SQL table calculations
+- The query does not use [Parameters](/references/lightdash-config-yml#parameters-configuration), [`sql_filter`](/references/tables#sql-filter-row-level-security), or [user attributes](/references/workspace/user-attributes) inside SQL
 - If the query uses a time dimension, the requested granularity must be **equal to or coarser** than the pre-aggregate's granularity
 
 <Tip>
@@ -108,22 +118,40 @@ Pre-aggregates support metrics that can be re-aggregated from pre-computed resul
 - `max`
 - `average`
 
-### Personal warehouse connections
+## Current limitations
 
-<Warning>
-  Pre-aggregates are **not compatible** with [personal warehouse connections](/references/workspace/personal-warehouse-connections). Materialization always runs under a single user's credentials, so warehouse-level access rules are not applied per viewer. If you rely on personal warehouse connections to enforce data access, use [results caching](/guides/developer/caching) instead.
-</Warning>
+Pre-aggregates support a narrower subset of the Lightdash semantic layer than regular warehouse queries.
 
-### Current limitations
+### Not supported
 
-Not all metrics work this way. Consider `count_distinct` with the same daily pre-aggregate from above. If a daily pre-aggregate stores "2 distinct customers on 2024-01-15" and "1 distinct customer on 2024-01-16", you can't sum those to get the monthly distinct count — Alice ordered on both days and would be counted twice:
+Pre-aggregates do not support:
+
+- [Personal warehouse connections](/references/workspace/personal-warehouse-connections). Materialization always runs under a single user's credentials, so warehouse-level access rules are not applied per viewer. If you rely on personal warehouse connections to enforce data access, use [results caching](/guides/developer/caching) instead.
+- [Parameters](/references/lightdash-config-yml#parameters-configuration) — parameter values are picked at query time, so they cannot be resolved during materialization. Queries that use parameters fall back to the warehouse.
+- [User attributes](/references/workspace/user-attributes) when referenced from SQL. [`required_attributes`](/references/tables#required-attributes) and [`any_attributes`](/references/tables#any-attributes) are still supported through [`materialization_role`](/references/pre-aggregates/getting-started#materialization-role).
+- [Custom metrics](/guides/custom-fields#custom-metrics) created in the Explorer
+- [Custom SQL dimensions](/guides/custom-fields#custom-sql) created in the Explorer ([Custom bin dimensions](/guides/custom-fields#bin) are supported)
+- SQL table calculations ([Formula table calculations](/guides/formula-table-calculations#formula-table-calculations) are supported)
+
+### SQL compatibility
+
+[`sql_filter`](/references/tables#sql-filter-row-level-security) (and its alias `sql_where`) runs both at materialization time and at query time on top of the materialized data.
+
+- **At materialization time**, the filter is evaluated against your warehouse. If the SQL references [Parameters](/references/lightdash-config-yml#parameters-configuration) or [user attributes](/references/workspace/user-attributes), the values injected come from the materialization context — you can pin this to a fixed identity or attribute set with [`materialization_role`](/references/pre-aggregates/getting-started#materialization-role) so the materialization captures the rows you need.
+- **At query time**, the same filter is re-applied against the materialized data, which is served by DuckDB. If the `sql_filter` SQL uses warehouse-specific syntax that DuckDB doesn't understand, the query will fail to run against the pre-aggregate and fall back to the warehouse.
+
+### Metrics that can't be pre-aggregated
+
+Pre-aggregates do not support metric types that cannot be re-aggregated from pre-computed results.
+
+For example, consider `count_distinct` on a daily pre-aggregate. If the pre-aggregate stores "2 distinct customers on 2024-01-15" and "1 distinct customer on 2024-01-16", you cannot sum those daily values to get the monthly distinct count, because the same customer can appear on multiple days.
 
 | order_date_day | status  | distinct_customers |
 |---|---|---|
 | 2024-01-15     | shipped | 2 (Alice, Bob)     |
 | 2024-01-16     | shipped | 1 (Alice)          |
 
-Re-aggregating: 2 + 1 = **3**, but the correct monthly answer is **2** (Alice, Bob). The pre-aggregate lost track of *which* customers were counted.
+Re-aggregating gives `2 + 1 = 3`, but the correct monthly answer is `2` (`Alice`, `Bob`). The pre-aggregate no longer knows which customers were counted.
 
 We're investigating supporting `count_distinct` through approximation algorithms. [Follow this issue](https://github.com/lightdash/lightdash/issues/21536) for updates.
 
@@ -133,7 +161,7 @@ For similar reasons, the following metric types are also not supported:
 - `median`, `percentile`
 - `percent_of_total`, `percent_of_previous`
 - `running_total`
-- Custom SQL metrics — [Follow this issue](https://github.com/lightdash/lightdash/issues/21537)
+- Custom SQL / post-calculation metrics (including many `number` metrics) — [Follow this issue](https://github.com/lightdash/lightdash/issues/21537)
 - `number`, `string`, `date`, `timestamp`, `boolean`
 
 For metrics that can't be pre-aggregated, consider using [caching](/guides/developer/caching) instead.
@@ -167,7 +195,7 @@ A single pre-aggregate can serve many different queries. A daily pre-aggregate w
 | **Warehouse hit on first query?** | Yes                                           | No — only materialization hits the warehouse, not query-time serving    |
 | **Coverage**                 | All metric types, all query shapes                 | Only re-aggregatable metrics (sum, count, min, max, average)           |
 | **Scope**                    | One cache entry per unique SQL                     | One pre-aggregate can serve many query shapes                          |
-| **Availability**             | Cloud Pro+ or self-hosted with license             | Enterprise (Early Access)                                              |
+| **Availability**             | Cloud Pro+ or self-hosted with license             | Enterprise (Beta)                                                      |
 
 ### When to use which
 
@@ -181,7 +209,7 @@ A single pre-aggregate can serve many different queries. A daily pre-aggregate w
 **Use results caching when:**
 
 - Query patterns are ad-hoc or unpredictable
-- You need count_distinct, median, percentile, custom SQL metrics, table calculations, or custom dimensions/metrics
+- You need unsupported features listed above, such as `count_distinct`, [Parameters](/references/lightdash-config-yml#parameters-configuration), [`sql_filter`](/references/tables#sql-filter-row-level-security), or raw SQL table calculations
 - You're using the SQL runner
 - You don't want upfront configuration work
 
