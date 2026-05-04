@@ -1,0 +1,108 @@
+---
+title: "Okta SSO setup (Lightdash Cloud)"
+description: "Configure Okta SSO for your Lightdash Cloud workspace and securely share the required values with the Lightdash team."
+---
+
+<CardGroup cols={3}>
+  <Card title="Cloud Enterprise" icon="rocket" horizontal>
+
+  </Card>
+</CardGroup>
+
+<Info>
+  **Okta SSO is only available on Lightdash Enterprise plans.**
+
+  To enable Okta SSO on your Lightdash Cloud workspace, [contact the Lightdash team](https://www.lightdash.com/contact) — we'll configure it on your behalf once you've completed the Okta-side setup below.
+
+  For more information on our plans, visit our [pricing page](https://www.lightdash.com/pricing).
+</Info>
+
+## Summary
+
+This guide walks you through setting up Okta SSO for your Lightdash Cloud workspace. You'll create an Okta application, gather a handful of values, and securely share them with the Lightdash team (e.g. via 1Password). The Lightdash team will then enable Okta SSO on your workspace.
+
+If you're self-hosting Lightdash, follow the [self-hosted SSO configuration guide](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash#okta) instead.
+
+## What you'll share with Lightdash
+
+At the end of this guide, you'll need to securely share the following with the Lightdash team (we recommend using 1Password or a similar secret-sharing tool):
+
+| Value | Description |
+| --- | --- |
+| **Client ID** | From the Okta application settings |
+| **Client secret** | From the Okta application settings |
+| **Okta domain** | Your Okta domain, **without** `https://` (e.g. `dev-123456.okta.com`) |
+| **Issuer URI** | Your authorization server issuer URI, **with** `https://` (e.g. `https://dev-123456.okta.com/oauth2/default`) |
+| **Authorization server ID** | Optional. Only required if you're using a custom authorization server (not the Okta org authorization server) |
+| **Extra scopes** | Optional. E.g. `groups` if you want to use Okta groups in Lightdash and you're not using a custom authorization server |
+
+<Warning>
+  Do **not** send the client secret over email or Slack. Use a secure secret-sharing tool such as 1Password.
+</Warning>
+
+## 1. Create an Okta application
+
+In the Okta admin panel, navigate to **Applications** and click **Create App Integration**, choose the following settings:
+
+- **Sign-in method**: OIDC - OpenID Connect
+- **Application type**: Web application
+
+On the following page, replace `{{ lightdash_url }}` with the URL of your Lightdash workspace (e.g. if you sign in at `https://app.lightdash.cloud/login`, your `{{ lightdash_url }}` is `https://app.lightdash.cloud`; if you have a custom domain like `https://lightdash.example.com/login`, use `https://lightdash.example.com`).
+
+- **Grant type**: Authorization Code
+- **Sign-in redirect URIs**: `{{ lightdash_url }}/api/v1/oauth/redirect/okta`
+- **Sign-out redirect URIs**: `{{ lightdash_url }}`
+- **Controlled access**: Select who can access this application
+
+Click **Save**.
+
+For the optimal user experience, we recommend allowing Okta to initiate the login flow. On the application settings page, click **Edit** next to **General Settings** and set:
+
+- **Login initiated by**: App and Okta Sign-in Page
+- **Application visibility**: Display application icon to users
+- **Login flow**: Redirect to app to initiate login (OIDC Compliant)
+- **Initiate login URI**: `{{ lightdash_url }}/api/v1/login/okta`
+
+Click **Save**.
+
+## 2. Collect the values to share
+
+From the application settings page, copy the following:
+
+- **Client ID**
+- **Client secret**
+
+Your **Okta domain** is the first part of your Okta URL — for example, if your Okta URL is `https://dev-123456.okta.com`, your Okta domain is `dev-123456.okta.com` (no `https://`).
+
+For the **Issuer URI**, you can either use your Org authorization server (which uses `https://dev-123456.okta.com` as the issuer) or a custom authorization server. To find the issuer URI for a custom authorization server, navigate to **Security > API > Authorization Servers**, click the authorization server, and note the **Issuer URI** and **Name**.
+
+For example, the default custom authorization server has an issuer URI of `https://dev-123456.okta.com/oauth2/default`.
+
+## 3. (Optional) Configure groups
+
+If you want to use Okta groups to control access to Lightdash, configure groups in Okta:
+
+- **If you're not using a custom authorization server**: in the **OpenID Connect ID Token** section of the Okta application settings, set **Groups claim type** to `Filter` and **Groups claim filter** to match `.*` on the `groups` claim. You'll then need to share `groups` as an extra scope with the Lightdash team.
+- **If you're using a custom authorization server**: on the authorization server settings, add a claim `groups`, value type `Groups`, with a regex matching `.*`. You don't need to share extra scopes in this case.
+
+See [Using Okta to manage groups in Lightdash](/references/workspace/groups#using-okta-to-manage-groups-in-lightdash) for more on group sync behavior.
+
+## 4. Securely share the values with Lightdash
+
+Send the following to your Lightdash contact via 1Password (or another secure secret-sharing tool):
+
+- Client ID
+- Client secret
+- Okta domain (without `https://`)
+- Issuer URI (with `https://`)
+- Authorization server ID (only if using a custom authorization server)
+- Any extra scopes (e.g. `groups`, only if needed)
+
+Once we have these details, the Lightdash team will configure Okta on our side and test it with you.
+
+## Related resources
+
+- [SSO providers overview](/references/workspace/sso-providers)
+- [SCIM integration](/references/workspace/scim-integration)
+- [Using Okta to manage groups in Lightdash](/references/workspace/groups#using-okta-to-manage-groups-in-lightdash)
+- [Self-hosted SSO configuration](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash#okta)
