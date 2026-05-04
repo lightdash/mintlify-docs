@@ -1,0 +1,105 @@
+---
+title: "Verified charts and dashboards"
+sidebarTitle: Verified content
+description: Mark charts and dashboards as verified so your team can instantly identify trusted, approved content. Verified content gets a green checkmark badge that shows who verified it and when, and verification is automatically removed if the content is edited.
+---
+
+<Frame>
+  <img src="/images/guides/verified-content/dashboard-badge.jpeg" alt="Verified dashboard with green checkmark badge showing 'Verified by tori whaley'"/>
+</Frame>
+
+Verified charts and dashboards let organization and project admins sign off on specific content so the rest of your team knows at a glance which charts and dashboards are trusted and approved.
+
+Each verified item gets a green checkmark badge that shows who verified it and when. Verification always reflects the current state of the content. If a chart or dashboard is edited after being verified, the badge is automatically removed and an admin will need to re-verify the updated version.
+
+<Frame>
+  <iframe width="100%" height="420" src="https://www.loom.com/embed/2d2b4d46f10d498389c2061715708e54" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen />
+</Frame>
+
+## Who can verify content
+
+Only organization admins and project admins can verify or unverify charts and dashboards. All other users can see which content is verified, but cannot change verification status themselves.
+
+## Verifying a chart or dashboard
+
+Admins can verify content directly from the chart or dashboard, or from the verification panel in project settings.
+
+Admins also have a dedicated verification panel under **Project settings** that lists all verified content and provides a central place to manage verification across the project.
+
+<Frame>
+  <img src="/images/guides/verified-content/admin-panel.png" alt="Verified content panel in project settings showing a list of verified charts and dashboards with their space and verifier"/>
+</Frame>
+
+## Where users see verified content
+
+Once a chart or dashboard is verified, the green checkmark badge appears wherever that content is surfaced, including:
+
+- The homepage, so users can quickly spot approved content to start from
+- Chart and dashboard listings
+- Inside the chart or dashboard itself, along with the verifier's name and verification timestamp
+
+This makes it easy for teams to distinguish between exploratory or work-in-progress content and content that's been reviewed and approved.
+
+<Frame>
+  <img src="/images/guides/verified-content/homepage-tab.png" alt="Homepage with a 'Verified' tab listing all verified charts and dashboards for quick access"/>
+</Frame>
+
+## Verification is automatically removed when content changes
+
+Verification is tied to the exact state of the content at the time it was verified. If anyone edits a verified chart or dashboard, the verification badge is automatically removed. An admin will need to review the updated version and re-verify it.
+
+This guarantees that a verified badge always reflects content that an admin has explicitly approved in its current form.
+
+## Verification in charts and dashboards as code
+
+Verification status is included in [charts and dashboards as code](/guides/developer/dashboards-as-code). When you run `lightdash download`, verified content includes verification metadata in the YAML, and `lightdash upload` can apply or remove the verified badge based on what your YAML says.
+
+### Two fields: `verification` and `verified`
+
+Verified content has two related fields in the YAML:
+
+- **`verification`** — read-only audit metadata showing who verified the content and when. Emitted on download for visibility in version control. Ignored on upload.
+- **`verified`** — a boolean that controls verification state on upload. This is the field you edit to change verification.
+
+Here's what a verified chart looks like after `lightdash download`:
+
+```yaml
+name: Total orders
+slug: total-orders
+description: Count of all orders
+# ... other chart fields ...
+verification:
+  verifiedAt: "2026-04-22T17:48:43.394Z"
+  verifiedBy:
+    firstName: David
+    lastName: Attenborough
+    userUuid: b264d83a-9000-426a-85ec-3f9c20f368ce
+verified: true
+```
+
+### How `verified` behaves on upload
+
+The `verified` field has three states:
+
+| Value | Behavior on upload |
+|---|---|
+| `verified: true` | Verifies the content. No-op if already verified. |
+| `verified: false` | Unverifies the content. No-op if already unverified. |
+| `verified` absent | Leaves verification state unchanged. |
+
+The "absent = leave alone" semantic means that downloading and re-uploading a YAML file you haven't touched will not unintentionally change verification state, even if you delete the `verified` line.
+
+### Permissions
+
+Only users with permission to verify content (organization admins and project admins) can change verification state via the CLI. If you upload a YAML containing `verified: true` or `verified: false` but you don't have verify permissions, the upload still succeeds — the rest of your changes go through, but the verification field is silently skipped and a warning is logged on the server.
+
+This means CI pipelines run by non-admin deployers (for example, with the `developer` role) won't fail just because a YAML file contains a `verified` field they can't act on.
+
+## Coming soon: unified verified content
+
+Today, admin-verified charts and dashboards live in a separate stream from [verified answers](/guides/ai-agents/verified-answers) (the AI-agent-generated content that users mark as verified inside an AI agent conversation). We're working on bringing them together so that any verified piece of content, wherever it was verified, is treated as a single trusted signal across:
+
+- The verified badge in tiles, search, the resource browser, and space overviews
+- Content-as-code YAML download/upload
+- The [Lightdash MCP](/references/integrations/lightdash-mcp) `list_verified_content` tool
+- In-product AI agent retrieval and suggestions
