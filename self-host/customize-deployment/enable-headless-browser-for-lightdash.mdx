@@ -46,3 +46,33 @@ In order to make this work, there are a few key ENV variables that need to be co
 
   This means that if you are using docker locally, make sure the headless browser pod can reach the lightdash pod. Or follow the [docker documentation](https://docs.docker.com/compose/compose-file/compose-file-v3/#network_mode) to enable `network:host`
 </Info>
+
+## Run Lightdash on a fully internal HTTPS network
+
+If you run Lightdash with `SECURE_COOKIES=true` and you don't want the headless browser to leave the cluster to reach Lightdash, `INTERNAL_LIGHTDASH_HOST` still needs to be **HTTPS**. Plain HTTP does not work in this configuration: Lightdash emits HSTS on every response, so once Chrome (running inside browserless) has loaded a page from the internal hostname over HTTP it pins that hostname to HTTPS and auto-upgrades every subsequent asset request — which then fails against a plain-HTTP ClusterIP.
+
+The typical setup is to terminate TLS on the internal Lightdash hostname (with an internal Ingress, an nginx/envoy sidecar, an internal AWS ALB, etc.) using a **self-signed certificate**, and tell the Lightdash backend to skip TLS validation for screenshot traffic to that host:
+
+```yaml
+# values.yaml
+configMap:
+  SECURE_COOKIES: 'true'
+  SITE_URL: https://lightdash.mycompany.com
+  INTERNAL_LIGHTDASH_HOST: https://lightdash-internal.svc.cluster.local
+  INTERNAL_LIGHTDASH_HOST_IGNORE_HTTPS_ERRORS: 'true'
+```
+
+`INTERNAL_LIGHTDASH_HOST_IGNORE_HTTPS_ERRORS=true` is opt-in and default off. When enabled, the Lightdash backend skips TLS validation on:
+
+- the internal `getUserCookie` request from the backend to `INTERNAL_LIGHTDASH_HOST`, and
+- the Playwright/Chromium request that renders the screenshot inside the headless browser.
+
+**Security trade-off.** TLS validation is disabled for that traffic. Only enable this flag when the network path between the Lightdash backend, the headless browser and `INTERNAL_LIGHTDASH_HOST` is itself trusted — typically inside a Kubernetes cluster network or a private VPC.
+
+<Note>
+The default `ghcr.io/browserless/chromium` image does **not** trust self-signed certificates out of the box. You will see `net::ERR_CERT_AUTHORITY_INVALID` from Playwright and `DEPTH_ZERO_SELF_SIGNED_CERT` from the backend's own internal fetch unless this flag is set.
+</Note>
+
+<Tip>
+If you can issue a publicly-trusted certificate for the internal hostname (e.g. via Let's Encrypt with DNS-01, AWS ACM, an internal subdomain of a public domain), the default browserless image already trusts it and you don't need this flag. This is only worth the effort if a publicly-trusted cert on the internal hostname is straightforward in your infrastructure — many teams find it isn't, which is why this flag exists.
+</Tip>
