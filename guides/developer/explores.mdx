@@ -60,7 +60,7 @@ Use the explores config when you want to create tailored versions of the same ta
   </Step>
   <Step title="Add an explores section under meta">
 
-    Use the `explores` config to define multiple versions of the table. Each explore has its own `label`, `joins`, joined fields, and access rules.
+    Use the `explores` config to define multiple versions of the table. Each explore has its own `label`, `joins`, joined fields, and filters.
 
     <Tabs>
       <Tab title="dbt v1.9 and earlier">
@@ -74,17 +74,16 @@ Use the explores config when you want to create tailored versions of the same ta
               explores:
                 deals_accounts:
                   label: Deals w/Accounts
-                  description: Deals table with accounts joined in, limited acount fields included
+                  description: Deals table with accounts joined in, limited account fields included
                   joins:
                     - join: accounts
                       relationship: many-to-one
                       sql_on: ${deals.account_id} = ${accounts.account_id}
                       fields: [industry, segment, count_accounts]
-                deals_exec_view:
-                  label: Deals (Exec View)
-                  description: Deals table with account info, for execs only, all acount fields included
-                  required_attributes:
-                    is_exec: "true"
+                deals_closed_won:
+                  label: Deals (Closed Won)
+                  description: Deals table filtered to closed-won deals, with full account info
+                  sql_filter: ${deals.status} = 'closed_won'
                   joins:
                     - join: accounts
                       relationship: many-to-one
@@ -103,17 +102,16 @@ Use the explores config when you want to create tailored versions of the same ta
                 explores:
                   deals_accounts:
                     label: Deals w/Accounts
-                    description: Deals table with accounts joined in, limited acount fields included
+                    description: Deals table with accounts joined in, limited account fields included
                     joins:
                       - join: accounts
                         relationship: many-to-one
                         sql_on: ${deals.account_id} = ${accounts.account_id}
                         fields: [industry, segment, count_accounts]
-                  deals_exec_view:
-                    label: Deals (Exec View)
-                    description: Deals table with account info, for execs only, all acount fields included
-                    required_attributes:
-                      is_exec: "true"
+                  deals_closed_won:
+                    label: Deals (Closed Won)
+                    description: Deals table filtered to closed-won deals, with full account info
+                    sql_filter: ${deals.status} = 'closed_won'
                     joins:
                       - join: accounts
                         relationship: many-to-one
@@ -132,17 +130,16 @@ Use the explores config when you want to create tailored versions of the same ta
         explores:
           deals_accounts:
             label: Deals w/Accounts
-            description: Deals table with accounts joined in, limited acount fields included
+            description: Deals table with accounts joined in, limited account fields included
             joins:
               - join: accounts
                 relationship: many-to-one
                 sql_on: ${deals.account_id} = ${accounts.account_id}
                 fields: [industry, segment, count_accounts]
-          deals_exec_view:
-            label: Deals (Exec View)
-            description: Deals table with account info, for execs only, all acount fields included
-            required_attributes:
-              is_exec: "true"
+          deals_closed_won:
+            label: Deals (Closed Won)
+            description: Deals table filtered to closed-won deals, with full account info
+            sql_filter: ${deals.status} = 'closed_won'
             joins:
               - join: accounts
                 relationship: many-to-one
@@ -158,7 +155,7 @@ Use the explores config when you want to create tailored versions of the same ta
     - You'll now see:
       - **Deals (Basic)**
       - **Deals w/Accounts**
-      - **Deals (Exec View)** (only visible to users with the required attribute)
+      - **Deals (Closed Won)**
 
     Each shows up as its own table in the UI, but all use the same `deals` model.
   </Step>
@@ -167,15 +164,23 @@ Use the explores config when you want to create tailored versions of the same ta
 
 ## Table config options you can use
 
-Inside each explore definition, you can use any of the existing table config options, including:
+Inside each explore definition, you can use the following config options:
 
-- `label`
-- `joins`
-- `sql_filter`
-- `description`
-- `default_filters`
-- `required_attributes`
-- `additional_dimensions`
+| Property | Description |
+| :------- | :---------- |
+| `label` | Display name for the explore in the Lightdash UI. Defaults to a friendly version of the explore name. |
+| `description` | Description shown for the explore. |
+| `group_label` | Group the explore under a label in the **Query from tables** list. Inherits from the base model if not set. |
+| `joins` | List of joined tables for this explore. If omitted, joins are inherited from the base model. See [joins reference](/references/joins). |
+| `sql_filter` | SQL expression applied as a `WHERE` clause to every query against this explore. |
+| `sql_where` | Alias for `sql_filter`. |
+| `case_sensitive` | When `false`, all string filters in this explore are case insensitive. Defaults to `true`. |
+| `default_filters` | Default filters applied when users open the explore. See [default filters](/references/tables#default-filters). |
+| `additional_dimensions` | Explore-scoped custom dimensions that can reference fields from joined tables. See [below](#adding-custom-dimensions-to-an-explore). |
+
+<Note>
+  Other model-level options such as `required_attributes`, `metrics`, `sql_from`, `default_time_dimension`, `spotlight`, `primary_key`, and `pre_aggregates` are configured on the base model and are inherited by all explores. They cannot be overridden per explore.
+</Note>
 
 [📚 Read the Tables reference docs for all configuration options](/references/tables#table-properties)
 
