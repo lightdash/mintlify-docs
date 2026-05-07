@@ -38,7 +38,9 @@ Lightdash has two separate timezone settings that solve different problems at di
 | **Project timezone** | Application | "What timezone should my users see data in?"     | Project settings → Timezone              |
 | **Data timezone**    | Warehouse   | "What timezone are my NTZ timestamps stored in?" | Warehouse connection → Advanced settings |
 
-The **project timezone** is always available. The **data timezone** is currently behind an experimental feature flag — see [Data timezone](#data-timezone) below.
+<Info>
+  **Availability:** The expanded project-timezone behavior (display formatting, `DATE_TRUNC` grouping, calendar extracts), the [`convert_timezone`](#per-dimension-display-opt-out) dimension override, and the [data timezone](#data-timezone) are all [Experimental](/references/workspace/feature-maturity-levels) features behind the `EnableTimezoneSupport` flag. Reach out to support to enable it for your organization. Without the flag, the project timezone only controls relative date filter boundaries.
+</Info>
 
 For relative date filter calculations, Lightdash resolves the project timezone using the following hierarchy (highest priority first):
 
@@ -81,10 +83,6 @@ If you have both the UI setting and the environment variable configured, the UI 
 
 ### Per-dimension display opt-out
 
-<Info>
-  **Availability:** The `convert_timezone` dimension override requires the [project query timezone](#project-query-timezone-ui-setting) to be set. It is a [Beta](/references/workspace/feature-maturity-levels) feature.
-</Info>
-
 By default, every `timestamp` dimension follows the project timezone for display, grouping, and extracts. Some columns — system timestamps, audit logs, pre-converted values — should render in their raw warehouse value instead. Set `convert_timezone: false` on the dimension's YAML meta to opt that single column out:
 
 <Tabs>
@@ -125,32 +123,12 @@ The flag affects **display** only — table cells, exports, `DATE_TRUNC` groupin
 
 ### Data timezone
 
-<Info>
-  **Availability:** Data timezone is an [Experimental](/references/workspace/feature-maturity-levels) feature behind the `EnableTimezoneSupport` flag. Reach out to support to enable it for your organization.
-</Info>
-
 The **data timezone** answers a different question than the project timezone: "what timezone are my NTZ (no-timezone) timestamps actually stored in?"
 
 Set the data timezone on a warehouse connection (**Warehouse connection → Advanced settings → Data timezone**) and Lightdash issues the appropriate session command on each query (e.g. `SET timezone TO 'America/Chicago'` on Postgres, `ALTER SESSION SET TIMEZONE = 'America/Chicago'` on Snowflake). Ambiguous NTZ values are then interpreted in that zone before being compared to filter literals or grouped.
 
 - **Without it:** a stored `2024-01-15 18:00:00` in an NTZ column is assumed to be UTC.
 - **With `America/Chicago`:** the warehouse reads it as 6pm Chicago — midnight UTC the next day.
-
-Timezone-aware columns (Postgres `timestamptz`, Snowflake `TIMESTAMP_TZ`, BigQuery `TIMESTAMP`) are absolute instants already, so the data timezone has no effect on them.
-
-| Warehouse  | Session timezone supported?                  |
-| ---------- | -------------------------------------------- |
-| Snowflake  | ✅                                            |
-| Postgres   | ✅                                            |
-| Redshift   | ✅                                            |
-| Databricks | ✅                                            |
-| Trino      | ✅                                            |
-| DuckDB     | ✅                                            |
-| ClickHouse | ✅                                            |
-| BigQuery   | ❌ (UI field is hidden)                       |
-| Athena     | ❌ (UI field is hidden)                       |
-
-BigQuery and Athena have no session-timezone plumbing, so the data timezone setting is inert on those warehouses and the UI field is hidden. NTZ-style columns (BigQuery `DATETIME`, Athena bare `TIMESTAMP`) holding non-UTC data can't be normalized.
 
 ### Scheduled delivery timezone
 
@@ -296,7 +274,7 @@ The delivery timezone only controls when the delivery runs — the query results
 | "Today" shows wrong data | Use the per-chart timezone picker | Applies to one chart only |
 | "Today" shows wrong data | Set `LIGHTDASH_QUERY_TIMEZONE` env var | Server-wide, not per-user |
 | "Today" shows wrong data | Cast to `date` type in dbt | Loses intraday granularity |
-| Timestamps in local TZ, don't want conversion | Set the data timezone on the warehouse connection | Experimental; not supported on BigQuery/Athena |
+| Timestamps in local TZ, don't want conversion | Set the data timezone on the warehouse connection | Experimental |
 | Timestamps in local TZ, don't want conversion | Set project query timezone to match | Per-project, not per-user |
 | Timestamps in local TZ, don't want conversion | Cast to `date` type in dbt | Loses intraday granularity |
 | Want to display data in a different timezone | Set the project query timezone | Applies to the whole project |
