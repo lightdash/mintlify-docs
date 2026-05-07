@@ -36,7 +36,7 @@ You can customize how Tables look in Lightdash by adding configuration to your Y
         meta:
           label: 'App Users'
           order_fields_by: 'label'
-          group_label: 'Mobile App'
+          groups: ['mobile', 'engagement']
           sql_filter: ${date_dimension} >= '2025-01-01'
           primary_key: user_id
           sets:
@@ -69,7 +69,7 @@ You can customize how Tables look in Lightdash by adding configuration to your Y
           meta:
             label: 'App Users'
             order_fields_by: 'label'
-            group_label: 'Mobile App'
+            groups: ['mobile', 'engagement']
             sql_filter: ${date_dimension} >= '2025-01-01'
             primary_key: user_id
             sets:
@@ -101,7 +101,7 @@ You can customize how Tables look in Lightdash by adding configuration to your Y
 
     label: 'App Users'
     order_fields_by: 'label'
-    group_label: 'Mobile App'
+    groups: ['mobile', 'engagement']
     sql_filter: ${date_dimension} >= '2025-01-01'
     primary_key: user_id
     sets:
@@ -136,7 +136,8 @@ You can customize how Tables look in Lightdash by adding configuration to your Y
 | [order_fields_by](#order-fields-by)                       | `index` or `label` | How the fields will be sorted in the sidebar. [Read about the order rules.](#order-fields-by)                                           |
 | [joins](/references/joins)                                | array              | Join logic to join other data models to the Table. [Read about joins.](/references/joins)                                               |
 | [metrics](/references/metrics#2-using-the-model-meta-tag) | object             | Model metrics. [Read about model metrics](/references/metrics#2-using-the-model-meta-tag)                                               |
-| [group_label](#group-label)                               | string             | Group tables in the sidebar. [Read about the group label.](#group-label)                                                                |
+| [groups](#groups)                                         | array of strings   | Group tables in the sidebar, with up to 3 levels of nesting. [Read about groups.](#groups)                                              |
+| group_label                                               | string             | **Deprecated:** use [`groups`](#groups) instead. Group tables in the sidebar.                                                            |
 | [sql_from](#sql-from)                                     | string             | Overrides dbt model relation_name                                                                                                       |
 | [sql_filter](#sql-filter-row-level-security)              | string             | A permanent filter that will always be applied when querying this table directly. [`Read about sql_filter.`](#sql-filter)               |
 | [sql_where](#sql-filter-row-level-security)               | string             | Alias for `sql_filter`                                                                                                                  |
@@ -223,15 +224,42 @@ Here are some other things worth mentioning about the `order_fields_by` paramete
   - then, metrics defined in the dimensions' `meta`
 - Group labels inherit the index of the first dimension that use them.
 
-### Group label
+### Groups
 
-If you set this property, the table will be grouped in the sidebar with other tables with the same group label.
+Use `groups` to organize tables into nested groups in the sidebar. You can nest up to **3 levels deep** by passing an array of group keys, ordered from outermost to innermost.
+
+```yaml
+models:
+  - name: users
+    meta:
+      groups: ['mobile', 'engagement']
+```
+
+In the example above, the `users` table is placed under the `mobile` group, and within it, the `engagement` subgroup.
+
+Group keys are referenced project-wide. Define their display labels and (optional) descriptions in your [`lightdash.config.yml`](/references/lightdash-config-yml#table-groups-configuration) file under `table_groups`:
+
+```yaml
+# lightdash.config.yml
+table_groups:
+  mobile:
+    label: 'Mobile App'
+    description: 'Tables related to the mobile app'
+  engagement:
+    label: 'Engagement'
+```
+
+If a group key is not defined in `table_groups`, the key itself is used as the label.
 
 The tables in your sidebar will appear in the following order:
 
-- Group labels appear first, alphabetically
-- Ungrouped tables appear after the grouped tables in the sidebar, alphabetically
-- Tables within the groups are also ordered alphabetically
+- Grouped tables appear first, with groups sorted alphabetically by label
+- Ungrouped tables appear after the grouped tables, alphabetically
+- Tables within each group are also ordered alphabetically
+
+<Info>
+  The `groups` property replaces the legacy `group_label` property. `group_label` still works for backwards compatibility but is deprecated — migrate to `groups` for nested group support.
+</Info>
 
 <Frame>
   ![](/images/references/table-group-label-a6d42e6d72a08f15c392fb7cb03a2e6a.png)
