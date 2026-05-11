@@ -33,13 +33,13 @@ For the full list of date filter types and their SQL output, see the [Date/Times
 
 Lightdash has two separate timezone settings that solve different problems at different layers:
 
-| Setting                    | Layer       | Question it answers                                                          | Where configured                         |
-| -------------------------- | ----------- | ---------------------------------------------------------------------------- | ---------------------------------------- |
-| **Project query timezone** | Application | "What timezone should my users see data in?"                                 | Project settings → Timezone              |
-| **Data timezone**          | Warehouse   | "What timezone are my timestamps without timezone metadata (NTZ) stored in?" | Warehouse connection → Advanced settings |
+| Setting                    | Acts on                            | Question it answers                                                          | Where configured                         |
+| -------------------------- | ---------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------- |
+| **Project query timezone** | How Lightdash interprets your data | "What timezone should my users see data in?"                                 | Project settings → Timezone              |
+| **Data timezone**          | How the warehouse reads timestamps | "What timezone are my timestamps without timezone metadata (NTZ) stored in?" | Warehouse connection → Advanced settings |
 
 <Info>
-  Several features on this page are [Experimental](/references/workspace/feature-maturity-levels) and need `EnableTimezoneSupport` enabled for your organization (contact support to turn it on). Each section is marked accordingly. Without the setting, the project query timezone only adjusts relative date filter boundaries - everything else stays in UTC.
+  Several features on this page are [Experimental](/references/workspace/feature-maturity-levels) and need `EnableTimezoneSupport` enabled for your organization (contact support to turn it on). Each section is marked accordingly. Without the setting, the project query timezone only adjusts relative date filter boundaries - everything else renders the raw warehouse value.
 </Info>
 
 ### How the project query timezone is resolved
@@ -76,9 +76,10 @@ This is the recommended way to configure the query timezone for most teams. It c
 
 **Requires `EnableTimezoneSupport`** ([Experimental](/references/workspace/feature-maturity-levels)):
 
-- **Display** - table cells, chart axes, tooltips, and CSV/Excel/Google Sheets exports render timestamps in the project query timezone. The resolved zone appears as a badge in the Explore view (when viewing or editing a saved chart).
+- **Display** - table cells, chart axes, tooltips, and CSV/Excel/Google Sheets exports render timestamps in the project query timezone. A badge in the Explore view (when viewing or editing a saved chart) shows which timezone from the hierarchy is currently active.
 - **`DATE_TRUNC` grouping** - day, week, month, quarter, and year buckets align to the project query timezone calendar.
 - **Calendar extracts** - dimensions like "day of week", "month number", and "hour of day" are computed in the project query timezone, so they line up with their `DATE_TRUNC` siblings on the same row.
+- **Per-dimension opt-out** - individual dimensions can keep their raw warehouse value with `convert_timezone: false`. See [Per-dimension timezone opt-out](#per-dimension-timezone-opt-out) below.
 
 <Frame>
   <img src="/images/guides/developer/timezones/resolved-timezone-badge-light.png" alt="Resolved timezone badge in the Explore view" className="block dark:hidden" />
@@ -88,8 +89,6 @@ This is the recommended way to configure the query timezone for most teams. It c
 <Note>
   Truncated intervals and extracts built on a `date`-typed dimension (e.g. `order_date_month` where `order_date` is `type: date`) ignore the timezone shift - a `date` has no time component, so it always renders as the calendar date it represents.
 </Note>
-
-Individual dimensions can opt out of project query timezone formatting with `convert_timezone: false` ([Experimental](/references/workspace/feature-maturity-levels)). See [Per-dimension timezone opt-out](#per-dimension-timezone-opt-out) below.
 
 ### `LIGHTDASH_QUERY_TIMEZONE` environment variable
 
@@ -150,25 +149,23 @@ The override propagates to every auto-generated [time interval](/references/dime
   **Experimental** - requires `EnableTimezoneSupport`. The setting only appears in warehouse advanced settings once the feature is enabled. Not available on BigQuery or Athena.
 </Info>
 
-The **data timezone** answers a different question than the project query timezone:
-
-> "What timezone are my NTZ (no-timezone) timestamps actually stored in?"
-
-Set it under **Warehouse connection → Advanced settings → Data timezone**. Lightdash then issues a session command on every query so the warehouse interprets ambiguous NTZ values in that zone before they're compared to filter literals or grouped.
-
-<Note>
-  The exact command depends on your warehouse - for example, `SET timezone TO 'America/Chicago'` on Postgres or `ALTER SESSION SET TIMEZONE = 'America/Chicago'` on Snowflake.
-</Note>
+If your warehouse stores timestamps without timezone metadata (NTZ) in a non-UTC zone, set the **data timezone** so Lightdash interprets those values correctly instead of assuming UTC. Configure it under **Warehouse connection → Advanced settings → Data timezone**.
 
 <Frame>
   <img src="/images/guides/developer/timezones/data-timezone-setting-light.png" alt="Data timezone field in warehouse connection advanced settings" className="block dark:hidden" />
   <img src="/images/guides/developer/timezones/data-timezone-setting-dark.png" alt="Data timezone field in warehouse connection advanced settings" className="hidden dark:block" />
 </Frame>
 
+Once set, Lightdash issues a session command on every query so the warehouse reads ambiguous NTZ values in that zone before they're compared to filter literals or grouped.
+
+<Note>
+  The exact command depends on your warehouse - for example, `SET timezone TO 'America/Chicago'` on Postgres or `ALTER SESSION SET TIMEZONE = 'America/Chicago'` on Snowflake.
+</Note>
+
 For an NTZ value stored as `2024-01-15 18:00:00`:
 
-- **Without it** - the warehouse assumes UTC.
-- **With `America/Chicago`** - the warehouse reads it as 6pm Chicago, equivalent to midnight UTC the next day.
+- **Without the data timezone set** - the warehouse assumes UTC, so the value is read as 6pm UTC.
+- **With the data timezone set to `America/Chicago`** - the warehouse reads it as 6pm Chicago, equivalent to midnight UTC the next day.
 
 ### Scheduled delivery timezone
 
@@ -233,7 +230,7 @@ If your timestamps are stored in a local timezone (e.g., US Pacific Time) withou
 
 ### Timestamps are stored in UTC but you want to view them in a local timezone
 
-If your data is stored in UTC and `EnableTimezoneSupport` is enabled for your organization, the simplest path is to set the [project query timezone](#project-query-timezone-ui-setting) to your preferred zone - chart axes, tooltips, table cells, and exports will all render in that zone, and time interval dimensions (day, week, month, calendar extracts) will bucket on its calendar boundaries.
+If your data is stored in UTC and `EnableTimezoneSupport` is enabled for your organization, the simplest path is to set the [project query timezone](#project-query-timezone-ui-setting) to your preferred zone. Chart axes, tooltips, table cells, and exports will all render in that zone, and time interval dimensions (day, week, month, calendar extracts) will bucket on its calendar boundaries.
 
 If you only want to convert a specific column (rather than the whole project), or if `EnableTimezoneSupport` is not available for you, you can use [additional dimensions](/references/dimensions#additional-dimensions) to create timezone-converted versions of a timestamp:
 

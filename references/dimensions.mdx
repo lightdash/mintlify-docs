@@ -170,7 +170,7 @@ The table below shows all the dimension properties you can customize:
 | [image](#image-display)  | No       | Object with `url`  | **[WIP]** Display images in table cells using URL templates. Supports LiquidJS templating for dynamic URLs. |
 | [case_sensitive](#case-sensitive) | No | boolean | If set to `false`, string filters on this dimension will be case insensitive. Defaults to `true`. Overrides explore-level setting. |
 | [tags](#tags) | No | string[] | An array of string tags for categorizing and filtering dimensions programmatically. Tags can be used by AI agents, API filters, and other backend workflows. |
-| [convert_timezone](#convert-timezone) | No | boolean | **[Experimental]** If set to `false`, the dimension opts out of the project query timezone for display, grouping, and extracts - the raw warehouse value is rendered instead. Defaults to `true`. Requires the project query timezone to be set. |
+| [convert_timezone](#convert-timezone) | No | boolean | **[Experimental]** If set to `false`, the dimension opts out of the project query timezone for display, grouping, and extracts - the raw warehouse value is rendered instead. Defaults to `true`. Has no effect unless a project query timezone is set. |
 
 
 ## Type
@@ -1431,51 +1431,18 @@ Lightdash dimensions and custom metrics are protected by this feature, however, 
 ## Convert timezone
 
 <Info>
-  **Availability:** The `convert_timezone` dimension override is an [Experimental](/references/workspace/feature-maturity-levels) feature behind the `EnableTimezoneSupport` flag. It requires the [project query timezone](/guides/developer/timezones#project-query-timezone-ui-setting) to be set.
+  **Availability:** The `convert_timezone` dimension override is an [Experimental](/references/workspace/feature-maturity-levels) feature behind the `EnableTimezoneSupport` flag. Has no effect unless the [project query timezone](/guides/developer/timezones#project-query-timezone-ui-setting) is set.
 </Info>
 
-By default, every `timestamp` dimension follows the project query timezone for display, grouping (`DATE_TRUNC` intervals), and calendar component extracts (`DAY_OF_WEEK_INDEX`, `MONTH_NUM`, etc.). Set `convert_timezone: false` to opt a single dimension out - the raw warehouse value is rendered instead, and time-interval children of the dimension (`_day`, `_month`, `_day_of_week_index`, ...) inherit the opt-out automatically.
+Set `convert_timezone: false` on a `timestamp` dimension to opt it out of the project query timezone for display, grouping, and calendar extracts. The raw warehouse value is rendered instead, and time-interval children of the dimension (`_day`, `_month`, `_day_of_week_index`, ...) inherit the opt-out automatically. Filters always use the project query timezone regardless of this setting.
 
-This is useful for system timestamps, audit logs, or columns that you've already converted to a specific timezone in your dbt model.
+```yaml
+- name: created_at_utc
+  type: timestamp
+  convert_timezone: false
+```
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: created_at_utc
-        description: 'Always render in UTC, regardless of project query timezone'
-        meta:
-          dimension:
-            type: timestamp
-            convert_timezone: false
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    columns:
-      - name: created_at_utc
-        description: 'Always render in UTC, regardless of project query timezone'
-        config:
-          meta:
-            dimension:
-              type: timestamp
-              convert_timezone: false
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    dimensions:
-      - name: created_at_utc
-        description: 'Always render in UTC, regardless of project query timezone'
-        type: timestamp
-        convert_timezone: false
-    ```
-  </Tab>
-</Tabs>
-
-`convert_timezone: false` only changes how the column is **displayed, grouped, and extracted** - table cells, exports, `DATE_TRUNC` buckets, and calendar extracts all show the raw warehouse value. Filters always use the project query timezone, so every dimension on the same row agrees on whether the row matches. In practice: a filter like "between 2026-01-01 and 2026-01-31" cuts at midnight in the project query timezone, even though the column itself renders raw.
-
-See [Per-dimension timezone opt-out](/guides/developer/timezones#per-dimension-timezone-opt-out) in the Timezones guide for the full picture of how timezone settings interact.
+See [Per-dimension timezone opt-out](/guides/developer/timezones#per-dimension-timezone-opt-out) in the Timezones guide for the full picture of how this interacts with other timezone settings, full dbt v1.9 / v1.10+ / Lightdash YAML examples, and filter behavior.
 
 ## Color
 
