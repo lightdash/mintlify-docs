@@ -1016,6 +1016,14 @@ These dbt flags work with Lightdash commands that support dbt options. [Read the
 - `--full-refresh`
 - `--defer` (works with `lightdash preview` and `lightdash compile`)
 
+#### `--defer`
+
+`--defer` is commonly paired with `--state` and `--select state:modified+` to limit a preview to changed models. The behavior below is specific to how Lightdash builds the explore list and differs from a plain `dbt build --defer`.
+
+- **`--defer` only resolves Lightdash-joined upstream models against the prod state manifest.** It does not promote arbitrary unmodified models from the state manifest into the preview as standalone explores. With `--select state:modified+`, the preview contains the modified models (compiled to the dev/CI schema), their downstream models, and any models referenced through Lightdash join configs (deferred to the prod relations). Standalone `tag:lightdash` models that are not joined to a modified model will not appear. This is the scope of the fix shipped in [lightdash/lightdash#20672](https://github.com/lightdash/lightdash/pull/20672).
+- **Do not pass `--favor-state` to preview workflows.** `--favor-state` makes selected nodes prefer the prod relation over the freshly built dev relation, which silently routes the modified model back to stale prod data — the opposite of the intent of a PR preview.
+- **The comma in dbt's `--select` is `AND`, not `OR`.** `--select 'tag:lightdash,state:modified+'` resolves to "modified models that are also tagged `lightdash`", which usually narrows to one or two explores rather than the broader set most users expect. Use space-separated arguments (`--select tag:lightdash state:modified+`) for `OR`.
+
 ### dbt project variables
 
 You can set dbt project variables in Lightdash commands that support dbt options. [Read the dbt docs on project variables](https://docs.getdbt.com/docs/build/project-variables) for details.
