@@ -10,7 +10,7 @@ When you apply a relative date filter like "today", "last 1 completed day", or "
 
 This means that for a user in California (Pacific Time, UTC-8), "today" rolls over at **4:00 PM local time** because that's when midnight UTC occurs. This applies to all relative date filters - "yesterday", "in the current week", "last 7 completed days", etc.
 
-**Absolute date filters** (e.g., "equals 2026-01-15" or "is between 2026-01-01 and 2026-01-31") are **not affected** by timezone settings since you're specifying exact dates.
+**Absolute date filters** (e.g., "equals 2026-01-15" or "is between 2026-01-01 and 2026-01-31") encode exact moments, so timezone settings don't reinterpret saved filter values. The datetime picker itself, however, can render and interpret values in the project timezone instead of the browser's - see [Date filter inputs in project timezone](#date-filter-inputs-in-project-timezone).
 
 ### What happens under the hood
 
@@ -80,6 +80,7 @@ This is the recommended way to configure the query timezone for most teams. It c
 - **`DATE_TRUNC` grouping** - day, week, month, quarter, and year buckets align to the project query timezone calendar.
 - **Calendar extracts** - dimensions like "day of week", "month number", and "hour of day" are computed in the project query timezone, so they line up with their `DATE_TRUNC` siblings on the same row.
 - **Per-dimension opt-out** - individual dimensions can keep their raw warehouse value with `convert_timezone: false`. See [Per-dimension timezone opt-out](#per-dimension-timezone-opt-out) below.
+- **Date filter inputs** - the datetime picker in absolute date filters can be set to display and interpret values in the project query timezone, so users in different browser timezones agree on what a typed wall-clock value means. See [Date filter inputs in project timezone](#date-filter-inputs-in-project-timezone) below.
 
 <Note>
   Truncated intervals and extracts built on a `date`-typed dimension (e.g. `order_date_month` where `order_date` is `type: date`) ignore the timezone shift - a `date` has no time component, so it always renders as the calendar date it represents.
@@ -89,6 +90,27 @@ This is the recommended way to configure the query timezone for most teams. It c
   <img src="/images/guides/developer/timezones/resolved-timezone-badge-light.png" alt="Resolved timezone badge in the Explore view" className="block dark:hidden" />
   <img src="/images/guides/developer/timezones/resolved-timezone-badge-dark.png" alt="Resolved timezone badge in the Explore view" className="hidden dark:block" />
 </Frame>
+
+### Date filter inputs in project timezone
+
+<Info>
+  **Experimental** - requires `EnableTimezoneSupport` and a project query timezone. The toggle is disabled until a project query timezone is set.
+</Info>
+
+By default, the datetime picker in absolute date filters operates in the **browser's** timezone. Two users in different timezones who type the same wall-clock value (e.g., `2026-03-15 00:00`) submit different UTC instants, so a shared dashboard filter can return different rows depending on where the viewer is.
+
+Project admins can flip this with the **Use project time zone in date filter inputs** toggle on the project timezone settings page. When enabled:
+
+- The picker displays existing filter values in the project query timezone, and interprets newly entered values in that zone as well.
+- A subtext under the picker shows the equivalent local-time value, and a side label shows the active timezone.
+- Saved filter values aren't rewritten - they continue to encode the same UTC instant, just rendered in a different zone. A filter previously shown as "March 15 00:00" (EET) would now display as "March 14 22:00" if the project query timezone is UTC.
+
+<Frame>
+  <img src="/images/guides/developer/timezones/date-filter-input-project-timezone-light.png" alt="Absolute date filter picker showing values in the project query timezone" className="block dark:hidden" />
+  <img src="/images/guides/developer/timezones/date-filter-input-project-timezone-dark.png" alt="Absolute date filter picker showing values in the project query timezone" className="hidden dark:block" />
+</Frame>
+
+If a chart overrides the timezone via the [per-chart timezone picker](#per-chart-timezone-picker), the filter picker uses that override instead of the project query timezone.
 
 ### `LIGHTDASH_QUERY_TIMEZONE` environment variable
 
@@ -316,4 +338,5 @@ The delivery timezone only controls when the delivery runs - the query results t
 | Want to display data in a different timezone | Set the project query timezone | Applies to the whole project |
 | Want to display data in a different timezone | Use additional dimensions with `convert_timezone()` plus `convert_timezone: false` | Display only - doesn't fix filter boundaries |
 | Single column should keep raw warehouse value | Set `convert_timezone: false` on the dimension | Filters still cut at project query timezone midnights |
+| Filter values differ across users in different browser timezones | Enable "Use project time zone in date filter inputs" | Experimental; requires a project query timezone |
 | Scheduled delivery runs at wrong time | Check project and per-delivery timezone settings | Only affects delivery timing, not query results |
