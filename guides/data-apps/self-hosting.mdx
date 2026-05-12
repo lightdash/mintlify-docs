@@ -1,0 +1,62 @@
+---
+title: "Self-hosting"
+sidebarTitle: "Self-hosting"
+description: "Configure your self-hosted Lightdash instance to run Data apps."
+---
+
+<Info>
+  Data apps are an **enterprise** feature. You'll need a valid `LIGHTDASH_LICENSE_KEY` set on your instance before any of the configuration below takes effect.
+</Info>
+
+Data apps are AI-generated React code, produced inside an isolated [E2B](https://e2b.dev/) sandbox, built with Vite, and stored in an S3-compatible bucket. To enable the feature on a self-hosted Lightdash instance you need to bring your own E2B and Anthropic API keys, and point Lightdash at a bucket it can write to.
+
+## Prerequisites
+
+- **Enterprise license** - `LIGHTDASH_LICENSE_KEY` must be set on your instance.
+- **S3-compatible storage** - a bucket Lightdash can write to for app source and built artifacts. If your instance isn't already using S3, [set that up first](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage).
+- **An E2B account** - sign up at [e2b.dev](https://e2b.dev/) and create an API key. E2B is the sandbox provider we use to build the apps.
+- **An Anthropic API key** - sign up at [console.anthropic.com](https://console.anthropic.com/) and create an API key. Claude is the model that writes the React code inside the sandbox.
+
+## Configuration
+
+Add the following environment variables to your Lightdash deployment:
+
+| Variable | Example | Purpose |
+| --- | --- | --- |
+| `APPS_RUNTIME_ENABLED` | `true` | Main switch for the feature. |
+| `APPS_S3_BUCKET` | `lightdash-apps` | Bucket Lightdash will write app source and built artifacts to. Falls back to `S3_BUCKET` if unset - set this if you want a dedicated bucket. |
+| `E2B_API_KEY` | `<your-e2b-api-key>` | Your [E2B](https://e2b.dev/) API key. E2B is the sandbox provider where we generate and build the apps. |
+| `E2B_TEMPLATE_NAME` | `lightdash/lightdash-data-app` | Lightdash's public E2B template - pulls our prebuilt sandbox image so you don't have to build one yourself. |
+| `ANTHROPIC_API_KEY` | `<your-anthropic-api-key>` | Your [Anthropic](https://console.anthropic.com/) API key. Claude is the model that writes the React code inside the sandbox. |
+
+Restart the backend. The "Data apps" entry will appear in the **New** menu for users with the appropriate permission scope.
+
+### Optional configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `E2B_TEMPLATE_TAG` | Running Lightdash version (e.g. `0.2917.1`) | Pins the sandbox image to a specific tag of the E2B template. Each Lightdash release publishes a matching tag so the backend and sandbox stay in sync. You can override this to roll back to a previous build (e.g. `E2B_TEMPLATE_TAG=0.2916.0`) or set it to an empty string to use the template's `default` tag. Most operators don't need to touch this. |
+
+## Costs
+
+Self-hosting Data apps means you pay E2B and Anthropic directly:
+
+- **E2B** bills per sandbox-second. A typical build runs for 1–15 minutes; sandboxes are paused between iterations and resumed on follow-up prompts.
+- **Anthropic** bills per token. Each generation sends the project's dbt catalog and the user's prompt to Claude, plus any attached charts, dashboards, or images.
+
+Both providers expose usage dashboards. We recommend setting spend limits on both before rolling the feature out to your users.
+
+## Permissions
+
+Data apps follow the same space-based permission model as charts and dashboards. The relevant scopes (`view:DataApp`, `create:DataApp`, `manage:DataApp`) are bundled into the default system roles - but on enterprise instances using custom roles, you'll need to grant them explicitly. See [Custom roles](/references/roles) for details.
+
+## Troubleshooting
+
+**The "Data apps" entry doesn't appear in the New menu.**
+Check that `APPS_RUNTIME_ENABLED=true`, `LIGHTDASH_LICENSE_KEY` is set, and the signed-in user has the `create:DataApp` scope.
+
+**Builds fail immediately with a sandbox creation error.**
+Verify `E2B_API_KEY` is valid and that your E2B account has access to the `lightdash/lightdash-data-app` template. If you've overridden `E2B_TEMPLATE_TAG`, double-check the tag exists.
+
+**Builds fail mid-generation with an Anthropic error.**
+Check your Anthropic account usage limits and confirm `ANTHROPIC_API_KEY` is valid. Long-running generations can hit rate limits on lower-tier Anthropic plans.
