@@ -170,6 +170,7 @@ The table below shows all the dimension properties you can customize:
 | [image](#image-display)  | No       | Object with `url`  | **[WIP]** Display images in table cells using URL templates. Supports LiquidJS templating for dynamic URLs. |
 | [case_sensitive](#case-sensitive) | No | boolean | If set to `false`, string filters on this dimension will be case insensitive. Defaults to `true`. Overrides explore-level setting. |
 | [tags](#tags) | No | string[] | An array of string tags for categorizing and filtering dimensions programmatically. Tags can be used by AI agents, API filters, and other backend workflows. |
+| [convert_timezone](#convert-timezone) | No | boolean | **[Experimental]** If set to `false`, the dimension opts out of the project query timezone for display, grouping, and extracts - the raw warehouse value is rendered instead. Defaults to `true`. Has no effect unless a project query timezone is set. |
 
 
 ## Type
@@ -1426,6 +1427,52 @@ Lightdash dimensions and custom metrics are protected by this feature, however, 
   Scheduler deliveries will run against the user who created the scheduled delivery, be careful when sharing required attributes with other users.
 </Info>
 
+
+## Convert timezone
+
+<Info>
+  **Availability:** The `convert_timezone` dimension override is an [Experimental](/references/workspace/feature-maturity-levels) feature behind the `EnableTimezoneSupport` flag. Has no effect unless the [project query timezone](/guides/developer/timezones#project-query-timezone-ui-setting) is set.
+</Info>
+
+Set `convert_timezone: false` on a `timestamp` dimension to opt it out of the project query timezone. This is useful for columns that should always render in their raw warehouse value - system timestamps, audit logs, or pre-converted timezone columns.
+
+When set, the dimension's display, grouping, and calendar extracts all use the raw warehouse value. Time-interval children of the dimension (`_day`, `_month`, `_day_of_week_index`, ...) inherit the opt-out automatically.
+
+Filters still use the project query timezone regardless of this setting, so every dimension on a row agrees on whether the row matches the filter.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: created_at_utc
+        meta:
+          dimension:
+            type: timestamp
+            convert_timezone: false
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    columns:
+      - name: created_at_utc
+        config:
+          meta:
+            dimension:
+              type: timestamp
+              convert_timezone: false
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: created_at_utc
+        type: timestamp
+        convert_timezone: false
+    ```
+  </Tab>
+</Tabs>
+
+See [Per-dimension timezone opt-out](/guides/developer/timezones#per-dimension-timezone-opt-out) in the Timezones guide for how this interacts with other timezone settings and filter behavior.
 
 ## Color
 
