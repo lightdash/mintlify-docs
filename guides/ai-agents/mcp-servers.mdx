@@ -1,0 +1,127 @@
+---
+title: Extend agents with MCP servers
+sidebarTitle: MCP servers
+description: Connect AI agents to external Model Context Protocol servers to expand the tools and data sources they can use.
+---
+
+<Info>
+  MCP server support for AI agents is available as part of the AI agents add-on. [View pricing](https://www.lightdash.com/pricing).
+</Info>
+
+You can extend Lightdash AI agents with external [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) servers. Once an MCP server is registered in a project and attached to an agent, the tools it exposes are added to the agent's tool set, alongside Lightdash's built-in semantic layer tools.
+
+Use MCP servers when you want an agent to:
+
+- Read from systems that are not in your warehouse (for example, CRMs, ticketing tools, or internal APIs)
+- Trigger custom workflows or actions during a conversation
+- Reuse an existing MCP server your team already maintains
+
+<Note>
+  Looking to connect an external AI assistant (such as Claude or ChatGPT) **to** Lightdash? That's the opposite direction. See [Lightdash MCP](/references/integrations/lightdash-mcp) instead.
+</Note>
+
+## How it works
+
+MCP servers are managed at the **project** level and attached to one or more agents in that project. When a user sends a message to an agent:
+
+1. Lightdash loads every MCP server attached to the agent.
+2. It opens an HTTP connection to each server, authenticating with the credentials you configured.
+3. The tools advertised by each server are merged into the agent's tool set for that turn.
+4. The agent decides which tools to call, including any MCP-provided tools, to answer the question.
+
+MCP servers respect your existing agent permissions: only users who can use the agent can trigger its MCP tools.
+
+<Warning>
+  Tools exposed by an MCP server run with the credentials you store in Lightdash, not the credentials of the end user. Only register servers you trust, and scope their tokens to the minimum permissions needed.
+</Warning>
+
+## Requirements
+
+- An MCP server reachable over HTTPS from your Lightdash instance
+- A bearer token if the server requires authentication
+- A user with **manage** permissions on AI agents in the target project
+
+<Note>
+  Only the HTTP transport is supported. OAuth-based MCP servers are not yet supported — use bearer token authentication or an unauthenticated server for now.
+</Note>
+
+## Register an MCP server
+
+MCP servers are registered per project. Once registered, the same server can be attached to multiple agents in that project.
+
+You can register a server through the API:
+
+```bash
+curl -X POST \
+  "https://<your-instance>.lightdash.cloud/api/v1/projects/<projectUuid>/aiAgents/mcpServers" \
+  -H "Authorization: ApiKey <your-personal-access-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Support ticketing",
+    "url": "https://mcp.example.com/sse",
+    "authType": "bearer",
+    "credentials": {
+      "bearerToken": "<server-bearer-token>"
+    }
+  }'
+```
+
+### Fields
+
+| Field | Required | Description |
+|---|---|---|
+| `name` | Yes | Display name shown in the agent configuration. |
+| `url` | Yes | HTTPS URL of the MCP server endpoint. |
+| `authType` | Yes | One of `none` or `bearer`. `oauth` is reserved for future use. |
+| `credentials.bearerToken` | When `authType` is `bearer` | Bearer token sent in the `Authorization` header on every request. Stored encrypted at rest. |
+
+Use `authType: "none"` for servers that don't require authentication. Do not send `credentials` in that case.
+
+### List registered servers
+
+```bash
+curl "https://<your-instance>.lightdash.cloud/api/v1/projects/<projectUuid>/aiAgents/mcpServers" \
+  -H "Authorization: ApiKey <your-personal-access-token>"
+```
+
+The response includes each server's `uuid`, `name`, `url`, `authType`, and a `hasCredentials` flag. Credentials themselves are never returned.
+
+## Attach an MCP server to an agent
+
+Pass `mcpServerUuids` when you create or update an agent. The array fully replaces the current set of attached servers — include every UUID you want the agent to keep.
+
+```bash
+curl -X POST \
+  "https://<your-instance>.lightdash.cloud/api/v1/projects/<projectUuid>/aiAgents" \
+  -H "Authorization: ApiKey <your-personal-access-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Support copilot",
+    "instruction": "You help the support team triage tickets...",
+    "tags": ["ai", "support"],
+    "integrations": [],
+    "mcpServerUuids": ["<mcp-server-uuid>"]
+  }'
+```
+
+To see which servers are currently attached to an agent:
+
+```bash
+curl "https://<your-instance>.lightdash.cloud/api/v1/projects/<projectUuid>/aiAgents/<agentUuid>/mcpServers" \
+  -H "Authorization: ApiKey <your-personal-access-token>"
+```
+
+To detach a server, send an update with `mcpServerUuids` omitting that server's UUID. Deleting an MCP server from the project also removes it from every agent it was attached to.
+
+## Best practices
+
+- **Use descriptive tool names on your MCP server.** The agent picks tools based on their name and description. Vague names like `query` or `do_thing` make it harder for the agent to choose correctly.
+- **Keep tool surfaces small.** A focused MCP server with a handful of well-described tools usually outperforms a server that exposes dozens of overlapping ones.
+- **Scope bearer tokens narrowly.** Issue a token that only grants the permissions the agent actually needs, and rotate it regularly.
+- **Test in a dedicated agent first.** Create a test agent attached to the new MCP server before adding it to agents your whole team uses.
+
+## Troubleshooting
+
+- **"MCP server is missing bearer credentials"** — The server was registered as `bearer` but no token was provided. Re-register the server with a valid `credentials.bearerToken`.
+- **"OAuth MCP server is not implemented yet"** — Only `none` and `bearer` auth types are supported today. Use a proxy that translates OAuth to a bearer token if needed.
+- **Tools from the MCP server don't appear in answers** — Confirm the server's UUID is included in the agent's `mcpServerUuids`, the URL is reachable from your Lightdash instance, and the bearer token is still valid.
