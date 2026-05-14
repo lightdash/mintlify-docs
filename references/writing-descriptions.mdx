@@ -1,0 +1,167 @@
+---
+title: "Writing useful descriptions in your semantic layer"
+sidebarTitle: "Writing descriptions"
+description: "A guide to writing descriptions for models, dimensions, and metrics that serve reviewers, new hires, and AI agents."
+---
+
+Most descriptions just restate the name. `customer_id: "The customer ID."` `total_revenue: "Total revenue."` This is the default, and it's useless — to reviewers, to new hires, and to the AI agents that query your warehouse through Lightdash.
+
+A good description carries the context that lives in the head of whoever built the model. This page is a guide to writing them for the three things you describe in your semantic layer: **models, dimensions, and metrics**.
+
+## What a good description answers
+
+A description should answer the questions someone unfamiliar with the model would have to ask in Slack otherwise:
+
+- **Grain** — what does one row represent (for models), or what does this column mean at that grain (for dimensions and metrics)?
+- **Source** — where does the value come from, and is it always populated?
+- **Values or formula** — for dimensions, what are the possible values? For metrics, how is the number calculated?
+- **Alternatives** — there are probably three things in your project that look similar. When do I reach for this one instead of the others?
+- **Transformations** — what has already been filtered, converted, or excluded?
+- **Gotchas** — what's the trap you'd warn a teammate about?
+
+You don't need to answer all six every time. Answer the ones that aren't obvious.
+
+## Examples
+
+### Models
+
+A model description sets context for everything inside it. Lead with the grain and the source.
+
+**`fct_orders`**
+- ❌ "Orders fact table."
+- ✅ "One row per order placed on the platform, including cancelled and refunded orders. Sourced from the Shopify orders endpoint via Fivetran, refreshed hourly. For revenue analysis, filter `payment_status IN ('captured', 'partially_refunded')`. Joins to `dim_customers` on `customer_id`, and one-to-many to `fct_order_items` on `order_id`."
+
+**`dim_customers`**
+- ❌ "Customer dimension."
+- ✅ "One row per customer account. Identity-stitched from anonymous web sessions and authenticated app users — a single person can have multiple historical `anonymous_id`s but only one `customer_id`. Excludes soft-deleted and test accounts. For the raw, unstitched source data, use `stg_app__users`."
+
+### Dimensions
+
+**`order_id`**
+- ❌ "The order ID."
+- ✅ "Primary key for the order. Stable from creation — survives refunds, returns, and status changes. For individual line items use `order_item_id`, which is unique per row."
+
+**`payment_status`**
+- ❌ "Payment status of the order."
+- ✅ "State of the payment intent: `authorized`, `captured`, `partially_refunded`, `refunded`, `failed`, `voided`. An order can be `fulfilled` while `payment_status` is still `authorized` — auto-capture happens at ship time, not checkout."
+
+**`deleted_at`**
+- ❌ "When the record was deleted."
+- ✅ "UTC timestamp of soft-delete in the source. NULL for active records. We never hard-delete — filter `WHERE deleted_at IS NULL` in every downstream model unless you're explicitly auditing churn."
+
+**`revenue_usd`**
+- ❌ "Revenue in USD."
+- ✅ "Net revenue recognized at fulfillment, in USD. Excludes tax, shipping, refunds, and gift card redemptions. Converted from local currency using the daily FX rate at order time — not re-stated when rates change."
+
+### Metrics
+
+A metric description should make the formula and the filter context explicit. A user looking at a number in a dashboard should be able to read the description and understand exactly what's been counted.
+
+**`total_revenue_usd`**
+- ❌ "Total revenue."
+- ✅ "Sum of `revenue_usd` for orders where `completed_at IS NOT NULL`. Excludes cancelled orders, tax, shipping, and gift card redemptions. For top-line including cancellations use `gross_revenue_usd`."
+
+**`active_customer_count`**
+- ❌ "Count of active customers."
+- ✅ "Count of distinct `customer_id` who placed at least one completed order in the trailing 30 days, relative to the query date. The window slides — for a fixed period, filter `completed_at` directly and use `unique_customer_count` instead."
+
+**`average_order_value`**
+- ❌ "Average order value."
+- ✅ "Mean of `revenue_usd` across completed orders. One row per order, so multi-item orders count once. Sensitive to outliers — for a more representative central tendency on long-tailed distributions, consider `median_order_value`."
+
+## The mental model
+
+Write every description as if you're leaving for a year-long sabbatical tomorrow and a new analyst is taking over your project. They have your repo, your warehouse, and nothing else — no Slack to ping, no standup to ask in.
+
+What would they need to know to not break things? That's the description.
+
+## Why it's worth the time
+
+Descriptions in your semantic layer aren't just for code review. In Lightdash, they surface in the field picker, in tooltips, in the metrics catalog, and in the context the AI agent uses when answering natural-language questions. A vague description means a vague answer — or worse, a confidently wrong one.
+
+The cost is a few minutes per field, once. The return is that every reviewer, every new hire, and every AI query against your warehouse starts with the same context you have in your head.
+
+## Layer AI hints on top of descriptions
+
+A `description` is for humans — it shows up in the Lightdash field picker, tooltips, and the metrics catalog. An `ai_hint` is metadata that only AI agents see. It's where you put the context that a teammate would intuit but an AI needs spelled out: which field is canonical for a given question, common phrasing users will use, traps that lead to wrong answers.
+
+<Info>
+  When both `description` and `ai_hint` are present, AI hints take precedence for AI agent prompts.
+</Info>
+
+AI hints can be added at three levels: model, dimension, and metric.
+
+### Model-level hint
+
+Building on the `fct_orders` description from above:
+
+```yaml
+models:
+  - name: fct_orders
+    description: >
+      One row per order placed on the platform, including cancelled and refunded
+      orders. Sourced from the Shopify orders endpoint via Fivetran, refreshed
+      hourly. For revenue analysis filter payment_status IN ('captured',
+      'partially_refunded').
+    meta:
+      ai_hint:
+        - This is the canonical orders table. Use it for any question about
+          order volume, revenue, fulfillment, or customer purchase behaviour.
+        - Cancelled orders are included by default — always check whether the
+          user wants them in or out before answering revenue questions.
+```
+
+### Dimension-level hint
+
+Using the `revenue_usd` description from above:
+
+```yaml
+columns:
+  - name: revenue_usd
+    description: >
+      Net revenue recognized at fulfillment, in USD. Excludes tax, shipping,
+      refunds, and gift card redemptions. Converted from local currency using
+      the daily FX rate at order time — not re-stated when rates change.
+    meta:
+      dimension:
+        ai_hint:
+          - This is the canonical revenue column. When users ask about "revenue",
+            "sales", "how much we made", or "top-line", use this — not amount_usd
+            or gross_amount_usd.
+          - To answer questions about a time period, aggregate using completed_at,
+            not created_at. Orders that never completed have NULL revenue.
+```
+
+### Metric-level hint
+
+Using the `total_revenue_usd` metric from above:
+
+```yaml
+columns:
+  - name: revenue_usd
+    meta:
+      metrics:
+        total_revenue_usd:
+          type: sum
+          description: >
+            Sum of revenue_usd for orders where completed_at IS NOT NULL.
+            Excludes cancelled orders, tax, shipping, and gift card redemptions.
+          ai_hint:
+            - Use this for any question about revenue, sales, or top-line numbers.
+            - Do NOT use this for forecasting questions — it's a historical
+              recognized-revenue measure and doesn't include pipeline or
+              committed contracts.
+            - If a user asks for "gross revenue" or "revenue including
+              cancellations", switch to gross_revenue_usd.
+```
+
+### When to reach for an AI hint vs. a better description
+
+If a piece of context would be useful to a human analyst, put it in the `description` — humans will see it in the Lightdash UI, and the AI will read it too.
+
+Reserve `ai_hint` for things only the agent needs:
+
+- Mapping business phrasing to the right field ("when users say 'sales', they mean `revenue_usd`")
+- Disambiguating between near-duplicate fields the agent might confuse
+- Reminders about which join, filter, or time grain to apply for a given question type
+- Warnings about wrong-answer traps — patterns where the agent has historically picked the wrong field
