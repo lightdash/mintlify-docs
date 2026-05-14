@@ -230,6 +230,47 @@ If you're building your own agents or automated workflows, you can integrate dir
 - **Authentication**: Requires OAuth 2.0 flow for secure authentication
 - **Documentation**: See the [MCP specification](https://modelcontextprotocol.io/docs) for implementation details
 
+##### Pin a project with the `X-Lightdash-Project` header
+
+By default, MCP clients use `set_project` to choose an active project, and the selection is stored as a per-user context. If you're building an integration that should always operate against a single project, you can pre-select the project by sending the `X-Lightdash-Project` header on every request to `/api/v1/mcp`.
+
+When the header is set:
+
+- The project UUID in the header is used as the active project for that request, overriding any project previously set with `set_project`.
+- The `list_projects` and `set_project` tools are hidden from `tools/list`, so the AI assistant can't change the project for the request.
+- Access to the project is still enforced by your user, API key, or service account's permissions — the header can't be used to access projects the caller can't already see.
+
+This is useful when you want each integration, workspace, or environment to be locked to one project (for example, a separate connector per project) without relying on the AI assistant to call `set_project` first.
+
+The header value must be a valid project UUID. You can find the project UUID in the Lightdash URL when viewing a project (`/projects/<projectUuid>/...`).
+
+<CodeGroup>
+```json Cursor (.cursor/mcp.json)
+{
+  "mcpServers": {
+    "lightdash-sales": {
+      "url": "https://<your_instance_name>.lightdash.cloud/api/v1/mcp",
+      "headers": {
+        "X-Lightdash-Project": "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  }
+}
+```
+
+```bash curl
+curl https://<your_instance_name>.lightdash.cloud/api/v1/mcp \
+  -H "Authorization: Bearer <your_token>" \
+  -H "X-Lightdash-Project: 00000000-0000-0000-0000-000000000000" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+</CodeGroup>
+
+<Info>
+  If the header value isn't a valid UUID, it's ignored and the request falls back to the user's stored project context. Permissions are always checked against the resolved project, so a header for a project the caller can't view will return a "no access" error.
+</Info>
+
 {/*<Accordion title="Example: Inspecting the MCP endpoint">
 
 ```bash
