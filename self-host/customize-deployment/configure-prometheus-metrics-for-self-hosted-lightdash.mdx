@@ -31,6 +31,7 @@ You can customize the Prometheus metrics endpoint using the following environmen
 | `LIGHTDASH_EVENT_LOOP_MONITORING_PRECISION` | Precision for event loop monitoring in milliseconds. Must be greater than zero. |           |            `10`             |
 | `LIGHTDASH_PROMETHEUS_LABELS`               | Labels to add to all metrics. Must be valid JSON                                |           |                             |
 | `LIGHTDASH_CUSTOM_METRICS_CONFIG_PATH`      | Path to a JSON config file for custom event-driven counter metrics              |           |                             |
+| `LIGHTDASH_PROMETHEUS_EXTENDED_METRICS_ENABLED` | Enables the `http_server_requests_seconds` histogram (see [HTTP request metrics](#http-request-metrics)) |           |           `false`           |
 
 ## Available metrics
 
@@ -115,6 +116,44 @@ These metrics track query execution performance. The `context` label is either `
 | `lightdash_query_warehouse_duration_seconds` | histogram | Warehouse query execution duration | `warehouse_type`, `context` |
 | `lightdash_query_overhead_duration_seconds` | histogram | Lightdash overhead: total duration minus warehouse execution time | `context` |
 | `lightdash_query_cache_hit_total` | counter | Total number of query cache hits and misses | `result`, `context`, `has_pre_aggregate_match` |
+
+### HTTP request metrics
+
+This metric is **opt-in**. Enable it by setting `LIGHTDASH_PROMETHEUS_EXTENDED_METRICS_ENABLED=true`. When enabled, it times every HTTP request handled by the Express API, the scheduler, and the NATS worker, and is exposed on each of their Prometheus endpoints.
+
+Use it to build Grafana dashboards or alerts for request latency (p50, p95, p99) and error rates. It complements the `lightdash_query_*` histograms, which only cover the data-query pipeline.
+
+| Metric | Type | Description | Labels |
+| :----- | :--- | :---------- | :----- |
+| `http_server_requests_seconds` | histogram | HTTP server request duration in seconds | `method`, `uri`, `status_code` |
+
+**Labels:**
+
+- `method` — HTTP method (`GET`, `POST`, etc.).
+- `uri` — the templated route path (for example, `/api/v1/projects/:projectUuid/spaces`). Requests that do not match a route collapse into `unmatched`, and static files into `/assets/*`. This keeps label cardinality bounded so the metric is safe to enable in production.
+- `status_code` — the response status code as a string (for example, `"200"`, `"404"`).
+
+**Buckets** (seconds): `0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120`. The lower buckets give meaningful p50/p95/p99 signal for fast endpoints, and the upper buckets cover long-running query endpoints.
+
+**Example: enable and query the metric**
+
+```bash
+# Enable in your deployment environment
+LIGHTDASH_PROMETHEUS_ENABLED=true
+LIGHTDASH_PROMETHEUS_EXTENDED_METRICS_ENABLED=true
+```
+
+```promql
+# p99 request latency per route over the last 5 minutes
+histogram_quantile(
+  0.99,
+  sum by (le, uri) (rate(http_server_requests_seconds_bucket[5m]))
+)
+
+# 5xx error rate per route
+sum by (uri) (rate(http_server_requests_seconds_count{status_code=~"5.."}[5m]))
+  / sum by (uri) (rate(http_server_requests_seconds_count[5m]))
+```
 
 ### Pre-aggregate metrics
 
