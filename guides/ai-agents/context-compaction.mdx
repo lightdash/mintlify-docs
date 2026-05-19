@@ -1,0 +1,58 @@
+---
+title: "Thread context compaction"
+description: "How AI agents keep long conversations within the model's context window by summarizing earlier messages."
+---
+
+<Info>
+  Context compaction is currently behind the `ai-context-compaction` feature flag and applies to web-app threads only. Slack threads are not compacted yet.
+</Info>
+
+Long agent conversations can accumulate enough tool calls, results, and follow-up messages to approach the underlying model's context window. When a thread gets close to that limit, Lightdash automatically **compacts** the earlier part of the conversation into a structured summary so the agent can keep responding without losing the important context.
+
+## What it does
+
+When a new user message would push the thread over the model's safe context window, Lightdash:
+
+1. Picks the earlier messages that have not been compacted yet.
+2. Sends them, along with any previous compaction summary, to a fast model that produces a structured markdown summary covering goals, constraints, progress, decisions, next steps, and critical context.
+3. Stores the compaction against the thread and uses the summary in place of the original messages for future responses in that thread.
+
+You'll see a "compacting earlier context…" indicator in the web app when a compaction runs before the agent replies. The original messages remain visible in the thread for you to read — only what gets sent to the model is shortened.
+
+## When it runs
+
+Compaction is triggered when **all** of the following are true:
+
+- The `ai-context-compaction` feature flag is enabled for the user's organization.
+- The thread is a web-app thread (Slack threads are skipped).
+- The previous reply's total token usage is greater than `context window − 16,384 reserve tokens` for the model in use.
+- The active model exposes a known context window. Azure and OpenRouter providers are not supported because their context windows are not declared in Lightdash and are skipped.
+- The triggering prompt has not already been compacted.
+
+Each compaction extends the previous summary rather than replacing it, so summaries stay cumulative as a thread grows.
+
+## Enabling compaction
+
+Compaction is gated by a feature flag. To turn it on across a self-hosted instance, add `ai-context-compaction` to `LIGHTDASH_ENABLE_FEATURE_FLAGS`:
+
+```bash
+LIGHTDASH_ENABLE_FEATURE_FLAGS=ai-context-compaction
+```
+
+See [environment variables](/self-host/customize-deployment/environment-variables) for the full list of feature-flag controls. On Lightdash Cloud, contact support to have the flag enabled for your organization.
+
+## Supported models
+
+Compaction relies on the model's declared context window, so it is only available for the OpenAI, Anthropic, and Bedrock provider presets shipped with Lightdash. Azure deployments and OpenRouter custom models are skipped — those threads keep working but will not be compacted.
+
+The summary itself is always generated with the provider's fast model preset (for example, `gpt-5-mini` for OpenAI or `claude-haiku-4-5` for Anthropic and Bedrock) to keep latency and cost low.
+
+## What you'll notice as a user
+
+- Conversations can keep going on long-running threads without hitting context limits.
+- The agent's recall of very early messages becomes a structured summary rather than the full text, so highly specific phrasing from early turns may be condensed.
+- Pinned context, decisions, and explicit user preferences are preserved across compactions.
+
+<Tip>
+  If you want the agent to start fresh — for example, when switching to an unrelated question — start a new thread instead of relying on compaction. New threads give the model a clean context and tend to produce sharper answers.
+</Tip>
