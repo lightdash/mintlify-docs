@@ -608,6 +608,44 @@ You can also reference model-level parameters from joined tables:
 In this example, the join uses a model-level parameter `customer_status` defined in the `customers` model. This allows you to dynamically filter the joined data based on parameters specific to the joined table.
 
 
+### In `sql_from` for dynamic tables or schemas
+
+Parameters are always rendered as quoted string literals, so you can't drop a parameter directly into a `FROM` clause to switch tables or schemas. To dynamically choose a table or schema at query time, use [Liquid templating](https://shopify.github.io/liquid/) around the parameter reference.
+
+If you don't care about quoting, you can interpolate the parameter directly into the identifier:
+
+```yaml
+sql_from: "analytics_${lightdash.parameters.sales.source_env}.fact_sales"
+```
+
+If you need full control over the identifier (for example, to map parameter values to specific fully-qualified table names), use a Liquid `case` or `if` block wrapped in `{% raw %}` so Lightdash doesn't try to render the parameter as a string:
+
+<Tabs>
+  <Tab title="case">
+    ```yaml
+    sql_from: >
+      {% raw %}{% case ld.parameters.sales.source_env %}
+      {% when 'prod' %} analytics_prod.fact_sales
+      {% when 'staging' %} analytics_staging.fact_sales
+      {% when 'dev' %} analytics_dev.fact_sales
+      {% else %} analytics_prod.fact_sales
+      {% endcase %}{% endraw %}
+    ```
+  </Tab>
+  <Tab title="if / elsif">
+    ```yaml
+    sql_from: >
+      {% raw %}{% if ld.parameters.sales.source_env == 'prod' %} analytics_prod.fact_sales
+      {% elsif ld.parameters.sales.source_env == 'staging' %} analytics_staging.fact_sales
+      {% else %} analytics_dev.fact_sales
+      {% endif %}{% endraw %}
+    ```
+  </Tab>
+</Tabs>
+
+The same pattern works for swapping schemas, databases, or any other identifier that can't be expressed as a quoted string.
+
+
 ### In table calculations
 
 You can reference parameters in table calculations:
