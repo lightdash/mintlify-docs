@@ -46,11 +46,12 @@ MCP servers are configured per project and can be attached to one or more agents
     - **Name** — a friendly label (e.g. `Notion`, `Linear`)
     - **URL** — the remote MCP server endpoint (e.g. `https://mcp.notion.com/mcp`)
     - **Auth type** — `None`, `Bearer token`, or `OAuth`
+    - **Allow shared OAuth credential** (OAuth only) — turn this on if you want a manager to connect a single shared account that everyone can fall back to. Leave it off to require each user to connect their own account.
   </Step>
   <Step title="Provide credentials">
     Depending on the auth type:
     - **Bearer token** — paste the token. It is encrypted at rest.
-    - **OAuth** — click **Connect** to start the OAuth flow with the provider. Lightdash handles token storage and refresh.
+    - **OAuth** — every user clicks **Connect** under the MCP server to start the OAuth flow with their own account. If **Allow shared OAuth credential** is on, a manager can also click **Connect shared account** to set up a fallback credential. Lightdash handles token storage and refresh in both cases.
     - **None** — no credentials required.
   </Step>
   <Step title="Attach to an agent">
@@ -61,11 +62,22 @@ MCP servers are configured per project and can be attached to one or more agents
 ## How credentials work
 
 - MCP servers live at the **project level** and can be reused across any number of agents in that project — configure once, attach anywhere.
-- Every user chatting with an agent uses the **same configured credentials** for that MCP server. Actions taken in the external tool (e.g. a Linear issue created by the agent) are attributed to whoever owns those credentials, not the end user.
-- Choose credentials with a scope that matches what you want the agent to do — for example, a service account for a shared Notion workspace, or a bot user for Linear.
+- **Bearer token** servers always use one shared token for everyone chatting with the agent. Actions are attributed to whoever owns that token.
+- **OAuth** servers support two credential scopes — **personal** and **shared** — and you choose which ones to allow per server.
+
+### OAuth credential scopes
+
+| Scope        | Who connects                                                        | Who can use it                                       | Attribution                                  |
+| ------------ | ------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------- |
+| **Personal** | Each project member connects their own account.                     | Only the user who connected it.                      | Actions are attributed to that user.         |
+| **Shared**   | A project manager connects a single account (e.g. a service account). | All users chatting with agents that use the server. | Actions are attributed to the shared account. |
+
+When both scopes are available, the agent uses the current user's **personal** credential first and falls back to the **shared** credential if the user has not connected their own account.
+
+Personal OAuth is enabled by default on every OAuth server. To also allow a shared credential, a project manager must turn on **Allow shared OAuth credential** when creating the MCP server.
 
 <Info>
-  Per-user OAuth (where each user connects their own account) is planned but not yet supported.
+  Bearer-token servers do not support personal credentials — every user shares the same token.
 </Info>
 
 ## Choose which tools are exposed to the agent
@@ -122,6 +134,8 @@ The agent searches Confluence for the canonical definition, then answers using b
 - All credentials (bearer tokens and OAuth tokens) are encrypted at rest.
 - OAuth refresh is handled automatically; expired tokens trigger a re-authorization prompt.
 - MCP servers are configured at the project level and only available to agents in that project.
+- Personal OAuth credentials are scoped to the user who connected them — no other user can use, view, or impersonate them through the agent.
+- Only project managers can enable shared OAuth credentials and connect or disconnect the shared account; any project member who can view the project can connect or disconnect their own personal credential.
 
 ## Related
 
