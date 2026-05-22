@@ -45,7 +45,7 @@ We currently support:
 
   <Card title="ClickHouse" icon="container-storage" href="#clickhouse" />
 
-  <Card title="MotherDuck" icon="database" href="#motherduck" />
+  <Card title="MotherDuck / DuckLake" icon="database" href="#duckdb" />
 
   <Card title="Athena" icon="aws" href="#athena" />
 
@@ -705,11 +705,19 @@ This controls what day is the start of the week in Lightdash. `Auto` sets it to 
 ***
 
 <a id="duckdb"></a>
-### MotherDuck
+### MotherDuck / DuckLake
 
-Lightdash supports DuckDB project connections through [MotherDuck](https://motherduck.com/).
+Lightdash supports DuckDB project connections through either [MotherDuck](https://motherduck.com/) or [DuckLake](https://ducklake.select/). Both options are configured from the same **MotherDuck / DuckLake** tile — pick the connection type from the toggle at the top of the form.
 
-You can see more details in [dbt documentation](https://docs.getdbt.com/reference/resource-configs/duckdb-configs).
+You can see more details in the [dbt-duckdb documentation](https://docs.getdbt.com/reference/resource-configs/duckdb-configs).
+
+##### dbt version
+
+DuckDB connections in Lightdash require dbt `v1.8` or later.
+
+#### MotherDuck
+
+Use MotherDuck when your data lives in a managed DuckDB database in the cloud.
 
 ##### Database
 
@@ -735,10 +743,6 @@ The number of threads dbt should use for this connection. If you're not sure wha
 
 This controls what day is the start of the week in Lightdash. `Auto` sets it to whatever the default is for your data warehouse. Or, you can customize it and select the day of the week from the drop-down menu. This will be taken into account when using 'WEEK' time interval in Lightdash.
 
-##### dbt version
-
-MotherDuck connections in Lightdash require dbt `v1.8` or later.
-
 If you work with dbt locally, your `profiles.yml` should look similar to this:
 
 ```yaml
@@ -755,6 +759,96 @@ my-motherduck-db:
       settings:
         motherduck_token: "{{ env_var('MOTHERDUCK_TOKEN') }}"
 ```
+
+#### DuckLake
+
+Use [DuckLake](https://ducklake.select/) when you want DuckDB to read Parquet data files from object storage (S3, GCS, Azure) or a local disk, with table metadata kept in a separate catalog database (PostgreSQL, SQLite, or a DuckDB file).
+
+Lightdash attaches DuckLake in read-only mode and shares a single warm DuckDB instance per credential set, so concurrent schema lookups stay cheap.
+
+##### Schema
+
+The default schema your queries will use inside the attached DuckLake catalog. Defaults to `main`.
+
+##### Catalog alias
+
+The name Lightdash uses to `ATTACH` the DuckLake catalog. Defaults to `ducklake`. This is the value returned as the project database in the Lightdash API.
+
+##### Catalog backend
+
+The database that stores DuckLake table metadata. Pick one of:
+
+- **PostgreSQL** — provide `Host`, `Port`, `Database`, `User`, and `Password`.
+- **SQLite** — provide `Catalog file path` (a file on the Lightdash server).
+- **DuckDB** — provide `Catalog file path` (a DuckDB file on the Lightdash server).
+
+File-based catalogs (SQLite and DuckDB) only work for deployments where Lightdash and dbt can read the same filesystem — typically self-hosted single-pod setups.
+
+##### Data path backend
+
+Where DuckLake reads the underlying Parquet data files. Pick one of:
+
+- **S3-compatible** — `S3 URL` (e.g. `s3://my-bucket/path/`), optional `Endpoint`, `Region`, `Access key ID` / `Secret access key`, and a `Use path-style URLs` switch for non-AWS providers. Leave the access keys empty to use the default AWS SDK credential chain (IAM role, web identity, etc.).
+- **Google Cloud Storage** — `GCS URL` (e.g. `gs://my-bucket/path/`) and an optional HMAC key pair. Leave HMAC values empty to use the SDK credential chain.
+- **Azure Blob Storage** — `Azure Blob URL` (e.g. `azure://container/path/`) plus either a `Connection string`, or `Account name` + `Account key`. A connection string takes precedence when both are set.
+- **Local filesystem** — `Local data path`, a server-local directory. Only viable for single-pod deployments.
+
+##### Threads
+
+The number of threads dbt should use for this connection. If you're not sure what to use, start with `1`.
+
+##### Start of week
+
+This controls what day is the start of the week in Lightdash. `Auto` sets it to whatever the default is for your data warehouse. Or, you can customize it and select the day of the week from the drop-down menu. This will be taken into account when using 'WEEK' time interval in Lightdash.
+
+##### Example `profiles.yml` (PostgreSQL catalog + S3 data path)
+
+If you work with dbt locally, your `profiles.yml` should look similar to this:
+
+```yaml
+my-ducklake-db:
+  target: prod
+  outputs:
+    prod:
+      type: duckdb
+      path: ":memory:"
+      database: ducklake
+      schema: main
+      threads: 4
+      extensions:
+        - ducklake
+        - postgres
+        - httpfs
+      settings:
+        autoinstall_known_extensions: true
+        autoload_known_extensions: true
+      attach:
+        - alias: ducklake
+          path: "ducklake:ld_ducklake"
+      secrets:
+        - name: ld_ducklake_catalog
+          type: postgres
+          host: pg.example.com
+          port: 5432
+          database: catalog
+          user: "{{ env_var('LD_CATALOG_USER') }}"
+          password: "{{ env_var('LD_CATALOG_PASSWORD') }}"
+        - name: ld_ducklake_data
+          type: s3
+          scope: "s3://my-bucket/path/"
+          region: us-east-1
+          key_id: "{{ env_var('LD_S3_KEY') }}"
+          secret: "{{ env_var('LD_S3_SECRET') }}"
+        - name: ld_ducklake
+          type: ducklake
+          metadata_path: ""
+          data_path: "s3://my-bucket/path/"
+          metadata_parameters:
+            TYPE: postgres
+            SECRET: ld_ducklake_catalog
+```
+
+For a SQLite or DuckDB-file catalog, the attach path is inlined directly — for example `path: "ducklake:sqlite:/data/catalog.sqlite"` with `options: { data_path: "/data/parquet/" }` — and only the data-path secret is needed.
 
 ***
 
