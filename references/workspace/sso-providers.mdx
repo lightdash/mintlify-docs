@@ -38,6 +38,34 @@ Lightdash supports multiple SSO providers for secure authentication. This page p
   Self-hosted instances can configure any supported SSO provider by setting environment variables directly. See the [self-hosted SSO configuration guide](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash) for setup instructions. Lightdash Cloud customers should follow the provider-side setup and share the values with the Lightdash team.
 </Note>
 
+## URL requirements for organization-managed SSO
+
+When an organization admin saves a per-organization SSO configuration, Lightdash validates that any provider URL it has to fetch resolves to a **public `https://` address**. This protects against server-side request forgery (SSRF) since the URL is requested by the Lightdash backend during issuer discovery.
+
+The following fields are validated at save time:
+
+| Provider | Validated field | What gets checked |
+| :--- | :--- | :--- |
+| Okta | `oktaDomain` | The domain is used to build `https://<oktaDomain>` — it must resolve to a public host. |
+| Generic OIDC | `metadataDocumentEndpoint` | The OIDC discovery document URL must use `https://` and resolve to a public host. |
+
+URLs that point to `localhost`, loopback addresses, private networks, or other internal/non-routable addresses are rejected with a `ParameterError`. Azure AD is not affected because its endpoints are templated from the tenant ID.
+
+<Note>
+  This check runs only when configuration is **saved through the API or admin UI**. Existing stored configurations and environment-variable-based self-hosted configurations are not re-validated.
+</Note>
+
+Example error returned when saving an invalid value:
+
+```json
+{
+  "error": {
+    "name": "ParameterError",
+    "message": "OIDC discovery document URL must be a valid public https URL — localhost, private and internal network addresses are not allowed."
+  }
+}
+```
+
 ## Provider details
 
 ### Google
