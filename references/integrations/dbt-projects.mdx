@@ -36,27 +36,27 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
     **Trade-offs:** bypasses PR review; relies on per-developer `profiles.yml`; high footgun risk if a developer's prod target accidentally points at a non-prod warehouse.
   </Accordion>
 
-  <Accordion title="2. lightdash deploy from a GitHub Action">
-    Same as #1, but runs inside a CI workflow with credentials stored as GitHub Secrets.
+  <Accordion title="2. lightdash deploy from CI">
+    Same as #1, but runs inside a CI workflow (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket Pipelines, etc.) with credentials stored as CI secrets.
 
     | Property                              | Value                                                                                                                                  |
     | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
     | dbt code source                       | CI runner's checkout of the repo                                                                                                       |
     | Compile location                      | CI runner                                                                                                                              |
-    | `profiles.yml` source                 | Provided by the workflow — either committed as an `env_var()` template, or written to disk from a GitHub Secret at runtime             |
+    | `profiles.yml` source                 | Provided by the workflow — either committed as an `env_var()` template, or written to disk from a CI secret at runtime                 |
     | Target                                | Default in the CI `profiles.yml`, overridden by `--target`                                                                             |
     | UI Connection Settings respected?     | No                                                                                                                                     |
-    | Auth                                  | `LIGHTDASH_API_KEY` from GitHub Secrets                                                                                                |
+    | Auth                                  | `LIGHTDASH_API_KEY` from CI secrets                                                                                                    |
     | Prerequisites                         | Lightdash CLI + dbt installed in the workflow; warehouse creds available to CI; valid `profiles.yml` produced at runtime               |
     | Remote git connection required?       | No                                                                                                                                     |
-    | Workflow template                     | [`deploy.yml`](https://github.com/lightdash/cli-actions) in `lightdash/cli-actions`                                                    |
+    | Workflow template                     | [`deploy.yml`](https://github.com/lightdash/cli-actions) in `lightdash/cli-actions` (GitHub Actions example)                           |
 
     **Use cases:** automated production deploys gated by PR merge; PR preview workflows (`lightdash start-preview` + `lightdash validate`).
 
     **Trade-offs:** requires duplicating warehouse credentials into CI on top of what's already in Lightdash; needs dbt available in the runner.
 
     <Warning>
-      Never commit a `profiles.yml` with plaintext credentials. Either use an `env_var()` template committed to the repo, or write the file to disk at runtime from a GitHub Secret.
+      Never commit a `profiles.yml` with plaintext credentials. Either use an `env_var()` template committed to the repo, or write the file to disk at runtime from a CI secret.
     </Warning>
   </Accordion>
 
@@ -79,8 +79,8 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
     **Trade-offs:** manual; relies on a human remembering to click it.
   </Accordion>
 
-  <Accordion title="4. lightdash refresh from a GitHub Action">
-    Calls the same endpoint as the "Refresh dbt" button, but programmatically from CI. Lightdash does the work server-side using the project's UI Connection Settings.
+  <Accordion title="4. lightdash refresh from CI">
+    Calls the same endpoint as the "Refresh dbt" button, but programmatically from CI (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket Pipelines, etc.). Lightdash does the work server-side using the project's UI Connection Settings.
 
     | Property                              | Value                                                                                       |
     | ------------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -89,18 +89,18 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
     | `profiles.yml` source                 | Synthesised by Lightdash from UI Connection Settings                                        |
     | Target                                | UI Project Settings → Connection Settings → Target name                                     |
     | UI Connection Settings respected?     | Yes                                                                                         |
-    | Auth                                  | `LIGHTDASH_API_KEY` from GitHub Secrets                                                     |
+    | Auth                                  | `LIGHTDASH_API_KEY` from CI secrets                                                         |
     | Prerequisites                         | Project must have a remote git source connected; Lightdash CLI installed in the workflow    |
     | Remote git connection required?       | Yes                                                                                         |
-    | Workflow template                     | [`refresh.yml`](https://github.com/lightdash/cli-actions) in `lightdash/cli-actions`        |
+    | Workflow template                     | [`refresh.yml`](https://github.com/lightdash/cli-actions) in `lightdash/cli-actions` (GitHub Actions example) |
 
     **Use cases:** automated post-merge sync to production when the project is already git-connected.
 
     **Trade-offs:** can't push uncommitted changes (only what's in the connected branch); won't catch issues pre-merge — pair with a separate `lightdash validate` PR workflow if you want that.
   </Accordion>
 
-  <Accordion title="5. Pinging the refresh API directly from a GitHub Action">
-    Same as #4, but bypasses the Lightdash CLI entirely — just a `curl` to the API.
+  <Accordion title="5. Pinging the refresh API directly from CI">
+    Same as #4, but bypasses the Lightdash CLI entirely — just a `curl` to the API. Works from any CI system (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket Pipelines, etc.).
 
     | Property                              | Value                                                                       |
     | ------------------------------------- | --------------------------------------------------------------------------- |
@@ -109,7 +109,7 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
     | `profiles.yml` source                 | Synthesised by Lightdash from UI Connection Settings                        |
     | Target                                | UI Project Settings → Connection Settings → Target name                     |
     | UI Connection Settings respected?     | Yes                                                                         |
-    | Auth                                  | `LIGHTDASH_API_KEY` from GitHub Secrets                                     |
+    | Auth                                  | `LIGHTDASH_API_KEY` from CI secrets                                         |
     | Prerequisites                         | Project must have a remote git source connected                             |
     | Remote git connection required?       | Yes                                                                         |
     | Lightdash CLI required?               | No                                                                          |
@@ -123,7 +123,7 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
 
 ### Decision matrix
 
-|                                       | #1 `lightdash deploy` — local CLI | #2 `lightdash deploy` — GitHub Action | #3 "Refresh dbt" — UI button | #4 `lightdash refresh` — GitHub Action | #5 `POST /refresh` API — GitHub Action |
+|                                       | #1 `lightdash deploy` — local CLI | #2 `lightdash deploy` — CI | #3 "Refresh dbt" — UI button | #4 `lightdash refresh` — CI | #5 `POST /refresh` API — CI |
 | ------------------------------------- | ------------------------------- | ---------------------------------- | ------------------ | ----------------------------- | ------------------------------ |
 | Automated?                            | No                              | Yes                                | No                 | Yes                           | Yes                            |
 | Pushes uncommitted local changes?     | Yes                             | No                                 | No                 | No                            | No                             |
@@ -144,8 +144,8 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
 
 **Teams without a remote git connection** (project loaded via local CLI only):
 
-- **Production sync** → `lightdash deploy` in GitHub Actions (#2)
-- **Previews** → `lightdash start-preview` in GitHub Actions
+- **Production sync** → `lightdash deploy` in CI (#2)
+- **Previews** → `lightdash start-preview` in CI
 
 **Teams just getting started:**
 
@@ -170,7 +170,7 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
 </Warning>
 
 <Tip>
-  Mechanisms #4 and #5 are underused. Most existing GitHub Actions examples lead with `lightdash deploy`, which is the heaviest option in CI (requires dbt + warehouse credentials duplicated into the runner). The refresh-based patterns are simpler and often a better fit when the project is git-connected.
+  Mechanisms #4 and #5 are underused. Most existing CI examples lead with `lightdash deploy`, which is the heaviest option in CI (requires dbt + warehouse credentials duplicated into the runner). The refresh-based patterns are simpler and often a better fit when the project is git-connected.
 </Tip>
 
 ### How to trigger each sync
