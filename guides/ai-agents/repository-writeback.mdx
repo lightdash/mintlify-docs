@@ -1,0 +1,97 @@
+---
+title: Repository writeback (Beta)
+description: Ask an AI agent to edit your dbt project in chat and open a pull request with the changes.
+---
+
+<Warning>
+  Repository writeback is currently in Beta and gated by a feature flag. Contact
+  Lightdash support to enable it for your organization.
+</Warning>
+
+Repository writeback lets you ask an AI agent in chat or Slack to change something in the dbt repository that backs your project — rename a metric, add a dimension, edit a model's SQL, fix a YAML description — and have the agent open a pull request with the change.
+
+This is the same writeback capability you would normally trigger from the Custom Metric or SQL Runner menus, surfaced inside the conversation with your AI agent.
+
+## When to use it
+
+Use repository writeback when the change you want needs to land in your dbt project files:
+
+- Rename a metric in a YAML file
+- Add a new metric or dimension to a dbt model
+- Edit a model's SQL
+- Update a description, label, or `meta` block
+- Fix a typo in a column definition
+
+For other kinds of changes, the agent will pick a different tool:
+
+| You want to… | The agent uses… |
+| --- | --- |
+| Ask a question about data | Query and discovery tools |
+| Edit an existing chart or dashboard in Lightdash | `editContent` |
+| Propose an in-app change to a metric or dimension for review | `proposeChange` (see [Self-improvement](/guides/ai-agents/self-improvement)) |
+| Change the underlying dbt repository | `proposeWriteback` |
+
+## Prerequisites
+
+- The **AI writeback** feature flag must be enabled for your organization.
+- Your project's dbt connection must be a **GitHub** repository. GitLab, Bitbucket, Azure DevOps, and local dbt projects are not supported.
+- The Lightdash **GitHub App** must be installed on the repository so the agent can open pull requests.
+- You need at least [project Developer](/references/workspace/roles) permissions on the project.
+
+## How it works
+
+When you ask the agent for a change that belongs in the repo, it calls a tool called `proposeWriteback`. The tool:
+
+1. Spawns a separate, sandboxed writeback agent with no memory of your chat.
+2. Hands that agent a self-contained instruction generated from your request.
+3. The writeback agent edits the relevant files, runs `lightdash compile` to validate the result, and pushes a new branch.
+4. A pull request is opened against your repository's default branch and the URL is returned to you in chat.
+
+The tool call is synchronous and can take a few minutes. The agent will tell you a pull request is being prepared while it waits.
+
+## Using it in chat
+
+Phrase your request as a direct change to the repo and, where possible, name the file, model, or field you want touched. The more specific you are, the more reliably the writeback agent finds the right place to edit.
+
+**Good prompts**
+
+```text
+In models/orders.yml, rename the metric `total_revenue` to `net_revenue`
+and update its description to "Revenue after refunds and discounts."
+```
+
+```text
+Add a new metric `active_users_7d` to the users model. It should be a
+count_distinct of user_id filtered to events in the last 7 days.
+```
+
+```text
+In the customers model, fix the typo in the `lifetime_value` dimension
+description: change "lifteime" to "lifetime."
+```
+
+**Less effective prompts**
+
+```text
+Clean up our metrics.
+```
+
+```text
+Make the orders model better.
+```
+
+When the pull request is ready, the agent posts the URL in the thread. Open it, review the diff, and merge as you would any other pull request. After merging, refresh dbt in Lightdash (or let your CI/CD do it) so the change takes effect.
+
+## What happens if it can't run
+
+| Situation | Result |
+| --- | --- |
+| Feature flag is off | The tool isn't available. The agent answers normally without offering to open a pull request. |
+| Project's dbt connection isn't GitHub | The agent tells you the project must be connected to GitHub for writeback. |
+| GitHub App isn't installed on the repo | The agent surfaces a setup error. Install the Lightdash GitHub App on the repository (from your project's dbt connection settings) and try again. |
+| Writeback agent makes no file changes | No pull request is opened. The agent reports back that nothing needed to change. |
+
+## Related
+
+- [dbt write-back](/guides/developer/dbt-write-back) — write back individual custom metrics, dimensions, and SQL Runner queries from the Lightdash UI.
+- [Self-improvement](/guides/ai-agents/self-improvement) — let agents propose in-app changes to the semantic layer through reviewable changesets instead of pull requests.
