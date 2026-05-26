@@ -12,6 +12,51 @@ description: "You can easily make changes in dbt and see them updated in your Li
 
 You can sync your dbt project code with Lightdash in a few different ways. We recommend everyone set up continuous deployment, but you can also refresh in the Lightdash app or deploy from the CLI.
 
+### Ways to sync dbt to Lightdash
+
+There are three mechanisms to sync dbt with Lightdash. They aren't really alternatives — they're different triggers — but they do differ in **where the dbt code comes from**, **where compilation happens**, and **which `profiles.yml` / target wins**.
+
+<AccordionGroup>
+  <Accordion title="1. CLI from a laptop (lightdash deploy)">
+    - **Where code comes from:** the developer's local working copy (uncommitted changes included).
+    - **Where compile happens:** locally on the laptop. The CLI runs `dbt compile` under the hood, then ships the resulting `manifest.json` to Lightdash.
+    - **Which `profiles.yml`:** local one (`~/.dbt/profiles.yml` by default, or `--profiles-dir`).
+    - **Which target:** default in that `profiles.yml`, unless overridden with `--target`.
+    - **Trigger:** a developer runs the command.
+    - **Use case:** initial setup, debugging, and one-off "rebel" deploys. Not recommended ongoing — it bypasses PR review and can lead to production issues.
+  </Accordion>
+
+  <Accordion title="2. UI 'Refresh dbt' button">
+    - **Where code comes from:** Lightdash fetches it from the source configured in **Project Settings → dbt Connection** (GitHub, GitLab, Azure DevOps, Bitbucket, or dbt Cloud), at the branch specified there (typically `main`).
+    - **Where compile happens:** server-side, on Lightdash's infrastructure.
+    - **Which `profiles.yml`:** Lightdash synthesises one from the project's **UI Connection Settings** (warehouse type + credentials).
+    - **Which target:** the **Target name** field in **Project Settings → Connection Settings**.
+    - **Trigger:** a user clicks **Refresh dbt** in the UI.
+    - **Use case:** pulling the latest merged state into Lightdash without touching CI. Anyone with the right permissions can do it.
+  </Accordion>
+
+  <Accordion title="3. lightdash deploy from GitHub Actions (recommended)">
+    - **Where code comes from:** the GitHub Action's checkout of the repo (so whatever branch the workflow runs against — usually `main`).
+    - **Where compile happens:** inside the GitHub Action runner. Same mechanics as the laptop CLI, just on a CI box.
+    - **Which `profiles.yml`:** whatever the action provides — either a committed `profiles.yml` in the repo (with `DBT_PROFILES_DIR` pointing at it) or a templated one generated at workflow runtime from GitHub Secrets.
+    - **Which target:** default in that `profiles.yml`, unless overridden with `--target`.
+    - **Trigger:** `on: push: branches: [main]` typically, or `workflow_dispatch` for manual runs.
+    - **Use case:** automated production deploys gated by PR merge. This is the recommended pattern.
+  </Accordion>
+</AccordionGroup>
+
+#### Side-by-side comparison
+
+|                          | CLI from laptop                            | UI "Refresh dbt"                          | GitHub Action                          |
+| ------------------------ | ------------------------------------------ | ----------------------------------------- | -------------------------------------- |
+| **dbt code source**      | Local working copy                         | Lightdash fetches from git source         | CI runner checkout of repo             |
+| **Compile location**     | Laptop                                     | Lightdash servers                         | CI runner                              |
+| **`profiles.yml` source**| Local (`~/.dbt/`)                          | Synthesised from UI Connection Settings   | Repo / CI secrets                      |
+| **Target controlled by** | Default in local profile, or `--target`    | UI Target name field                      | Default in CI profile, or `--target`   |
+| **PR review gate**       | No                                         | No                                        | Yes (if `main`-only trigger)           |
+| **Who can trigger**      | Anyone with the CLI + API key              | Anyone with refresh permission            | Anyone who can merge to `main`         |
+| **Recommended for**      | Initial setup / debugging                  | Quick UI refresh after merge              | Production deploys                     |
+
 ### 1. Set up continuous deployment
 
 [Read how to do that and check out our example workflow files](/guides/cli/how-to-use-lightdash-deploy#automatically-deploy-your-changes-to-lightdash-using-a-github-action). 
