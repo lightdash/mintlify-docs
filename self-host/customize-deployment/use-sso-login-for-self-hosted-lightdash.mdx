@@ -166,6 +166,10 @@ To create a One Login integration:
   **Lightdash Cloud users**: instead of setting these environment variables, securely share the client ID, client secret, and issuer URL with the Lightdash team.
 </Tip>
 
+<Note>
+  **Enterprise: configure OneLogin per organization from the admin panel.** Organization admins on Enterprise plans can configure OneLogin SSO themselves from **Settings → Organization SSO** without setting environment variables or contacting Lightdash. The panel accepts the issuer URL, client ID, and client secret, and lets you scope sign-in to specific email domains and toggle password sign-in. Configurations are stored encrypted per organization, and users are routed to the right OneLogin tenant based on their email domain at login. See [Configure SSO per organization](#configure-sso-per-organization) below.
+</Note>
+
 These variables enable you to control Single Sign On (SSO) functionality for One Login
 
 | Variable                             | Description                | Required? | Default |
@@ -231,3 +235,70 @@ These variables enable you to control Single Sign On (SSO) functionality for a g
 | `AUTH_OIDC_X509_CERT_PATH`        | Path to a PEM-encoded public key certificate for `private_key_jwt`                                                                 |           |                       |
 | `AUTH_OIDC_PRIVATE_KEY_PATH`      | Path to a PEM-encoded private key for `private_key_jwt`                                                                            |           |                       |
 | `AUTH_OIDC_SCOPES`                | List of space-delimited OIDC scopes                                                                                                |           |                       |
+
+## Configure SSO per organization
+
+<Note>
+  Available on **Lightdash Enterprise** plans (Cloud and self-hosted). For Azure AD, OneLogin, and generic OIDC.
+</Note>
+
+Enterprise admins can configure SSO directly from the Lightdash admin panel, without setting environment variables or sharing credentials with the Lightdash team. Each organization stores its own encrypted SSO configuration, and Lightdash routes users to the correct identity provider based on their email domain at login.
+
+### When to use this
+
+Use the admin panel when you want to:
+
+- Configure a different identity provider (or tenant) per organization on the same Lightdash instance.
+- Onboard a new SSO connection without redeploying or contacting the Lightdash team.
+- Restrict an SSO connection to specific email domains, or require SSO-only login (no password) for a domain.
+
+If your instance already has SSO configured via environment variables, those stay active as a fallback when no per-organization configuration matches the user's email domain.
+
+### Configure OneLogin from the admin panel
+
+Prerequisites:
+
+- You're an **organization admin** on an Enterprise plan.
+- You've created a OneLogin OIDC application following the [OneLogin setup steps](#one-login) above and have the **issuer URL**, **client ID**, and **client secret**.
+- The OneLogin application's redirect URL is set to `{{site_url}}/api/v1/oauth/redirect/oneLogin`.
+
+Steps:
+
+1. In Lightdash, go to **Settings → Organization SSO**.
+2. Open the **OneLogin** panel.
+3. Enter the **Issuer URL**, **Client ID**, and **Client secret**.
+4. (Optional) Under **Email domains**, list the domains that should be routed to this OneLogin connection (for example, `acme.com`). Users signing in with a matching domain are sent to OneLogin automatically.
+5. (Optional) Toggle **Allow password sign-in** off to enforce SSO-only login for users in the configured domains.
+6. Click **Save**.
+
+To remove the connection, open the same panel and click **Delete**. Lightdash falls back to the instance-level SSO configuration (if any) once the per-organization configuration is removed.
+
+<Tip>
+  Client secrets are encrypted at rest and never returned by the API. When updating a configuration, omit `oauth2ClientSecret` from the payload to keep the previously stored secret.
+</Tip>
+
+### Manage the configuration via the API
+
+The same configuration is available through the API for automation:
+
+| Method   | Endpoint                       | Purpose                                |
+| :------- | :----------------------------- | :------------------------------------- |
+| `GET`    | `/api/v1/org/sso/oneLogin`     | Read the current OneLogin config       |
+| `PUT`    | `/api/v1/org/sso/oneLogin`     | Create or update the OneLogin config   |
+| `DELETE` | `/api/v1/org/sso/oneLogin`     | Remove the OneLogin config             |
+
+Example `PUT` payload:
+
+```json
+{
+  "enabled": true,
+  "oauth2Issuer": "https://acme.onelogin.com/oidc/2",
+  "oauth2ClientId": "abcd-1234-...",
+  "oauth2ClientSecret": "your-client-secret",
+  "emailDomains": ["acme.com"],
+  "overrideEmailDomains": true,
+  "allowPassword": false
+}
+```
+
+Equivalent endpoints exist for the other providers: `/api/v1/org/sso/azuread` and `/api/v1/org/sso/oidc`. See the [API reference](/api-reference/v1/introduction) for the full schema.
