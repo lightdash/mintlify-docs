@@ -227,8 +227,10 @@ If you're building your own agents or automated workflows, you can integrate dir
 
 - **Transport**: Lightdash MCP exposes a StreamableHTTP transport endpoint at `https://<your_instance_name>.lightdash.cloud/api/v1/mcp`
 - **Debugging**: Use `@modelcontextprotocol/inspector` to inspect and debug the MCP connection
-- **Authentication**: Requires OAuth 2.0 flow for secure authentication
+- **Authentication**: For interactive setups use OAuth 2.0. For headless agents and automated workflows, you can authenticate with a Personal Access Token by passing `Authorization: ApiKey <token>` instead. Create the token under **Settings → Personal access tokens** for the user whose permissions and attributes you want the integration to use. Service account tokens are also supported on plans that include them.
 - **Documentation**: See the [MCP specification](https://modelcontextprotocol.io/docs) for implementation details
+- **Pin a project (optional)**: pass `X-Lightdash-Project: <project-uuid>` to scope the MCP session to a specific project, skipping the `set_project` step.
+- **Override user attributes per request (optional)**: pass `X-Lightdash-User-Attributes: <json>` to override the authenticated user's attributes for that request (useful for row-level security when an agent acts on behalf of different end-users).
 
 {/*<Accordion title="Example: Inspecting the MCP endpoint">
 
@@ -252,7 +254,7 @@ MCP provides AI assistants with powerful tools to interact with your Lightdash d
 #### Project management
 
 - **List projects** - View all accessible projects in your organization
-- **Set active project** - Switch context between different projects (required before accessing any data)
+- **Set active project** - Switch context between different projects (required before accessing any data). Accepts an optional `tags` array to filter the explores and fields visible in the session to those matching the given tags — the same tag-based filtering used by [AI agents](/guides/ai-agents/data-access#limiting-access-to-specific-explores-and-fields), but available directly in an MCP session without needing an agent. Useful when tags work in the Lightdash UI but you also want to scope an MCP session to a specific domain (e.g., `["sales"]`).
 - **Get current project** - Check which project is currently active
 
 <Info>
@@ -276,6 +278,41 @@ MCP provides AI assistants with powerful tools to interact with your Lightdash d
 <Info>
   **Run SQL** requires the `manage SqlRunner` permission. The SQL is executed directly against your warehouse, so use the appropriate SQL dialect for your connection (e.g., PostgreSQL, BigQuery, Snowflake).
 </Info>
+
+<Accordion title="run_sql response shape (for developers)">
+  When you call `run_sql` from a custom MCP client or live artifact, the tool returns both a CSV text payload and a `structuredContent` object. Prefer `structuredContent.rows` over parsing the CSV — values arrive as JSON-serializable primitives (numbers, strings, booleans, ISO date strings, or `null`), so you don't need `parseFloat` or `parseInt` on numeric columns.
+
+  **Response envelope:**
+
+  ```json
+  {
+    "content": [
+      { "type": "text", "text": "<CSV string with header row + data rows>" }
+    ],
+    "structuredContent": {
+      "rows": [
+        { "status": "completed", "n": 94, "total_amount": 2397 }
+      ],
+      "columns": ["status", "n", "total_amount"],
+      "rowCount": 1
+    }
+  }
+  ```
+
+  **Example usage:**
+
+  ```ts
+  const result = await callMcpTool('run_sql', { sql, limit });
+  const rows = result.structuredContent.rows;       // [{ status: 'completed', n: 94, ... }, ...]
+  const columns = result.structuredContent.columns; // ['status', 'n', 'total_amount']
+  ```
+
+  **Notes:**
+
+  - Empty results still return `structuredContent` as `{ rows: [], columns, rowCount: 0 }` — distinct from a parse failure.
+  - On error, the response has `isError: true` and `content[0].text` contains the error message; `structuredContent` is omitted.
+  - `content[0].text` continues to carry the raw CSV, so existing clients that parse the text payload keep working.
+</Accordion>
 
 <Warning>
   **Security best practice:** Ensure the database credentials configured in your Lightdash connection have **read-only (viewer) access** to your warehouse. Since `run_sql` executes arbitrary SQL, a connection with write permissions could allow AI agents to modify or delete warehouse data.

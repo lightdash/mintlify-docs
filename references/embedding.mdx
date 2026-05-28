@@ -122,6 +122,7 @@ All configuration options (`dashboardFiltersInteractivity`, `canExportCsv`, `can
     canDateZoom?: boolean,          // Allow date granularity zoom
     canExplore?: boolean,           // Allow "Explore from here"
     canViewUnderlyingData?: boolean, // Allow viewing raw data
+    canViewDataApps?: boolean,      // Allow rendering data app tiles
   },
 
   // Optional: User information for query tracking
@@ -155,6 +156,7 @@ const token = jwt.sign({
     canDateZoom: true,
     canExplore: true,
     canViewUnderlyingData: true,
+    canViewDataApps: true,
   },
   user: {
     externalId: 'user-789',
@@ -400,6 +402,18 @@ When enabled, users can click on charts to open a modal showing the underlying d
   ![](/images/references/embedding-view-underlying-data.png)
 </Frame>
 
+### View data apps
+
+Allows [data app](/guides/data-apps) tiles on an embedded dashboard to render and run their metric queries.
+
+```typescript
+canViewDataApps?: boolean
+```
+
+Data app tiles run arbitrary metric queries against your semantic layer, so they need broader access than a standard chart tile. Enabling `canViewDataApps` grants the embed JWT the additional permissions a data app needs to mint a preview token and execute its queries. User attributes and SQL filters on the JWT still apply, so row-level access controls are enforced inside the data app exactly as they are on chart tiles.
+
+When this option is off (the default), data app tiles on the dashboard render as a placeholder and no queries run. Turn it on when you trust the embed audience to see the data the app can request and you want the tile to behave the same as it does in Lightdash.
+
 ## Allowed content
 
 ### Allowed dashboards
@@ -435,7 +449,7 @@ See the [environment variables reference](/self-host/customize-deployment/enviro
 
 ## User attributes
 
-User attributes enable row-level security by filtering data based on user properties.
+User attributes enable row-level and column-level security by filtering data based on user properties. Column-level security is especially useful when embedded users can [Explore from here](#explore-from-here), since it ensures restricted fields stay hidden in the explore view as well.
 
 ```typescript
 userAttributes?: {
@@ -455,7 +469,12 @@ userAttributes?: {
 }
 ```
 
-User attributes filter tables that have `sql_filter` configurations in dbt. See the complete [User attributes guide](/references/workspace/user-attributes).
+The JWT `userAttributes` field drives both row-level and column-level access controls, the same ones available to Lightdash account users:
+
+- **Row-level filtering**: attributes are substituted into any `sql_filter` on the dbt model (e.g. `${lightdash.attributes.tenant_id}`), restricting which rows the embedded user can query.
+- **Column-level filtering**: attributes are matched against [`required_attributes`](/references/workspace/user-attributes#column-filtering-with-required_attributes) and `any_attributes` rules on dimensions, metrics, and tables. Fields whose rules the embedded user's attributes don't satisfy are stripped from the explore entirely: they don't appear in the field list, can't be queried, and return Forbidden if requested directly. Metrics derived from a hidden dimension are hidden too.
+
+See the complete [User attributes guide](/references/workspace/user-attributes).
 
 ## User metadata
 
@@ -704,7 +723,7 @@ app.get('/api/embed-token', authenticateUser, async (req, res) => {
 });
 ```
 
-### Use user attributes for row-level security
+### Use user attributes for row- and column-level security
 
 ```javascript
 // ✅ Filter data by user's tenant
@@ -733,6 +752,6 @@ See [User attributes reference](/references/workspace/user-attributes) for compl
   </Card>
 
   <Card title="User attributes" icon="shield-check" href="/references/workspace/user-attributes">
-    Implement row-level security
+    Implement row- and column-level security
   </Card>
 </CardGroup>

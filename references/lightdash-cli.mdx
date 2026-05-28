@@ -319,8 +319,8 @@ All standard [dbt options](#dbt-options) work with `lightdash preview`.
   - (default: 1)
   - Number of batches to upload in parallel when using batched deploy. Use with caution as higher values may overwhelm the server
 - `--expires-in <hours>`
-  - (default: 720, i.e. 30 days)
-  - Number of hours until the preview project auto-expires
+  - (default: the upstream project's configured default, or 720 if there is no upstream project)
+  - Number of hours until the preview project auto-expires. Values above the upstream project's [maximum preview expiration](/guides/developer/preview-projects#preview-expiration) are silently capped to the maximum.
 
 **Examples:**
 
@@ -382,8 +382,8 @@ All standard [dbt options](#dbt-options) work with `lightdash start-preview`.
   - (default: 1)
   - Number of batches to upload in parallel when using batched deploy. Use with caution as higher values may overwhelm the server
 - `--expires-in <hours>`
-  - (default: 720, i.e. 30 days)
-  - Number of hours until the preview project auto-expires
+  - (default: the upstream project's configured default, or 720 if there is no upstream project)
+  - Number of hours until the preview project auto-expires. Values above the upstream project's [maximum preview expiration](/guides/developer/preview-projects#preview-expiration) are silently capped to the maximum.
 
 
 ### `lightdash stop-preview`
@@ -443,6 +443,8 @@ All standard [dbt options](#dbt-options) work with `lightdash deploy`.
 - `--use-dbt-list [true|false]`
   - (default: true)
   - Use `dbt list` instead of `dbt compile` to generate dbt manifest.json
+- `--combine-manifest <path>`
+  - Path to an additional dbt `manifest.json`. Models present in this file but missing from the deploy-generated manifest are merged in so the deploy reflects the full project even when dbt was only run on a subset of models. The deploy-generated manifest always wins on conflicts.
 - `--use-batched-deploy`
   - (default: false)
   - Deploy explores in batches instead of a single request. Useful for large projects that exceed payload size limits
@@ -481,6 +483,21 @@ Refreshes your hosted Lightdash project using the latest code from your linked G
 
 This command does not support using dbt options.
 
+### `lightdash deploy` vs `lightdash refresh`
+
+The two CLI commands above (`lightdash deploy` and `lightdash refresh`) are often confused. Here's the quick difference:
+
+| | `lightdash deploy` | `lightdash refresh` |
+| --- | --- | --- |
+| **What it does** | Pushes your local dbt project to a Lightdash project. Runs `dbt compile` (or `dbt list`) locally to produce a fresh `manifest.json`, then sends the compiled models/explores to the Lightdash server. | Tells the Lightdash server to re-pull from the connected git remote and recompile, server-side. No local dbt run, no local files involved — it's the API-driven equivalent of clicking **Refresh dbt** in the UI. |
+| **Where compilation happens** | Locally (laptop or CI runner) | Lightdash servers |
+| **Requires a remote git connection?** | No | Yes |
+| **Flags** | Many (`--project`, `--select`, `--full-refresh`, `--create`, `--use-batched-deploy`, etc.) | Essentially none (just `--verbose`) |
+| **Use when** | You've changed dbt models or Lightdash YAML metadata locally and want those changes to land in a Lightdash project. | Lightdash already points at a git repo and you just want it to pull the latest. |
+
+**Rule of thumb:**
+- Local dbt code you want to push → `deploy`
+- Lightdash already points at a git repo and you just want it to pull the latest → `refresh`
 
 ### `lightdash validate`
 
