@@ -272,8 +272,9 @@ MCP provides AI assistants with powerful tools to interact with your Lightdash d
 
 #### Query execution
 
-- **Run metric query** - Execute queries using your semantic layer's metrics and dimensions, and generate visualizations (tables, bar charts, line charts, pie charts, and more)
-- **Run SQL** - Execute arbitrary SQL queries directly against the project's data warehouse. Useful for ad-hoc analysis or queries that don't fit the explore-based model. Returns up to 500 rows by default (configurable up to 5,000).
+- **Run metric query** - Execute queries using your semantic layer's metrics and dimensions. Completed results include a best-effort `exploreUrl` so you can open the query in Lightdash to keep exploring.
+- **Render chart** - Render a visualization (tables, bar charts, line charts, pie charts, and more) for a completed metric query result in MCP App-capable clients (e.g., Claude). Call this after a metric query finishes when you want a visual chart; the query is not re-executed. SQL Runner results are not supported by `render_chart`.
+- **Run SQL** - Execute arbitrary SQL queries directly against the project's data warehouse. Useful for ad-hoc analysis or queries that don't fit the explore-based model. Returns up to 500 rows by default (configurable up to 5,000). Completed results include a best-effort `sqlRunnerUrl` so you can open the compiled SQL in [SQL Runner](/guides/developer/sql-runner).
 
 <Info>
   **Run SQL** requires the `manage SqlRunner` permission. The SQL is executed directly against your warehouse, so use the appropriate SQL dialect for your connection (e.g., PostgreSQL, BigQuery, Snowflake).
@@ -294,7 +295,8 @@ MCP provides AI assistants with powerful tools to interact with your Lightdash d
         { "status": "completed", "n": 94, "total_amount": 2397 }
       ],
       "columns": ["status", "n", "total_amount"],
-      "rowCount": 1
+      "rowCount": 1,
+      "sqlRunnerUrl": "https://<your_instance_name>.lightdash.cloud/projects/<project-uuid>/sql-runner?..."
     }
   }
   ```
@@ -305,11 +307,13 @@ MCP provides AI assistants with powerful tools to interact with your Lightdash d
   const result = await callMcpTool('run_sql', { sql, limit });
   const rows = result.structuredContent.rows;       // [{ status: 'completed', n: 94, ... }, ...]
   const columns = result.structuredContent.columns; // ['status', 'n', 'total_amount']
+  const sqlRunnerUrl = result.structuredContent.sqlRunnerUrl; // shareable link to inspect/edit the SQL in SQL Runner, or null
   ```
 
   **Notes:**
 
-  - Empty results still return `structuredContent` as `{ rows: [], columns, rowCount: 0 }` — distinct from a parse failure.
+  - Empty results still return `structuredContent` as `{ rows: [], columns, rowCount: 0, sqlRunnerUrl }` — distinct from a parse failure.
+  - `sqlRunnerUrl` is best-effort and may be `null` if the share link cannot be created. It points to the compiled SQL that was executed, which may differ slightly from the SQL you submitted.
   - On error, the response has `isError: true` and `content[0].text` contains the error message; `structuredContent` is omitted.
   - `content[0].text` continues to carry the raw CSV, so existing clients that parse the text payload keep working.
 </Accordion>
