@@ -1,0 +1,120 @@
+---
+title: Configure SSO
+description: Set up Single Sign-On providers for your organization from Lightdash admin settings, with per-domain routing, password control, and account linking.
+---
+
+Organization admins can configure Single Sign-On (SSO) providers directly from **Organization settings → Single Sign-On**, without editing environment variables or involving the Lightdash team. Each provider is configured per organization and routed to users by their email domain.
+
+<Note>
+  Self-serve SSO configuration is available on paid Lightdash plans. Which providers you can configure depends on your plan — see the [SSO providers matrix](/references/workspace/sso-providers#sso-providers-by-plan). Self-hosted instances can configure SSO from this panel **or** with environment variables — see [Self-hosted alternative](#self-hosted-alternative-environment-variables).
+</Note>
+
+## Prerequisites
+
+Before a provider routes any users, your organization must have at least one [**verified domain**](/references/workspace/verified-domains). SSO routing only matches users whose email domain is verified for your organization, so verify your domains first.
+
+## How routing works
+
+- **Email-domain routing** — when a user enters their email on the login page, Lightdash shows only the providers configured for that email's [verified domain](/references/workspace/verified-domains).
+- **Override organization domains** — by default a provider routes **all** of your organization's verified domains. Turn on *Override organization domains* to restrict it to a subset. See [Routing SSO methods to verified domains](/references/workspace/verified-domains#routing-sso-methods-to-verified-domains).
+- **Enabled toggle** — turn a configured provider on or off without deleting it. A disabled provider is ignored by routing.
+- **Password sign-in** — each provider has an *Allow password sign-in* option. The password field is hidden only when **every** provider matching a user's domain disallows it (lenient rule: if any matching provider allows password, it is shown). Disallowing it everywhere enforces SSO-only sign-in.
+- **Precedence** — when a per-organization provider matches a user's domain, it takes precedence over instance-level SSO for that user.
+
+## Configuration steps
+
+The flow is the same for every credential-based provider:
+
+1. Create an OAuth/OIDC application in your identity provider.
+2. Set the redirect (callback) URL to the value in the table below, replacing `{{ lightdash_url }}` with your instance URL (for example `https://app.lightdash.cloud`, or your self-hosted domain).
+3. Copy the resulting credentials into **Organization settings → Single Sign-On → _provider_ → Set up**.
+4. Set the routing domains (*Override organization domains*) and *Allow password sign-in* as needed, then enable the provider.
+
+| Provider | Redirect (callback) URL |
+| :--- | :--- |
+| Okta | `{{ lightdash_url }}/api/v1/oauth/redirect/okta` |
+| Azure AD | `{{ lightdash_url }}/api/v1/oauth/redirect/azuread` |
+| OneLogin | `{{ lightdash_url }}/api/v1/oauth/redirect/oneLogin` |
+| OpenID Connect | `{{ lightdash_url }}/api/v1/oauth/redirect/oidc` |
+
+<Tip>
+  The provider-side application setup (app type, redirect URIs, group claims) is identical to the self-hosted instructions. See [Configure SSO for self-hosted Lightdash](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash) for detailed, screenshot-level steps per provider — then enter the values in this panel instead of setting environment variables.
+</Tip>
+
+<Note>
+  When you save an Okta or Generic OIDC configuration, Lightdash validates that the provider URL it must fetch (the Okta domain / metadata document URL) resolves to a public `https://` address. See [URL requirements for organization-managed SSO](/references/workspace/sso-providers#url-requirements-for-organization-managed-sso).
+</Note>
+
+### Okta
+
+Create an OIDC web application in Okta (see the [detailed Okta steps](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash#okta)), then enter:
+
+| Field | Required? |
+| :--- | :---: |
+| Issuer URI | <Icon icon="square-check" iconType="solid"/> |
+| Okta domain | <Icon icon="square-check" iconType="solid"/> |
+| Client ID | <Icon icon="square-check" iconType="solid"/> |
+| Client secret | <Icon icon="square-check" iconType="solid"/> |
+| Authorization server ID | |
+| Extra scopes | |
+
+### Azure Active Directory
+
+Register an application in Azure AD (see the [detailed Azure AD steps](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash#azure-active-directory)), then enter:
+
+| Field | Required? |
+| :--- | :---: |
+| Application (client) ID | <Icon icon="square-check" iconType="solid"/> |
+| Directory (tenant) ID | <Icon icon="square-check" iconType="solid"/> |
+| Client secret | <Icon icon="square-check" iconType="solid"/> |
+
+### OneLogin
+
+Create an OpenID Connect (OIDC) app in OneLogin (see the [detailed OneLogin steps](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash#one-login)), then enter:
+
+| Field | Required? |
+| :--- | :---: |
+| Issuer URL | <Icon icon="square-check" iconType="solid"/> |
+| Client ID | <Icon icon="square-check" iconType="solid"/> |
+| Client secret | <Icon icon="square-check" iconType="solid"/> |
+
+### OpenID Connect
+
+Connect any OpenID Connect-compliant provider (Keycloak, Auth0, PingIdentity, etc.), then enter:
+
+| Field | Required? |
+| :--- | :---: |
+| Client ID | <Icon icon="square-check" iconType="solid"/> |
+| Client secret | <Icon icon="square-check" iconType="solid"/> |
+| Metadata document URL | <Icon icon="square-check" iconType="solid"/> |
+| Scopes | |
+
+The metadata document URL is your provider's [OIDC discovery endpoint](https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderConfigurationRequest) (`.well-known/openid-configuration`).
+
+### Google
+
+Google works differently from the other providers. On **Lightdash Cloud**, Google sign-in uses Lightdash's shared Google OAuth app, so there are **no credentials to enter** — you only set the routing domains and password options, then enable it.
+
+Google sign-in is **on by default** for your verified domains whenever no other provider takes over. Because of this, the Google panel is also where you **opt out** of Google: set it up and toggle it off to remove the "Sign in with Google" button — and block Google sign-in server-side — for your verified domains. This is useful to enforce a dedicated provider (Okta, Azure AD, etc.) instead of Google.
+
+<Note>
+  **Self-hosted instances** don't use a shared Google app. Create your own Google Cloud OAuth client — set the authorized redirect URI to `{{ lightdash_url }}/api/v1/oauth/redirect/google` following Google's [Create an OAuth web client ID](https://support.google.com/workspacemigrate/answer/9222992?hl=en) guide — and provide the credentials via environment variables. See [Google SSO configuration](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash#google).
+</Note>
+
+## SSO account linking
+
+Account linking controls what happens when a user signs in via SSO and their identity isn't already attached to a Lightdash account. There are two independent toggles:
+
+- **Link SSO identities across providers** — when a user signs in with a new OIDC provider, link the new identity to an existing user that already has another OIDC identity with the same email.
+- **Link SSO logins to existing accounts by email** — when a user signs in via OIDC with an email that matches an existing Lightdash user, attach the SSO identity to that user instead of failing the login. Required when using [SCIM](/references/workspace/scim-integration) with SSO so SCIM-provisioned users can sign in.
+
+## Self-hosted alternative: environment variables
+
+Self-hosted instances can configure any provider instance-wide with environment variables instead of (or in addition to) this panel. See [Configure SSO for self-hosted Lightdash](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash) for the full list of variables per provider. Instance-level SSO applies to all users, while per-organization configuration in this panel takes precedence for matched domains.
+
+## Related resources
+
+- [SSO providers overview](/references/workspace/sso-providers)
+- [Configure SSO for self-hosted Lightdash](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash)
+- [SCIM integration](/references/workspace/scim-integration)
+- [Groups and access control](/references/workspace/groups)
