@@ -8,6 +8,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const matter = require('gray-matter');
 
 const CHECK_EXTERNAL = process.argv.includes('--external');
 
@@ -39,6 +40,11 @@ function findMDXFiles(dir, fileList = []) {
   });
 
   return fileList;
+}
+
+function hasDraftTitle(content) {
+  const title = matter(content).data.title;
+  return typeof title === 'string' && title.toLowerCase().includes('draft');
 }
 
 function extractLinks(content, filePath) {
@@ -282,9 +288,13 @@ async function main() {
 
   const mdxFiles = findMDXFiles('.');
   const excludedPaths = ['node_modules', '.git', 'CONTRIBUTING.md'];
-  const filteredFiles = mdxFiles.filter(file =>
-    !excludedPaths.some(excluded => file.includes(excluded))
-  );
+  const filteredFiles = mdxFiles.filter(file => {
+    if (excludedPaths.some(excluded => file.includes(excluded))) {
+      return false;
+    }
+
+    return !hasDraftTitle(fs.readFileSync(file, 'utf8'));
+  });
 
   const brokenLinks = [];
   const externalLinks = [];
