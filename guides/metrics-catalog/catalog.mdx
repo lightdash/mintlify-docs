@@ -634,6 +634,96 @@ Use an array of dimension names at the metric level to create an allowlist of di
 - Curate the exploration experience per metric (e.g., revenue metrics only filterable by business dimensions).
 - Reduce clutter in models with many dimensions.
 
+## Setting a default segment and filter for a metric
+
+You can pre-select a segment-by dimension and a filter for a metric so the Metrics Explorer opens with a curated view instead of a single uncut line. Use this when there is one obvious "first question" for a metric — for example, splitting `unique_order_count` by `order_source` and limiting it to completed orders.
+
+Set these on the metric's `spotlight` block:
+
+- `default_segment`: dimension name (or `table.dimension` for joined fields) that the Metrics Explorer pre-selects in **Segment by**.
+- `default_filter`: a map of `{ dimension: value }` or `{ dimension: [value1, value2] }` that the Metrics Explorer applies as the initial filter rule.
+
+Both fields must reference dimensions that are valid for the Metrics Explorer (segmentable / filterable types) and must already be allowed by the metric's `segment_by` and `filter_by` allowlists when those are set. Invalid references fail at compile time.
+
+Users can clear or change either default at any time in the explorer — they only seed the initial view.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
+        columns:
+          - name: order_id
+            meta:
+              metrics:
+                unique_order_count:
+                  type: count_distinct
+                  spotlight:
+                    segment_by:
+                      - order_source
+                      - status
+                      - shipping_method
+                    filter_by:
+                      - status
+                      - order_source
+                      - shipping_method
+                    default_segment: order_source
+                    default_filter:
+                      status: completed
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: orders
+        columns:
+          - name: order_id
+            config:
+              meta:
+                metrics:
+                  unique_order_count:
+                    type: count_distinct
+                    spotlight:
+                      segment_by:
+                        - order_source
+                        - status
+                        - shipping_method
+                      filter_by:
+                        - status
+                        - order_source
+                        - shipping_method
+                      default_segment: order_source
+                      default_filter:
+                        status: completed
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    metrics:
+      unique_order_count:
+        type: count_distinct
+        sql: ${TABLE}.order_id
+        spotlight:
+          segment_by:
+            - order_source
+            - status
+            - shipping_method
+          filter_by:
+            - status
+            - order_source
+            - shipping_method
+          default_segment: order_source
+          default_filter:
+            status: completed
+    ```
+  </Tab>
+</Tabs>
+
+`default_filter` accepts the same shorthand as model-level default filters — a single value, an array of values, or an operator object (for example `{ amount: { ">=": 100 } }`).
+
 ## Configuring default time settings in .yml
 
 We recommend setting up default time fields to make it easier for your business users and save them time.
