@@ -32,7 +32,7 @@ jobs:
             }
 
             if (!sourcePrNumber) {
-              const { data: events } = await github.rest.issues.listEventsForTimeline({
+              const events = await github.paginate(github.rest.issues.listEventsForTimeline, {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: docsPr.number,
@@ -51,25 +51,50 @@ jobs:
               }
             }
 
-            if (!sourcePrNumber) {
-              core.info('No lightdash/lightdash source PR found.');
-              return;
+            // Resolve the author to assign: prefer the source PR author, then fall
+            // back to an explicit `cc @author` mention in the docs PR body.
+            let author;
+            let reason;
+
+            if (sourcePrNumber) {
+              let sourcePr;
+              try {
+                ({ data: sourcePr } = await github.rest.pulls.get({
+                  owner: 'lightdash',
+                  repo: 'lightdash',
+                  pull_number: sourcePrNumber,
+                }));
+              } catch (error) {
+                core.info(`Could not load lightdash/lightdash#${sourcePrNumber} (${error.status || error.message}). Falling back to cc mention.`);
+              }
+
+              const sourceAuthor = sourcePr?.user?.login;
+              if (sourcePr && !sourceAuthor) {
+                core.info(`Source PR #${sourcePrNumber} has no author.`);
+              } else if (sourceAuthor?.endsWith('[bot]')) {
+                core.info(`Source PR #${sourcePrNumber} author is ${sourceAuthor}. Skipping bot assignment.`);
+                return;
+              } else if (sourceAuthor) {
+                author = sourceAuthor;
+                reason = sourceReason;
+              }
             }
 
-            const { data: sourcePr } = await github.rest.pulls.get({
-              owner: 'lightdash',
-              repo: 'lightdash',
-              pull_number: sourcePrNumber,
-            });
-
-            const author = sourcePr.user?.login;
             if (!author) {
-              core.info(`Source PR #${sourcePrNumber} has no author. Skipping assignment.`);
-              return;
+              const ccMatch = body.match(/(?:^|\n)\s*cc\s+@([A-Za-z0-9-]+)/i);
+              if (ccMatch) {
+                const ccAuthor = ccMatch[1];
+                if (ccAuthor.endsWith('[bot]')) {
+                  core.info(`cc mention is bot @${ccAuthor}. Skipping.`);
+                } else {
+                  author = ccAuthor;
+                  reason = 'cc mention';
+                }
+              }
             }
 
-            if (author.endsWith('[bot]')) {
-              core.info(`Source PR #${sourcePrNumber} author is ${author}. Skipping bot assignment.`);
+            if (!author) {
+              core.info('No lightdash/lightdash source PR author or cc mention found.');
               return;
             }
 
@@ -82,7 +107,7 @@ jobs:
 
             const wasAssigned = issue.assignees?.some((assignee) => assignee.login === author);
             if (wasAssigned) {
-              core.info(`Assigned docs PR #${docsPr.number} to ${author} via ${sourceReason}.`);
+              core.info(`Assigned docs PR #${docsPr.number} to ${author} via ${reason}.`);
               return;
             }
 
