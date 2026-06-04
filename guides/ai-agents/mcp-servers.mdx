@@ -43,15 +43,16 @@ MCP servers are configured per project and can be attached to one or more agents
   </Step>
   <Step title="Add a new server">
     Click **Add MCP server** and provide:
-    - **Name** — a friendly label (e.g. `Notion`, `Linear`)
+    - **Name** — a friendly label (e.g. `Notion`, `Linear`, `GitHub`)
     - **URL** — the remote MCP server endpoint (e.g. `https://mcp.notion.com/mcp`)
     - **Auth type** — `None`, `Bearer token`, or `OAuth`
-    - **Allow shared OAuth credential** (OAuth only) — turn this on if you want a manager to connect a single shared account that everyone can fall back to. Leave it off to require each user to connect their own account.
+    - **Credential scope** — choose **Per user** so each user connects their own token or account, or **Shared** so everyone uses one credential. Per-user is the default. See [credential scopes](#credential-scopes) below.
   </Step>
   <Step title="Provide credentials">
-    Depending on the auth type:
-    - **Bearer token** — paste the token. It is encrypted at rest.
-    - **OAuth** — every user clicks **Connect** under the MCP server to start the OAuth flow with their own account. If **Allow shared OAuth credential** is on, a manager can also click **Connect shared account** to set up a fallback credential. Lightdash handles token storage and refresh in both cases.
+    Depending on the auth type and scope:
+    - **Bearer token, shared** — a project manager pastes the token once. It is encrypted at rest and used by everyone chatting with the agent.
+    - **Bearer token, per user** — each user opens the MCP server and clicks **Connect your token** to paste their own token. If the manager also enabled the shared scope, they can paste a shared token as a fallback.
+    - **OAuth** — every user clicks **Connect** under the MCP server to start the OAuth flow with their own account. If the shared scope is also enabled, a manager can click **Connect shared account** to set up a fallback credential. Lightdash handles token storage and refresh in both cases.
     - **None** — no credentials required.
   </Step>
   <Step title="Attach to an agent">
@@ -62,34 +63,38 @@ MCP servers are configured per project and can be attached to one or more agents
 ## How credentials work
 
 - MCP servers live at the **project level** and can be reused across any number of agents in that project — configure once, attach anywhere.
-- **Bearer token** servers always use one shared token for everyone chatting with the agent. Actions are attributed to whoever owns that token.
-- **OAuth** servers support two credential scopes — **personal** and **shared** — and you choose which ones to allow per server.
+- Both **Bearer token** and **OAuth** servers support two credential scopes — **per user** and **shared** — and you choose which ones to allow per server.
+- **None** auth servers don't store credentials at all.
 
-### OAuth credential scopes
+### Credential scopes
 
-| Scope        | Who connects                                                        | Who can use it                                       | Attribution                                  |
-| ------------ | ------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------- |
-| **Personal** | Each project member connects their own account.                     | Only the user who connected it.                      | Actions are attributed to that user.         |
-| **Shared**   | A project manager connects a single account (e.g. a service account). | All users chatting with agents that use the server. | Actions are attributed to the shared account. |
+| Scope        | Who connects                                                          | Who can use it                                       | Attribution                                   |
+| ------------ | --------------------------------------------------------------------- | ---------------------------------------------------- | --------------------------------------------- |
+| **Per user** | Each project member connects their own token or account.              | Only the user who connected it.                      | Actions are attributed to that user.          |
+| **Shared**   | A project manager connects a single token or account.                 | All users chatting with agents that use the server. | Actions are attributed to the shared account. |
 
 <Tip>
-  **We recommend per-user OAuth for most use cases.** Actions are attributed to the right person, users only grant access to their own data, and you don't need to manage a shared service account. Reserve shared credentials for bots or service accounts where individual attribution doesn't matter.
+  **We recommend per-user credentials for most use cases.** Actions are attributed to the right person, users only grant access to their own data, and you don't need to manage a shared service account. Reserve shared credentials for bots or service accounts where individual attribution doesn't matter.
 </Tip>
 
 <Frame>
   <img
     src="/images/guides/ai-agents/mcp-per-user-oauth.png"
-    alt="Per-user OAuth connection flow showing each user's Connect button under an MCP server"
+    alt="Per-user connection flow showing each user's Connect button under an MCP server"
   />
 </Frame>
 
-When both scopes are available, the agent uses the current user's **personal** credential first and falls back to the **shared** credential if the user has not connected their own account.
+When both scopes are available, the agent uses the current user's **per-user** credential first and falls back to the **shared** credential if the user hasn't connected their own.
 
-Personal OAuth is enabled by default on every OAuth server. To also allow a shared credential, a project manager must turn on **Allow shared OAuth credential** when creating the MCP server.
+Per-user credentials are enabled by default on every Bearer-token and OAuth server. To also allow a shared credential, a project manager must enable the shared scope when creating the MCP server.
 
-<Info>
-  Bearer-token servers do not support personal credentials — every user shares the same token.
-</Info>
+### Disconnecting a credential
+
+Any user can disconnect their own per-user credential at any time from the MCP server's menu — **Disconnect your token** for bearer-token servers, or **Disconnect your account** for OAuth servers. Project managers can disconnect the shared credential the same way. Disconnecting only removes the credential; the server itself stays configured and the user can reconnect later.
+
+### Example: connecting GitHub
+
+GitHub is a good fit for per-user bearer-token credentials. Each teammate connects a fine-grained, read-only [GitHub personal access token](https://github.com/settings/personal-access-tokens) that only grants access to the repositories they already have. Once connected, the agent can read the code behind your metrics — joining warehouse data with the source of truth for how those metrics are produced — and any actions are attributed to the user who connected their token.
 
 ## Choose which tools are exposed to the agent
 
@@ -145,8 +150,8 @@ The agent searches Confluence for the canonical definition, then answers using b
 - All credentials (bearer tokens and OAuth tokens) are encrypted at rest.
 - OAuth refresh is handled automatically; expired tokens trigger a re-authorization prompt.
 - MCP servers are configured at the project level and only available to agents in that project.
-- Personal OAuth credentials are scoped to the user who connected them — no other user can use, view, or impersonate them through the agent.
-- Only project managers can enable shared OAuth credentials and connect or disconnect the shared account; any project member who can view the project can connect or disconnect their own personal credential.
+- Per-user credentials (bearer tokens and OAuth) are scoped to the user who connected them — no other user can use, view, or impersonate them through the agent.
+- Only project managers can enable the shared credential scope and connect or disconnect the shared credential; any project member who can view the project can connect or disconnect their own per-user credential.
 
 ## Related
 
