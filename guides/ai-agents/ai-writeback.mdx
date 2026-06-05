@@ -8,7 +8,7 @@ description: Ask an AI agent to edit your dbt project in chat and open a pull re
   Lightdash support to enable it for your organization.
 </Warning>
 
-AI writeback lets you ask an AI agent in chat or Slack to change something in the dbt repository that backs your project — rename a metric, add a dimension, edit a model's SQL, fix a YAML description — and have the agent open a pull request with the change.
+AI writeback lets you ask an AI agent in chat or Slack to change something in the dbt repository that backs your project — rename a metric, add a dimension, edit a model's SQL, fix a YAML description — and have the agent open a pull request (or GitLab merge request) with the change.
 
 This is the same writeback capability you would normally trigger from the Custom Metric or SQL Runner menus, surfaced inside the conversation with your AI agent.
 
@@ -28,14 +28,15 @@ For other kinds of changes, the agent will pick a different tool:
 | --- | --- |
 | Ask a question about data | Query and discovery tools |
 | Edit an existing chart or dashboard in Lightdash | `editContent` |
-| Propose an in-app change to a metric or dimension for review | `proposeChange` (see [Self-improvement](/guides/ai-agents/self-improvement)) |
 | Change the underlying dbt repository | `proposeWriteback` |
 
 ## Prerequisites
 
 - The **AI writeback** feature flag must be enabled for your organization.
-- Your project's dbt connection must be a **GitHub** repository. GitLab, Bitbucket, Azure DevOps, and local dbt projects are not supported.
-- The Lightdash **GitHub App** must be installed on the repository so the agent can open pull requests.
+- Your project's dbt connection must be a **GitHub** or **GitLab** repository. Bitbucket, Azure DevOps, dbt Cloud, and local dbt projects are not supported.
+- The matching Lightdash app must be installed for the repository so the agent can open requests:
+  - **GitHub** — install the Lightdash GitHub App on the repository.
+  - **GitLab** — connect the Lightdash GitLab App for your organization (self-hosted GitLab is supported via the project's `host_domain`).
 - You need at least [project Developer](/references/workspace/roles) permissions on the project.
 
 ## How it works
@@ -45,9 +46,14 @@ When you ask the agent for a change that belongs in the repo, it calls a tool ca
 1. Spawns a separate, sandboxed writeback agent with no memory of your chat.
 2. Hands that agent a self-contained instruction generated from your request.
 3. The writeback agent edits the relevant files, runs `lightdash compile` to validate the result, and pushes a new branch.
-4. A pull request is opened against your repository's default branch and the URL is returned to you in chat.
+4. A pull request (GitHub) or merge request (GitLab) is opened against your repository's default branch and the URL is returned to you in chat.
 
 The tool call is synchronous and can take a few minutes. The agent will tell you a pull request is being prepared while it waits.
+
+<Note>
+  GitHub commits are signed by the Lightdash GitHub App. GitLab commits are
+  pushed over OAuth and are unsigned.
+</Note>
 
 ## Using it in chat
 
@@ -109,12 +115,13 @@ If any of those checks fail, the agent stops and tells you why instead of silent
 | Situation | Result |
 | --- | --- |
 | Feature flag is off | The tool isn't available. The agent answers normally without offering to open a pull request. |
-| Project's dbt connection isn't GitHub | The agent tells you the project must be connected to GitHub for writeback. |
+| Project's dbt connection isn't GitHub or GitLab | The agent tells you the project must be connected to a supported git host for writeback. |
 | GitHub App isn't installed on the repo | The agent surfaces a setup error. Install the Lightdash GitHub App on the repository (from your project's dbt connection settings) and try again. |
 | Writeback agent makes no file changes | No pull request is opened. The agent reports back that nothing needed to change. |
 | Pasted PR link is in a different repo, merged, closed, or from a fork | The agent rejects the link with an explanation and does not open a new pull request. |
+| GitLab App isn't connected for the organization | The agent surfaces a `GitLab App is not installed` error. Connect the Lightdash GitLab App for your organization and try again. |
+| Writeback agent makes no file changes | No pull request or merge request is opened. The agent reports back that nothing needed to change. |
 
 ## Related
 
 - [dbt write-back](/guides/developer/dbt-write-back) — write back individual custom metrics, dimensions, and SQL Runner queries from the Lightdash UI.
-- [Self-improvement](/guides/ai-agents/self-improvement) — let agents propose in-app changes to the semantic layer through reviewable changesets instead of pull requests.
