@@ -154,11 +154,37 @@ This means you can display significantly more dimension values when using metric
 
 You can add column totals or row totals (in pivot tables) to your tables by selecting `Show column totals` or `Show row totals` in the chart configuration panel. The column totals in your results and table visualizations are calculated using the underlying data from your table, not only the values that are visible in the table.
 
-<Info>
-  Totals are not calculated for table calculations.
-</Info>
-
 In pivot tables, both column totals and row totals are computed by running extra aggregation queries against your warehouse, so each total reflects the true value for that column or row rather than a sum of the cells shown. This means totals are accurate for `count`, `sum`, `count_distinct`, `average`, `min`, `max`, and ratio metrics in pivot tables, in both the metrics-as-columns and metrics-as-rows layouts. If the warehouse cannot return a value for a given total (for example, when a metric is not defined for that row), the cell is left blank rather than showing an incorrect sum.
+
+### Totals for table calculations
+
+Lightdash calculates grand, column, row, and subtotal values for table calculations whose result is meaningful when the underlying query collapses to a single aggregated row. The calculation is re-applied to the totals row (e.g. `100 * sum(profit) / sum(revenue)`) rather than summing the cells shown in the table.
+
+**Supported**
+
+Table calculation totals are computed when the calculation:
+
+- References only aggregated metrics (no dimensions, no other table calculations).
+- Is written as either:
+  - A **SQL** table calculation that performs per-row scalar arithmetic on metric references, with no window clause (`OVER (...)`) and no table calculation helper functions (row, pivot, or total functions).
+  - A **formula** table calculation that does not use aggregate or window functions.
+
+For example, `100 * ${orders.total_profit} / ${orders.total_revenue}` is totaled correctly because applying the same expression to the aggregated `total_profit` and `total_revenue` row reproduces the overall margin.
+
+**Unsupported (total stays blank)**
+
+The total cell is left blank — rather than showing a misleading value — when the table calculation:
+
+- References a dimension, a custom dimension, or another table calculation.
+- References a period-over-period metric (these are dropped from the totals query because they require their time dimension to be selected).
+- Uses a SQL window function (any `OVER (...)` clause, including `SUM(...) OVER ()`, `LAG`, `LEAD`, `ROW_NUMBER`, running totals, etc.).
+- Uses a built-in table calculation function — row functions, pivot functions, or aggregate/total helper functions — which compile to window SQL.
+- Is a formula calculation that uses aggregate or window functions.
+- Is a template table calculation (these are always excluded from totals).
+
+**Filters**
+
+Totals cannot be computed at all when the query has metric filters or table calculation filters applied. In that case the totals row is omitted regardless of whether individual table calculations would otherwise be totalable, because table calculation filters are applied after the calculations run and would produce inconsistent totals.
 
 ### Incorrect totals
 
