@@ -154,11 +154,30 @@ This means you can display significantly more dimension values when using metric
 
 You can add column totals or row totals (in pivot tables) to your tables by selecting `Show column totals` or `Show row totals` in the chart configuration panel. The column totals in your results and table visualizations are calculated using the underlying data from your table, not only the values that are visible in the table.
 
-<Info>
-  Totals are not calculated for table calculations.
-</Info>
-
 In pivot tables, both column totals and row totals are computed by running extra aggregation queries against your warehouse, so each total reflects the true value for that column or row rather than a sum of the cells shown. This means totals are accurate for `count`, `sum`, `count_distinct`, `average`, `min`, `max`, and ratio metrics in pivot tables, in both the metrics-as-columns and metrics-as-rows layouts. If the warehouse cannot return a value for a given total (for example, when a metric is not defined for that row), the cell is left blank rather than showing an incorrect sum.
+
+### Totals for table calculations
+
+Grand totals, column totals, row totals, and subtotals are also computed for table calculations whose value only depends on aggregated metrics. The formula is re-applied to the aggregated metric row, so the total reflects the calculation evaluated on the totals (for example, `100 * sum(profit) / sum(revenue)`) rather than a sum of the cell values shown.
+
+A table calculation is totaled when it meets all of these conditions:
+
+- It references **only metrics** — no dimension references.
+- For **SQL** table calculations, it contains no [row functions](/references/table-calculation-functions/row-functions), [pivot functions](/references/table-calculation-functions/pivot-functions), [aggregate functions](/references/table-calculation-functions/aggregate-functions) (`total()`, `row_total()`), or raw window clauses (`... OVER (...)`).
+- For [formula table calculations](/guides/formula-table-calculations), it contains no aggregate functions (`SUM`, `COUNT`, `AVG`, ...) or window functions.
+
+For example, these calculations are totaled:
+
+```sql
+-- SQL: metric-only scalar arithmetic
+100 * ${orders.profit} / ${orders.revenue}
+```
+
+```text
+=100 * orders_profit / orders_revenue
+```
+
+The total cell is left blank when a calculation cannot be safely re-evaluated on the aggregated row. This includes calculations built from [SQL templates](/guides/table-calculations/sql-templates) (percent change from previous, percent of previous value, percent of column total, rank in column, running total, window function), calculations that reference a dimension, SQL calculations that use row, pivot, or aggregate helper functions, formulas containing aggregates or window functions, and calculations whose references cannot be resolved.
 
 ### Incorrect totals
 
