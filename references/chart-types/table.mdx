@@ -154,11 +154,24 @@ This means you can display significantly more dimension values when using metric
 
 You can add column totals or row totals (in pivot tables) to your tables by selecting `Show column totals` or `Show row totals` in the chart configuration panel. The column totals in your results and table visualizations are calculated using the underlying data from your table, not only the values that are visible in the table.
 
-<Info>
-  Totals are not calculated for table calculations.
-</Info>
-
 In pivot tables, both column totals and row totals are computed by running extra aggregation queries against your warehouse, so each total reflects the true value for that column or row rather than a sum of the cells shown. This means totals are accurate for `count`, `sum`, `count_distinct`, `average`, `min`, `max`, and ratio metrics in pivot tables, in both the metrics-as-columns and metrics-as-rows layouts. If the warehouse cannot return a value for a given total (for example, when a metric is not defined for that row), the cell is left blank rather than showing an incorrect sum.
+
+### Totals for table calculations
+
+Lightdash computes grand, column, row, and subtotal values for table calculations whose formulas only reference metrics. The formula is re-applied to the aggregated metric row, so a calculation like `100 * ${orders.profit} / ${orders.revenue}` produces `100 * sum(profit) / sum(revenue)` in the totals row rather than summing the visible cells.
+
+Totals are computed for:
+
+- **SQL table calculations** that reference only metrics with the `${table.field}` syntax — for example, `100 * ${orders.profit} / ${orders.revenue}`.
+- **[Formula table calculations](/guides/formula-table-calculations)** that reference only metrics and contain no aggregate or window functions — for example, `=100 * orders_profit / orders_revenue`.
+
+Totals are left blank for table calculations that can't be safely recomputed on an aggregated row, including:
+
+- Calculations that reference a dimension (only metric references can be totaled).
+- SQL calculations that use [row functions](/references/table-calculation-functions/row-functions) (`row()`, `offset()`, `index()`, `offset_list()`, `lookup()`, `list()`), [pivot functions](/references/table-calculation-functions/pivot-functions) (`pivot_column()`, `pivot_index()`, `pivot_offset()`, `pivot_offset_list()`, `pivot_row()`, `pivot_where()`), or the [aggregate functions](/references/table-calculation-functions/aggregate-functions) `total()` and `row_total()`.
+- SQL containing a raw window clause (`... OVER (...)`).
+- Formula calculations that use aggregate functions (`SUM`, `COUNT`, `AVG`, …) or window functions.
+- All [quick calculation SQL templates](/guides/table-calculations/sql-templates) (percent change from previous, percent of previous value, percent of column total, rank in column, running total, and window function templates), because they all rely on window functions.
 
 ### Incorrect totals
 
