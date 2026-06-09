@@ -105,21 +105,27 @@ Custom roles are assigned at the project level to provide granular access contro
 
 ### Content-as-code scopes
 
-Two scopes control access to [content as code](/guides/developer/dashboards-as-code), the CLI workflow for managing charts and dashboards as YAML files.
+Three scopes control access to [content as code](/guides/developer/dashboards-as-code), the CLI workflow for managing charts and dashboards as YAML files. They form a read → write → narrow-write ladder.
 
-**Download content as code** (`view:ContentAsCode`) lets a user pull existing charts and dashboards as YAML via `lightdash download`. It does not allow pushing changes back.
+**Download content as code** (`view:ContentAsCode`) lets a user pull existing charts and dashboards as YAML via `lightdash download`. It does not allow pushing changes back. This is the common "let people pull templates" grant.
 
-**Download and upload content as code** (`manage:ContentAsCode`) grants both download and upload. Users with this scope can run `lightdash upload` to overwrite charts and dashboards in the project.
+**Upload content as code to own previews** (`manage:ContentAsCode@self`) is a narrow upload right: users can run `lightdash upload` only against preview projects they created themselves. This is the intended day-to-day scope for non-Developer users in CI/CD-style workflows where they need to validate their own preview but shouldn't push to shared projects. Pair it with `view:ContentAsCode` so they can still pull from shared projects.
+
+**Download and upload content as code** (`manage:ContentAsCode`) grants both download and upload across any project the role applies to. Users with this scope can run `lightdash upload` to overwrite charts and dashboards in the project. This implies `view:ContentAsCode` and the `@self` upload right.
 
 Use **download-only** to let a user pull production YAML for local development, diffing, or inspection without giving them the ability to overwrite production content. Combine with a controlled promotion path (e.g., CI/CD running with a service account that holds the manage scope) so writes only land via the pipeline.
 
-For example, to protect a production project from accidental `lightdash upload` overwrites:
+For example, to protect a production project from accidental `lightdash upload` overwrites while still letting users iterate on previews:
 
 1. Downgrade the user's org role to **Member** or **Viewer** so they don't inherit `manage:ContentAsCode` from their org role.
-2. Create a custom project role with only **Download content as code** enabled (plus whatever else they need).
+2. Create a custom project role with **Download content as code** and **Upload content as code to own previews** enabled (plus whatever else they need).
 3. Assign the custom role to the user on the production project.
 
-The user can now run `lightdash download` against production but will get a `403` on `lightdash upload`.
+The user can now run `lightdash download` against production and `lightdash upload` against their own preview projects, but will get a `403` on `lightdash upload` to production.
+
+<Note>
+  A custom role cloned from **Developer** can drop the full **Upload content as code** scope while keeping **Upload content as code to own previews** — this mirrors built-in Developer behavior for the own-preview case while removing write access to shared projects.
+</Note>
 
 ### SQL-related scopes
 
