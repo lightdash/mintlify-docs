@@ -115,17 +115,26 @@ Three scopes control access to [content as code](/guides/developer/dashboards-as
 
 Use **download-only** to let a user pull production YAML for local development, diffing, or inspection without giving them the ability to overwrite production content. Combine with a controlled promotion path (e.g., CI/CD running with a service account that holds the manage scope) so writes only land via the pipeline.
 
-For example, to protect a production project from accidental `lightdash upload` overwrites while still letting users iterate on previews:
+#### Restrict developers to preview uploads (agentic development workflow)
 
-1. Downgrade the user's org role to **Member** or **Viewer** so they don't inherit `manage:ContentAsCode` from their org role.
-2. Create a custom project role with **Download content as code** and **Upload content as code to own previews** enabled (plus whatever else they need).
-3. Assign the custom role to the user on the production project.
+A common pattern for agentic development of dashboards and content as code is to let developers iterate freely on their own preview projects while preventing direct `lightdash upload` to production. Promotion to production then happens through a reviewed CI/CD pipeline instead of an individual's CLI.
 
-The user can now run `lightdash download` against production and `lightdash upload` against their own preview projects, but will get a `403` on `lightdash upload` to production.
+To set this up:
 
-<Note>
-  A custom role cloned from **Developer** can drop the full **Upload content as code** scope while keeping **Upload content as code to own previews** — this mirrors built-in Developer behavior for the own-preview case while removing write access to shared projects.
-</Note>
+1. **Clone the built-in Developer role** to create a custom role (for example, `Developer (no prod upload)`).
+2. **Remove** the **Download and upload content as code** (`manage:ContentAsCode`) scope from the cloned role.
+3. **Add** the **Download content as code** (`view:ContentAsCode`) and **Upload content as code to own previews** (`manage:ContentAsCode@self`) scopes.
+4. **Assign the custom role to the user at the project level** on the production project.
+
+<Warning>
+  Custom project roles can only narrow scopes the user would otherwise inherit. If the user is an **Organization Admin** or **Organization Developer**, they will inherit `manage:ContentAsCode` from their org role and the project-level custom role will not block them. For this pattern to work, the user's organization role must be **Viewer**, **Interactive Viewer**, or **Member**.
+</Warning>
+
+With this setup, the user can:
+
+- Run `lightdash download` against the production project to pull YAML for local editing.
+- Run `lightdash preview` and `lightdash upload` against their own preview projects to validate changes.
+- Receive a `403` when attempting `lightdash upload` against the production project — production writes must go through the promotion pipeline.
 
 ### SQL-related scopes
 
