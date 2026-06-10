@@ -772,6 +772,7 @@ On server start, we will check the following variables, and update some configur
 | `LD_SETUP_DBT_VERSION`               | Version of dbt to use (eg: v1.8) (default=latest)                                                                                                 |
 | `LD_SETUP_GITHUB_PAT`                | GitHub personal access token                                                                                                                      |
 | `LD_SETUP_SERVICE_ACCOUNT_TOKEN`     | A pre-set token for the service account, must start with `ldsvc_` prefix                                                                          |
+| `LD_SETUP_USER_ATTRIBUTES`           | JSON array declaring [user attributes and group-value mappings](#declare-user-attributes) to reconcile on every deploy.                           |
 
 ## Initialize multiple projects
 
@@ -955,3 +956,51 @@ To migrate:
 1. Move your existing project config into a JSON object (use the existing project's exact `name` so it is updated in place rather than recreated).
 2. Set `LD_SETUP_PROJECTS` to a single-element array containing that object.
 3. Remove the legacy `LD_SETUP_PROJECT_*` and `LD_SETUP_GITHUB_*` variables from your deployment.
+
+## Declare user attributes
+
+Set `LD_SETUP_USER_ATTRIBUTES` to a JSON array to declare [user attributes](/references/workspace/user-attributes) and their group-value mappings as instance config. Lightdash reconciles the array on every deploy, so you no longer need a manual post-deploy API or CLI step to (re)apply attributes after a release.
+
+<Info>
+  **User attribute setup is only available on Lightdash Enterprise plans.**
+
+  For more information on our plans, visit our [pricing page](https://www.lightdash.com/pricing).
+</Info>
+
+On every boot, Lightdash matches each entry to an existing user attribute **by `name`**: new names are created, existing names are updated in place. Attributes that are not present in the array are left untouched — this reconcile is non-destructive and never deletes attributes you created in the UI.
+
+### Schema
+
+Each entry in the array has the following shape:
+
+| Field              | Required | Description                                                                                                                                                                            |
+| :----------------- | :------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`             | Yes      | User attribute name. Must be non-empty and **unique within the array**.                                                                                                                |
+| `description`      | No       | Human-readable description shown in **Organization Settings** → **User Attributes**.                                                                                                  |
+| `attributeDefault` | No       | Default value applied to users who don't have an explicit value. Use a string, or `null` for no default. Defaults to `null`.                                                          |
+| `groups`           | No       | Array of `{ "group": "<group name>", "value": "<string>" }` mappings that assign the attribute value to every member of a [group](/references/workspace/groups). Defaults to `[]`.    |
+
+### Example
+
+```jsonc
+LD_SETUP_USER_ATTRIBUTES='[
+  {
+    "name": "is_privileged",
+    "description": "sensitive-data access",
+    "attributeDefault": null,
+    "groups": [
+      { "group": "Privileged Analyst", "value": "true" }
+    ]
+  }
+]'
+```
+
+### Group resolution
+
+Group bindings are resolved **by group name** because group UUIDs aren't known at deploy time — groups provisioned via [SCIM](/references/workspace/scim-integration) are created by your IdP, not by Lightdash.
+
+If a group name in `groups` doesn't match any existing group at the time the deploy runs (for example, because SCIM hasn't synced it yet), Lightdash logs a warning and skips that mapping rather than failing the deploy. The mapping is retried on the next deploy, so once the group exists the binding reconciles automatically.
+
+### Per-user mappings
+
+`LD_SETUP_USER_ATTRIBUTES` only supports group-based mappings. Per-user (by-email) values still need to be assigned through the UI or API.
