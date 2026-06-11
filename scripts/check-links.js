@@ -218,6 +218,15 @@ function extractPagesFromDocsJson(docsJson) {
   return pages;
 }
 
+function isHiddenPage(file) {
+  // Mintlify pages with `hidden: true` frontmatter are intentionally
+  // excluded from docs.json navigation, so they're not orphans.
+  const content = fs.readFileSync(file, 'utf8');
+  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!frontmatterMatch) return false;
+  return /^hidden:\s*true\s*$/m.test(frontmatterMatch[1]);
+}
+
 function findOrphanedPages(allMdxFiles, docsJson) {
   if (!docsJson) return [];
 
@@ -236,7 +245,7 @@ function findOrphanedPages(allMdxFiles, docsJson) {
       return;
     }
 
-    if (!pagesInNav.has(relativePath)) {
+    if (!pagesInNav.has(relativePath) && !isHiddenPage(file)) {
       orphans.push(relativePath);
     }
   });
