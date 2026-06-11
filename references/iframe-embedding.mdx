@@ -179,14 +179,14 @@ const embedUrl = `https://app.lightdash.cloud/embed/${projectUuid}#${token}`;
 
 See [User attributes reference](/references/workspace/user-attributes) for complete guide.
 
-## Theming URL parameters
+## URL parameters
 
-Embedded dashboards support two optional URL parameters for customizing the visual appearance of the embed. These are added as **query parameters** before the hash fragment.
+Embedded dashboards support a few optional URL parameters that customize the visual appearance and the query timezone of the session. These are added as **query parameters** before the hash fragment.
 
 ### URL format
 
 ```
-https://your-instance.lightdash.cloud/embed/{projectUuid}?theme=dark&backgroundColor=1c1c1c#{jwtToken}
+https://your-instance.lightdash.cloud/embed/{projectUuid}?theme=dark&backgroundColor=1c1c1c&timezone=America/Los_Angeles#{jwtToken}
 ```
 
 ### `theme`
@@ -222,16 +222,42 @@ Only hex color codes are supported. Other CSS color formats (named colors, `rgb(
 https://app.lightdash.cloud/embed/abc-123?backgroundColor=1c1c1c#eyJhbGci...
 ```
 
-### Combining both parameters
+### `timezone`
 
-You can use `theme` and `backgroundColor` together:
+Sets a per-session query timezone for the embed. Use it when one embedded dashboard needs to render in different timezones for different viewers (for example, a multi-tenant app where each tenant has its own timezone), without creating separate charts per timezone.
+
+Accepts an [IANA timezone name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) (e.g. `America/Los_Angeles`, `Europe/Berlin`, `Asia/Tokyo`). The value is used for dashboard tile queries, inherited totals and subtotals, and filter autocomplete in that session.
+
+| Format | Example | Description |
+|--------|---------|-------------|
+| IANA timezone name | `timezone=America/Los_Angeles` | Renders the session in Los Angeles time |
+| IANA timezone name | `timezone=Europe/Berlin` | Renders the session in Berlin time |
+
+**Example:**
+```
+https://app.lightdash.cloud/embed/abc-123?timezone=America/Los_Angeles#eyJhbGci...
+```
+
+URL-encode the `/` if your URL builder requires it (e.g. `America%2FLos_Angeles`).
+
+<Info>
+The embed `timezone` param sits at the top of the [query timezone hierarchy](/guides/developer/timezones#how-the-project-query-timezone-is-resolved) for that session and overrides any per-chart timezone pin. It only applies to direct iframe and shareable URL embeds — not the React SDK, where the host app's URL is unrelated to the embed.
+</Info>
+
+<Warning>
+The embed `timezone` param requires the `EnableTimezoneSupport` feature flag on your project. When the flag is off, the param is ignored. When the flag is on, an invalid IANA value returns a 400 — empty or whitespace-only values fall through to the chart pin or project default.
+</Warning>
+
+### Combining parameters
+
+You can use `theme`, `backgroundColor`, and `timezone` together:
 
 ```
-https://app.lightdash.cloud/embed/abc-123?theme=dark&backgroundColor=1c1c1c#eyJhbGci...
+https://app.lightdash.cloud/embed/abc-123?theme=dark&backgroundColor=1c1c1c&timezone=America/Los_Angeles#eyJhbGci...
 ```
 
 <Info>
-Both parameters are optional. Existing embed URLs without these parameters behave exactly as before — light theme with the default background.
+All URL parameters are optional. Existing embed URLs without these parameters behave exactly as before — light theme, default background, and the chart or project query timezone.
 </Info>
 
 ### Building themed URLs
