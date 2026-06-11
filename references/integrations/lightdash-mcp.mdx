@@ -318,6 +318,28 @@ MCP provides AI assistants with powerful tools to interact with your Lightdash d
   **Security best practice:** Ensure the database credentials configured in your Lightdash connection have **read-only (viewer) access** to your warehouse. Since `run_sql` executes arbitrary SQL, a connection with write permissions could allow AI agents to modify or delete warehouse data.
 </Warning>
 
+#### Editing content
+
+MCP can read, create, and edit Lightdash charts and dashboards using the same [content-as-code](/guides/developer/dashboards-as-code) payloads that the Lightdash CLI uses. This lets agents make targeted edits to existing content or build new charts and dashboards directly in a conversation, without downloading YAML files locally.
+
+- **Read content** (`read_content`) - Fetch a chart or dashboard as JSON by slug. Call this before editing so the agent can see the current state.
+- **Edit content** (`edit_content`) - Apply an [RFC 6902 JSON Patch](https://datatracker.ietf.org/doc/html/rfc6902) to an existing chart or dashboard, then validate and persist. Use this for surgical changes (e.g. rename a field, add a filter, swap a chart color) without rewriting the whole object.
+- **Create content** (`create_content`) - Create a new chart or dashboard from a full chart-as-code or dashboard-as-code object. Returns the persisted slug and URL.
+
+These tools reuse the same permissions, validation, and project context as the [Lightdash CLI](/guides/cli/how-to-install-the-lightdash-cli) `download` and `upload` commands, so the user driving the MCP session needs the same access required to manage that content in Lightdash.
+
+<Info>
+  When prompting an agent to build content, ask it to use [verified content](#core-capabilities) as a reference. The agent can call `find_content` and `read_content` on a verified chart, then use that JSON as the template for `create_content` — giving you new content that follows the patterns your team has already approved.
+</Info>
+
+**Example prompt:** _"Read the `weekly-revenue` chart, then create a copy called `weekly-revenue-by-region` that adds `customers_region` as a pivot dimension."_
+
+The assistant will call `read_content` to fetch the source chart, modify the JSON to add the pivot, and call `create_content` to save the new chart — returning a link to open it in Lightdash.
+
+<Tip>
+  For bulk edits across many dashboards or as part of a CI/CD pipeline, the [download-edit-upload workflow](/guides/developer/editing-dashboards-with-agents) using the Lightdash CLI is still the recommended approach. MCP content tools are best for interactive edits inside an AI assistant.
+</Tip>
+
 #### Agent context
 
 - **List agents** - Discover available AI agents and their areas of expertise
@@ -545,7 +567,7 @@ A: Yes, each team member can set up their own MCP connection with their individu
 
 **Q: Can MCP modify my data or dashboards?**
 
-A: No, MCP cannot modify your Lightdash configuration, dashboards, or underlying data. It can search, explore your data models, run metric queries, and execute SQL SELECT queries — but all operations are read-only.
+A: MCP can create and edit Lightdash charts and dashboards via the [content-as-code tools](#editing-content) when your user account has the required permissions. MCP cannot modify your underlying warehouse data — query execution is read-only (metric queries and SQL `SELECT` only). All write operations respect your existing Lightdash permissions and project access controls.
 
 **Q: Claude returns data as text but no visual chart is displayed. What's wrong?**
 
