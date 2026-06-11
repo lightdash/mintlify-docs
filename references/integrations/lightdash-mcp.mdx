@@ -14,6 +14,8 @@ With MCP, your AI assistant becomes a data analyst that can:
 - Browse and understand your data models
 - Find relevant metrics and dimensions
 - Run queries and generate visualizations
+- Discover existing charts and dashboards, including verified content
+- Create and edit charts and dashboards using content-as-code
 - Leverage your AI agents' domain expertise and verified answers
 - Switch between different projects seamlessly
 - Respect your data governance and access controls
@@ -229,8 +231,49 @@ If you're building your own agents or automated workflows, you can integrate dir
 - **Debugging**: Use `@modelcontextprotocol/inspector` to inspect and debug the MCP connection
 - **Authentication**: For interactive setups use OAuth 2.0. For headless agents and automated workflows, you can authenticate with a Personal Access Token by passing `Authorization: ApiKey <token>` instead. Create the token under **Settings → Personal access tokens** for the user whose permissions and attributes you want the integration to use. Service account tokens are also supported on plans that include them.
 - **Documentation**: See the [MCP specification](https://modelcontextprotocol.io/docs) for implementation details
-- **Pin a project (optional)**: pass `X-Lightdash-Project: <project-uuid>` to scope the MCP session to a specific project, skipping the `set_project` step.
+- **Pin a project (optional)**: pass `X-Lightdash-Project: <project-uuid>` to scope the MCP session to a specific project, skipping the `set_project` step. See [details below](#pin-a-project-with-the-x-lightdash-project-header).
 - **Override user attributes per request (optional)**: pass `X-Lightdash-User-Attributes: <json>` to override the authenticated user's attributes for that request (useful for row-level security when an agent acts on behalf of different end-users).
+
+##### Pin a project with the `X-Lightdash-Project` header
+
+By default, MCP clients use `set_project` to choose an active project, and the selection is stored as a per-user context. If you're building an integration that should always operate against a single project, you can pre-select the project by sending the `X-Lightdash-Project` header on every request to `/api/v1/mcp`.
+
+When the header is set:
+
+- The project UUID in the header is used as the active project for that request, overriding any project previously set with `set_project`.
+- The `list_projects` and `set_project` tools are hidden from `tools/list`, so the AI assistant can't change the project for the request.
+- Access to the project is still enforced by your user, API key, or service account's permissions — the header can't be used to access projects the caller can't already see.
+
+This is useful when you want each integration, workspace, or environment to be locked to one project (for example, a separate connector per project) without relying on the AI assistant to call `set_project` first.
+
+The header value must be a valid project UUID. You can find the project UUID in the Lightdash URL when viewing a project (`/projects/<projectUuid>/...`).
+
+<CodeGroup>
+```json Cursor (.cursor/mcp.json)
+{
+  "mcpServers": {
+    "lightdash-sales": {
+      "url": "https://<your_instance_name>.lightdash.cloud/api/v1/mcp",
+      "headers": {
+        "X-Lightdash-Project": "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  }
+}
+```
+
+```bash curl
+curl https://<your_instance_name>.lightdash.cloud/api/v1/mcp \
+  -H "Authorization: Bearer <your_token>" \
+  -H "X-Lightdash-Project: 00000000-0000-0000-0000-000000000000" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+</CodeGroup>
+
+<Info>
+  If the header value isn't a valid UUID, it's ignored and the request falls back to the user's stored project context. Permissions are always checked against the resolved project, so a header for a project the caller can't view will return a "no access" error.
+</Info>
 
 {/*<Accordion title="Example: Inspecting the MCP endpoint">
 
@@ -268,12 +311,15 @@ MCP provides AI assistants with powerful tools to interact with your Lightdash d
 - **Find fields** - Search for specific metrics and dimensions by business terms (e.g., "total revenue", "order date")
 - **Search field values** - Look up valid values for a field, useful for building filters
 - **Find content** - Search for existing charts and dashboards by name or description
+- **List content** - Browse accessible content as a hierarchy. By default it returns root-level spaces; pass a space slug to list the charts, dashboards, and nested spaces directly inside that space. Use this when you want the agent to walk space → content rather than search by keyword.
 - **List verified content** - Discover charts and dashboards that admins have marked as verified, so agents can reference trusted, canonical patterns when building new content. If you want your agent to prefer verified patterns, ask it to in your prompt (e.g. _"Use verified charts as the reference for any new chart you build."_).
 
 #### Query execution
 
-- **Run metric query** - Execute queries using your semantic layer's metrics and dimensions, and generate visualizations (tables, bar charts, line charts, pie charts, and more)
-- **Run SQL** - Execute arbitrary SQL queries directly against the project's data warehouse. Useful for ad-hoc analysis or queries that don't fit the explore-based model. Returns up to 500 rows by default (configurable up to 5,000).
+- **Run metric query** - Execute queries using your semantic layer's metrics and dimensions. Completed results include a best-effort `exploreUrl` so you can open the query in Lightdash to keep exploring.
+- **Render chart** - Render a visualization (tables, bar charts, line charts, pie charts, and more) for a completed metric query result in MCP App-capable clients (e.g., Claude). Call this after a metric query finishes when you want a visual chart; the query is not re-executed. SQL Runner results are not supported by `render_chart`.
+- **Run SQL** - Execute arbitrary SQL queries directly against the project's data warehouse. Useful for ad-hoc analysis or queries that don't fit the explore-based model. Returns up to 500 rows by default (configurable up to 5,000). Completed results include a best-effort `sqlRunnerUrl` so you can open the compiled SQL in [SQL Runner](/guides/developer/sql-runner).
+- **Get query result** - Poll for the result of a long-running query. If `run_metric_query` or `run_sql` doesn't finish within its wait window, the tool returns a `queryUuid` and the assistant polls `get_query_result` until the warehouse completes the query — so long queries don't time out the session.
 
 <Info>
   **Run SQL** requires the `manage SqlRunner` permission. The SQL is executed directly against your warehouse, so use the appropriate SQL dialect for your connection (e.g., PostgreSQL, BigQuery, Snowflake).
@@ -294,7 +340,8 @@ MCP provides AI assistants with powerful tools to interact with your Lightdash d
         { "status": "completed", "n": 94, "total_amount": 2397 }
       ],
       "columns": ["status", "n", "total_amount"],
-      "rowCount": 1
+      "rowCount": 1,
+      "sqlRunnerUrl": "https://<your_instance_name>.lightdash.cloud/projects/<project-uuid>/sql-runner?..."
     }
   }
   ```
@@ -305,11 +352,13 @@ MCP provides AI assistants with powerful tools to interact with your Lightdash d
   const result = await callMcpTool('run_sql', { sql, limit });
   const rows = result.structuredContent.rows;       // [{ status: 'completed', n: 94, ... }, ...]
   const columns = result.structuredContent.columns; // ['status', 'n', 'total_amount']
+  const sqlRunnerUrl = result.structuredContent.sqlRunnerUrl; // shareable link to inspect/edit the SQL in SQL Runner, or null
   ```
 
   **Notes:**
 
-  - Empty results still return `structuredContent` as `{ rows: [], columns, rowCount: 0 }` — distinct from a parse failure.
+  - Empty results still return `structuredContent` as `{ rows: [], columns, rowCount: 0, sqlRunnerUrl }` — distinct from a parse failure.
+  - `sqlRunnerUrl` is best-effort and may be `null` if the share link cannot be created. It points to the compiled SQL that was executed, which may differ slightly from the SQL you submitted.
   - On error, the response has `isError: true` and `content[0].text` contains the error message; `structuredContent` is omitted.
   - `content[0].text` continues to carry the raw CSV, so existing clients that parse the text payload keep working.
 </Accordion>
@@ -317,6 +366,28 @@ MCP provides AI assistants with powerful tools to interact with your Lightdash d
 <Warning>
   **Security best practice:** Ensure the database credentials configured in your Lightdash connection have **read-only (viewer) access** to your warehouse. Since `run_sql` executes arbitrary SQL, a connection with write permissions could allow AI agents to modify or delete warehouse data.
 </Warning>
+
+#### Editing content
+
+MCP can read, create, and edit Lightdash charts and dashboards using the same [content-as-code](/guides/developer/dashboards-as-code) payloads that the Lightdash CLI uses. This lets agents make targeted edits to existing content or build new charts and dashboards directly in a conversation, without downloading YAML files locally.
+
+- **Read content** (`read_content`) - Fetch a chart or dashboard as JSON by slug. Call this before editing so the agent can see the current state.
+- **Edit content** (`edit_content`) - Apply an [RFC 6902 JSON Patch](https://datatracker.ietf.org/doc/html/rfc6902) to an existing chart or dashboard, then validate and persist. Use this for surgical changes (e.g. rename a field, add a filter, swap a chart color) without rewriting the whole object.
+- **Create content** (`create_content`) - Create a new chart or dashboard from a full chart-as-code or dashboard-as-code object. Returns the persisted slug and URL.
+
+These tools reuse the same permissions, validation, and project context as the [Lightdash CLI](/guides/cli/how-to-install-the-lightdash-cli) `download` and `upload` commands, so the user driving the MCP session needs the same access required to manage that content in Lightdash.
+
+<Info>
+  When prompting an agent to build content, ask it to use [verified content](#data-exploration) as a reference. The agent can call `find_content` and `read_content` on a verified chart, then use that JSON as the template for `create_content` — giving you new content that follows the patterns your team has already approved.
+</Info>
+
+**Example prompt:** _"Read the `weekly-revenue` chart, then create a copy called `weekly-revenue-by-region` that adds `customers_region` as a pivot dimension."_
+
+The assistant will call `read_content` to fetch the source chart, modify the JSON to add the pivot, and call `create_content` to save the new chart — returning a link to open it in Lightdash.
+
+<Tip>
+  For bulk edits across many dashboards or as part of a CI/CD pipeline, the [download-edit-upload workflow](/guides/developer/editing-dashboards-with-agents) using the Lightdash CLI is still the recommended approach. MCP content tools are best for interactive edits inside an AI assistant.
+</Tip>
 
 #### Agent context
 
@@ -326,6 +397,55 @@ MCP provides AI assistants with powerful tools to interact with your Lightdash d
 - **Clear agent** - Remove agent scoping and return to the full project context
 
 These tools are covered in detail in the [Using AI agent context](#using-ai-agent-context) section below.
+
+<Info>
+  When an agent is active, its scope applies to the whole session: data exploration is limited to the agent's explores, and content tools (find, list, read, create, and edit) only see spaces the agent has access to.
+</Info>
+
+#### Built-in skills
+
+Lightdash ships built-in skills (such as `developing-in-lightdash`) that give AI assistants guidance for working with Lightdash — for example, conventions for writing dbt models, charts, and dashboards. These skills are exposed as MCP resources, which most clients consume automatically.
+
+For MCP clients that don't read resources directly (e.g. Claude Code), three fallback tools let the assistant discover and load the same content:
+
+- **List skills** (`list_skills`) - Return the available built-in skills along with their supporting resource files
+- **Read skill** (`read_skill`) - Read the main `SKILL.md` instructions for a skill by name (e.g. `developing-in-lightdash`)
+- **Read skill resource** (`read_skill_resource`) - Read a supporting resource file for a skill by name and resource path (e.g. `resources/dashboard-best-practices.md`)
+
+You don't need to call these tools explicitly — when relevant, the assistant will call `list_skills` to discover what's available and then load the skill content it needs. If your client already supports MCP resources, you can ignore these tools; both paths return the same content.
+
+<Accordion title="Skill resources via MCP (for developers)">
+  The Lightdash MCP server exposes its built-in skills as MCP resources, so any MCP-compatible client can discover and load them at runtime — no CLI install required. This is useful for custom agents that want to dynamically fetch Lightdash's guidance on building dashboards, charts, and semantic layer configuration.
+
+  The server advertises support via the `io.modelcontextprotocol/skills` extension capability returned from `initialize`. Clients that don't recognize the extension can still list and read the resources directly.
+
+  **Available resources:**
+
+  | URI | Type | Description |
+  |---|---|---|
+  | `skill://index.json` | `application/json` | Discovery index listing every built-in skill and its supporting files. |
+  | `skill://lightdash/<skill-name>/SKILL.md` | `text/markdown` | A skill's instructions and frontmatter (e.g. `skill://lightdash/developing-in-lightdash/SKILL.md`). |
+  | `skill://lightdash/<skill-name>/resources/<file>` | `text/markdown` | Supporting reference files for a skill. |
+
+  **Example: list and read a skill via JSON-RPC**
+
+  ```json
+  // List available resources
+  { "jsonrpc": "2.0", "id": 1, "method": "resources/list", "params": {} }
+
+  // Read the discovery index
+  { "jsonrpc": "2.0", "id": 2, "method": "resources/read",
+    "params": { "uri": "skill://index.json" } }
+
+  // Read a specific skill
+  { "jsonrpc": "2.0", "id": 3, "method": "resources/read",
+    "params": { "uri": "skill://lightdash/developing-in-lightdash/SKILL.md" } }
+  ```
+</Accordion>
+
+<Tip>
+  If you're working in Claude Code, Cursor, or another supported editor, you can also [install skills via the CLI](/guides/developer/agent-skills#installing-skills) — it ships the same files to your local agent without requiring an MCP round trip.
+</Tip>
 
 ### Example conversations
 
@@ -545,7 +665,7 @@ A: Yes, each team member can set up their own MCP connection with their individu
 
 **Q: Can MCP modify my data or dashboards?**
 
-A: No, MCP cannot modify your Lightdash configuration, dashboards, or underlying data. It can search, explore your data models, run metric queries, and execute SQL SELECT queries — but all operations are read-only.
+A: MCP can create and edit Lightdash charts and dashboards via the [content-as-code tools](#editing-content) when your user account has the required permissions. MCP cannot modify your underlying warehouse data — query execution is read-only (metric queries and SQL `SELECT` only). All write operations respect your existing Lightdash permissions and project access controls.
 
 **Q: Claude returns data as text but no visual chart is displayed. What's wrong?**
 
