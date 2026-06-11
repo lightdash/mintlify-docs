@@ -136,6 +136,50 @@ With this setup, the user can:
 - Run `lightdash preview` and `lightdash upload` against their own preview projects to validate changes.
 - Receive a `403` when attempting `lightdash upload` against the production project — production writes must go through the promotion pipeline.
 
+### Preview-edit scopes
+
+Four `@self` scopes let a user edit content **only inside [preview projects](/guides/developer/preview-projects) they created themselves**, without granting any edit rights in production:
+
+- **Manage dashboards in own previews** (`manage:Dashboard@self`)
+- **Manage saved charts in own previews** (`manage:SavedChart@self`)
+- **Manage spaces in own previews** (`manage:Space@self`)
+- **Explore and query data in own previews** (`manage:Explore@self`)
+
+Use these to enable a governed self-serve workflow for non-analyst builders:
+
+1. The user is view-only in the production project.
+2. They create a preview project from production — content and access are copied across.
+3. Inside their own preview they can freely create, edit, and delete dashboards, charts, and spaces, and use the Explorer to build new charts.
+4. A reviewer with the appropriate rights [promotes the changes](/guides/how-to-promote-content) back to production.
+
+Without the `@self` modifier, granting `manage:Dashboard` (or the chart/space/explore equivalents) would also grant those rights in the production project. With `@self`, the rule only takes effect when both conditions hold:
+
+- The project is a preview project.
+- The current user is the user who created that preview.
+
+In any other project — production, a teammate's preview, an org-level role assignment with no project context — the scope contributes nothing. The four scopes are included in the built-in Developer role by default; you only need to add them explicitly when building a custom role for users whose org role is Viewer, Interactive Viewer, or Member.
+
+<Info>
+  These scopes still respect space access. A `manage:Dashboard@self` or `manage:SavedChart@self` grant only applies inside spaces the user can already see (public spaces, or private spaces they're a member of). `manage:Space@self` lets the user create new spaces and manage spaces they can see, but does not expose private spaces they weren't a member of in production. `manage:Explore@self` is project-wide inside the preview, matching how Explore works elsewhere.
+</Info>
+
+#### Let view-only users build in their own previews
+
+To set up the "view-only in production, edit freely in own preview" workflow:
+
+1. **Downgrade the user's org role** to Viewer, Interactive Viewer, or Member so production rights come from the project-level role.
+2. **Create a custom role** (for example, `Preview Builder`) with:
+   - The view scopes the user needs in production (e.g. `view:Dashboard`, `view:SavedChart`, `view:Space`, `view:Project`).
+   - `create:Project` so they can create preview projects.
+   - All four preview-edit scopes: `manage:Dashboard@self`, `manage:SavedChart@self`, `manage:Space@self`, `manage:Explore@self`.
+3. **Assign the custom role** to the user at the production project level.
+
+With this setup, the user can browse production read-only, spin up a preview from production, edit dashboards/charts/spaces and run the Explorer inside that preview, and request promotion back to production. They cannot edit production content directly, and they cannot edit content in previews created by other users.
+
+<Tip>
+  Promoting content from a preview back to production still requires promote (or editor) rights on the destination project. The preview-edit scopes do not grant promotion — that gate is enforced separately so a reviewer remains in the loop.
+</Tip>
+
 ### SQL-related scopes
 
 Three scopes control different SQL-authoring features. They are independent — granting one does not grant the others.
