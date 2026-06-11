@@ -42,15 +42,22 @@ Lightdash has two separate timezone settings that solve different problems at di
   **Beta:** Several features on this page are currently in the [Beta](/references/workspace/feature-maturity-levels) phase. Contact support to enable them for your organization - each section below is marked accordingly. Without them, the project query timezone only adjusts relative date filter boundaries; everything else renders the raw warehouse value.
 </Info>
 
-### How the project query timezone is resolved
+### How the query timezone is resolved
 
-Lightdash picks the active project query timezone using the hierarchy below (highest priority wins):
+Lightdash picks the active query timezone using the hierarchy below (highest priority wins):
 
-1. **Per-chart timezone** - set on an individual chart in the Explore view
-2. **User timezone** - set by a logged-in user in their profile
-3. **Project query timezone** - set by an admin in project settings
+1. **Session override** - a per-session timezone supplied by the host, e.g. a `?timezone=` parameter on an embed URL
+2. **Saved chart timezone setting** - one of three values stored on the chart:
+   - a specific IANA zone (e.g. `America/New_York`) - the chart is pinned to that zone for every viewer
+   - `user_timezone` - the chart resolves to each viewer's profile timezone (falls back to the project timezone if the user has none set, or if the user timezone feature is disabled)
+   - `project_timezone` *(default for new and unconfigured charts)* - the chart resolves to the project query timezone for every viewer, and tracks later changes to it
+3. **Project query timezone** - set by an admin in project settings, and the value the `project_timezone` setting above resolves to
 4. **`LIGHTDASH_QUERY_TIMEZONE`** environment variable - server-wide fallback
 5. **UTC** - default if nothing else is configured
+
+<Note>
+  Saved charts default to **`project_timezone`** so every viewer sees the same numbers, and the chart automatically picks up later changes to the project query timezone. If you want viewers in different timezones to each see their own day boundaries, set the chart to `user_timezone` explicitly using the [per-chart timezone picker](#per-chart-timezone-picker).
+</Note>
 
 ### Per-chart timezone picker
 
@@ -58,7 +65,13 @@ Lightdash picks the active project query timezone using the hierarchy below (hig
   **Beta:** The per-chart timezone picker is currently in the [Beta](/references/workspace/feature-maturity-levels) phase. Contact support to enable it for your organization.
 </Info>
 
-You can override the query timezone for an individual chart in the Explore view. When building or editing a chart, use the timezone picker to select a timezone. This only applies to that specific chart and takes the highest priority in the hierarchy.
+When building or editing a chart in the Explore view, use the timezone picker to choose how the chart resolves its timezone:
+
+- **Project timezone** *(default)* - the chart uses the project query timezone for every viewer. Saved charts use this setting by default, so the numbers are deterministic across your audience.
+- **Viewer's timezone** - the chart re-resolves to each viewer's profile timezone (or the project timezone if they have none). Use this for personal exploration or internal dashboards where each viewer should see their own day boundaries.
+- **A specific timezone** - pin the chart to a fixed IANA zone (e.g. `America/New_York`). The chart renders in that zone regardless of viewer or project changes.
+
+The setting is stored on the chart, so it applies to every viewer the same way until you change it.
 
 ### User timezone
 
@@ -66,20 +79,20 @@ You can override the query timezone for an individual chart in the Explore view.
   **Beta:** The user timezone setting is currently in the [Beta](/references/workspace/feature-maturity-levels) phase. Contact support to enable it for your organization.
 </Info>
 
-Logged-in users can set a personal default timezone in **Settings > Profile > Default timezone**. When set, this timezone applies to every query the user runs across every project they have access to, unless a chart pins its own timezone with the [per-chart timezone picker](#per-chart-timezone-picker).
+Logged-in users can set a personal default timezone in **Settings > Profile > Default timezone**. This preference only applies to a query when the chart's timezone setting is **Viewer's timezone** - by default, saved charts are pinned to the project query timezone for everyone (see the [resolution hierarchy](#how-the-query-timezone-is-resolved)).
 
-The user timezone sits between the per-chart and project query timezones in the [resolution hierarchy](#how-the-project-query-timezone-is-resolved), so:
+When the chart is set to **Viewer's timezone**:
 
-- A chart-level timezone override always wins over the user's preference.
-- When no chart-level override is set, the user's preference wins over the project default.
+- The user's preference wins over the project default.
 - Leave the field empty to fall back to the project query timezone.
 
 The user timezone affects the same behaviors as the project query timezone (relative date filter boundaries, and - with Beta support enabled - display, `DATE_TRUNC` grouping, and calendar extracts). It does **not** apply to:
 
-- **Anonymous viewers** - embed and JWT sessions don't have a profile, so they always use the project query timezone.
+- **Charts pinned to the project timezone or a specific IANA zone** - those resolve the same way for every viewer regardless of their profile setting.
+- **Anonymous viewers** - embed and JWT sessions don't have a profile, so even charts set to **Viewer's timezone** fall back to the project query timezone.
 
 <Note>
-  Scheduled deliveries run their queries as the user who created the delivery, so the creator's user timezone applies to the query results. The delivery's own timezone setting only controls **when** the delivery runs, not how the queries interpret dates.
+  Scheduled deliveries run the chart as saved, so the chart's timezone setting determines how dates are interpreted. The delivery's own timezone setting only controls **when** the delivery runs.
 </Note>
 
 Organization and project admins can set a default query timezone for the project in **Settings > Project Settings**.
@@ -234,7 +247,7 @@ This isn't just a few rows being shifted - the filter boundaries are a full day 
 **Workarounds:**
 
 - **Set the project query timezone:** An admin can set the query timezone in **Settings > Project Settings** to match your team's timezone. See [Project query timezone](#project-query-timezone-ui-setting).
-- **Set your user timezone:** Set a default timezone on your profile so every query you run uses it. See [User timezone](#user-timezone).
+- **Set your user timezone:** Set a default timezone on your profile, then set the chart to **Viewer's timezone** so it resolves to your profile zone. See [User timezone](#user-timezone).
 - **Use the per-chart timezone picker:** Override the timezone on a specific chart in the Explore view. See [Per-chart timezone picker](#per-chart-timezone-picker).
 - **Set `LIGHTDASH_QUERY_TIMEZONE`:** Set the [`LIGHTDASH_QUERY_TIMEZONE`](#lightdash_query_timezone-environment-variable) environment variable to your preferred timezone. Available for self-hosted instances, or contact us for Lightdash Cloud (Pro/Enterprise).
 - **Cast to date in dbt:** If you only need day-level granularity, cast your timestamp column to a `date` type in your dbt model. When a column uses `type: date`, there's no time component for Lightdash to apply UTC conversion to - `2026-02-12` is just `2026-02-12` regardless of timezone.
@@ -343,7 +356,7 @@ The delivery timezone only controls when the delivery runs - the query results t
 | Scenario | Workaround | Limitation |
 |:---------|:-----------|:-----------|
 | "Today" shows wrong data | Set project query timezone in UI (admin) | Per-project, not per-user |
-| | Set a user timezone in Profile settings | Beta; doesn't apply to embeds |
+| | Set a user timezone in Profile settings and set the chart to **Viewer's timezone** | Beta; doesn't apply to embeds |
 | | Use the per-chart timezone picker | Applies to one chart only |
 | | Set `LIGHTDASH_QUERY_TIMEZONE` env var | Server-wide, not per-user |
 | | Cast to `date` type in dbt | Loses intraday granularity |
