@@ -2,7 +2,7 @@ name: Assign Docs PR
 
 on:
   pull_request:
-    types: [opened, reopened, edited]
+    types: [opened, reopened, edited, ready_for_review, synchronize]
 
 permissions:
   issues: write
@@ -12,7 +12,6 @@ jobs:
   assign-docs-pr:
     name: Assign docs PR to source PR author
     runs-on: ubuntu-latest
-    if: github.event.pull_request.user.login == 'mintlify[bot]'
 
     steps:
       - name: Assign source PR author
@@ -21,6 +20,11 @@ jobs:
           script: |
             const docsPr = context.payload.pull_request;
             const body = docsPr.body || '';
+            const handleAliases = new Map([
+              ['tatiana', 'tatianainama'],
+              ['tatiana-inama', 'tatianainama'],
+            ]);
+            const normalizeHandle = (handle) => handleAliases.get(handle.toLowerCase()) || handle;
             const sourceMatch = body.match(/lightdash\/lightdash(?:#|\/pull\/)(\d+)/i);
             const contextualSourceMatch = body.match(/(?:upstream PR|source PR|triggered by|follows|follow-up to)[^#]{0,120}#(\d{5,})/is);
             let sourcePrNumber = sourceMatch ? Number(sourceMatch[1]) : undefined;
@@ -68,7 +72,7 @@ jobs:
                 core.info(`Could not load lightdash/lightdash#${sourcePrNumber} (${error.status || error.message}). Falling back to cc mention.`);
               }
 
-              const sourceAuthor = sourcePr?.user?.login;
+              const sourceAuthor = sourcePr?.user?.login ? normalizeHandle(sourcePr.user.login) : undefined;
               if (sourcePr && !sourceAuthor) {
                 core.info(`Source PR #${sourcePrNumber} has no author.`);
               } else if (sourceAuthor?.endsWith('[bot]')) {
@@ -83,7 +87,7 @@ jobs:
             if (!author) {
               const ccMatch = body.match(/(?:^|\n)\s*cc\s+@([A-Za-z0-9-]+)/i);
               if (ccMatch) {
-                const ccAuthor = ccMatch[1];
+                const ccAuthor = normalizeHandle(ccMatch[1]);
                 if (ccAuthor.endsWith('[bot]')) {
                   core.info(`cc mention is bot @${ccAuthor}. Skipping.`);
                 } else {
@@ -93,22 +97,31 @@ jobs:
               }
             }
 
+            if (!author && docsPr.user?.login && !docsPr.user.login.endsWith('[bot]')) {
+              author = normalizeHandle(docsPr.user.login);
+              reason = 'docs PR author';
+            }
+
             if (!author) {
               core.info('No lightdash/lightdash source PR author or cc mention found.');
               return;
             }
 
-            const { data: issue } = await github.rest.issues.addAssignees({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: docsPr.number,
-              assignees: [author],
-            });
+            try {
+              const { data: issue } = await github.rest.issues.addAssignees({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: docsPr.number,
+                assignees: [author],
+              });
 
-            const wasAssigned = issue.assignees?.some((assignee) => assignee.login === author);
-            if (wasAssigned) {
-              core.info(`Assigned docs PR #${docsPr.number} to ${author} via ${reason}.`);
-              return;
+              const wasAssigned = issue.assignees?.some((assignee) => assignee.login === author);
+              if (wasAssigned) {
+                core.info(`Assigned docs PR #${docsPr.number} to ${author} via ${reason}.`);
+                return;
+              }
+            } catch (error) {
+              core.info(`Could not assign docs PR #${docsPr.number} to ${author} (${error.status || error.message}). Falling back to cc comment.`);
             }
 
             const fallbackBody = `cc @${author}`;
@@ -125,11 +138,15 @@ jobs:
               return;
             }
 
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: docsPr.number,
-              body: fallbackBody,
-            });
+            try {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: docsPr.number,
+                body: fallbackBody,
+              });
 
-            core.info(`Assignment did not land for ${author}. Posted fallback cc comment.`);
+              core.info(`Assignment did not land for ${author}. Posted fallback cc comment.`);
+            } catch (error) {
+              core.info(`Assignment and fallback comment both failed for ${author} (${error.status || error.message}).`);
+            }
