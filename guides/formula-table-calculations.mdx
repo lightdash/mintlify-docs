@@ -142,6 +142,52 @@ You can use:
 | `COALESCE(a, b, …)`    | First non-null argument          |
 | `ISNULL(x)`            | `TRUE` if x is null              |
 
+## Window clauses: `PARTITION BY` and `ORDER BY`
+
+Window functions accept optional `PARTITION BY` and `ORDER BY` clauses,
+written inline as extra arguments. Use them when you want a running
+total, moving average, rank, or `LAG`/`LEAD` to reset for each group or
+follow a specific row order.
+
+- `PARTITION BY <dimension>` — restart the calculation for each value
+  of the dimension (for example, run a separate running total per
+  region).
+- `ORDER BY <dimension>` — define the row order the window uses (for
+  example, by date). Defaults to the natural sort of your results table
+  when omitted.
+
+**Running total per group**
+
+```
+=RUNNING_TOTAL(orders_revenue, PARTITION BY orders_region, ORDER BY orders_order_date)
+```
+
+**Moving average per group**
+
+```
+=MOVING_AVG(orders_revenue, 6, PARTITION BY orders_partner_name, ORDER BY orders_order_month)
+```
+
+**Percent change vs. previous row in the same group**
+
+```
+=(orders_revenue - LAG(orders_revenue, PARTITION BY orders_region, ORDER BY orders_order_date))
+   / LAG(orders_revenue, PARTITION BY orders_region, ORDER BY orders_order_date)
+```
+
+**Rank within each group**
+
+```
+=RANK(PARTITION BY orders_region, ORDER BY orders_revenue DESC)
+```
+
+You can also wrap any aggregate with an explicit `OVER (…)` clause for
+warehouse-style window aggregates:
+
+```
+=SUM(orders_revenue) OVER (PARTITION BY orders_region ORDER BY orders_order_date)
+```
+
 ## Examples
 
 **Gross margin as a percentage**
