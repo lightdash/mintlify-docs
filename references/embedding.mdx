@@ -125,6 +125,13 @@ All configuration options (`dashboardFiltersInteractivity`, `canExportCsv`, `can
     canViewDataApps?: boolean,      // Allow rendering data app tiles
   },
 
+  // Optional: Allow embedded users to save new charts from Explore
+  writeActions?: {
+    spaceUuid: string,                // Destination space for created content
+    serviceAccountUserUuid?: string,  // Actor for the write (use one)
+    userUuid?: string,
+  },
+
   // Optional: User information for query tracking
   user?: {
     externalId?: string,
@@ -413,6 +420,82 @@ canViewDataApps?: boolean
 Data app tiles run arbitrary metric queries against your semantic layer, so they need broader access than a standard chart tile. Enabling `canViewDataApps` grants the embed JWT the additional permissions a data app needs to mint a preview token and execute its queries. User attributes and SQL filters on the JWT still apply, so row-level access controls are enforced inside the data app exactly as they are on chart tiles.
 
 When this option is off (the default), data app tiles on the dashboard render as a placeholder and no queries run. Turn it on when you trust the embed audience to see the data the app can request and you want the tile to behave the same as it does in Lightdash.
+
+## Write actions
+
+Write actions let embedded users save new charts from the embedded Explore view. When the JWT includes a `writeActions` claim, Lightdash uses a configured actor (a service account or a regular user) to perform the write on behalf of the embedded viewer, and forces created content into a specific destination space.
+
+This is useful when you want to let your customers explore a chart, change it, and save the result back to Lightdash — without giving them a Lightdash login.
+
+```typescript
+writeActions?: {
+  spaceUuid: string,                  // Required: destination space for created content
+  serviceAccountUserUuid?: string,    // Use a service account as the actor
+  userUuid?: string,                  // Or use an existing Lightdash user as the actor
+}
+```
+
+**Rules:**
+
+- `spaceUuid` is required and must belong to the same project as the embed.
+- You must provide exactly one of `serviceAccountUserUuid` or `userUuid`.
+- The actor must belong to the same organization as the project and (for `userUuid`) be active.
+- The actor's permissions and space access still apply — the embed inherits whatever the actor can do in that space.
+- Newly saved charts are **not** added to the embed allowlist automatically. They behave like normal private content and won't be re-embeddable unless you add them explicitly.
+
+### Configure write actions
+
+Configure write actions from **Settings → Embedding** by toggling **Enable write actions** and selecting:
+
+- **Service account** — the Lightdash actor that performs the write. You can pick an existing service account or create one inline. Only service accounts with a writable role (Admin, Developer, Editor, or an equivalent custom role) can be used.
+- **Space for created content** — the destination space. You can pick an existing space or create one inline.
+
+The settings panel generates a JWT snippet that includes the `writeActions` claim with the selected service account user UUID and space UUID. Copy that snippet into your backend token-generation code.
+
+### Using a service account
+
+Service accounts are the recommended actor for embed write actions because their attribution stays consistent regardless of which embedded user is viewing.
+
+```javascript
+import jwt from 'jsonwebtoken';
+
+const token = jwt.sign({
+  content: {
+    type: 'dashboard',
+    dashboardUuid: 'your-dashboard-uuid',
+    canExplore: true,                  // Required to reach the Explore view from a chart tile
+  },
+  writeActions: {
+    serviceAccountUserUuid: 'service-account-user-uuid',
+    spaceUuid: 'destination-space-uuid',
+  },
+  userAttributes: {
+    tenant_id: 'tenant-abc',
+  },
+}, LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
+```
+
+### Using a regular user
+
+If you want saved charts attributed to a specific Lightdash user (e.g. an internal owner), use `userUuid` instead. The user must be active in the organization.
+
+```javascript
+const token = jwt.sign({
+  content: {
+    type: 'dashboard',
+    dashboardUuid: 'your-dashboard-uuid',
+    canExplore: true,
+  },
+  writeActions: {
+    userUuid: 'lightdash-user-uuid',
+    spaceUuid: 'destination-space-uuid',
+  },
+}, LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
+```
+
+<Warning>
+Embedded users cannot pick a different space when saving. The space is fixed by the `spaceUuid` in the JWT. This keeps embedded write activity contained and predictable.
+</Warning>
 
 ## Allowed content
 
