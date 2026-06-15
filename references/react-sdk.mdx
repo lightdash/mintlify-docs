@@ -83,9 +83,10 @@ The CSS import must be the first import in your entry file to ensure Lightdash s
 
 ## Components
 
-The Lightdash SDK exports three components for embedding different content types:
+The Lightdash SDK exports four components for embedding different content types:
 
 - `Lightdash.Dashboard` - Embed complete dashboards with multiple tiles
+- `Lightdash.DashboardBuilder` - Let embedded users create a brand-new dashboard
 - `Lightdash.Chart` - Embed individual saved charts
 - `Lightdash.Explore` - Embed interactive data exploration interface
 
@@ -112,6 +113,10 @@ type DashboardProps = {
   filters?: SdkFilter[];            // Apply filters programmatically
   paletteUuid?: string;             // Color palette UUID for custom theming
   contentOverrides?: LanguageMap;   // Localization/translation overrides
+  isEditMode?: boolean;             // Render the dashboard in edit mode (requires writeActions JWT)
+  onEditModeChange?: (
+    isEditMode: boolean,
+  ) => void;                        // Callback when the embed enters or leaves edit mode
   onExplore?: (options: {
     chart: SavedChart
   }) => void;                       // Callback when user navigates to explore
@@ -189,6 +194,106 @@ Track when users navigate to explore:
   }}
 />
 ```
+
+#### With edit mode
+
+When the JWT includes a `writeActions` claim, you can render an existing dashboard in edit mode and let users rename it, add saved charts from the allowed space, move or resize tiles, and save changes. The host app controls the edit-mode state through `isEditMode` and `onEditModeChange`.
+
+```tsx
+import Lightdash from '@lightdash/sdk';
+import { useState } from 'react';
+
+function EditableDashboard() {
+  const [isEditMode, setIsEditMode] = useState(false);
+
+  return (
+    <>
+      {!isEditMode && (
+        <button onClick={() => setIsEditMode(true)}>Edit dashboard</button>
+      )}
+      <Lightdash.Dashboard
+        instanceUrl="https://app.lightdash.cloud"
+        token={generateToken()} // JWT must include writeActions
+        isEditMode={isEditMode}
+        onEditModeChange={setIsEditMode}
+      />
+    </>
+  );
+}
+```
+
+Add-tile content is filtered to the JWT `writeActions.spaceUuid`, so users can only pick saved charts from the allowed space. See [Write actions](/references/embedding#write-actions) for the JWT claim.
+
+### Lightdash.DashboardBuilder
+
+Let embedded users build a brand-new dashboard from scratch. On mount, the SDK creates an empty dashboard in the JWT `writeActions.spaceUuid` and renders it through the same embedded dashboard component as `Lightdash.Dashboard`. The host app controls when the dashboard is in edit mode.
+
+Use this when you want your customers to author their own dashboards inside your app — for example, a "Create dashboard" page in your customer portal — without giving them a Lightdash login.
+
+#### Props
+
+```typescript
+type DashboardBuilderProps = {
+  // Required
+  instanceUrl: string;              // Your Lightdash instance URL
+  token: string | Promise<string>;  // JWT with writeActions claim
+
+  // Optional
+  theme?: 'light' | 'dark';
+  styles?: {
+    backgroundColor?: string;
+    fontFamily?: string;
+  };
+  filters?: SdkFilter[];
+  paletteUuid?: string;
+  contentOverrides?: LanguageMap;
+  isEditMode?: boolean;             // Render the new dashboard in edit mode
+  onEditModeChange?: (
+    isEditMode: boolean,
+  ) => void;                        // Callback when the embed enters or leaves edit mode
+  onDashboardReady?: (
+    dashboard: EmbedDashboard,
+  ) => void;                        // Called once the empty dashboard has been created
+  onExplore?: (options: {
+    chart: SavedChart
+  }) => void;
+};
+```
+
+#### Basic usage
+
+```tsx
+import Lightdash from '@lightdash/sdk';
+import { useEffect, useState } from 'react';
+
+function MyDashboardBuilder() {
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [isReady, setIsReady] = useState(false);
+
+  return (
+    <>
+      {isReady && !isEditMode && (
+        <button onClick={() => setIsEditMode(true)}>Edit dashboard</button>
+      )}
+      <Lightdash.DashboardBuilder
+        instanceUrl="https://app.lightdash.cloud"
+        token={generateToken()} // JWT must include writeActions
+        isEditMode={isEditMode}
+        onEditModeChange={setIsEditMode}
+        onDashboardReady={() => setIsReady(true)}
+      />
+    </>
+  );
+}
+```
+
+#### Requirements and behavior
+
+- The JWT must include a `writeActions` claim with `spaceUuid`. JWTs without `writeActions` fail closed for write-capable paths.
+- The new dashboard is created in `writeActions.spaceUuid`, named "Untitled dashboard", and is empty.
+- Add-tile content (saved charts and SQL charts) is filtered to the same space.
+- Dashboards created or edited through the SDK are normal Lightdash dashboards — they can be viewed and edited from Lightdash and vice versa.
+- See [Write actions](/references/embedding#write-actions) for the JWT claim and how to configure the actor and destination space.
 
 ### Lightdash.Chart
 
