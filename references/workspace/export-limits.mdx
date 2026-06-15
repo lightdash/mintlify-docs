@@ -1,0 +1,49 @@
+---
+title: "Export limits"
+description: "Override the instance-wide query row and CSV/Excel cell limits on a per-organization basis from your admin settings."
+---
+
+The **Export limits** panel lets organization admins raise or lower the two values that bound how much data a query can return and how large a CSV or Excel export can be. Without an override, every organization inherits the instance defaults set by `LIGHTDASH_QUERY_MAX_LIMIT` and `LIGHTDASH_CSV_CELLS_LIMIT`.
+
+Use this panel when a specific team needs to run wider or longer queries than the rest of the instance — for example, a single org on shared Cloud infrastructure that needs to export an 8M-cell CSV while keeping other orgs at the default.
+
+<Note>
+  The panel is gated behind the `pro-limits` feature flag. Enforcement of any stored override is always active — only writing the limits requires the flag. Contact Lightdash to enable it for your organization, or self-hosters can set `LIGHTDASH_ENABLE_FEATURE_FLAGS=pro-limits`.
+</Note>
+
+## What you can configure
+
+| Setting | What it controls | Inherits from |
+| --- | --- | --- |
+| **Maximum query rows** | The largest row limit a user can request from the explorer, SQL runner, or API. | `LIGHTDASH_QUERY_MAX_LIMIT` |
+| **Maximum CSV/Excel cells** | The largest CSV or Excel export (rows × columns) before results are truncated. | `LIGHTDASH_CSV_CELLS_LIMIT` |
+
+Both fields accept a positive integer. Leave a field empty to inherit the instance default.
+
+The CSV/Excel cells value is capped server-side at the higher of `LIGHTDASH_CSV_MAX_LIMIT` (default 5,000,000) and the current `LIGHTDASH_CSV_CELLS_LIMIT`. The query rows value cannot exceed `LIGHTDASH_QUERY_MAX_LIMIT`. The panel shows the active ceiling next to each input.
+
+The two limits are independent — raising the query-row limit does not change CSV export size, and vice versa.
+
+## Set per-organization limits
+
+1. Go to **Settings → Organization → Export limits**.
+2. Enter a value for **Maximum query rows**, **Maximum CSV/Excel cells**, or both.
+3. Click **Save**.
+
+To revert to the instance default, clear the field and save.
+
+Changes take effect immediately for new queries and exports. Existing scheduled deliveries pick up the new limit on their next run.
+
+## How limits are enforced
+
+| Surface | Behavior |
+| --- | --- |
+| Explorer and SQL runner row-limit selector | Maximum value is clamped to the org's effective query row limit. |
+| CSV and Excel downloads from charts, dashboards, and underlying data | Truncated to the org's effective cell limit, with a banner shown when truncation happens. |
+| Scheduled deliveries (CSV, Google Sheets, Excel) | Use the org's effective cell limit at run time. |
+| API responses for `/api/v1/org/settings` | Return the resolved effective values, falling back to the instance defaults when no override is set. |
+
+## Related
+
+- [Environment variables](/self-host/customize-deployment/environment-variables) — the instance defaults that act as fallbacks.
+- [Scheduled deliveries](/guides/how-to-create-scheduled-deliveries) — affected by the CSV/Excel cell limit.
