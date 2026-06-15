@@ -1,0 +1,81 @@
+---
+title: "AI writeback self-hosting"
+sidebarTitle: "AI writeback self-hosting"
+description: "Configure your self-hosted Lightdash instance to run the AI writeback agent."
+---
+
+<Info>
+  AI writeback is an **enterprise** feature and is currently in **Beta**. You'll need a valid `LIGHTDASH_LICENSE_KEY` set on your instance and the `ai-writeback` feature flag enabled for your organization before any of the configuration below takes effect.
+</Info>
+
+AI writeback lets an AI agent edit the dbt repository that backs a project and open a pull request (GitHub) or merge request (GitLab) with the change. The edits run inside an isolated [E2B](https://e2b.dev/) sandbox where a Claude-driven agent applies the diff, runs `lightdash compile` to validate, and pushes a new branch. To enable the feature on a self-hosted Lightdash instance you need to bring your own E2B and Anthropic API keys, and connect the matching Lightdash git app to the repositories you want writeback against.
+
+For an overview of what the feature does and how to use it in chat, see [AI writeback](/guides/ai-agents/ai-writeback).
+
+## Prerequisites
+
+- **Enterprise license** — `LIGHTDASH_LICENSE_KEY` must be set on your instance.
+- **AI writeback feature flag** — enable the `ai-writeback` feature flag for your organization.
+- **An E2B account** — sign up at [e2b.dev](https://e2b.dev/) and create an API key. E2B is the sandbox provider where the writeback agent edits files and runs `lightdash compile`.
+- **An Anthropic API key** — sign up at [console.anthropic.com](https://console.anthropic.com/) and create an API key. Claude is the model that drives the writeback agent.
+- **A supported git host** — each project that should support writeback must be connected to a **GitHub** or **GitLab** repository (Bitbucket, Azure DevOps, dbt Cloud, and local dbt projects are not supported), with the matching Lightdash app installed:
+  - **GitHub** — install the Lightdash GitHub App on the repository.
+  - **GitLab** — connect the Lightdash GitLab App for your organization (self-hosted GitLab is supported via the project's `host_domain`).
+
+## Configuration
+
+Add the following environment variables to your Lightdash deployment:
+
+| Variable | Example | Purpose |
+| --- | --- | --- |
+| `E2B_API_KEY` | `<your-e2b-api-key>` | Your [E2B](https://e2b.dev/) API key. Sandboxes are where the writeback agent edits files and runs `lightdash compile`. |
+| `E2B_AI_WRITEBACK_TEMPLATE_NAME` | `lightdash/lightdash-ai-writeback` | Lightdash's public E2B template for writeback — pulls our prebuilt sandbox image so you don't have to build one yourself. The `lightdash/` prefix points at our public team template; without it E2B looks in your own team and won't find the image. |
+| `AI_WRITEBACK_ANTHROPIC_API_KEY` | `<your-anthropic-api-key>` | Dedicated [Anthropic](https://console.anthropic.com/) API key used by the writeback agent. Kept separate from `ANTHROPIC_API_KEY` so writeback and AI Analyst have independent spend caps and fail independently. |
+
+Restart the backend. Users with AI Analyst access on a project connected to a supported git host will see the agent offer to open a pull request when they ask for a change that belongs in the dbt repo.
+
+### Optional configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `E2B_AI_WRITEBACK_TEMPLATE_TAG` | Running Lightdash version (e.g. `0.2917.1`) | Pins the writeback sandbox image to a specific tag of the E2B template. Each Lightdash release publishes a matching tag so the backend and sandbox stay in sync. Override this to roll back to a previous build or set it to an empty string to use the template's `default` tag. Most operators don't need to touch this. |
+
+## Supported dbt versions
+
+The writeback sandbox runs `lightdash compile` using the dbt version configured on the project, so validation behaves the same way it would locally. The sandbox ships with dbt **1.8, 1.9, 1.10, and 1.11** preinstalled:
+
+- Projects pinned to one of those versions compile against that exact version.
+- Projects set to `latest` compile against the newest available version (currently 1.11).
+- Projects pinned to a version below 1.8 (which is end-of-life upstream) are clamped up to 1.8 inside the sandbox.
+
+You don't need to configure anything — the version is selected automatically from the project's dbt connection settings.
+
+## Costs
+
+Self-hosting AI writeback means you pay E2B and Anthropic directly:
+
+- **E2B** bills per sandbox-second. A typical writeback runs for 1–5 minutes while the agent inspects files, edits them, and runs `lightdash compile`.
+- **Anthropic** bills per token. Each writeback sends the project's dbt catalog and the self-contained instruction generated from the user's request to Claude, plus any files the agent reads while making the change.
+
+Both providers expose usage dashboards. We recommend setting spend limits on both — and using `AI_WRITEBACK_ANTHROPIC_API_KEY` rather than reusing `ANTHROPIC_API_KEY` — so writeback spend can be capped independently of AI Analyst.
+
+## Permissions
+
+AI writeback is gated by the user's project role. Anyone asking the agent to open a pull request needs at least [project Developer](/references/workspace/roles) permissions on the project the agent is connected to. The git commits themselves are made by the installed Lightdash app, not by the end user:
+
+- **GitHub** commits are signed by the Lightdash GitHub App.
+- **GitLab** commits are pushed over OAuth and are unsigned.
+
+## Troubleshooting
+
+**The agent never offers to open a pull request.**
+Check that `LIGHTDASH_LICENSE_KEY` is set, the `ai-writeback` feature flag is enabled for the organization, and the project's dbt connection is GitHub or GitLab with the matching Lightdash app installed.
+
+**Writebacks fail immediately with a sandbox creation error.**
+Verify `E2B_API_KEY` is valid and that `E2B_AI_WRITEBACK_TEMPLATE_NAME` is set to `lightdash/lightdash-ai-writeback` (the `lightdash/` prefix is required to pull our public template — a bare name resolves to your own team). If you've overridden `E2B_AI_WRITEBACK_TEMPLATE_TAG`, double-check the tag exists.
+
+**Writebacks fail mid-run with an Anthropic error.**
+Check your Anthropic account usage limits and confirm `AI_WRITEBACK_ANTHROPIC_API_KEY` is valid. Long-running writebacks can hit rate limits on lower-tier Anthropic plans.
+
+**The agent surfaces a `GitHub App is not installed` or `GitLab App is not installed` error.**
+Install the Lightdash GitHub App on the repository (from the project's dbt connection settings) or connect the Lightdash GitLab App for your organization, then ask the agent to try again.

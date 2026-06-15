@@ -1,0 +1,152 @@
+name: Assign Docs PR
+
+on:
+  pull_request:
+    types: [opened, reopened, edited, ready_for_review, synchronize]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  assign-docs-pr:
+    name: Assign docs PR to source PR author
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Assign source PR author
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const docsPr = context.payload.pull_request;
+            const body = docsPr.body || '';
+            const handleAliases = new Map([
+              ['tatiana', 'tatianainama'],
+              ['tatiana-inama', 'tatianainama'],
+            ]);
+            const normalizeHandle = (handle) => handleAliases.get(handle.toLowerCase()) || handle;
+            const sourceMatch = body.match(/lightdash\/lightdash(?:#|\/pull\/)(\d+)/i);
+            const contextualSourceMatch = body.match(/(?:upstream PR|source PR|triggered by|follows|follow-up to)[^#]{0,120}#(\d{5,})/is);
+            let sourcePrNumber = sourceMatch ? Number(sourceMatch[1]) : undefined;
+            let sourceReason = sourceMatch ? 'body source reference' : undefined;
+
+            if (!sourcePrNumber && contextualSourceMatch) {
+              sourcePrNumber = Number(contextualSourceMatch[1]);
+              sourceReason = 'body contextual source reference';
+            }
+
+            if (!sourcePrNumber) {
+              const events = await github.paginate(github.rest.issues.listEventsForTimeline, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: docsPr.number,
+                per_page: 100,
+              });
+
+              const sourceEvent = [...events].reverse().find((event) => (
+                event.event === 'cross-referenced' &&
+                event.source?.issue?.repository?.full_name === 'lightdash/lightdash' &&
+                event.source?.issue?.pull_request
+              ));
+
+              if (sourceEvent) {
+                sourcePrNumber = sourceEvent.source.issue.number;
+                sourceReason = 'timeline cross-reference';
+              }
+            }
+
+            // Resolve the author to assign: prefer the source PR author, then fall
+            // back to an explicit `cc @author` mention in the docs PR body.
+            let author;
+            let reason;
+
+            if (sourcePrNumber) {
+              let sourcePr;
+              try {
+                ({ data: sourcePr } = await github.rest.pulls.get({
+                  owner: 'lightdash',
+                  repo: 'lightdash',
+                  pull_number: sourcePrNumber,
+                }));
+              } catch (error) {
+                core.info(`Could not load lightdash/lightdash#${sourcePrNumber} (${error.status || error.message}). Falling back to cc mention.`);
+              }
+
+              const sourceAuthor = sourcePr?.user?.login ? normalizeHandle(sourcePr.user.login) : undefined;
+              if (sourcePr && !sourceAuthor) {
+                core.info(`Source PR #${sourcePrNumber} has no author.`);
+              } else if (sourceAuthor?.endsWith('[bot]')) {
+                core.info(`Source PR #${sourcePrNumber} author is ${sourceAuthor}. Skipping bot assignment.`);
+                return;
+              } else if (sourceAuthor) {
+                author = sourceAuthor;
+                reason = sourceReason;
+              }
+            }
+
+            if (!author) {
+              const ccMatch = body.match(/(?:^|\n)\s*cc\s+@([A-Za-z0-9-]+)/i);
+              if (ccMatch) {
+                const ccAuthor = normalizeHandle(ccMatch[1]);
+                if (ccAuthor.endsWith('[bot]')) {
+                  core.info(`cc mention is bot @${ccAuthor}. Skipping.`);
+                } else {
+                  author = ccAuthor;
+                  reason = 'cc mention';
+                }
+              }
+            }
+
+            if (!author && docsPr.user?.login && !docsPr.user.login.endsWith('[bot]')) {
+              author = normalizeHandle(docsPr.user.login);
+              reason = 'docs PR author';
+            }
+
+            if (!author) {
+              core.info('No lightdash/lightdash source PR author or cc mention found.');
+              return;
+            }
+
+            try {
+              const { data: issue } = await github.rest.issues.addAssignees({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: docsPr.number,
+                assignees: [author],
+              });
+
+              const wasAssigned = issue.assignees?.some((assignee) => assignee.login === author);
+              if (wasAssigned) {
+                core.info(`Assigned docs PR #${docsPr.number} to ${author} via ${reason}.`);
+                return;
+              }
+            } catch (error) {
+              core.info(`Could not assign docs PR #${docsPr.number} to ${author} (${error.status || error.message}). Falling back to cc comment.`);
+            }
+
+            const fallbackBody = `cc @${author}`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: docsPr.number,
+              per_page: 100,
+            });
+
+            const hasFallback = comments.some((comment) => comment.body?.trim() === fallbackBody);
+            if (hasFallback) {
+              core.info(`Assignment did not land, but fallback comment already exists for ${author}.`);
+              return;
+            }
+
+            try {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: docsPr.number,
+                body: fallbackBody,
+              });
+
+              core.info(`Assignment did not land for ${author}. Posted fallback cc comment.`);
+            } catch (error) {
+              core.info(`Assignment and fallback comment both failed for ${author} (${error.status || error.message}).`);
+            }

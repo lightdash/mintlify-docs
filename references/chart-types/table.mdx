@@ -154,11 +154,23 @@ This means you can display significantly more dimension values when using metric
 
 You can add column totals or row totals (in pivot tables) to your tables by selecting `Show column totals` or `Show row totals` in the chart configuration panel. The column totals in your results and table visualizations are calculated using the underlying data from your table, not only the values that are visible in the table.
 
-<Info>
-  Totals are not calculated for table calculations.
-</Info>
+In pivot tables, both column totals and row totals are computed by running extra aggregation queries against your warehouse, so each total reflects the true value for that column or row rather than a sum of the cells shown. This means totals are accurate for `count`, `sum`, `count_distinct`, `average`, `min`, `max`, and ratio metrics in pivot tables, in both the metrics-as-columns and metrics-as-rows layouts. If the warehouse cannot return a value for a given total (for example, when a metric is not defined for that row), the cell is left blank rather than showing an incorrect sum.
 
-In pivot tables, column totals are computed by running an extra aggregation query against your warehouse, so each total reflects the true value for that column rather than a sum of the cells shown. This means totals are now accurate for `count`, `sum`, `count_distinct`, `average`, `min`, `max`, and ratio metrics in pivot tables.
+### Totals for table calculations
+
+Lightdash computes grand, column, row, and subtotal values for a table calculation by re-applying it to the aggregated totals row (e.g. `100 * sum(profit) / sum(revenue)`) rather than summing the cells shown in the table.
+
+A total is only produced when **all** of these are true:
+
+- The calculation references only aggregated metrics — no dimensions, custom dimensions, period-over-period metrics, or other table calculations.
+- It contains no window logic: no SQL `OVER (...)` clause, no built-in row/pivot/total helper functions, and no formula aggregate or window functions.
+- The calculation is a SQL or formula table calculation — template table calculations are always excluded.
+
+If any of these conditions fails, the total cell stays blank rather than showing a misleading value. Common examples that stay blank: running totals, `LAG` / `LEAD` / `ROW_NUMBER`, percent-of-total helpers, and any calc that references a dimension or another table calculation.
+
+**Filters disable totals entirely**
+
+When the query has metric filters or table calculation filters, the totals row is omitted for the whole table — table calculation filters are applied after the calculations run, so the resulting totals would be inconsistent with the visible rows.
 
 ### Incorrect totals
 

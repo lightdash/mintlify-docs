@@ -504,7 +504,7 @@ You can set a default owner for all metrics in a model. Metric-level owners over
 
 ## Controlling filtering and segmentation options
 
-You can control which dimensions appear in the filter and segment-by dropdowns when exploring metrics. This helps users focus on relevant dimensions.
+You can control which dimensions appear in the filter and segment-by dropdowns when exploring metrics. This helps users focus on relevant dimensions. You can also pre-apply a default segment and filter so users land on the most useful view as soon as they open a metric.
 
 ### Hide a dimension from all metrics
 
@@ -622,16 +622,119 @@ Use an array of dimension names at the metric level to create an allowlist of di
   </Tab>
 </Tabs>
 
+### Set a default segment and filter for a metric
+
+While `segment_by` and `filter_by` control which dimensions are *available*, `default_segment` and `default_filter` control which are *pre-selected* when a metric is opened. Use them when a metric is almost always viewed the same way (e.g., revenue segmented by region, or active users filtered to a specific status), so users don't have to set it up themselves every time.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
+        columns:
+          - name: amount
+            meta:
+              metrics:
+                total_revenue:
+                  type: sum
+                  spotlight:
+                    segment_by:
+                      - status
+                      - customer_segment
+                    filter_by:
+                      - status
+                      - region
+                    default_segment: customer_segment
+                    default_filter:
+                      status: completed
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: orders
+        columns:
+          - name: amount
+            config:
+              meta:
+                metrics:
+                  total_revenue:
+                    type: sum
+                    spotlight:
+                      segment_by:
+                        - status
+                        - customer_segment
+                      filter_by:
+                        - status
+                        - region
+                      default_segment: customer_segment
+                      default_filter:
+                        status: completed
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    dimensions:
+      - name: amount
+
+    metrics:
+      total_revenue:
+        type: sum
+        sql: ${TABLE}.amount
+        spotlight:
+          segment_by:
+            - status
+            - customer_segment
+          filter_by:
+            - status
+            - region
+          default_segment: customer_segment
+          default_filter:
+            status: completed
+    ```
+  </Tab>
+</Tabs>
+
+Now when someone opens the `total_revenue` metric in the Metrics Explorer, it's segmented by `customer_segment` and filtered to completed orders right away.
+
+`default_filter` uses the same syntax as [metric filters](/references/metrics#available-filter-types), so you can express:
+
+```yaml
+default_filter:
+  status: completed                 # is
+```
+
+```yaml
+default_filter:
+  status: [completed, shipped]      # is one of
+```
+
+```yaml
+default_filter:
+  status: "!cancelled"              # is not
+```
+
+<Info>
+  - Defaults are just a starting point: users can change or remove them while exploring, and their choices always take precedence. The defaults re-apply the next time the metric is opened.
+  - `default_segment` must be a segmentable dimension (string or boolean) and, if you've set a `segment_by` allowlist, must be one of those dimensions.
+  - `default_filter` accepts a single dimension and, if you've set a `filter_by` allowlist, that dimension must be in it. Only the `is` and `is not` operators are supported.
+</Info>
+
 ### How it works
 
 - **Dimension-level (boolean, default `true`)**: Controls whether a dimension appears in dropdowns for all metrics in that model.
 - **Metric-level (array of dimension names)**: Creates an allowlist of dimensions for that specific metric.
 - **Metric-level allowlists override dimension-level settings**: If a dimension has `filter_by: false` but a metric includes it in its `filter_by` array, it will still be available for that metric.
+- **Defaults pre-select, allowlists restrict**: `default_segment` and `default_filter` choose the starting view, while `segment_by` and `filter_by` control what users can switch to.
 
 ### Use cases
 
 - Hide internal/technical dimensions that aren't useful for analysis.
 - Curate the exploration experience per metric (e.g., revenue metrics only filterable by business dimensions).
+- Land users on the most useful view by default (e.g., revenue is always segmented by region, active users are always filtered to `status: active`).
 - Reduce clutter in models with many dimensions.
 
 ## Configuring default time settings in .yml

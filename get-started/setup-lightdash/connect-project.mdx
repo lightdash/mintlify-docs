@@ -702,6 +702,50 @@ The number of times Lightdash should retry ClickHouse queries that result in unh
 
 This controls what day is the start of the week in Lightdash. `Auto` sets it to whatever the default is for your data warehouse. Or, you can customize it and select the day of the week from the drop-down menu. This will be taken into account when using 'WEEK' time interval in Lightdash.
 
+#### Known issues
+
+##### Boolean expression columns must be typed as boolean
+
+ClickHouse represents the result of boolean expressions, like `status = 'active'`, as `UInt8`. If the column is not typed as boolean in your dbt schema, Lightdash may treat it as a string dimension and generate a filter like `IN ('true')`. ClickHouse rejects this with an error like `Cannot convert string 'true' to type UInt8`. See [GitHub issue #24028](https://github.com/lightdash/lightdash/issues/24028).
+
+To avoid this, explicitly type boolean expression columns as `boolean` in your dbt schema:
+
+```yaml
+models:
+  - name: orders
+    columns:
+      - name: is_active
+        data_type: boolean
+```
+
+Or set the Lightdash dimension type:
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
+        columns:
+          - name: is_active
+            meta:
+              dimension:
+                type: boolean
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: orders
+        columns:
+          - name: is_active
+            config:
+              meta:
+                dimension:
+                  type: boolean
+    ```
+  </Tab>
+</Tabs>
+
 ***
 
 <a id="duckdb"></a>
@@ -1209,7 +1253,11 @@ This webhook is an optional extra for those using the dbt Cloud CI steps. If you
 
 ##### Discovery API Endpoint
 
-The dbt specific endpoint for your dbt Cloud instance. You can find details on this in the [dbt Cloud API documentation](https://docs.getdbt.com/docs/dbt-cloud-apis/discovery-querying#discovery-api-endpoints).
+The dbt Cloud metadata API host for your region. Must use `https://`. Match it to your dbt Cloud access URL:
+
+- US multi-tenant: `https://metadata.cloud.getdbt.com`
+- EU multi-tenant: `https://metadata.eu1.dbt.com`
+- Cell-based (URL like `abc123.us1.dbt.com`): `https://<prefix>.metadata.us1.dbt.com`
 
 ***
 
