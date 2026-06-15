@@ -1,0 +1,113 @@
+---
+title: "Drivers"
+description: "Define which metrics influence each other in your .yml files and visualize those relationships automatically in Saved Trees."
+---
+
+**Drivers** are metrics that directly influence or feed into another metric. By defining drivers in your `.yml` files, you can automatically visualize how metrics relate to each other in [Saved Trees](/guides/metrics-catalog/saved-trees) — no manual drawing needed.
+
+For example, `total_order_amount` is a driver of `total_revenue`, `average_order_size`, and `total_completed_order_amount` — because each of those metrics is influenced by the total order amount. On the canvas, this creates a tree where `total_order_amount` fans out to the metrics it drives.
+
+### Defining drivers
+
+Add a `drivers` property to any metric listing the metrics that flow into it. You can reference metrics from the same table by name, or from other tables using the `table.metric` syntax:
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
+        columns:
+          - name: order_amount
+            meta:
+              metrics:
+                total_revenue:
+                  type: sum
+                  drivers:
+                    - total_order_amount
+                average_order_size:
+                  type: average
+                  drivers:
+                    - total_order_amount
+                total_completed_order_amount:
+                  type: sum
+                  drivers:
+                    - total_order_amount
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: orders
+        columns:
+          - name: order_amount
+            config:
+              meta:
+                metrics:
+                  total_revenue:
+                    type: sum
+                    drivers:
+                      - total_order_amount
+                  average_order_size:
+                    type: average
+                    drivers:
+                      - total_order_amount
+                  total_completed_order_amount:
+                    type: sum
+                    drivers:
+                      - total_order_amount
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    dimensions:
+      - name: order_amount
+
+    metrics:
+      total_revenue:
+        type: sum
+        sql: ${TABLE}.order_amount
+        drivers:
+          - total_order_amount
+      average_order_size:
+        type: average
+        sql: ${TABLE}.order_amount
+        drivers:
+          - total_order_amount
+      total_completed_order_amount:
+        type: sum
+        sql: ${TABLE}.order_amount
+        drivers:
+          - total_order_amount
+    ```
+  </Tab>
+</Tabs>
+
+This creates edges on the canvas pointing from each driver to the current metric (e.g., `total_order_amount` → `total_revenue`, `total_order_amount` → `average_order_size`, etc.).
+
+#### Cross-table drivers
+
+Drivers don't have to live in the same table as the metric they drive. Use the `table.metric` syntax to reference a metric from another table:
+
+```yaml
+metrics:
+  conversion_rate:
+    type: number
+    sql: ${signups} / ${visits}
+    drivers:
+      - signups              # same-table metric
+      - marketing.ad_spend   # cross-table: 'table.metric_name'
+```
+
+### How drivers appear on the canvas
+
+- **Automatic**: Driver edges appear as soon as both the driver and target metrics are on the canvas.
+- **Read-only**: You cannot delete or modify driver edges from the UI — they are managed through your `.yml` configuration.
+
+In Saved Trees, driver edges are displayed alongside manually-created edges, giving you a complete picture of both the relationships you've drawn and the ones defined in your data model.
+
+<Info>
+  Driver edges cannot be removed from a Saved Tree. If you don't want a driver edge to appear, remove one of its endpoint nodes from the canvas.
+</Info>
