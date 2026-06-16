@@ -119,6 +119,42 @@ The writeback PR card has two action groups:
 
 After merging, refresh dbt in Lightdash (or let your CI/CD do it) so the change takes effect.
 
+## Impact analysis and post-merge content migration
+
+When a writeback removes or renames a metric or dimension, the saved charts, dashboards, dependent metrics, and scheduled deliveries that reference the old field can break. The agent helps you understand and recover from that change in two steps.
+
+### Impact reported when the PR is opened
+
+As soon as the agent opens the writeback pull request, it runs a deterministic impact analysis on each removed or renamed field — joining the field-reference tables, not fuzzy search — and folds a concise summary into its reply:
+
+- Whether the change is **breaking** (anything references the field) or **safe** (nothing does)
+- Counts of affected charts, dashboards, dependent metrics, and scheduled deliveries
+- A few of the most notable affected items by name
+
+The impact check is advisory and never blocks the PR — if nothing references the field, the agent says so; if the check can't run, the PR is opened anyway. Pure additions and description- or SQL-only edits skip the impact report.
+
+### Migration plan after you merge
+
+If the agent has [content editing](/guides/ai-agents/content-tools) enabled, merging the writeback PR from the chat card automatically asks the agent to plan a migration for the affected saved content. You don't need to ask — the merge action is what triggers it.
+
+The agent will:
+
+1. Re-run the impact analysis against the now-merged change.
+2. Present a plan in chat: which charts and dashboards need repointing, and to which replacement field.
+3. Wait for you to confirm (or proceed if you've already approved), then use the content-editing tool to repoint each affected chart and report back what it changed and anything it couldn't.
+
+If a field was removed outright with no obvious replacement, the agent surfaces it and asks which field to repoint to rather than guessing. If nothing is affected, it simply confirms there's nothing to update.
+
+<Note>
+  If the agent doesn't have content editing enabled, it still reports the
+  impact of a removal or rename when the PR is opened, but won't offer to
+  repoint affected content — that needs to be done by someone with edit access
+  after the merge. See [Creating and editing
+  content](/guides/ai-agents/content-tools) to enable it.
+</Note>
+
+You can also ask the agent to plan the repoint **before** merging if you want to line up the changes first — just ask in the same thread.
+
 <Note>
   Merging or closing a writeback PR from the card uses your project permissions
   on the connected repository. You need at least project **Developer** to act on
