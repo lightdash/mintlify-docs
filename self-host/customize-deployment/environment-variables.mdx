@@ -772,6 +772,7 @@ On server start, we will check the following variables, and update some configur
 | `LD_SETUP_GITHUB_PAT`                | GitHub personal access token                                                                                                                      |
 | `LD_SETUP_SERVICE_ACCOUNT_TOKEN`     | A pre-set token for the service account, must start with `ldsvc_` prefix                                                                          |
 | `LD_SETUP_USER_ATTRIBUTES`           | JSON array declaring [user attributes and group-value mappings](#declare-user-attributes) to reconcile on every deploy.                           |
+| `LD_SETUP_GROUP_PROJECT_ACCESS`      | JSON array declaring [group → project role assignments](#declare-group--project-access) to reconcile on every deploy.                             |
 
 ## Initialize multiple projects
 
@@ -1003,3 +1004,55 @@ If a group name in `groups` doesn't match any existing group at the time the dep
 ### Per-user mappings
 
 `LD_SETUP_USER_ATTRIBUTES` only supports group-based mappings. Per-user (by-email) values still need to be assigned through the UI or API.
+
+## Declare group → project access
+
+Set `LD_SETUP_GROUP_PROJECT_ACCESS` to a JSON array to declare [group → project role assignments](/references/workspace/roles) as instance config. Lightdash reconciles the array on every deploy, so you no longer need to re-apply group access through the UI or API after each release. This is the project-access equivalent of [`LD_SETUP_USER_ATTRIBUTES`](#declare-user-attributes).
+
+<Info>
+  **Group project access setup is only available on Lightdash Enterprise plans** and uses [groups](/references/workspace/groups) and (optionally) [custom roles](/references/workspace/custom-roles), which are Enterprise features.
+
+  For more information on our plans, visit our [pricing page](https://www.lightdash.com/pricing).
+</Info>
+
+On every boot, Lightdash matches each entry to a group and project, then either creates the access, updates it if the role differs, or leaves it untouched when it already matches. Group accesses that are not present in the array are left untouched — this reconcile is non-destructive and never removes access you assigned in the UI.
+
+This is especially useful for instances that provision groups via [SCIM](/references/workspace/scim-integration): SCIM group UUIDs aren't known at deploy time, so this lets you declare role mappings by group name once and have them applied automatically as groups sync from your IdP.
+
+### Schema
+
+Each entry in the array has the following shape:
+
+| Field         | Required                       | Description                                                                                                                                                                                            |
+| :------------ | :----------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `groupName`   | Yes                            | Name of the [group](/references/workspace/groups) to grant access to. Resolved by name so it is compatible with SCIM-synced groups.                                                                    |
+| `projectName` | One of `projectName`/`projectUuid` | Name of the project to grant access to.                                                                                                                                                            |
+| `projectUuid` | One of `projectName`/`projectUuid` | UUID of the project to grant access to. Takes precedence if both `projectName` and `projectUuid` are provided.                                                                                      |
+| `role`        | Yes                            | A [system role](/references/workspace/roles) (`viewer`, `interactive_viewer`, `editor`, `developer`, or `admin`) or the name of a [custom role](/references/workspace/custom-roles).                   |
+
+### Example
+
+```jsonc
+LD_SETUP_GROUP_PROJECT_ACCESS='[
+  {
+    "groupName": "Core Data Developer",
+    "projectName": "Production",
+    "role": "developer"
+  },
+  {
+    "groupName": "Data Analyst",
+    "projectUuid": "abc-123",
+    "role": "PII Analyst"
+  }
+]'
+```
+
+### Group, project, and role resolution
+
+- **Groups** are resolved by `groupName` because group UUIDs aren't known at deploy time when groups are provisioned via [SCIM](/references/workspace/scim-integration).
+- **Projects** are resolved by `projectUuid` when set, otherwise by `projectName`.
+- **Roles** are resolved as a system role first; if the value doesn't match a system role, Lightdash looks up a [custom role](/references/workspace/custom-roles) with that name.
+
+If a group, project, or custom role can't be resolved at the time the deploy runs (for example, because SCIM hasn't synced the group yet), Lightdash logs a warning and skips that entry rather than failing the deploy. The entry is retried on the next deploy, so once the group, project, or role exists the access reconciles automatically.
+
+Malformed JSON or entries that fail schema validation (e.g. missing `groupName`, or neither `projectName` nor `projectUuid`) throw at boot time so configuration errors surface before the instance starts.
