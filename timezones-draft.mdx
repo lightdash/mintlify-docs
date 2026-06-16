@@ -211,6 +211,52 @@ A chart grouped by **hour, minute, or smaller** buckets data by instants. The bo
 
 **Implication:** sub-day grouping is naturally consistent across viewers. The only exception is half-hour and 45-minute offset zones (India, Nepal, parts of Australia), where bucket boundaries don't align with whole-hour zones. Hour-grain charts spanning a daylight-saving transition may also render with a one-hour visual jump at the boundary. *— [GLITCH-453](https://linear.app/lightdash/issue/GLITCH-453), [GLITCH-449](https://linear.app/lightdash/issue/GLITCH-449)*
 
+## Daylight-saving transitions
+
+Twice a year the clock jumps. In a DST zone like `America/New_York`, the **fall-back** day is 25 hours long (clocks go back, so 1 AM happens twice) and the **spring-forward** day is 23 hours long (clocks go forward, so 2 AM never happens). Lightdash buckets data in the project timezone, so these show up in your charts. Here's exactly how, using a source that emits one event every real hour. *— [GLITCH-504](https://linear.app/lightdash/issue/GLITCH-504)*
+
+### Daily charts
+
+A daily chart simply counts every event that fell on each local calendar day. The fall-back day has 25 hours of events; the spring-forward day has 23. The bar is genuinely taller (or shorter) — this is correct, not a bug, and it looks the same on every warehouse.
+
+```text
+events/day                              America/New_York · 1 event per real hour
+
+DST back  (fall-back, Nov 3)            DST forward  (spring-forward, Mar 10)
+
+  25 ┤             ┌────┐                 24 ┤ ┌────┐┌────┐        ┌────┐┌────┐
+  24 ┤ ┌────┐┌────┐│████│┌────┐┌────┐     23 ┤ │████││████│ ┌────┐ │████││████│
+     │ │████││████││████││████││████│        │ │████││████│ │████│ │████││████│
+     │ │████││████││████││████││████│        │ │████││████│ │████│ │████││████│
+     └─┴────┴┴────┴┴────┴┴────┴┴────┴─       └─┴────┴┴────┴─┴────┴─┴────┴┴────┴─
+       Nov1  Nov2  Nov3  Nov4  Nov5           Mar8  Mar9  Mar10  Mar11 Mar12
+        24    24    25    24    24              24    24    23     24    24
+                  ▲ 25-hour day                            ▲ 23-hour day
+```
+
+### Hourly charts
+
+This is where the fold is visible. On **fall-back**, the two 1 AM hours (`01:00` EDT and `01:00` EST — one real hour apart, but the same wall-clock label) are **merged into a single `01:00` bucket** with double the count. On **spring-forward**, the `02:00` bucket is simply absent, because that hour never happened.
+
+```text
+count                                   bucket = hour in America/New_York
+
+DST back  (fall-back)                          DST forward  (spring-forward)
+
+  2 ┤             ┌────┐                          1 ┤ ┌──┐┌──┐┌──┐      ┌──┐┌──┐┌──┐
+    │             │████│ ← both 1 AMs merged        │ │██││██││██│ ┄┄┄┄ │██││██││██│
+  1 ┤ ┌──┐┌──┐┌──┐│████│┌──┐┌──┐┌──┐               └─┴──┴┴──┴┴──┴─┴────┴┴──┴┴──┴┴──┴─
+    │ │██││██││██││████││██││██││██│                  23  00  01   02   03  04  05
+    └─┴──┴┴──┴┴──┴┴────┴┴──┴┴──┴┴──┴─                 └ EST(−5)┘    ▲   └─ EDT(−4) ─┘
+      22  23  00  01   02  03  04                                no 02:00 bucket
+      └─ EDT(−4) ┘ ▲   └─ EST(−5) ┘                              (hour skipped)
+                 fold: count = 2
+```
+
+<Note>
+**Why merge and not two `01:00` bars?** Splitting the fold into two buckets is "technically faithful" but surprising, and it can't be done consistently across every warehouse Lightdash supports. Merging is what most BI tools do and what reading "01:00" on an axis leads you to expect. If you genuinely need to separate the two physical hours, group by the raw UTC instant (or a `convert_timezone: false` dimension) instead. *— [GLITCH-504](https://linear.app/lightdash/issue/GLITCH-504)*
+</Note>
+
 ## Sharing charts: pinning vs viewer timezone
 
 When you save a chart, Lightdash asks how you want viewers to see it:
