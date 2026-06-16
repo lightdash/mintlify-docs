@@ -83,12 +83,13 @@ The CSS import must be the first import in your entry file to ensure Lightdash s
 
 ## Components
 
-The Lightdash SDK exports four components for embedding different content types:
+The Lightdash SDK exports five components for embedding different content types:
 
 - `Lightdash.Dashboard` - Embed complete dashboards with multiple tiles
 - `Lightdash.DashboardBuilder` - Let embedded users create a brand-new dashboard
 - `Lightdash.Chart` - Embed individual saved charts
 - `Lightdash.Explore` - Embed interactive data exploration interface
+- `Lightdash.AiAgent` - Embed an AI agent so users can chat with their data
 
 All components share common props for authentication and styling.
 
@@ -445,6 +446,89 @@ export function generateExploreToken() {
   }, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '4h' });
 }
 ```
+
+### Lightdash.AiAgent
+
+Embed a Lightdash [AI agent](/guides/ai-agents) so embedded users can chat with their data, generate charts, and save results back to a fixed space — without a Lightdash login.
+
+The component renders the agent inside an iframe. Use `threadUuid` to deep-link into an existing thread, or omit it to land on the new-thread screen.
+
+#### Props
+
+```typescript
+type AiAgentProps = {
+  // Required
+  instanceUrl: string;              // Your Lightdash instance URL
+  agentUuid: string;                // Agent to embed (must match the JWT)
+  token: string | Promise<string>;  // JWT with content.type: 'aiAgent'
+
+  // Optional
+  threadUuid?: string;              // Open a specific thread on load
+  theme?: 'light' | 'dark';
+  styles?: {
+    backgroundColor?: string;
+  };
+};
+```
+
+<Info>
+`Lightdash.AiAgent` does not accept `filters`, `contentOverrides`, or `onExplore`. Threads, navigation, and chart actions are managed inside the embedded agent UI.
+</Info>
+
+#### Basic usage
+
+```tsx
+import Lightdash from '@lightdash/sdk';
+
+function MyAiAgent() {
+  return (
+    <Lightdash.AiAgent
+      instanceUrl="https://app.lightdash.cloud"
+      agentUuid="your-agent-uuid"
+      token={generateAiAgentToken()} // Server-side function
+    />
+  );
+}
+```
+
+#### Open a specific thread
+
+```tsx
+<Lightdash.AiAgent
+  instanceUrl="https://app.lightdash.cloud"
+  agentUuid="your-agent-uuid"
+  threadUuid="thread-uuid"
+  token={token}
+/>
+```
+
+#### Token generation for AI agents
+
+AI agent embeds require a JWT with `content.type: 'aiAgent'` and a `writeActions` claim that pins the destination space and the actor used for agent queries and chart saves:
+
+```javascript
+// Backend API endpoint
+import jwt from 'jsonwebtoken';
+
+export function generateAiAgentToken() {
+  return jwt.sign({
+    content: {
+      type: 'aiAgent',
+      projectUuid: 'your-project-uuid',
+      agentUuid: 'your-agent-uuid',
+    },
+    writeActions: {
+      serviceAccountUserUuid: 'service-account-user-uuid',
+      spaceUuid: 'destination-space-uuid',
+    },
+    userAttributes: {
+      tenant_id: 'tenant-abc',
+    },
+  }, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
+}
+```
+
+See [Embedding AI agents](/guides/embedding/ai-agents) for the full guide and [AI agent token](/references/embedding#ai-agent-token) for the complete JWT structure.
 
 ## Generating embed tokens
 
