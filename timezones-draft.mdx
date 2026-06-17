@@ -211,6 +211,121 @@ A chart grouped by **hour, minute, or smaller** buckets data by instants. The bo
 
 **Implication:** sub-day grouping is naturally consistent across viewers. The only exception is half-hour and 45-minute offset zones (India, Nepal, parts of Australia), where bucket boundaries don't align with whole-hour zones. Hour-grain charts spanning a daylight-saving transition may also render with a one-hour visual jump at the boundary. *— [GLITCH-453](https://linear.app/lightdash/issue/GLITCH-453), [GLITCH-449](https://linear.app/lightdash/issue/GLITCH-449)*
 
+## Daylight-saving transitions
+
+Twice a year the clock jumps. In a DST zone like `America/New_York`, the **fall-back** day is 25 hours long (clocks go back, so 1 AM happens twice) and the **spring-forward** day is 23 hours long (clocks go forward, so 2 AM never happens). Lightdash buckets data in the project timezone, so these show up in your charts.
+
+The rule that keeps everything consistent: **a bar holds exactly the events you get when you drill into it** — a single, contiguous slice of real time. Every example below uses a source that emits one event per real hour, at 10 minutes past, in `America/New_York`. *— [GLITCH-504](https://linear.app/lightdash/issue/GLITCH-504)*
+
+### Daily charts
+
+A daily bar counts every event in that local calendar day. The fall-back day genuinely contains 25 hours of events and the spring-forward day 23 — so the bar is taller or shorter. This is correct, not a bug, and it looks the same on every warehouse. Drilling a day always returns exactly its events, because a calendar day is one clean range of real time regardless of how many hours it held.
+
+#### Clocks go back — fall-back (Nov 3, 2024): a 25-hour day
+
+```text
+events/day · America/New_York · 1 event per real hour
+
+  25 ┤             ┌────┐
+  24 ┤ ┌────┐┌────┐│████│┌────┐┌────┐
+     │ │████││████││████││████││████│
+     └─┴────┴┴────┴┴────┴┴────┴┴────┴─
+       Nov1  Nov2  Nov3  Nov4  Nov5
+        24    24   [25]   24    24
+                    ▲ 25-hour day (clocks go back)
+```
+
+```text
+Click the Nov 3 bar → "show underlying data" → 25 rows
+
+  #    local (America/New_York)      UTC instant
+ ──────────────────────────────────────────────────────
+  1    2024-11-03 00:10  EDT (−4)    2024-11-03 04:10Z
+  2    2024-11-03 01:10  EDT (−4)    2024-11-03 05:10Z   ┐ two events at 01:10,
+  3    2024-11-03 01:10  EST (−5)    2024-11-03 06:10Z   ┘ one real hour apart
+  4    2024-11-03 02:10  EST (−5)    2024-11-03 07:10Z
+  5    2024-11-03 03:10  EST (−5)    2024-11-03 08:10Z
+  ⋮                                  ⋮
+ 25    2024-11-03 23:10  EST (−5)    2024-11-04 04:10Z
+
+The day is one contiguous range (04:10Z → next-day 04:10Z = 25 h), so the
+drill returns all 25 events — including both 01:10s.
+```
+
+#### Clocks go forward — spring-forward (Mar 10, 2024): a 23-hour day
+
+```text
+events/day · America/New_York · 1 event per real hour
+
+  24 ┤ ┌────┐┌────┐      ┌────┐┌────┐
+  23 ┤ │████││████│┌────┐│████││████│
+     │ │████││████││████││████││████│
+     └─┴────┴┴────┴┴────┴┴────┴┴────┴─
+       Mar8  Mar9  Mar10 Mar11 Mar12
+        24    24   [23]   24    24
+                    ▲ 23-hour day (clocks go forward)
+```
+
+```text
+Click the Mar 10 bar → "show underlying data" → 23 rows
+
+  #    local (America/New_York)      UTC instant
+ ──────────────────────────────────────────────────────
+  1    2024-03-10 00:10  EST (−5)    2024-03-10 05:10Z
+  2    2024-03-10 01:10  EST (−5)    2024-03-10 06:10Z
+  –    (no 02:10 — the 02:00–03:00 hour never happened)
+  3    2024-03-10 03:10  EDT (−4)    2024-03-10 07:10Z
+  4    2024-03-10 04:10  EDT (−4)    2024-03-10 08:10Z
+  ⋮                                  ⋮
+ 23    2024-03-10 23:10  EDT (−4)    2024-03-11 03:10Z
+
+The day is again one contiguous range (05:10Z → next-day 03:10Z = 23 h), so
+the drill returns all 23 events — there is simply no 02:10 to return.
+```
+
+### Hourly charts
+
+At hour grain the fall-back fold is visible in the bars — and on every warehouse it **merges** into one bar. Spring-forward has no repeated hour, only the missing `02:00` (shown below).
+
+#### Fall-back: the two 1 AM hours merge into one bar
+
+The two 1 AM hours (`01:00` EDT and `01:00` EST — one real hour apart, same wall-clock label) collapse into a single `01:00` bucket with double the count.
+
+```text
+count/hour · America/New_York · MERGE
+
+  2 ┤             ┌────┐
+    │             │████│ ← 01:00 EDT + 01:00 EST in one bucket
+  1 ┤ ┌──┐┌──┐┌──┐│████│┌──┐┌──┐┌──┐
+    │ │██││██││██││████││██││██││██│
+    └─┴──┴┴──┴┴──┴┴────┴┴──┴┴──┴┴──┴─
+      22  23  00  01   02  03  04   (local hour)
+      └─ EDT (−4) ┘    └─ EST (−5) ┘
+
+Drill the 01:00 bar → 2 rows (05:10Z and 06:10Z). Count and drill-down agree.
+One bar per wall-clock hour; matches other BI tools; the extra hour reads as a
+spike — which can look like a real event on a constant-rate source.
+```
+
+#### Spring-forward
+
+No repeated hour, so there's nothing to fold — the `02:00` bucket is simply absent.
+
+```text
+count/hour · America/New_York
+
+  1 ┤ ┌──┐┌──┐┌──┐      ┌──┐┌──┐┌──┐
+    │ │██││██││██│ ┄┄┄┄ │██││██││██│
+    └─┴──┴┴──┴┴──┴─┴────┴┴──┴┴──┴┴──┴─
+      23  00  01   02   03  04  05   (local hour)
+      └ EST (−5) ┘  ▲   └─ EDT (−4) ┘
+            no 02:00 bucket (hour skipped)
+```
+
+<Note>
+**Why merge?** Under Lightdash's wall-clock grouping, both folds are "1 AM" locally, so they belong in one bucket — and merge matches what other BI tools do. The cost is a once-a-year `count = 2` spike on the fall-back hour. Splitting the fold into two same-time bars would keep a constant-rate source flat, but it needs an offset in the axis label to tell the two `01:00` bars apart; it isn't offered today. *— [GLITCH-509](https://linear.app/lightdash/issue/GLITCH-509)*
+</Note>
+
 ## Sharing charts: pinning vs viewer timezone
 
 When you save a chart, Lightdash asks how you want viewers to see it:
