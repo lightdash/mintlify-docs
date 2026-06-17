@@ -285,9 +285,9 @@ the drill returns all 23 events — there is simply no 02:10 to return.
 
 ### Hourly charts
 
-At hour grain the fall-back fold is visible in the bars, and there are **two design options** for how to handle it. Spring-forward looks the same under both — there's no repeated hour to split, only the missing `02:00` (shown at the end).
+At hour grain the fall-back fold is visible in the bars — and on every warehouse it **merges** into one bar. Spring-forward has no repeated hour, only the missing `02:00` (shown below).
 
-#### Fall-back, Option A — merge (one `01:00` bar)
+#### Fall-back: the two 1 AM hours merge into one bar
 
 The two 1 AM hours (`01:00` EDT and `01:00` EST — one real hour apart, same wall-clock label) collapse into a single `01:00` bucket with double the count.
 
@@ -307,31 +307,9 @@ One bar per wall-clock hour; matches other BI tools; the extra hour reads as a
 spike — which can look like a real event on a constant-rate source.
 ```
 
-#### Fall-back, Option B — split (two `01:00` bars)
+#### Spring-forward
 
-Each real hour keeps its own bucket, so a constant-rate source stays flat across the fold.
-
-```text
-count/hour · America/New_York · SPLIT
-
-  1 ┤ ┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐
-    │ │██││██││██││██││██││██││██││██│
-    └─┴──┴┴──┴┴──┴┴──┴┴──┴┴──┴┴──┴┴──┴─
-      22  23  00  01  01  02  03  04   (local hour)
-                  ▲   ▲
-                 −4   −5   ← same wall-clock 01:00, one real hour apart
-```
-
-This reconciles with drill-down **only if the bucket's identity is the UTC instant**, not the rendered wall-clock label. The drill filter is then an instant range, so each bar maps to exactly its own row:
-
-- click the first `01:00` bar → `instant in [05:00Z, 06:00Z)` → 1 row
-- click the second `01:00` bar → `instant in [06:00Z, 07:00Z)` → 1 row
-
-Telling the two bars apart on the axis (e.g. `1am −4` / `1am −5`) is a display concern layered on top — the backend keys on the instant, the frontend chooses the label.
-
-#### Spring-forward (identical under both options)
-
-No repeated hour, so nothing to merge or split — the `02:00` bucket is simply absent.
+No repeated hour, so there's nothing to fold — the `02:00` bucket is simply absent.
 
 ```text
 count/hour · America/New_York
@@ -345,7 +323,7 @@ count/hour · America/New_York
 ```
 
 <Note>
-**Merge vs split — the trade-off.** Both are correct, and both reconcile with drill-down *provided the backend keys buckets on the UTC instant rather than the rendered wall-clock label*. Today it keys on the label, which is the only reason merge currently stays self-consistent and split does not — that's the thing to fix first. Once buckets are instant-keyed, the choice is a presentation one: **merge** matches other BI tools and shows one bar per wall-clock hour, at the cost of a once-a-year spike on the fall-back hour; **split** keeps a constant-rate source flat and is more faithful, at the cost of two same-time bars that need an offset in the label. A single instant-keyed backend can serve either — or offer both. *— [GLITCH-504](https://linear.app/lightdash/issue/GLITCH-504)*
+**Why merge?** Under Lightdash's wall-clock grouping, both folds are "1 AM" locally, so they belong in one bucket — and merge matches what other BI tools do. The cost is a once-a-year `count = 2` spike on the fall-back hour. Splitting the fold into two same-time bars would keep a constant-rate source flat, but it needs an offset in the axis label to tell the two `01:00` bars apart; it isn't offered today. *— [GLITCH-509](https://linear.app/lightdash/issue/GLITCH-509)*
 </Note>
 
 ## Sharing charts: pinning vs viewer timezone
