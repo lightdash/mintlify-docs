@@ -107,7 +107,7 @@ The project timezone is the default for every chart. If you don't set one, Light
 
 ### Which timezone wins
 
-A chart's own timezone setting decides what zone it uses, unless an embed overrides it. From highest priority:
+A chart's own timezone setting decides what zone it uses, unless an embed overrides it. The zone it ends up using is its **resolved timezone**, the term used throughout this guide. From highest priority:
 
 1. **An embed URL timezone parameter**, if the chart is embedded with one. This outranks everything.
 2. Otherwise, the chart's timezone setting applies:
@@ -183,14 +183,31 @@ You can see which is which before you build. The dimension list shows an indicat
 
 ## The chart timezone badge
 
-Every chart in Explore and on dashboards shows a small badge with the resolved timezone, for example `(UTC +01:00) Europe/London`. This tells you exactly what zone the chart's filters, buckets, and rendered values are using.
+Every chart in Explore and on dashboards shows a small badge with its resolved timezone, for example `(UTC +01:00) Europe/London`. This is the zone the chart settled on after the rules in [Which timezone wins](#which-timezone-wins), and it tells you exactly what zone the chart's filters, buckets, and rendered values are using.
 
 <Frame>
   <img src="/images/guides/developer/timezones/resolved-timezone-badge-light.png" alt="Resolved timezone badge in the Explore view" className="block dark:hidden" />
   <img src="/images/guides/developer/timezones/resolved-timezone-badge-dark.png" alt="Resolved timezone badge in the Explore view" className="hidden dark:block" />
 </Frame>
 
-Read it. If it's not what you expect, use the timezone picker to change the chart's timezone (see [Choosing a chart's timezone](#choosing-a-charts-timezone)).
+Read it. If it's not the zone you expect, change it with the [timezone picker](#choosing-a-charts-timezone).
+
+## Choosing a chart's timezone
+
+Open the timezone picker from the chart's settings (next to **Run query** in Explore) to choose how the chart resolves its zone. There are three options:
+
+<Frame>
+  <img src="images/timezones-draft/chart-timezone-picker-light.png" alt="Chart timezone picker showing Project timezone, User timezone, and a specific timezone option" className="block dark:hidden" />
+  <img src="images/timezones-draft/chart-timezone-picker-dark.png" alt="Chart timezone picker showing Project timezone, User timezone, and a specific timezone option" className="hidden dark:block" />
+</Frame>
+
+| Option | What viewers see | When to use |
+| --- | --- | --- |
+| **Project timezone** *(default)* | Everyone sees the project's timezone. If the project timezone changes later, the chart follows. | Shared reports and dashboards where the numbers should mean the same thing for everyone. |
+| **User timezone** | Each viewer sees their own profile timezone, or the project timezone if they haven't set one. | Personal exploration, or internal dashboards where each viewer should see their own day boundaries. |
+| **A specific timezone** | A fixed zone (e.g. `America/New_York`), the same for everyone, frozen regardless of project or viewer. | A chart that must always report in one zone, such as a regional report. |
+
+The default is **Project timezone**. It is not pinned to whatever zone you happened to be in when you saved: it always resolves to the current project timezone, so the chart stays consistent for its whole audience and tracks any later change to the project setting. Pick **User timezone** only when you deliberately want each viewer's own day boundaries, and **A specific timezone** when the zone must never change.
 
 ## How filters work
 
@@ -261,23 +278,6 @@ Lightdash buckets data by wall-clock time in the resolved timezone, so daylight-
 
 This matches how other BI tools plot the transition. If a one-hour jump looks suspicious, switch the chart to UTC to confirm it's a daylight-saving artifact and not a data issue.
 
-## Choosing a chart's timezone
-
-Open the timezone picker from the chart's settings (next to **Run query** in Explore) to choose how the chart resolves its zone. There are three options:
-
-<Frame>
-  <img src="images/timezones-draft/chart-timezone-picker-light.png" alt="Chart timezone picker showing Project timezone, User timezone, and a specific timezone option" className="block dark:hidden" />
-  <img src="images/timezones-draft/chart-timezone-picker-dark.png" alt="Chart timezone picker showing Project timezone, User timezone, and a specific timezone option" className="hidden dark:block" />
-</Frame>
-
-| Option | What viewers see | When to use |
-| --- | --- | --- |
-| **Project timezone** *(default)* | Everyone sees the project's timezone. If the project timezone changes later, the chart follows. | Shared reports and dashboards where the numbers should mean the same thing for everyone. |
-| **User timezone** | Each viewer sees their own profile timezone, or the project timezone if they haven't set one. | Personal exploration, or internal dashboards where each viewer should see their own day boundaries. |
-| **A specific timezone** | A fixed zone (e.g. `America/New_York`), the same for everyone, frozen regardless of project or viewer. | A chart that must always report in one zone, such as a regional report. |
-
-The default is **Project timezone**. It is not pinned to whatever zone you happened to be in when you saved: it always resolves to the current project timezone, so the chart stays consistent for its whole audience and tracks any later change to the project setting. Pick **User timezone** only when you deliberately want each viewer's own day boundaries, and **A specific timezone** when the zone must never change.
-
 ## Your profile timezone
 
 In your Profile settings, you can set a **Default timezone**. It only takes effect when timezone support is enabled for your organization, and it only affects charts set to **User timezone**: those charts resolve to your profile timezone when you view them.
@@ -339,26 +339,7 @@ If you're stuck, the badge on the chart and the data-timezone preview on the con
 
 ---
 
-## TL;DR checklist
-
-**Modeling:**
-
-- [ ] Use timezone-aware timestamp types in your warehouse.
-- [ ] Use `DATE` for calendar values, not strings, not timestamps.
-- [ ] Set the connection's data timezone (default UTC is usually right).
-- [ ] Set the project timezone to your reporting zone.
-- [ ] Add `convert_timezone: false` only on columns you want shown raw.
-
-**Day-to-day:**
-
-- [ ] When saving a chart, leave it on Project timezone (default) unless you have a reason to change it.
-- [ ] Read the badge on the chart: it tells you the resolved zone.
-- [ ] Set your profile timezone once if you work with User-timezone charts.
-- [ ] Use a specific timezone for charts that must always report in one zone.
-
----
-
-# Worked example: one row, four configurations
+# Example: one row, four configurations
 
 Imagine one row in your `orders` table:
 
