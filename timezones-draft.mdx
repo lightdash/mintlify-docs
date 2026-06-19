@@ -28,7 +28,7 @@ This guide is in two parts:
 | **Data timezone** | "What zone is the raw data in?" | Warehouse connection settings |
 | **Project timezone** | "What zone do my reports use?" | Project settings |
 
-You set each one once. From then on, every chart, filter, and export converts between the two automatically.
+You set each one once, and every chart, filter, and export converts between the two automatically.
 
 If all your raw data is UTC (recommended) and you report in your local zone, you only need to set the project timezone. The data timezone defaults to UTC.
 
@@ -50,16 +50,16 @@ The "avoid" types are naive: they carry no timezone information, so Lightdash ha
 
 ### Use `DATE` for calendar values
 
-If a column represents a calendar date, such as a birthday, a fiscal period start, or an `effective_date` on a contract, store it as `DATE`. Lightdash treats `DATE` columns as fixed calendar dates and never shifts them. No matter the project timezone, `2024-03-15` stays `2024-03-15`.
+If a column represents a calendar date rather than a moment in time, store it as `DATE`. Lightdash treats `DATE` columns as fixed calendar dates and never shifts them: `2024-03-15` stays `2024-03-15` regardless of the project timezone.
 
-This is what you want for things like:
+Use `DATE` for values like:
 
 - A user's date of birth
 - A subscription start date
 - An anniversary
 - A fiscal-period boundary
 
-This is **not** what you want for event timestamps. If you store "the moment an order was placed" as a `DATE`, you lose the time-of-day and can't compute things like "orders per hour" later.
+`DATE` is **not** what you want for event timestamps. If you store "the moment an order was placed" as a `DATE`, you lose the time-of-day and can't compute things like "orders per hour" later.
 
 ### Don't use strings for dates
 
@@ -77,7 +77,7 @@ When you create or edit a warehouse connection in Lightdash, you'll find a **Dat
 - **If all your naive timestamps are in UTC** (very common, since most ELT pipelines normalize to UTC): leave it as UTC.
 - **If your naive timestamps are in a single non-UTC zone** (e.g. an on-prem system that logs in local time): set the data timezone to that zone. Lightdash will interpret naive values as being in that zone.
 
-After saving, click **Preview** to see how Lightdash interprets a sample timestamp. The preview shows the current moment in three forms: as your warehouse returns it, as Lightdash interprets it, and as it would render in your project timezone. If those three values agree with what you expect, you're set.
+After saving, click **Preview** to see how Lightdash interprets a sample timestamp. It shows the current moment in three forms: as your warehouse returns it, as Lightdash interprets it, and as it renders in your project timezone.
 
 <Frame>
   <img src="/images/guides/developer/timezones/data-timezone-preview-light.png" alt="Data timezone preview showing the raw, interpreted, and rendered values" className="block dark:hidden" />
@@ -206,7 +206,7 @@ You can see which is which before you build. The dimension list shows an indicat
 
 ## The chart timezone badge
 
-Every chart in Explore and on dashboards shows a small badge with its resolved timezone, for example `(UTC +01:00) Europe/London`. This is the zone the chart settled on after the rules in [Which timezone wins](#which-timezone-wins), and it tells you exactly what zone the chart's filters, buckets, and rendered values are using.
+Every chart in Explore and on dashboards shows a small badge with its resolved timezone, for example `(UTC +01:00) Europe/London`. It's the zone the chart's filters, buckets, and values use, resolved by the rules in [Which timezone wins](#which-timezone-wins).
 
 <Frame>
   <img src="/images/guides/developer/timezones/resolved-timezone-badge-light.png" alt="Resolved timezone badge in the Explore view" className="block dark:hidden" />
@@ -230,17 +230,13 @@ Open the **Run query** settings (the dropdown next to the **Run query** button i
 | **User timezone** | Each viewer sees their own profile timezone, or the project timezone if they haven't set one. | Personal exploration, or internal dashboards where each viewer should see their own day boundaries. |
 | **A specific timezone** | A fixed zone (e.g. `America/New_York`), the same for everyone, frozen regardless of project or viewer. | A chart that must always report in one zone, such as a regional report. |
 
-The default is **Project timezone**. It is not frozen at save time: it always resolves to the current project timezone, so the chart stays consistent for its whole audience and tracks any later change to the project setting. Pick **User timezone** only when you deliberately want each viewer's own day boundaries, and **A specific timezone** when the zone must never change.
+**Project timezone** is the default, and it is not frozen at save time: it always resolves to the current project timezone, so a later change to the project setting flows through to the chart.
 
 ## How filters work
 
 ### Relative date filters
 
-Filters like "last 7 days," "yesterday," and "this month" are computed in the **resolved timezone of the chart**. That means:
-
-- "Yesterday" on a chart in America/New_York means the calendar day that just ended in New York.
-- "Last 7 days" means the rolling 7-day window ending at the current moment, with day boundaries in New York.
-- "This month" means the calendar month in New York.
+Relative filters like "yesterday," "last 7 days," and "this month" are computed in the chart's **resolved timezone**. On a chart resolved to America/New_York, "yesterday" is the day that just ended in New York.
 
 ### Absolute date filters
 
@@ -270,7 +266,7 @@ If a chart overrides its timezone with the [timezone picker](#choosing-a-chart-t
 
 ### Cell-click filters
 
-Clicking a bar or cell to filter ("show me only this month") uses the value as displayed, not the underlying instant. Click "March 2024" and you filter to March 2024 in the chart's timezone, which is exactly what you saw.
+Clicking a bar or cell filters on the value as shown, not the underlying instant. Click "March 2024" and you get March 2024 in the chart's timezone, exactly what you saw.
 
 ## Day-grouped vs hour-grouped charts
 
@@ -278,9 +274,7 @@ Day and hour groupings respond to timezone differently, which changes how charts
 
 ### Day-or-coarser grouping
 
-A chart grouped by **day, week, month, quarter, or year** buckets data by calendar boundaries. If the chart's resolved timezone changes, for example because a viewer is using User timezone mode, the bucket boundaries move. The same underlying events can land in different bars.
-
-Two viewers in different timezones may see different numbers on a daily chart if it is set to User timezone. This is correct (each viewer sees their own calendar) but can be surprising. See [Choosing a chart timezone](#choosing-a-chart-timezone) for how to control it.
+A chart grouped by **day, week, month, quarter, or year** buckets data by calendar boundaries, so when the resolved timezone changes (for example on a User-timezone chart) those boundaries move and the same events can land in different bars. Two viewers can then see different numbers on the same daily chart. This is correct, since each sees their own calendar, but it can be surprising. See [Choosing a chart timezone](#choosing-a-chart-timezone) to control it.
 
 ### Sub-day grouping
 
@@ -306,7 +300,7 @@ Lightdash buckets data by local time in the resolved timezone, so daylight-savin
 - On a **daily** chart, the fall-back day spans 25 hours and the spring-forward day spans 23. Each bar still counts exactly the events in that calendar day, and drilling in returns them all.
 - On an **hourly** chart, the two 1 AM hours on the fall-back day merge into a single bar with double the count, and the missing 2 AM hour on the spring-forward day simply has no bar.
 
-The hourly charts below count one event per hour in America/New_York. On the fall-back day (3 November), every hour has one event except 1 AM, which holds two: the 1 AM that ran on summer time and the 1 AM that ran again on winter time fall into the same bar.
+The hourly charts below count one event per hour in America/New_York. On the fall-back day (3 November), every hour has one event except 1 AM, which holds two: summer-time 1 AM and winter-time 1 AM land in the same bar.
 
 <Frame>
   <img src="images/timezones-draft/dst-fall-back-light.png" alt="Hourly bar chart for 3 November in America/New_York: every hour has one event except the 1 AM bar, which is doubled because the clocks fell back" className="block dark:hidden" />
@@ -322,7 +316,7 @@ On the spring-forward day (10 March), the clocks jump from 2 AM to 3 AM, so the 
 
 ## Your profile timezone
 
-In your Profile settings, you can set a **Default timezone**. It only takes effect when timezone support is enabled for your organization, and it only affects charts set to **User timezone**: those charts resolve to your profile timezone when you view them.
+In your Profile settings, you can set a **Default timezone**. It affects only charts set to **User timezone**, which resolve to your profile zone when you view them.
 
 It does **not** affect:
 
@@ -335,9 +329,9 @@ Scheduled deliveries are the exception to "no viewer": a delivery runs its queri
 
 ## Dashboards
 
-Each chart on a dashboard keeps its own timezone setting. A dashboard can mix charts on the project timezone (consistent across viewers) with charts on User timezone (varies per viewer). Each chart's badge tells you which zone it resolved to.
+Every chart on a dashboard keeps its own timezone setting, so one dashboard can mix Project-timezone charts (same for everyone) with User-timezone charts (per viewer). Each chart's badge shows the zone it resolved to.
 
-Dashboard-level date filters (e.g., a date picker that controls multiple charts) pass the same value to every chart, but each chart applies its own timezone logic. So a dashboard filter "last 7 days" on a Project-timezone chart and a User-timezone chart can produce different numbers: one is anchored to the project zone, the other to the viewer's zone.
+A dashboard date filter sends the same value to every chart, but each chart reads it in its own zone. So a "last 7 days" filter can cover a different window on a Project-timezone chart than on the User-timezone chart next to it.
 
 ## Scheduled deliveries
 
@@ -357,11 +351,10 @@ For most schedules, the cleanest setup is:
 
 ## Embedded dashboards
 
-Embedded dashboards have no signed-in viewer, so there is no profile timezone to fall back to.
+An embedded dashboard has no signed-in viewer, so there's no profile timezone to read. Its zone resolves one of two ways:
 
-A direct iframe or shareable-URL embed can set a per-session timezone with the `timezone` URL parameter. It applies to the whole embedded session and overrides each chart's own setting. See [embedding URL parameters](/references/iframe-embedding#timezone). The React SDK does not support this parameter.
-
-Without it, each chart resolves to its own setting: the project timezone, or a specific timezone if one was chosen. A chart set to User timezone falls back to the project timezone, because an embed has no viewer profile.
+- **A `timezone` URL parameter** sets one zone for the whole session and overrides every chart. Available on direct iframe and shareable-URL embeds only, not the React SDK. See [embedding URL parameters](/references/iframe-embedding#timezone).
+- **Otherwise**, each chart uses its own setting: the project timezone, or a specific zone if one was pinned. A User-timezone chart falls back to the project, since there's no profile to read.
 
 ## When things go wrong
 
@@ -376,7 +369,7 @@ A few common symptoms and where to look:
 | "Yesterday" filter returns no data, but yesterday clearly has data | Project timezone is set to a zone where "yesterday" hasn't started yet | Project settings → Timezone |
 | Hourly chart looks like it skipped or doubled an hour | Daylight-saving transition in the rendered period | Switch to UTC to confirm |
 
-If you're stuck, the badge on the chart and the data-timezone preview on the connection page are the two fastest checks. They tell you exactly what Lightdash is using.
+If you're stuck, check the chart's badge and the connection's data-timezone preview first; both show exactly what Lightdash is using.
 
 ---
 
@@ -391,33 +384,12 @@ Imagine one row in your `orders` table:
 
 Same row, same warehouse. Here's what changes as you layer settings on.
 
-### 1. Out of the box: project timezone = UTC, all charts on Project timezone
-
-- `order_created_at` renders as `2026-05-19 02:00`. Grouped by day, it lands in bucket `2026-05-19`.
-- `order_date` renders as `2026-05-19`.
-- "Yesterday" filter on either column is `2026-05-18`.
-- Every viewer, everywhere, sees the same thing.
-
-### 2. Change the project timezone to America/New_York
-
-- `order_created_at` now renders as `2026-05-18 22:00` (the same instant, shown in NY). Grouped by day, it lands in bucket `2026-05-18`. The row moved buckets.
-- `order_date` still renders as `2026-05-19`. **DATE columns don't shift.**
-- "Yesterday" on `order_created_at` is the calendar day that ended in NY, `2026-05-18`.
-- "Yesterday" on `order_date` is also `2026-05-18` (the literal is computed in NY, but compared as a plain date).
-- Still identical for every viewer.
-
-### 3. Set one chart to a specific timezone (Asia/Tokyo); project remains NY
-
-- On that chart: `order_created_at` renders as `2026-05-19 11:00 JST`, bucket `2026-05-19`. `order_date` is still `2026-05-19`.
-- On every other chart in the project: still the NY behaviour from step 2.
-- All viewers see the same numbers on each chart, but the dashboard now mixes zones. Each chart's badge tells viewers which zone it's in.
-
-### 4. Set a chart to User timezone; viewer A is in London, viewer B in Tokyo
-
-- Viewer A sees `order_created_at` in London time; "yesterday" is the day that ended in London.
-- Viewer B sees the same column in Tokyo time; "yesterday" is the day that ended in Tokyo.
-- Around midnight in either zone, the same row can land in a different daily bucket for A vs B, and "yesterday" can resolve to different dates. Two viewers, same chart, different numbers.
-- `order_date` is unaffected by the viewer's zone for rendering: both see `2026-05-19`. But "yesterday" on `order_date` still depends on whose calendar "now" we use, so the filter result can differ.
+| Configuration | `order_created_at` shows | Grouped by day | `order_date` shows | Same for every viewer? |
+| --- | --- | --- | --- | --- |
+| Project timezone `UTC` | `2026-05-19 02:00` | `2026-05-19` | `2026-05-19` | Yes |
+| Project timezone `America/New_York` | `2026-05-18 22:00` | `2026-05-18` | `2026-05-19` | Yes |
+| One chart pinned to `Asia/Tokyo` (project stays NY) | `2026-05-19 11:00` | `2026-05-19` | `2026-05-19` | Yes on that chart, but the dashboard now mixes zones |
+| Chart set to User timezone | the viewer's local time | the viewer's local day | `2026-05-19` | No, each viewer sees their own day |
 
 ---
 
