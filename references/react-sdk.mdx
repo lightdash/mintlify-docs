@@ -81,15 +81,16 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 The CSS import must be the first import in your entry file to ensure Lightdash styles load before other styles and avoid conflicts.
 </Warning>
 
-## Components
+## Components and hooks
 
-The Lightdash SDK exports five components for embedding different content types:
+The Lightdash SDK exports components for embedding Lightdash content and hooks for building custom host-app UI around embedded content:
 
 - `Lightdash.Dashboard` - Embed complete dashboards with multiple tiles
 - `Lightdash.DashboardBuilder` - Let embedded users create a brand-new dashboard
 - `Lightdash.Chart` - Embed individual saved charts
 - `Lightdash.Explore` - Embed interactive data exploration interface
 - `Lightdash.AiAgent` - Embed an AI agent so users can chat with their data
+- `Lightdash.useLightdashContent` - List spaces, dashboards, charts, and data apps for a custom content catalog
 
 All components share common props for authentication and styling.
 
@@ -529,6 +530,123 @@ export function generateAiAgentToken() {
 ```
 
 See [Embedding AI agents](/guides/embedding/ai-agents) for the full guide and [AI agent token](/references/embedding#ai-agent-token) for the complete JWT structure.
+
+## API hooks
+
+### Lightdash.useLightdashContent
+
+Use `useLightdashContent` when you want your own app to list Lightdash content instead of embedding the Lightdash home page. A common pattern is to let customers choose a space in your UI, show the dashboards and charts in that space, then render the selected object with `Lightdash.Dashboard` or `Lightdash.Chart`.
+
+The hook calls the Lightdash content API and returns metadata only. It does not render the selected chart or dashboard, and it does not replace the chart or dashboard embed token you pass to the render component.
+
+#### Backend: generate an API access token
+
+Generate the token on your backend with your Lightdash embed secret. Never expose the embed secret in browser code.
+
+```typescript
+import jwt from 'jsonwebtoken';
+
+export function generateContentCatalogToken() {
+  return jwt.sign(
+    {
+      content: {
+        type: 'apiAccess',
+        projectUuid: 'your-project-uuid',
+        serviceAccountUserUuid: 'service-account-user-uuid',
+      },
+      user: {
+        externalId: 'customer-user-123',
+        email: 'customer@example.com',
+      },
+      userAttributes: {
+        tenant_id: 'tenant-abc',
+      },
+    },
+    process.env.LIGHTDASH_EMBED_SECRET,
+    { expiresIn: '1h' },
+  );
+}
+```
+
+The service account controls what the hook can list. If the service account cannot view a private space, content from that space is not returned.
+
+#### Frontend: list content in a space
+
+```tsx
+import Lightdash from '@lightdash/sdk';
+
+function ContentCatalog({
+  instanceUrl,
+  projectUuid,
+  token,
+  spaceUuid,
+}: {
+  instanceUrl: string;
+  projectUuid: string;
+  token: string;
+  spaceUuid: string;
+}) {
+  const { data, error, isLoading, refetch } = Lightdash.useLightdashContent(
+    {
+      instanceUrl,
+      projectUuid,
+      auth: {
+        type: 'embedToken',
+        token,
+      },
+    },
+    {
+      spaceUuids: [spaceUuid],
+      contentTypes: ['dashboard', 'chart'],
+      page: 1,
+      pageSize: 50,
+      sortBy: 'name',
+      sortDirection: 'asc',
+    },
+  );
+
+  if (isLoading) return <p>Loading content...</p>;
+  if (error) return <p>Unable to load content</p>;
+
+  return (
+    <div>
+      <button type="button" onClick={() => refetch()}>
+        Refresh
+      </button>
+
+      {data?.data.map((item) => (
+        <button key={item.uuid} type="button">
+          {item.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+```
+
+#### Options
+
+```typescript
+type ListContentOptions = {
+  projectUuids?: string[];
+  spaceUuids?: string[];
+  parentSpaceUuid?: string;
+  contentTypes?: Array<'space' | 'dashboard' | 'chart' | 'data_app'>;
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  sortBy?: 'name' | 'space_name' | 'last_updated_at';
+  sortDirection?: 'asc' | 'desc';
+};
+```
+
+<Info>
+Use the `spaceUuids` option as a filter, not as an authorization boundary. Authorization comes from the API access token's service account permissions.
+</Info>
+
+<Warning>
+`apiAccess` tokens are for API reads such as content listing. To let embedded users save charts or dashboards, use an embed token that supports `writeActions`.
+</Warning>
 
 ## Generating embed tokens
 
