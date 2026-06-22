@@ -62,7 +62,7 @@ All tokens share these fields:
 {
   content: {
     // Content configuration (required)
-    type: 'dashboard' | 'chart',
+    type: 'dashboard' | 'chart' | 'aiAgent' | 'apiAccess',
     projectUuid?: string,
     // ... type-specific fields
   },
@@ -239,6 +239,70 @@ const token = jwt.sign({
 }, SECRET, { expiresIn: '24h' });
 ```
 
+### AI agent token
+
+For embedding a Lightdash [AI agent](/guides/ai-agents) so users can chat with their data from inside your app. See [Embedding AI agents](/guides/embedding/ai-agents) for the full walkthrough.
+
+```typescript
+{
+  content: {
+    type: 'aiAgent',
+
+    // Agent the embed is allowed to use (required)
+    agentUuid: string,
+
+    // Project identifier (optional)
+    projectUuid?: string,
+  },
+
+  // Required: AI agent embeds must include writeActions
+  writeActions: {
+    spaceUuid: string,                  // Space the agent reads/writes content from
+    serviceAccountUserUuid?: string,    // Use a service account as the actor
+    userUuid?: string,                  // Or use an existing Lightdash user as the actor
+  },
+
+  // Optional: row-level filtering for the embedded viewer
+  userAttributes?: {
+    [attributeName: string]: string,
+  },
+
+  // Optional: user information surfaced in audit/analytics
+  user?: {
+    externalId?: string,
+    email?: string,
+  },
+}
+```
+
+<Info>
+AI agent tokens are scoped to a single agent. A token issued for one `agentUuid` cannot be used to access another agent, and dashboard or chart tokens are rejected on AI agent routes. The agent can only read dashboards and saved charts from `writeActions.spaceUuid`, and saves new charts back into that same space.
+</Info>
+
+**Example:**
+
+```javascript
+import jwt from 'jsonwebtoken';
+
+const token = jwt.sign({
+  content: {
+    type: 'aiAgent',
+    projectUuid: 'your-project-uuid',
+    agentUuid: 'your-agent-uuid',
+  },
+  writeActions: {
+    serviceAccountUserUuid: 'service-account-user-uuid',
+    spaceUuid: 'destination-space-uuid',
+  },
+  userAttributes: {
+    tenant_id: 'tenant-abc',
+  },
+  user: {
+    email: 'customer@example.com',
+  },
+}, SECRET, { expiresIn: '1h' });
+```
+
 ### Data app token
 
 For embedding a [data app](/guides/data-apps) as standalone content in an iframe (no dashboard). See [How to embed data apps](/guides/embedding/data-apps) for the full guide.
@@ -299,6 +363,67 @@ const token = jwt.sign({
   },
 }, SECRET, { expiresIn: '1h' });
 ```
+
+### API access token
+
+Use an API access token when your host app needs to call Lightdash APIs through the React SDK, for example to list spaces, dashboards, and charts with [`Lightdash.useLightdashContent`](/references/react-sdk#lightdashuselightdashcontent).
+
+```typescript
+{
+  content: {
+    type: 'apiAccess',
+
+    // Project identifier (required)
+    projectUuid: string,
+
+    // Service account used for permission checks (required)
+    serviceAccountUserUuid: string,
+  },
+
+  // Optional: row-level filtering for APIs that evaluate user attributes
+  userAttributes?: {
+    [attributeName: string]: string,
+  },
+
+  // Optional: user information surfaced in audit/analytics
+  user?: {
+    externalId?: string,
+    email?: string,
+  },
+}
+```
+
+<Info>
+API access tokens do not embed a specific dashboard or chart. They let the React SDK call supported Lightdash API endpoints with the permissions of `serviceAccountUserUuid`.
+</Info>
+
+**Example:**
+
+```javascript
+import jwt from 'jsonwebtoken';
+
+const token = jwt.sign({
+  content: {
+    type: 'apiAccess',
+    projectUuid: 'your-project-uuid',
+    serviceAccountUserUuid: 'service-account-user-uuid',
+  },
+  userAttributes: {
+    tenant_id: 'tenant-abc',
+  },
+  user: {
+    externalId: 'customer-user-123',
+    email: 'customer@example.com',
+  },
+}, SECRET, { expiresIn: '1h' });
+```
+
+**Rules:**
+
+- API access tokens must be generated server-side with your embed secret.
+- API access is authorized through the service account. The token can only list or read content that the service account can access.
+- A space UUID passed to an API hook is a filter, not a permission grant.
+- API access tokens cannot perform embed write actions. Use an embed token that supports `writeActions` when embedded users need to save charts or dashboards.
 
 ## Interactivity options reference
 
@@ -511,6 +636,7 @@ writeActions?: {
 - When editing or building a dashboard, add-tile content is filtered to `spaceUuid`, so embedded users can only pick saved charts from the allowed space.
 - Dashboards and charts created or edited through write actions are normal Lightdash objects — they can be viewed and edited from Lightdash and vice versa.
 - Newly saved charts are **not** added to the embed allowlist automatically. They behave like normal private content and won't be re-embeddable unless you add them explicitly.
+- API access tokens do not support write actions. They are for supported API reads, such as listing content through the React SDK.
 
 ### Configure write actions
 

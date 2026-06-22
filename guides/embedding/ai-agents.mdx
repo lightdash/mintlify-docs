@@ -1,0 +1,130 @@
+---
+title: "How to embed AI agents"
+sidebarTitle: "AI agents"
+description: "Embed a Lightdash AI agent in your application so your users can chat with their data without leaving your product."
+---
+
+import EmbedAvailability from '/snippets/embedding-availability.mdx';
+
+<EmbedAvailability />
+
+## Overview
+
+AI agent embedding lets you drop a Lightdash [AI agent](/guides/ai-agents) into your own application. Embedded users can start new threads, ask questions in natural language, and view the charts the agent generates — all scoped to a single agent and space that you control with the embed JWT.
+
+AI agent embeds use the same JWT-based security model as dashboard and chart embeds, but with a dedicated `content.type: "aiAgent"` token. Dashboard and chart tokens cannot access AI agent routes, and an AI agent token only grants access to the agent named in the token.
+
+### When to use AI agent embedding
+
+- Add a "Chat with your data" experience to your customer-facing app
+- Let customers ask ad-hoc questions about their own data without giving them a Lightdash login
+- Scope each customer's AI session to a specific space, so the agent only sees and writes content the customer is allowed to see
+
+### Available features
+
+Embedded AI agents support:
+
+- Creating and continuing threads with the agent
+- Viewing agent-generated charts and tables in the response
+- Saving AI-generated charts into a fixed destination space (via [write actions](/references/embedding#write-actions))
+- Row-level filtering via [user attributes](/references/workspace/user-attributes)
+
+Embedded AI sessions hide non-embed UI surfaces by default — including thread history sidebars, dashboard navigation, SQL mode, MCP server tools, and user preference screens. Actions that try to open full saved-chart or dashboard pages from generated artifacts are not supported inside an embed.
+
+## Prerequisites
+
+Before you embed an AI agent, you need:
+
+- An AI agent configured in your Lightdash project. See [Getting started with AI agents](/guides/ai-agents/getting-started).
+- An embed secret for the project. See [Embedding quickstart](/guides/embedding/how-to-embed-content).
+- A destination space where AI-generated charts will be saved.
+- A service account user (or regular Lightdash user) to act as the writer for AI actions. See [Write actions](/references/embedding#write-actions).
+
+## Embed an AI agent with the React SDK
+
+The React SDK ships a `Lightdash.AiAgent` component that renders the agent inside an iframe. Use it when you want the agent to live inside a React or Next.js app.
+
+```tsx
+import Lightdash from '@lightdash/sdk';
+
+function MyAiAgent() {
+  return (
+    <Lightdash.AiAgent
+      instanceUrl="https://app.lightdash.cloud"
+      agentUuid="your-agent-uuid"
+      token={generateAiAgentToken()} // Server-side function
+    />
+  );
+}
+```
+
+You can pass a `threadUuid` to deep-link the embed straight into an existing thread, or omit it to land on the new-thread screen. See [`Lightdash.AiAgent`](/references/react-sdk#lightdashaiagent) for the full prop list and styling options.
+
+## Generate an AI agent embed token
+
+AI agent embeds require a JWT with `content.type: "aiAgent"` and a `writeActions` claim. Generate it server-side using your embed secret.
+
+```javascript
+import jwt from 'jsonwebtoken';
+
+const token = jwt.sign({
+  content: {
+    type: 'aiAgent',
+    projectUuid: 'your-project-uuid',
+    agentUuid: 'your-agent-uuid',
+  },
+  writeActions: {
+    serviceAccountUserUuid: 'service-account-user-uuid',
+    spaceUuid: 'destination-space-uuid',
+  },
+  userAttributes: {
+    tenant_id: 'tenant-abc', // Row-level filtering for the embedded viewer
+  },
+  user: {
+    email: 'customer@example.com',
+  },
+}, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
+```
+
+**Required fields:**
+
+- `content.type` — must be `"aiAgent"`.
+- `content.agentUuid` — the agent the embed is allowed to use. Tokens cannot switch to a different agent at runtime.
+- `writeActions.spaceUuid` — the space AI-generated charts are saved into, and the only space the agent can read charts or dashboards from.
+- One of `writeActions.serviceAccountUserUuid` or `writeActions.userUuid` — the actor whose permissions are used when the agent runs queries and saves charts. See [Write actions](/references/embedding#write-actions).
+
+**Optional fields:**
+
+- `content.projectUuid` — pins the embed to a specific project.
+- `userAttributes` — applies row-level filters to the agent's queries, identical to other embed types.
+- `user.email` / `user.externalId` — surfaced in audit and analytics for the embedded viewer.
+
+## Access control
+
+AI agent embeds enforce a tight scope:
+
+- A token issued for agent A cannot access agent B, even within the same project.
+- The agent can only read dashboards and saved charts that live in `writeActions.spaceUuid`. Other content returns a not-found error.
+- The agent saves new charts into `writeActions.spaceUuid`. Embedded users cannot pick a different destination.
+- Query results respect the write actor's permissions and any `userAttributes` claims on the JWT, so embedded viewers only see the rows they're entitled to.
+- Dashboard and chart embed tokens are rejected by AI agent routes, and AI agent tokens are rejected by dashboard or chart routes.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="AI agents overview" icon="robot" href="/guides/ai-agents">
+    Learn how to design and configure agents before embedding them
+  </Card>
+
+  <Card title="React SDK reference" icon="react" href="/references/react-sdk#lightdashaiagent">
+    Full prop reference for the Lightdash.AiAgent component
+  </Card>
+
+  <Card title="Embedding reference" icon="book" href="/references/embedding#ai-agent-token">
+    Complete JWT structure for AI agent embed tokens
+  </Card>
+
+  <Card title="Write actions" icon="pen-to-square" href="/references/embedding#write-actions">
+    Configure the actor and destination space for embedded writes
+  </Card>
+</CardGroup>

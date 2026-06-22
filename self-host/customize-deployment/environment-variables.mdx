@@ -64,6 +64,8 @@ Control how many rows a query can return, page sizes, exports, and chart-version
 | `LIGHTDASH_PIVOT_TABLE_MAX_COLUMN_LIMIT`     | Configure maximum number of columns in pivot table (default=200)                                                                                                                                                                                                                                                                                 |
 | `LIGHTDASH_CSV_CELLS_LIMIT`                  | Max cells on CSV file exports (default=100000)                                                                                                                                                                                                                                                                                                   |
 | `LIGHTDASH_CHART_VERSION_HISTORY_DAYS_LIMIT` | Configure how far back the chart versions history goes in days (default=3)                                                                                                                                                                                                                                                                       |
+| `LIGHTDASH_DASHBOARD_MAX_TILES_PER_TAB`      | Maximum number of tiles allowed per tab on a dashboard (default=50)                                                                                                                                                                                                                                                                              |
+| `LIGHTDASH_DASHBOARD_MAX_TABS_PER_DASHBOARD` | Maximum number of tabs allowed per dashboard (default=20)                                                                                                                                                                                                                                                                                        |
 | `MAX_DOWNLOADS_AS_CODE`                      | Maximum number of downloads as code (default=100)                                                                                                                                                                                                                                                                                                |
 
 ## Scheduler
@@ -333,6 +335,7 @@ The variables below act as instance-wide defaults. Organization admins can overr
 | `LIGHTDASH_PROMETHEUS_EVENT_METRICS_ENABLED`     | Enables Prometheus counters for product events (e.g. chart views, downloads). (default=false) |
 | `LIGHTDASH_PROMETHEUS_EXTENDED_METRICS_ENABLED`  | Enables extended Prometheus metrics including warehouse query timings. (default=false)        |
 | `LIGHTDASH_PROMETHEUS_ALL_QUERY_METRICS_ENABLED` | Emits a Prometheus metric for every individual query (high cardinality). (default=false)      |
+| `LIGHTDASH_PROMETHEUS_HTTP_METRICS_ENABLED`      | Enables the OpenTelemetry `http.server.request.duration` histogram with semconv labels and route templates. (default=false) |
 
 ## Security
 
@@ -388,12 +391,11 @@ To enable AI Analyst, set `AI_COPILOT_ENABLED=true` and provide an API key for `
 | `OPENAI_EMBEDDING_MODEL`  | OpenAI embedding model for verified answers (default=text-embedding-3-small)                |
 | `OPENAI_BASE_URL`         | Optional base URL for OpenAI compatible API                                                 |
 | `OPENAI_AVAILABLE_MODELS` | Comma-separated list of models available in the model picker (default=All supported models) |
-| `OPENAI_ZERO_DATA_RETENTION` | Sets the OpenAI `OpenAI-Beta: assistants-zdr` header so prompts and completions are not retained by OpenAI. (default=false) |
+| `OPENAI_ZERO_DATA_RETENTION` | Set to `true` if your OpenAI account or LLM gateway enforces Zero Data Retention (ZDR). (default=false) |
 | `OPENAI_CUSTOM_HEADERS`  | JSON object of extra HTTP headers to send with every OpenAI request                          |
 | `OPENAI_SUPPORTS_STREAMING` | Set to `false` if the endpoint behind `OPENAI_BASE_URL` (e.g. an LLM gateway) doesn't support streaming (SSE) completions — Lightdash will make non-streaming requests instead (default=true) |
 
-<Tip>
-**Using an OpenAI-compatible proxy (e.g. LiteLLM)**
+#### Using an LLM gateway or proxy
 
 If your organization uses an OpenAI-compatible proxy like [LiteLLM](https://www.litellm.ai/), you can connect it to Lightdash by setting `AI_DEFAULT_PROVIDER=openai` and pointing `OPENAI_BASE_URL` to your proxy URL. For example:
 
@@ -407,7 +409,8 @@ Make sure your proxy has the model names correctly mapped. For example, if you s
 If you want to expose multiple models through the proxy, use `OPENAI_AVAILABLE_MODELS` with a comma-separated list of model names.
 
 If your proxy or gateway doesn't support streaming (SSE) completions, also set `OPENAI_SUPPORTS_STREAMING=false`. Lightdash will then make a single non-streaming request per model call — the AI agent keeps working unchanged, including the chat UI. Note that while a response is generating no bytes flow through the connection, so make sure any reverse proxy in the path has a read/idle timeout above your longest completion time.
-</Tip>
+
+If your gateway enforces Zero Data Retention (ZDR), also set `OPENAI_ZERO_DATA_RETENTION=true` — otherwise multi-step AI agent conversations with reasoning models will fail.
 
 #### Anthropic Configuration
 
@@ -772,6 +775,7 @@ On server start, we will check the following variables, and update some configur
 | `LD_SETUP_GITHUB_PAT`                | GitHub personal access token                                                                                                                      |
 | `LD_SETUP_SERVICE_ACCOUNT_TOKEN`     | A pre-set token for the service account, must start with `ldsvc_` prefix                                                                          |
 | `LD_SETUP_USER_ATTRIBUTES`           | JSON array declaring [user attributes and group-value mappings](#declare-user-attributes) to reconcile on every deploy.                           |
+| `LD_SETUP_GROUP_PROJECT_ACCESS`      | JSON array declaring [group → project role assignments](#declare-group--project-access) to reconcile on every deploy.                             |
 
 ## Initialize multiple projects
 
@@ -1003,3 +1007,55 @@ If a group name in `groups` doesn't match any existing group at the time the dep
 ### Per-user mappings
 
 `LD_SETUP_USER_ATTRIBUTES` only supports group-based mappings. Per-user (by-email) values still need to be assigned through the UI or API.
+
+## Declare group → project access
+
+Set `LD_SETUP_GROUP_PROJECT_ACCESS` to a JSON array to declare [group → project role assignments](/references/workspace/roles) as instance config. Lightdash reconciles the array on every deploy, so you no longer need to re-apply group access through the UI or API after each release. This is the project-access equivalent of [`LD_SETUP_USER_ATTRIBUTES`](#declare-user-attributes).
+
+<Info>
+  **Group project access setup is only available on Lightdash Enterprise plans** and uses [groups](/references/workspace/groups) and (optionally) [custom roles](/references/workspace/custom-roles), which are Enterprise features.
+
+  For more information on our plans, visit our [pricing page](https://www.lightdash.com/pricing).
+</Info>
+
+On every boot, Lightdash matches each entry to a group and project, then either creates the access, updates it if the role differs, or leaves it untouched when it already matches. Group accesses that are not present in the array are left untouched — this reconcile is non-destructive and never removes access you assigned in the UI.
+
+This is especially useful for instances that provision groups via [SCIM](/references/workspace/scim-integration): SCIM group UUIDs aren't known at deploy time, so this lets you declare role mappings by group name once and have them applied automatically as groups sync from your IdP.
+
+### Schema
+
+Each entry in the array has the following shape:
+
+| Field         | Required                       | Description                                                                                                                                                                                            |
+| :------------ | :----------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `groupName`   | Yes                            | Name of the [group](/references/workspace/groups) to grant access to. Resolved by name so it is compatible with SCIM-synced groups.                                                                    |
+| `projectName` | One of `projectName`/`projectUuid` | Name of the project to grant access to.                                                                                                                                                            |
+| `projectUuid` | One of `projectName`/`projectUuid` | UUID of the project to grant access to. Takes precedence if both `projectName` and `projectUuid` are provided.                                                                                      |
+| `role`        | Yes                            | A [system role](/references/workspace/roles) (`viewer`, `interactive_viewer`, `editor`, `developer`, or `admin`) or the name of a [custom role](/references/workspace/custom-roles).                   |
+
+### Example
+
+```jsonc
+LD_SETUP_GROUP_PROJECT_ACCESS='[
+  {
+    "groupName": "Core Data Developer",
+    "projectName": "Production",
+    "role": "developer"
+  },
+  {
+    "groupName": "Data Analyst",
+    "projectUuid": "abc-123",
+    "role": "PII Analyst"
+  }
+]'
+```
+
+### Group, project, and role resolution
+
+- **Groups** are resolved by `groupName` because group UUIDs aren't known at deploy time when groups are provisioned via [SCIM](/references/workspace/scim-integration).
+- **Projects** are resolved by `projectUuid` when set, otherwise by `projectName`.
+- **Roles** are resolved as a system role first; if the value doesn't match a system role, Lightdash looks up a [custom role](/references/workspace/custom-roles) with that name.
+
+If a group, project, or custom role can't be resolved at the time the deploy runs (for example, because SCIM hasn't synced the group yet), Lightdash logs a warning and skips that entry rather than failing the deploy. The entry is retried on the next deploy, so once the group, project, or role exists the access reconciles automatically.
+
+Malformed JSON or entries that fail schema validation (e.g. missing `groupName`, or neither `projectName` nor `projectUuid`) throw at boot time so configuration errors surface before the instance starts.
