@@ -1,0 +1,128 @@
+---
+title: "AI agent reviews"
+sidebarTitle: "Reviews"
+description: "Surface answers your agents probably got wrong, grouped by root cause, with one-click fixes for semantic layer and project context gaps."
+---
+
+<Info>
+  **Availability:** Reviews is a [Beta](/references/workspace/feature-maturity-levels) feature available on **Enterprise** and **Cloud Pro** plans. It is **off by default** and must be enabled by an organization admin.
+</Info>
+
+Reviews scans every AI agent turn for signs that the answer was probably wrong — a missing metric, an ambiguous field, a gap in your project context — and groups the findings by root cause so you can fix them in one place.
+
+For each finding, Reviews proposes the smallest change that would have prevented it:
+
+- **Semantic layer fixes** open a pull request against your dbt project (rename a field, add a description, add a metric).
+- **Project context fixes** add a short note that your agents read before answering future questions.
+
+## When to use it
+
+Turn Reviews on once you have agents in regular use and want a feedback loop that improves them without manually reading thread transcripts. It's most useful when:
+
+- Users ask the same kind of question repeatedly and the agent struggles
+- You want to keep dbt metadata and agent instructions tight as your data model evolves
+- You're rolling agents out to a wider audience and want admin-level visibility into quality
+
+If you're still setting your first agent up, start with [agent setup](/guides/ai-agents/getting-started) and [evaluations](/guides/ai-agents/evaluations) first — Reviews works best once there's real usage to learn from.
+
+## Enabling Reviews
+
+Reviews is opt-in. Until an admin enables it, no agent turns are processed and no findings are collected.
+
+1. Go to **Settings → Ask AI → General**.
+2. Toggle **Review AI agent turns** on.
+
+Once enabled, future agent turns are reviewed in the background. Existing threads are not back-filled.
+
+To stop collecting findings, toggle the setting off. Previously collected findings remain visible until you act on or dismiss them.
+
+## Reviewing findings
+
+Open **Settings → Ask AI → Reviews** to see what Reviews has surfaced. Findings are grouped by root cause so you can fix the underlying issue once instead of replying to threads one by one.
+
+| Finding type | What it means | How to fix |
+| --- | --- | --- |
+| **Semantic layer** | A field, metric, or description is missing, ambiguous, or wrong in your dbt project. | Apply the suggested fix to open a pull request against your dbt repository. |
+| **Project context** | Your agents are missing background knowledge to answer reliably (e.g. which table to use for "active users"). | Apply the suggested fix to add a note your agents read before answering. |
+
+Each finding links back to the original agent turn so you can see the question, the answer, and the evidence Reviews used to flag it.
+
+## The `lightdash.project_context.yml` file
+
+Project context fixes don't touch your dbt models. Instead, they write to a separate file — `lightdash.project_context.yml` — that lives next to `lightdash.config.yml` inside your dbt project directory. Your AI agents read it before they answer, so notes you add here change future behavior without changing the semantic layer.
+
+The file is committed to your dbt repo and travels with the rest of your project metadata. The first time Reviews applies a project context fix, it creates the file (with a header explaining what it's for) and opens a pull request. Subsequent fixes add or update entries in the same file.
+
+The full JSON Schema is published at [`lightdash-project-context-1.0.json`](https://github.com/lightdash/lightdash/blob/main/packages/common/src/schemas/json/lightdash-project-context-1.0.json) — point your editor at it for autocomplete and validation.
+
+### File shape
+
+```yaml lightdash.project_context.yml
+version: 1
+entries:
+  - id: mau
+    kind: definition
+    content: "MAU means monthly active users — distinct users with at least one session in the last 30 days."
+    terms: ["MAU", "monthly active users"]
+    objects: []
+  - id: active-users-table
+    kind: context
+    content: "Use `fct_user_activity` for active-user questions; `dim_users` is a slowly-changing dimension and double-counts churned users."
+    terms: ["active users"]
+    objects: ["fct_user_activity", "dim_users"]
+```
+
+The top-level document is `{ version, entries }`. A bare array of entries is also accepted for backward compatibility, but new files are written in the canonical shape.
+
+### Top-level properties
+
+| Property | Type | Required | Description |
+| --- | --- | --- | --- |
+| `version` | number | yes | Schema version. Currently always `1`. Bumping this is the escape hatch for a future breaking change. |
+| `entries` | array | yes | The list of context entries. May be empty. |
+
+### Entry properties
+
+Each item in `entries` is a single self-contained fact your agents should know.
+
+| Property | Type | Required | Description |
+| --- | --- | --- | --- |
+| `kind` | `"definition"` \| `"context"` | yes | How the entry is retrieved. Use `definition` for term-triggered facts (acronyms, vocabulary, "X means Y"). Use `context` for object-scoped guidance (routing rules, join rules, durable facts about a model). |
+| `content` | string | yes | One self-contained sentence. This is what the agent reads. Keep it short and unambiguous. |
+| `id` | string | no | Stable identifier used to update the entry later. Optional — Lightdash derives one from `terms[0]` (or `content`) at ingest if you omit it, suffixing on collision. Provide an explicit id if you want to hand-edit later without worrying about churn. |
+| `terms` | string[] | no | Prompt-facing trigger words and phrases. Used to surface `definition` entries when a user's question mentions one of them. Defaults to `[]`. |
+| `objects` | string[] | no | Semantic objects (models, fields, joins) this entry concerns. Used to surface `context` entries when the agent is reasoning about one of these objects. Defaults to `[]`. |
+
+Unknown keys on an entry are preserved on round-trip, so a field a newer Lightdash version adds won't be silently dropped if you edit the file by hand.
+
+### Editing the file
+
+You can edit `lightdash.project_context.yml` directly — it's a normal file in your dbt repo. The Reviews flow is designed to coexist with manual edits: writeback uses the GitHub API to merge a single entry at a time, preserving comments, quoting, and key order in the rest of the file, so the resulting diff is just the changed entry.
+
+If you do edit by hand, the same validation rules apply: invalid files surface schema-backed errors at ingest time.
+
+## Project context vs. semantic layer fixes
+
+Both kinds of fix open a pull request, but they change different things and have different review costs.
+
+| | Semantic layer fix | Project context fix |
+| --- | --- | --- |
+| **What it changes** | Your dbt model YAML — renames a field, adds a description, adds a metric, fixes a join. | A single entry in `lightdash.project_context.yml`. |
+| **Who else sees the change** | Everyone querying the model, in Lightdash and downstream. | AI agents only. |
+| **How the PR is built** | A writeback agent runs in a sandbox against your dbt project and proposes the edit. | Deterministic merge into the YAML file via the GitHub API — no sandbox. |
+| **When to use it** | The data model itself is wrong, ambiguous, or under-described. The fix would help SQL users too, not just the agent. | The data model is fine, but the agent is missing background knowledge — terminology, which table to prefer, business rules that aren't expressible as dbt metadata. |
+| **Reversibility** | Same as any dbt change — revert the PR. | Delete or edit the entry in `lightdash.project_context.yml`. |
+
+A rule of thumb: if a new analyst joining the team would also benefit from the change, it's probably a semantic layer fix. If only the agent needs to know it, it's project context.
+
+## Privacy and data handling
+
+- Reviews runs against agent turns inside your organization only.
+- Findings are stored in Lightdash alongside your other agent data and respect your existing project and admin permissions.
+- Disabling the toggle stops new collection immediately; it does not delete previously collected findings.
+
+## Related
+
+- [Evaluations](/guides/ai-agents/evaluations) — run a fixed set of prompts against your agent and grade the answers.
+- [AI writeback](/guides/ai-agents/ai-writeback) — let an agent open a dbt pull request from chat.
+- [Autopilot](/guides/ai-agents/autopilot) — scheduled agent that cleans up content and flags issues for review.
