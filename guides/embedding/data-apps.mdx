@@ -1,0 +1,120 @@
+---
+title: "How to embed data apps"
+sidebarTitle: "Data apps"
+description: "Embed a Lightdash data app as standalone content in an iframe using a JWT-scoped preview token."
+---
+
+import EmbedAvailability from '/snippets/embedding-availability.mdx';
+
+<EmbedAvailability />
+
+<Info>
+  Standalone data app embedding is in early access and gated behind a feature flag. Contact Lightdash to enable it for your workspace.
+</Info>
+
+## Overview
+
+Standalone data app embedding lets you render a [data app](/guides/data-apps) on its own — no dashboard, no surrounding chrome — inside an iframe in your application. The app runs in the same sandboxed environment as it does in Lightdash, with every metric query proxied through Lightdash and authorized against the embed JWT.
+
+Use standalone embedding when you want to surface an entire data app as a feature in your product (for example, a customer-facing report or interactive narrative) rather than embedding it as one tile on a Lightdash dashboard.
+
+### How it compares to other embed types
+
+| | Standalone data app | Data app tile on an embedded dashboard | Embedded chart |
+|---|---|---|---|
+| Content | One data app, full screen | One data app inside a dashboard | One saved chart |
+| JWT `content.type` | `dataApp` | `dashboard` with `canViewDataApps: true` | `chart` |
+| URL path | `/embed/{projectUuid}/app/{appUuid}` | `/embed/{projectUuid}` | React SDK only |
+| Filters / tile chrome | None | Dashboard filters and tile chrome | None |
+
+For tile-based embedding inside a dashboard, see [View data apps in dashboards](/guides/embedding/dashboards#view-data-apps).
+
+## Setup
+
+### 1. Enable the data app in embed settings
+
+Open **Settings → Embedding** for your project and use the **Allowed content** section to authorize the data apps you want to embed:
+
+- Toggle **Allow all data apps** to permit any app in the project, or
+- Add specific data apps to the allowlist.
+
+Standalone embedding is denied for any app that isn't on the allowlist (or covered by the "allow all" switch). This is enforced server-side regardless of what your JWT contains.
+
+### 2. Mint a data app JWT
+
+Sign a JWT with `content.type: 'dataApp'` and the `appUuid` of the data app you want to embed. The JWT must be signed with your project's embed secret.
+
+```javascript
+import jwt from 'jsonwebtoken';
+
+const token = jwt.sign(
+  {
+    content: {
+      type: 'dataApp',
+      projectUuid: 'your-project-uuid',
+      appUuid: 'your-app-uuid',
+    },
+    user: {
+      externalId: 'user-123',
+      email: 'user@example.com',
+    },
+    userAttributes: {
+      tenant_id: 'tenant-abc',
+    },
+  },
+  LIGHTDASH_EMBED_SECRET,
+  { expiresIn: '1h' },
+);
+```
+
+A `dataApp` token can only render the app named in its `appUuid` claim. It cannot be reused to render any other data app, chart, or dashboard.
+
+### 3. Construct the embed URL
+
+Data app embeds use the path `/embed/{projectUuid}/app/{appUuid}` with the JWT in the URL hash fragment:
+
+```
+https://your-instance.lightdash.cloud/embed/{projectUuid}/app/{appUuid}#{token}
+```
+
+The hash fragment is never sent to the server or stored in browser history.
+
+### 4. Render the iframe
+
+```html
+<iframe
+  src="https://app.lightdash.cloud/embed/abc-123-def-456/app/app-uuid-789#eyJhbGciOi..."
+  width="100%"
+  height="600"
+  frameborder="0"
+  sandbox="allow-scripts allow-same-origin"
+></iframe>
+```
+
+You can copy ready-to-use Node, Python, and Go snippets from **Settings → Embedding → Preview → Data apps** in Lightdash.
+
+## How access works
+
+A `dataApp` JWT is intentionally narrow: it authorizes the named app for the named project and nothing else. In practice, this means:
+
+- The token grants the embed user permission to **view the specified data app only**.
+- The data app can run arbitrary metric queries across the project's tables. Embedding an app means you are accepting project-wide column access for that token.
+- **Row-level filtering still applies.** User attributes on the JWT are enforced inside every query, just like they are for dashboard and chart embeds. SQL filters defined on your tables continue to apply.
+- A `dataApp` token **cannot** be used to load dashboards, charts, or the explore page. Each embed token is scoped to a single content type.
+
+<Warning>
+Because the token grants project-wide column access for the app's queries, only mint `dataApp` tokens for audiences you trust with that data. Use [user attributes](/references/workspace/user-attributes) to enforce row-level access.
+</Warning>
+
+## Limitations
+
+- Standalone data app embedding is iframe-only. There is no React SDK component for it yet.
+- The standalone embed has no filter bar or tile chrome — the app is rendered in isolation.
+- Interactivity options like `canExportCsv`, `canExplore`, and `dashboardFiltersInteractivity` do not apply to `dataApp` tokens.
+
+## See also
+
+- [Data apps overview](/guides/data-apps)
+- [Embedding reference (JWT structure)](/references/embedding)
+- [iframe embedding reference](/references/iframe-embedding)
+- [Embed dashboards with data app tiles](/guides/embedding/dashboards#view-data-apps)
