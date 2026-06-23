@@ -377,15 +377,15 @@ Enable if you're connecting to a Redshift Serverless workgroup rather than a pro
 
 ##### Assume role ARN
 
-Recommended. An IAM role Lightdash assumes to mint Redshift credentials. Leave blank to use the host's IAM role (self-hosted only), or provide AWS access keys under Advanced.
+Optional. An IAM role to assume — within your own AWS account — before minting credentials, instead of using the access-key identity directly. Self-hosted instances running on AWS can leave this and the access keys blank to use the host's IAM role.
 
 ##### Assume role external ID
 
-The external ID required by the assume-role trust policy, if you configured one.
+The external ID required by the role's trust policy, if you configured one.
 
 ##### Advanced: AWS access key ID & secret access key
 
-A static IAM user access key, used only if you are not assuming a role or relying on the host's IAM role. This is a long-lived secret — prefer assume-role where possible.
+The access key for the IAM user Lightdash uses to mint temporary Redshift credentials. On Lightdash Cloud, this is how you provide the AWS identity.
 
 ##### Advanced: Auto-create database user
 
@@ -428,27 +428,15 @@ Serverless workgroup:
 }
 ```
 
-**2. Give Lightdash an identity.** Choose one:
+**2. Create an identity to call that API.**
 
-- **Assume role (recommended).** Create an IAM role, attach the policy above, and add a trust policy allowing Lightdash to assume it. Pick any external ID string — it acts as a shared secret so only Lightdash can assume the role — and enter the role ARN and external ID in Lightdash.
+- **Access keys (Lightdash Cloud).** Create an IAM user, attach the policy above, generate an access key and secret, and enter them under **Advanced** on the connection form. Lightdash Cloud has no AWS identity of its own, so this is how you grant access. Keep the policy minimal and rotate the key periodically.
 
-  ```json
-  {
-    "Version": "2012-10-17",
-    "Statement": [{
-      "Effect": "Allow",
-      "Principal": { "AWS": "<LIGHTDASH_AWS_PRINCIPAL>" },
-      "Action": "sts:AssumeRole",
-      "Condition": { "StringEquals": { "sts:ExternalId": "<your-external-id>" } }
-    }]
-  }
-  ```
+- **Assume role (optional).** If you'd rather not grant the IAM user the Redshift permissions directly, attach the policy to a separate IAM role and let the user assume it: add a trust policy on the role allowing that user to assume it, then enter the role ARN (and external ID, if set) on the form. The role is assumed **within your own AWS account** — there is no cross-account trust with Lightdash.
 
-- **Access keys.** Create an IAM user with the policy above, generate an access key and secret, and enter them under **Advanced**. This is a long-lived secret — prefer assume-role.
+- **Host role (self-hosted on AWS only).** If you run Lightdash yourself on AWS, attach the policy to the instance or task role (EC2 instance profile, ECS task role, or IRSA) and leave the access-key and role fields blank.
 
-- **Host role (self-hosted only).** If Lightdash runs on AWS with an attached instance role or IRSA, attach the policy there and leave all credential fields blank.
-
-**3. Configure the connection** in Lightdash: set **Authentication type** to **AWS IAM**, fill in region, cluster/workgroup, database user, and your chosen identity, then click **Test & save**.
+**3. Configure the connection** in Lightdash: set **Authentication type** to **AWS IAM**, fill in region, cluster/workgroup, database user, and your access keys, then click **Test & save**.
 
 </Accordion>
 
