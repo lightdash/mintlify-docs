@@ -347,6 +347,111 @@ This controls what day is the start of the week in Lightdash. `Auto` sets it to 
 
 Enable to input your **SSH Remote Host**, **SSH Remote Port**, **SSH Username**, and to generate a public SSH key.
 
+##### Authentication type
+
+By default Lightdash connects to Redshift with a database **username and password**. You can instead authenticate with **AWS IAM**: Lightdash assumes an AWS identity and mints short-lived database credentials (valid up to 1 hour) from AWS at connection time, then connects over the standard Postgres protocol. No long-lived database password is stored. This is useful when your security policy disallows static or hashed passwords, or when your cluster fronts Lake Formation.
+
+<Note>If you don't see the **AWS IAM** option, it isn't enabled for your organization yet — contact Lightdash support.</Note>
+
+When **Authentication type** is set to **AWS IAM**, the following fields replace the password. Your **Host**, **DB name**, **Schema**, SSL, and SSH tunnel settings still apply.
+
+##### AWS region
+
+The AWS region where your Redshift cluster or serverless workgroup is located, for example `us-east-1`.
+
+##### Redshift Serverless
+
+Enable if you're connecting to a Redshift Serverless workgroup rather than a provisioned cluster.
+
+##### Cluster identifier
+
+(Provisioned clusters) The identifier of your Redshift cluster.
+
+##### Workgroup name
+
+(Serverless) The name of your Redshift Serverless workgroup.
+
+##### Database user
+
+(Provisioned clusters) The Redshift database user to request temporary credentials for. Serverless derives the user automatically.
+
+##### Assume role ARN
+
+Recommended. An IAM role Lightdash assumes to mint Redshift credentials. Leave blank to use the host's IAM role (self-hosted only), or provide AWS access keys under Advanced.
+
+##### Assume role external ID
+
+The external ID required by the assume-role trust policy, if you configured one.
+
+##### Advanced: AWS access key ID & secret access key
+
+A static IAM user access key, used only if you are not assuming a role or relying on the host's IAM role. This is a long-lived secret — prefer assume-role where possible.
+
+##### Advanced: Auto-create database user
+
+(Provisioned clusters) Create the database user automatically if it does not already exist.
+
+<Accordion title="Setting up AWS IAM for Redshift">
+
+**1. Create an IAM policy** that allows minting credentials. Use the variant for your warehouse type.
+
+Provisioned cluster:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Sid": "LightdashRedshiftCredentials",
+    "Effect": "Allow",
+    "Action": "redshift:GetClusterCredentials",
+    "Resource": [
+      "arn:aws:redshift:<region>:<account-id>:dbuser:<cluster-identifier>/<db-user>",
+      "arn:aws:redshift:<region>:<account-id>:dbname:<cluster-identifier>/<db-name>"
+    ]
+  }]
+}
+```
+
+If you enable **Auto-create database user**, also allow `redshift:CreateClusterUser` on the `dbuser:` resource. If you use database groups, add `redshift:JoinGroup` on the relevant `dbgroup:` resources.
+
+Serverless workgroup:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Sid": "LightdashRedshiftServerlessCredentials",
+    "Effect": "Allow",
+    "Action": "redshift-serverless:GetCredentials",
+    "Resource": "arn:aws:redshift-serverless:<region>:<account-id>:workgroup/<workgroup-id>"
+  }]
+}
+```
+
+**2. Give Lightdash an identity.** Choose one:
+
+- **Assume role (recommended).** Create an IAM role, attach the policy above, and add a trust policy allowing Lightdash to assume it. Pick any external ID string — it guards against confused-deputy access — and enter the role ARN and external ID in Lightdash.
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Principal": { "AWS": "<LIGHTDASH_AWS_PRINCIPAL>" },
+      "Action": "sts:AssumeRole",
+      "Condition": { "StringEquals": { "sts:ExternalId": "<your-external-id>" } }
+    }]
+  }
+  ```
+
+- **Access keys.** Create an IAM user with the policy above, generate an access key and secret, and enter them under **Advanced**. This is a long-lived secret — prefer assume-role.
+
+- **Host role (self-hosted only).** If Lightdash runs on AWS with an attached instance role or IRSA, attach the policy there and leave all credential fields blank.
+
+**3. Configure the connection** in Lightdash: set **Authentication type** to **AWS IAM**, fill in region, cluster/workgroup, database user, and your chosen identity, then click **Test & save**.
+
+</Accordion>
+
 ***
 
 
