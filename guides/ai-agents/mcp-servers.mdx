@@ -140,6 +140,28 @@ The agent pulls the data from your warehouse, generates the summary, and appends
 
 The agent searches Confluence for the canonical definition, then answers using both the doc and your data.
 
+## Self-hosted: backend networking
+
+MCP connections are validated and tested **server-side from the Lightdash backend**, not from your browser. When you add an MCP server, the backend performs a DNS lookup of the endpoint host (as an SSRF protection check) and then makes an actual HTTPS request to the MCP URL to test the connection. The same applies during every agent conversation that uses MCP tools.
+
+This means the **Lightdash backend container** must be able to reach every MCP endpoint you connect. On self-hosted deployments with restricted network egress, connection tests can fail even though the URL works fine from your laptop.
+
+Two common failures:
+
+| Error | What it means | Fix |
+| ----- | ------------- | --- |
+| **"We couldn't find a server at that URL"** | The backend's DNS lookup for the endpoint host failed — typically an internal hostname (e.g. `agentic-gateway.internal`) that the backend container can't resolve. | Configure DNS resolution and network routing from the backend pod to that host. |
+| **"fetch failed"** | DNS resolves, but the outbound HTTPS request from the backend container is blocked. | Allow outbound HTTPS (port 443) from the backend pod to the endpoint. |
+
+To resolve these, work with whoever owns your infrastructure to:
+
+- **Internal MCP endpoints** — configure DNS resolution and network routing from the Lightdash backend pod to the internal host.
+- **External MCP endpoints** (e.g. `https://docs.lightdash.com/mcp`) — allow outbound HTTPS (port 443) egress from the backend pod to the public internet.
+
+<Tip>
+  A quick way to confirm reachability is to exec into the Lightdash backend container and try to resolve and reach the endpoint host from there (e.g. with `curl`). If it fails from inside the container, it's a networking issue on your infrastructure side rather than a Lightdash configuration problem.
+</Tip>
+
 ## Security
 
 - All credentials (bearer tokens and OAuth tokens) are encrypted at rest.
