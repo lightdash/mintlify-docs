@@ -809,6 +809,45 @@ When working with joined tables, you can reference model-level parameters from t
 In this example, the `filtered_customer_revenue` dimension uses a model-level parameter `target_segment` from the joined `customers` model to conditionally show revenue.
 
 
+## Reserved parameters
+
+Lightdash provides built-in **reserved parameters** that are automatically available in every project. You don't need to define them in `lightdash.config.yml` or in a model — they resolve from the current query context at runtime.
+
+Reserved parameters appear in custom SQL autocomplete alongside your own parameters. They are surfaced as **System variables** in the autocomplete dropdown.
+
+<Frame>
+  <img src="/images/guides/developer/using-parameters/reserved-parameter-autocomplete-light.png" alt="Custom SQL autocomplete showing the date_zoom reserved parameter labelled as a System variable" className="block dark:hidden" />
+  <img src="/images/guides/developer/using-parameters/reserved-parameter-autocomplete-dark.png" alt="Custom SQL autocomplete showing the date_zoom reserved parameter labelled as a System variable" className="hidden dark:block" />
+</Frame>
+
+<Info>
+  If you define a user parameter with the same name as a reserved parameter, your user parameter **wins** and shadows the reserved one. Avoid naming user parameters after reserved names unless you intend to override them.
+</Info>
+
+### `date_zoom`
+
+Resolves to the currently selected [date zoom](/guides/date-zoom) granularity, lowercased (for example `day`, `week`, `month`, `quarter`, `year`, or a custom granularity name). When no date zoom is selected, the value is an empty string.
+
+Reference it in custom SQL just like any other parameter:
+
+```sql
+${ld.parameters.date_zoom}
+```
+
+This lets you branch SQL based on the dashboard's current granularity selection — for example, to swap label formatting, change a window size, or short-circuit logic when no granularity is selected:
+
+```sql
+CASE
+  WHEN ${ld.parameters.date_zoom} = 'week'   THEN 'Weekly view'
+  WHEN ${ld.parameters.date_zoom} = 'month'  THEN 'Monthly view'
+  WHEN ${ld.parameters.date_zoom} = ''       THEN 'No date zoom applied'
+  ELSE 'Other granularity'
+END
+```
+
+The value tracks the granularity actually used to compile the query, so it stays in sync with what users see in the date zoom dropdown, including [custom granularities](/references/lightdash-config-yml#custom-granularities-configuration).
+
+
 ## Saving parameter values
 
 Parameter values can be saved at both the chart and dashboard levels.
