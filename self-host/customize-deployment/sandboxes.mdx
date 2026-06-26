@@ -1,0 +1,150 @@
+---
+title: Sandboxes
+description: "How Lightdash runs LLM-generated code safely in isolated sandboxes, and how to configure the sandbox provider on a self-hosted instance."
+sidebarTitle: Sandboxes
+---
+
+<Note>
+🛠 This page is for engineering teams self-hosting their own Lightdash instance. On Lightdash Cloud, sandboxes are fully managed for you — there's nothing to configure.
+</Note>
+
+## What sandboxes are for
+
+Some Lightdash features use an AI agent (Claude Code) that **writes and runs code on
+your behalf**. Today that's:
+
+- **AI writeback** — the agent edits your dbt project (e.g. adds a metric or dimension),
+  runs `lightdash compile` to validate it, and opens a pull request.
+- **Data app generation** — the agent generates and builds a small web app from a prompt.
+
+Running model-generated code directly on the Lightdash server would be unsafe: the code
+is untrusted, can run arbitrary commands, and needs its own toolchain (git, dbt, the
+Lightdash CLI, Node). Lightdash instead runs each agent inside a **sandbox** — an isolated,
+disposable environment with a constrained network. The agent does its work there, Lightdash
+collects the result (a PR, a built app), and the sandbox is torn down.
+
+Sandboxes are also what make these features **fast** and **multi-turn**: a sandbox can be
+suspended between turns and resumed later, so a conversation with the agent keeps its state
+without holding a container open the whole time.
+
+## Sandbox providers
+
+The sandbox backend is pluggable. Lightdash talks to a provider-neutral interface, so the
+same feature code runs on whichever backend your deployment is configured for. You select
+the provider with the `SANDBOX_PROVIDER` environment variable.
+
+| Provider | `SANDBOX_PROVIDER` | Use for | Isolation |
+| --- | --- | --- | --- |
+| **E2B** (default) | `e2b` | Production / managed | microVM |
+| **Local Docker** | `docker` | Local development only | container |
+
+More providers (Kubernetes, ECS, microVM-based) are planned, but **E2B is the only
+supported production backend today**.
+
+<Warning>
+The **local Docker provider is for development only**. It launches plain Docker containers
+via the Docker socket, which is root-equivalent on the host and provides no real isolation
+between the sandbox and your machine. It **refuses to start when `NODE_ENV=production`**.
+Do not use it for a production deployment.
+</Warning>
+
+## E2B (production default)
+
+[E2B](https://e2b.dev) runs each sandbox as a Firecracker microVM in E2B's cloud. It's the
+default — if you don't set `SANDBOX_PROVIDER`, Lightdash uses E2B.
+
+To use it you need an E2B account and API key, and the agent needs an Anthropic API key:
+
+```bash
+SANDBOX_PROVIDER=e2b            # default, can be omitted
+E2B_API_KEY=e2b_...            # from your E2B dashboard
+ANTHROPIC_API_KEY=sk-ant-...   # the agent (Claude Code) runs inside the sandbox
+```
+
+The sandbox images are E2B *templates*. Lightdash uses separate templates for data apps and
+for AI writeback so they can be pinned or rolled back independently. These default to the
+published Lightdash templates and rarely need to be set:
+
+```bash
+E2B_TEMPLATE_NAME=lightdash/lightdash-data-app
+E2B_TEMPLATE_TAG=<lightdash-version>             # defaults to your Lightdash version
+E2B_AI_WRITEBACK_TEMPLATE_NAME=lightdash/lightdash-ai-writeback
+E2B_AI_WRITEBACK_TEMPLATE_TAG=<lightdash-version>
+```
+
+## Local Docker provider (development)
+
+For local development you can run sandboxes as plain Docker containers on your own machine
+— no E2B account required. This is the recommended way to work on or try the AI features
+locally.
+
+It uses the same images E2B builds, but as plain local Docker images. Two **separate**
+images are used (different toolchains), mirroring the two E2B templates:
+
+| Image (default tag) | Built from | Used by |
+| --- | --- | --- |
+| `lightdash-sandbox:local` | `sandboxes/data-apps/` | Data app generation |
+| `lightdash-ai-writeback:local` | `sandboxes/ai-writeback/` | AI writeback |
+
+### Prerequisites
+
+- Docker running locally, with the daemon reachable from the Lightdash backend.
+- S3-compatible object storage configured (locally this is MinIO). Suspended-sandbox
+  snapshots are tarred to object storage so a conversation survives the container being
+  destroyed — see [external object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage).
+- An Anthropic API key (`ANTHROPIC_API_KEY`) for the agent.
+
+### Setup
+
+1. Build the local sandbox images (each builds from `sandboxes/<feature>/`):
+
+   ```bash
+   ./sandboxes/data-apps/build-local-image.sh        # -> lightdash-sandbox:local
+   ./sandboxes/ai-writeback/build-local-image.sh     # -> lightdash-ai-writeback:local
+   ```
+
+   These are large (the writeback image bundles dbt, the Lightdash CLI and Claude Code) and
+   only need rebuilding when the sandbox toolchain changes.
+
+2. Point Lightdash at the Docker provider:
+
+   ```bash
+   SANDBOX_PROVIDER=docker
+   # optional — these are the defaults:
+   SANDBOX_DOCKER_IMAGE=lightdash-sandbox:local
+   SANDBOX_AI_WRITEBACK_DOCKER_IMAGE=lightdash-ai-writeback:local
+   ```
+
+3. Restart the **backend and the scheduler** so both pick up the new environment. Data app
+   generation runs in the scheduler worker, so a stale `SANDBOX_PROVIDER` there will keep it
+   on E2B. (With PM2, a plain `restart` reuses the cached env — delete and re-start the
+   processes, or restart with `--update-env`, to actually reload the env file.)
+
+## Snapshot lifecycle
+
+Two timers control how long sandboxes live:
+
+```bash
+SANDBOX_IDLE_TIMEOUT_MS=1800000        # suspend a running-but-idle sandbox (default 30 min)
+SANDBOX_SNAPSHOT_RETENTION_MS=604800000 # keep a suspended snapshot resumable (default 7 days)
+```
+
+In steady state every turn suspends its own sandbox, so the idle timeout is just a safety
+net for crashes. The retention window controls how long a conversation thread can be resumed
+before its snapshot is garbage-collected.
+
+## Environment variable reference
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SANDBOX_PROVIDER` | `e2b` | Sandbox backend: `e2b` or `docker`. |
+| `ANTHROPIC_API_KEY` | — | API key for the Claude Code agent running inside the sandbox. |
+| `E2B_API_KEY` | — | E2B API key (required when `SANDBOX_PROVIDER=e2b`). |
+| `E2B_TEMPLATE_NAME` | `lightdash/lightdash-data-app` | E2B template for data app sandboxes. |
+| `E2B_TEMPLATE_TAG` | Lightdash version | Tag of the data app template to launch. |
+| `E2B_AI_WRITEBACK_TEMPLATE_NAME` | `lightdash/lightdash-ai-writeback` | E2B template for writeback sandboxes. |
+| `E2B_AI_WRITEBACK_TEMPLATE_TAG` | Lightdash version | Tag of the writeback template to launch. |
+| `SANDBOX_DOCKER_IMAGE` | `lightdash-sandbox:local` | Local image for data app sandboxes (`docker` provider). |
+| `SANDBOX_AI_WRITEBACK_DOCKER_IMAGE` | `lightdash-ai-writeback:local` | Local image for writeback sandboxes (`docker` provider). |
+| `SANDBOX_IDLE_TIMEOUT_MS` | `1800000` (30 min) | How long a running sandbox can be idle before it's suspended. |
+| `SANDBOX_SNAPSHOT_RETENTION_MS` | `604800000` (7 days) | How long a suspended snapshot stays resumable before it's GC'd. |
