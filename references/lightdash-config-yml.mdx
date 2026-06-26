@@ -232,12 +232,16 @@ The `defaults` section allows you to set project-wide default settings that appl
 defaults:
   case_sensitive: false
   column_totals: false
+  additional_time_intervals:
+    date: ['fiscal_quarter']
+    timestamp: ['HOUR']
 ```
 
-| Property         | Required | Value   | Description |
-| :--------------- | :------- | :------ | :---------- |
-| `case_sensitive` | No       | boolean | Default case sensitivity for string filters across the project. When `false`, all string filters will be case insensitive by default. Defaults to `true`. |
-| `column_totals`  | No       | boolean | Default behavior for column totals in the explorer results table. When `false`, Lightdash skips the extra warehouse query that calculates column totals for new queries. Charts that explicitly enable "Show column totals" still calculate them. Defaults to `true`. |
+| Property                    | Required | Value   | Description |
+| :-------------------------- | :------- | :------ | :---------- |
+| `case_sensitive`            | No       | boolean | Default case sensitivity for string filters across the project. When `false`, all string filters will be case insensitive by default. Defaults to `true`. |
+| `column_totals`             | No       | boolean | Default behavior for column totals in the explorer results table. When `false`, Lightdash skips the extra warehouse query that calculates column totals for new queries. Charts that explicitly enable "Show column totals" still calculate them. Defaults to `true`. |
+| `additional_time_intervals` | No       | Object  | Extra time intervals appended to the built-in defaults for `date` and `timestamp` dimensions that don't declare their own `time_intervals`. See [Additional time intervals](#additional-time-intervals) below. |
 
 
 ### Disabling column totals by default
@@ -286,6 +290,69 @@ models:
 
 <Info>
   See [Tables reference](/references/tables#case-sensitive) for explore-level configuration and [Dimensions reference](/references/dimensions#case-sensitive) for dimension-level configuration.
+</Info>
+
+
+### Additional time intervals
+
+By default, Lightdash exposes a fixed set of time intervals on date and timestamp dimensions:
+
+* **Date dimensions:** `DAY`, `WEEK`, `MONTH`, `QUARTER`, `YEAR`
+* **Timestamp dimensions:** `RAW`, `DAY`, `WEEK`, `MONTH`, `QUARTER`, `YEAR`
+
+The `additional_time_intervals` setting lets you append extra intervals (standard granularities or [custom granularity](#custom-granularities-configuration) keys) to those built-in defaults project-wide, so you don't have to repeat `time_intervals` on every column.
+
+```yaml
+defaults:
+  additional_time_intervals:
+    date:
+      - fiscal_quarter      # custom_granularities key
+    timestamp:
+      - HOUR                # standard granularity
+      - fiscal_quarter      # custom_granularities key
+```
+
+| Property    | Required | Value             | Description                                                                                                                                            |
+| :---------- | :------- | :---------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `date`      | No       | Array of strings  | Extra intervals appended to the date defaults. Values may be standard granularities or [custom granularity](#custom-granularities-configuration) keys. |
+| `timestamp` | No       | Array of strings  | Extra intervals appended to the timestamp defaults. Values may be standard granularities or custom granularity keys.                                   |
+
+**How it works:**
+
+* **Additive only** — the built-in defaults are always included; values listed here are appended after them and de-duplicated.
+* **Fallback-only** — if a dimension declares its own `time_intervals` in its model `.yml`, the per-column list wins and `additional_time_intervals` is ignored for that dimension.
+* **Validation** — values are validated once at project compile time. Standard granularities are accepted case-insensitively. Sub-day grains (`RAW`, `MILLISECOND`, `SECOND`, `MINUTE`, `HOUR`) are not valid under `date` and are dropped with a warning. Unknown names that don't match a standard grain or a defined `custom_granularities` key are also dropped with a warning.
+
+**Example**: Add `HOUR` to every timestamp dimension and a `fiscal_quarter` custom granularity to both:
+
+```yaml
+# lightdash.config.yml
+custom_granularities:
+  fiscal_quarter:
+    label: "Fiscal Quarter"
+    sql: "DATE_TRUNC('quarter', ${COLUMN} + INTERVAL '1 month')"
+    type: date
+
+defaults:
+  additional_time_intervals:
+    date: ['fiscal_quarter']
+    timestamp: ['HOUR', 'fiscal_quarter']
+```
+
+A column that overrides this default still works as before:
+
+```yaml
+# In your model yml file - this column ignores the project default
+columns:
+  - name: created_at
+    meta:
+      dimension:
+        type: timestamp
+        time_intervals: ['DAY', 'WEEK']  # explicit list wins
+```
+
+<Info>
+  See [Dimensions reference](/references/dimensions#time-intervals) for per-dimension configuration and the [Custom granularities](#custom-granularities-configuration) section below for defining custom granularity keys.
 </Info>
 
 
