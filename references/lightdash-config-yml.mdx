@@ -235,13 +235,17 @@ defaults:
   additional_time_intervals:
     date: ['fiscal_quarter']
     timestamp: ['HOUR']
+  granularity_labels:
+    week: "Week starting Monday"
 ```
 
-| Property                    | Required | Value   | Description |
-| :-------------------------- | :------- | :------ | :---------- |
-| `case_sensitive`            | No       | boolean | Default case sensitivity for string filters across the project. When `false`, all string filters will be case insensitive by default. Defaults to `true`. |
-| `column_totals`             | No       | boolean | Default behavior for column totals in the explorer results table. When `false`, Lightdash skips the extra warehouse query that calculates column totals for new queries. Charts that explicitly enable "Show column totals" still calculate them. Defaults to `true`. |
-| `additional_time_intervals` | No       | Object  | Extra time intervals appended to the built-in defaults for `date` and `timestamp` dimensions that don't declare their own `time_intervals`. See [Additional time intervals](#additional-time-intervals) below. |
+| Property                    | Required | Value                    | Description |
+| :-------------------------- | :------- | :----------------------- | :---------- |
+| `case_sensitive`            | No       | boolean                  | Default case sensitivity for string filters across the project. When `false`, all string filters will be case insensitive by default. Defaults to `true`. |
+| `column_totals`             | No       | boolean                  | Default behavior for column totals in the explorer results table. When `false`, Lightdash skips the extra warehouse query that calculates column totals for new queries. Charts that explicitly enable "Show column totals" still calculate them. Defaults to `true`. |
+| `additional_time_intervals` | No       | Object                   | Extra time intervals appended to the built-in defaults for `date` and `timestamp` dimensions that don't declare their own `time_intervals`. See [Additional time intervals](#additional-time-intervals) below. |
+| `granularity_labels`        | No       | Object (string → string) | Override the display label of standard granularities (e.g. `week`, `month`) project-wide. Applied to dimension labels in the Explorer, the Explorer sidebar tree, the date zoom dropdown, and chart axis labels. See [Granularity label overrides](#granularity-label-overrides) below. |
+
 
 
 ### Disabling column totals by default
@@ -354,6 +358,47 @@ columns:
 <Info>
   See [Dimensions reference](/references/dimensions#time-intervals) for per-dimension configuration and the [Custom granularities](#custom-granularities-configuration) section below for defining custom granularity keys.
 </Info>
+
+### Granularity label overrides
+
+The `granularity_labels` setting lets you replace how standard granularities are displayed across the project. This is useful when your business uses a non-default convention — for example, a week that starts on Monday — and you want the UI to reflect that everywhere a granularity is shown.
+
+```yaml
+defaults:
+  granularity_labels:
+    week: "Week starting Monday"
+    month: "Calendar month"
+```
+
+| Property                      | Required | Value  | Description                                                                                                                                  |
+| :---------------------------- | :------- | :----- | :------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<granularity>` (e.g. `week`) | No       | string | The full replacement label used for this grain wherever the grain name is shown. The configured string is used verbatim, not appended to the built-in name. |
+
+Supported keys are the standard Lightdash `TimeFrames` values, written in lowercase or uppercase, for example `week`, `month`, or `hour`. Unknown keys are ignored with a warning at project compile time.
+
+**Where the override is applied:**
+
+* **Explorer dimension labels** — the configured string replaces the built-in grain segment of the auto-generated dimension label. For example, with `week: "Week starting Monday"`, the `Order date Week` dimension becomes `Order date Week starting Monday`.
+* **Explorer sidebar tree** — the same relabeling is shown in the dimension tree.
+* **Date zoom dropdown** — the configured string is used verbatim as the option label (e.g. `Week starting Monday` instead of `Week`).
+* **Chart axis labels** — axis labels that reflect the active grain pick up the override automatically.
+
+**How it works:**
+
+* **Full replacement** — the configured string replaces the grain label outright. Provide the complete label you want users to see (e.g. `"Week starting Monday"`), not just a suffix.
+* **Standard granularities only** — to relabel non-standard time periods (e.g. fiscal quarters), define a [custom granularity](#custom-granularities-configuration) instead.
+* **Project-wide** — applies to every date and timestamp dimension in the project; there is no per-dimension override.
+
+**Example**: Make every weekly grain advertise its week-start convention:
+
+```yaml
+# lightdash.config.yml
+defaults:
+  granularity_labels:
+    week: "Week starting Monday"
+```
+
+With this config, a `created_at` timestamp dimension exposes `Created at Week starting Monday` in the Explorer, sidebar tree, and chart axis labels, and `Week starting Monday` appears in the date zoom dropdown.
 
 
 ## Custom granularities configuration
