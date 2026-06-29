@@ -76,16 +76,12 @@ This works because `sum` can be re-aggregated — summing daily sums gives the c
 
 ## Query matching
 
-When a user runs a query, Lightdash automatically checks if a pre-aggregate can serve the results. A pre-aggregate matches when **all** of the following are true:
+When a user runs a query, Lightdash checks whether a pre-aggregate can serve it first. A pre-aggregate matches when the query fits inside it on each axis:
 
-- Every dimension in the query is included in the pre-aggregate
-- Every metric in the query is included in the pre-aggregate
-- Every dimension used in **filters** is included in the pre-aggregate
-- If the pre-aggregate itself defines `filters`, the query must include an equivalent or narrower filter
-- All metrics use [supported metric types](#supported-metric-types)
-- The query does not contain raw SQL table calculations
-- The query does not use [Parameters](/references/lightdash-config-yml#parameters-configuration), [`sql_filter`](/references/tables#sql-filter-row-level-security), or [user attributes](/references/workspace/user-attributes) inside SQL
-- If the query uses a time dimension, the requested granularity must be **equal to or coarser** than the pre-aggregate's granularity
+- **Fields are available** — every dimension, metric, and filter dimension in the query exists somewhere in the pre-aggregate.
+- **Grain is reachable** — if the query uses a time dimension, its granularity is **equal or coarser** than the pre-aggregate's, so the rows can be rolled up. Month is a coarser grain than day. Day is a coarser grain than hour.
+- **Scope is compatible** — if the pre-aggregate defines its own `filters`, the query includes an **equal or narrower** filter, so the subset can be filtered from the pre-aggregate base.
+- **Metrics re-aggregate cleanly** — all metrics are [supported types](#supported-metric-types). No non-additive metrics (like `count distinct`, `median`, etc. which require recalculation per grouping) and nothing resolved at runtime (raw SQL table calculations, [`sql_filter`](/references/tables#sql-filter-row-level-security) metrics, or SQL dependent on [Parameters](/references/lightdash-config-yml#parameters-configuration) and [user attributes](/references/workspace/user-attributes)). These can't be faithfully re-computed from stored rows.
 
 <Tip>
   A **day** pre-aggregate serves `day`, `week`, `month`, `quarter`, and `year` queries. A **month** pre-aggregate serves `month`, `quarter`, and `year` — but **not** `day` or `week`, since those need finer-grained data.
