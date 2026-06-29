@@ -170,6 +170,7 @@ The table below shows all the dimension properties you can customize:
 | [colors](#color)  | No       | Object with `value`, `color`  | Color for the values in the chart |
 | [image](#image-display)  | No       | Object with `url`  | **[WIP]** Display images in table cells using URL templates. Supports LiquidJS templating for dynamic URLs. |
 | [case_sensitive](#case-sensitive) | No | boolean | If set to `false`, string filters on this dimension will be case insensitive. Defaults to `true`. Overrides explore-level setting. |
+| [filter_autocomplete](#filter-autocomplete) | No | Object with `values`, `fetch_from_warehouse` | Configure the filter autocomplete suggestions for this dimension. Provide a static list of `values` (with optional display `label`s) and/or disable warehouse-based autocomplete by setting `fetch_from_warehouse: false`. |
 | [tags](#tags) | No | string[] | An array of string tags for categorizing and filtering dimensions programmatically. Tags can be used by AI agents, API filters, and other backend workflows. |
 | [convert_timezone](#convert-timezone) | No | boolean | **[Experimental]** If set to `false`, the dimension opts out of the project query timezone for display, grouping, and extracts - the raw warehouse value is rendered instead. Defaults to `true`. Has no effect unless a project query timezone is set. |
 
@@ -1664,6 +1665,109 @@ So with `case_sensitive: false`, filtering for `john` would match `John`, `JOHN`
 <Info>
   Dimension-level `case_sensitive` settings override explore-level and project-level settings. See [Tables reference](/references/tables#case-sensitive) for explore-level configuration and [lightdash.config.yml reference](/references/lightdash-config-yml#defaults-configuration) for project-level defaults.
 </Info>
+
+
+## Filter autocomplete
+
+You can customize the suggestions users see when filtering on a dimension. This is useful when you want to:
+
+- Provide a curated, static list of suggested values (with optional human-friendly labels) instead of relying solely on values from your warehouse.
+- Disable the live warehouse lookup for autocomplete to reduce warehouse queries on dimensions with very high cardinality or sensitive values.
+
+### Properties
+
+| Property | Required | Value | Description |
+| :------- | :------- | :---- | :---------- |
+| values | No | Array of `value`, `label` | A static list of suggested filter values. `value` is the raw value used in the filter; `label` is the optional display name shown in the autocomplete dropdown. Duplicate `value`s are ignored (the first occurrence wins). |
+| fetch_from_warehouse | No | boolean | If set to `false`, Lightdash won't query the warehouse for autocomplete suggestions on this dimension. Defaults to `true`. |
+
+### Static suggested values with labels
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: status
+        description: 'Subscription status'
+        meta:
+          dimension:
+            filter_autocomplete:
+              values:
+                - value: 'active'
+                  label: 'Active customer'
+                - value: 'trial'
+                  label: 'Trial'
+                - value: 'churned'
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    columns:
+      - name: status
+        description: 'Subscription status'
+        config:
+          meta:
+            dimension:
+              filter_autocomplete:
+                values:
+                  - value: 'active'
+                    label: 'Active customer'
+                  - value: 'trial'
+                    label: 'Trial'
+                  - value: 'churned'
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: status
+        description: 'Subscription status'
+        filter_autocomplete:
+          values:
+            - value: 'active'
+              label: 'Active customer'
+            - value: 'trial'
+              label: 'Trial'
+            - value: 'churned'
+    ```
+  </Tab>
+</Tabs>
+
+### Disabling warehouse autocomplete
+
+Set `fetch_from_warehouse: false` to stop Lightdash from querying your warehouse for autocomplete suggestions on this dimension. Users can still type values manually; if you also provide `values`, those will be shown as suggestions.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: customer_email
+        meta:
+          dimension:
+            filter_autocomplete:
+              fetch_from_warehouse: false
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    columns:
+      - name: customer_email
+        config:
+          meta:
+            dimension:
+              filter_autocomplete:
+                fetch_from_warehouse: false
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: customer_email
+        filter_autocomplete:
+          fetch_from_warehouse: false
+    ```
+  </Tab>
+</Tabs>
 
 
 ## Image Display
