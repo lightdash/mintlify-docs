@@ -36,10 +36,12 @@ the provider with the `SANDBOX_PROVIDER` environment variable.
 | Provider | `SANDBOX_PROVIDER` | Use for | Isolation |
 | --- | --- | --- | --- |
 | **E2B** (default) | `e2b` | Production / managed | microVM |
+| **AWS Lambda MicroVMs** | `lambda-microvm` | Production on AWS (self-hosted) | microVM |
 | **Local Docker** | `docker` | Local development only | container |
 
-More providers (Kubernetes, ECS, microVM-based) are planned, but **E2B is the only
-supported production backend today**.
+Both **E2B** and **AWS Lambda MicroVMs** are supported production backends. E2B is
+the managed default; Lambda MicroVMs is for teams who want sandboxes to run inside
+their own AWS account. More providers (Kubernetes, ECS) are planned.
 
 <Warning>
 The **local Docker provider is for development only**. It launches plain Docker containers
@@ -71,6 +73,57 @@ E2B_TEMPLATE_TAG=<lightdash-version>             # defaults to your Lightdash ve
 E2B_AI_WRITEBACK_TEMPLATE_NAME=lightdash/lightdash-ai-writeback
 E2B_AI_WRITEBACK_TEMPLATE_TAG=<lightdash-version>
 ```
+
+## AWS Lambda MicroVMs (self-hosted production)
+
+AWS Lambda MicroVMs run each sandbox as a Firecracker microVM **inside your own AWS
+account**, so untrusted agent code and your repository contents never leave your
+infrastructure. Like E2B, each microVM is a true microVM with native
+suspend/resume — Lightdash suspends a sandbox between turns and AWS keeps its
+memory snapshot, so a conversation resumes in about a second with no object storage
+involved.
+
+Use this provider when you want production-grade isolation but need the sandboxes
+to stay within your AWS boundary.
+
+```bash
+SANDBOX_PROVIDER=lambda-microvm
+ANTHROPIC_API_KEY=sk-ant-...   # the agent (Claude Code) runs inside the microVM
+
+# Region the microVMs run in (defaults to eu-west-1, the EU launch region)
+LAMBDA_MICROVM_REGION=eu-west-1
+
+# Container image ARNs the microVMs boot from — one per feature, built by your
+# image pipeline and pushed to ECR. Required.
+LAMBDA_MICROVM_DATA_APP_IMAGE_ARN=arn:aws:ecr:...:repository/lightdash-data-app
+LAMBDA_MICROVM_AI_WRITEBACK_IMAGE_ARN=arn:aws:ecr:...:repository/lightdash-ai-writeback
+```
+
+The backend uses its ambient AWS credentials (instance role / IRSA / standard SDK
+credential chain) to call the Lambda MicroVMs control plane, so no access keys are
+configured here.
+
+### Optional networking and IAM
+
+These default to AWS's managed open connectors and an empty execution role, which
+is enough to get started. Override them to tighten the network boundary or to give
+the microVM an IAM role:
+
+```bash
+# IAM role the microVM assumes (e.g. to pull from a private ECR or reach AWS APIs)
+LAMBDA_MICROVM_EXECUTION_ROLE_ARN=arn:aws:iam::...:role/lightdash-sandbox
+
+# Network connectors. Default to AWS-managed open ingress/egress; point these at
+# your own VPC connectors to constrain traffic.
+LAMBDA_MICROVM_INGRESS_CONNECTOR_ARN=arn:aws:lambda:<region>:aws:network-connector:aws-network-connector:ALL_INGRESS
+LAMBDA_MICROVM_EGRESS_CONNECTOR_ARN=arn:aws:lambda:<region>:aws:network-connector:aws-network-connector:INTERNET_EGRESS
+```
+
+<Note>
+With the default `INTERNET_EGRESS` connector the microVM has open outbound access,
+so the per-sandbox egress allowlist is not enforced. Supply a custom VPC egress
+connector to constrain where sandboxes can reach.
+</Note>
 
 ## Local Docker provider (development)
 
@@ -122,29 +175,37 @@ images are used (different toolchains), mirroring the two E2B templates:
 
 ## Snapshot lifecycle
 
-Two timers control how long sandboxes live:
+Every turn suspends its own sandbox, so in steady state nothing sits idle. For the
+**Lambda MicroVMs** provider, two timers configure the AWS-side idle policy as a
+backstop — when to auto-suspend a sandbox left running and when to auto-terminate a
+suspended one:
 
 ```bash
-SANDBOX_IDLE_TIMEOUT_MS=1800000        # suspend a running-but-idle sandbox (default 30 min)
-SANDBOX_SNAPSHOT_RETENTION_MS=604800000 # keep a suspended snapshot resumable (default 7 days)
+SANDBOX_IDLE_TIMEOUT_MS=1800000        # auto-suspend a running-but-idle microVM (default 30 min)
+SANDBOX_SNAPSHOT_RETENTION_MS=604800000 # auto-terminate a suspended microVM (default 7 days); also how long a thread stays resumable
 ```
 
-In steady state every turn suspends its own sandbox, so the idle timeout is just a safety
-net for crashes. The retention window controls how long a conversation thread can be resumed
-before its snapshot is garbage-collected.
+These are read only by the Lambda MicroVMs provider. **E2B** manages idle sandboxes
+itself, and the **Docker** dev provider has no idle handling.
 
 ## Environment variable reference
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `SANDBOX_PROVIDER` | `e2b` | Sandbox backend: `e2b` or `docker`. |
+| `SANDBOX_PROVIDER` | `e2b` | Sandbox backend: `e2b`, `lambda-microvm`, or `docker`. |
 | `ANTHROPIC_API_KEY` | — | API key for the Claude Code agent running inside the sandbox. |
 | `E2B_API_KEY` | — | E2B API key (required when `SANDBOX_PROVIDER=e2b`). |
 | `E2B_TEMPLATE_NAME` | `lightdash/lightdash-data-app` | E2B template for data app sandboxes. |
 | `E2B_TEMPLATE_TAG` | Lightdash version | Tag of the data app template to launch. |
 | `E2B_AI_WRITEBACK_TEMPLATE_NAME` | `lightdash/lightdash-ai-writeback` | E2B template for writeback sandboxes. |
 | `E2B_AI_WRITEBACK_TEMPLATE_TAG` | Lightdash version | Tag of the writeback template to launch. |
+| `LAMBDA_MICROVM_REGION` | `eu-west-1` | AWS region the microVMs run in (`lambda-microvm`). |
+| `LAMBDA_MICROVM_DATA_APP_IMAGE_ARN` | — | Image ARN for data app microVMs (required when `SANDBOX_PROVIDER=lambda-microvm`). |
+| `LAMBDA_MICROVM_AI_WRITEBACK_IMAGE_ARN` | — | Image ARN for writeback microVMs (required when `SANDBOX_PROVIDER=lambda-microvm`). |
+| `LAMBDA_MICROVM_EXECUTION_ROLE_ARN` | — | Optional IAM role the microVM assumes. |
+| `LAMBDA_MICROVM_INGRESS_CONNECTOR_ARN` | AWS-managed `ALL_INGRESS` | Optional ingress network connector. |
+| `LAMBDA_MICROVM_EGRESS_CONNECTOR_ARN` | AWS-managed `INTERNET_EGRESS` | Optional egress network connector. |
 | `SANDBOX_DOCKER_IMAGE` | `lightdash-sandbox:local` | Local image for data app sandboxes (`docker` provider). |
 | `SANDBOX_AI_WRITEBACK_DOCKER_IMAGE` | `lightdash-ai-writeback:local` | Local image for writeback sandboxes (`docker` provider). |
-| `SANDBOX_IDLE_TIMEOUT_MS` | `1800000` (30 min) | How long a running sandbox can be idle before it's suspended. |
-| `SANDBOX_SNAPSHOT_RETENTION_MS` | `604800000` (7 days) | How long a suspended snapshot stays resumable before it's GC'd. |
+| `SANDBOX_IDLE_TIMEOUT_MS` | `1800000` (30 min) | Lambda MicroVMs idle policy: auto-suspend a running-but-idle microVM. Ignored by `e2b`/`docker`. |
+| `SANDBOX_SNAPSHOT_RETENTION_MS` | `604800000` (7 days) | Lambda MicroVMs idle policy: auto-terminate a suspended microVM (also how long a thread stays resumable). Ignored by `e2b`/`docker`. |
