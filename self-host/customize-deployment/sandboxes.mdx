@@ -78,13 +78,11 @@ E2B_AI_WRITEBACK_TEMPLATE_TAG=<lightdash-version>
 
 AWS Lambda MicroVMs run each sandbox as a Firecracker microVM **inside your own AWS
 account**, so untrusted agent code and your repository contents never leave your
-infrastructure. Like E2B, each microVM is a true microVM with native
-suspend/resume — Lightdash suspends a sandbox between turns and AWS keeps its
-memory snapshot, so a conversation resumes in about a second with no object storage
-involved.
+infrastructure.
 
-Use this provider when you want production-grade isolation but need the sandboxes
-to stay within your AWS boundary.
+This is the **recommended sandbox provider for customers deploying Lightdash on AWS** —
+it keeps the sandbox boundary inside your existing AWS account and avoids sending agent
+workloads or repository contents to a third-party service.
 
 ```bash
 SANDBOX_PROVIDER=lambda-microvm
@@ -103,27 +101,29 @@ The backend uses its ambient AWS credentials (instance role / IRSA / standard SD
 credential chain) to call the Lambda MicroVMs control plane, so no access keys are
 configured here.
 
-### Optional networking and IAM
+### Networking and IAM
 
-These default to AWS's managed open connectors and an empty execution role, which
-is enough to get started. Override them to tighten the network boundary or to give
-the microVM an IAM role:
+<Warning>
+**Configure the network connectors before going to production.** The AWS-managed
+defaults give the microVM open inbound and outbound access, which means untrusted
+agent code can reach the public internet from inside your AWS account. We currently
+recommend pointing the egress connector at a VPC connector that has **no outbound
+access by default**, and only opening up the destinations the agent actually needs
+(your dbt repository host, the Anthropic / Bedrock API, your ECR registry).
+</Warning>
+
+Override these to tighten the network boundary or to give the microVM an IAM role:
 
 ```bash
 # IAM role the microVM assumes (e.g. to pull from a private ECR or reach AWS APIs)
 LAMBDA_MICROVM_EXECUTION_ROLE_ARN=arn:aws:iam::...:role/lightdash-sandbox
 
 # Network connectors. Default to AWS-managed open ingress/egress; point these at
-# your own VPC connectors to constrain traffic.
+# your own VPC connectors to constrain traffic. We strongly recommend an egress
+# connector that denies outbound traffic by default.
 LAMBDA_MICROVM_INGRESS_CONNECTOR_ARN=arn:aws:lambda:<region>:aws:network-connector:aws-network-connector:ALL_INGRESS
 LAMBDA_MICROVM_EGRESS_CONNECTOR_ARN=arn:aws:lambda:<region>:aws:network-connector:aws-network-connector:INTERNET_EGRESS
 ```
-
-<Note>
-With the default `INTERNET_EGRESS` connector the microVM has open outbound access,
-so the per-sandbox egress allowlist is not enforced. Supply a custom VPC egress
-connector to constrain where sandboxes can reach.
-</Note>
 
 ## Local Docker provider (development)
 
