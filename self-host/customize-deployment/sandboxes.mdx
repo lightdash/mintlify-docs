@@ -84,54 +84,28 @@ This is the **recommended sandbox provider for customers deploying Lightdash on 
 it keeps the sandbox boundary inside your existing AWS account and avoids sending agent
 workloads or repository contents to a third-party service.
 
-<Warning>
-Unlike E2B — where Lightdash publishes and hosts the sandbox templates for you — the
-Lambda MicroVMs path is **self-provisioned in your own AWS account**. Lightdash ships
-the sandbox **Dockerfiles**; you build the images from them and create the AWS resources
-below, in the region the microVMs run. There's nothing for Lightdash to host on your
-behalf — the images and the registered MicroVM images live in your account.
-</Warning>
-
 ### Prerequisites
 
-Create these once per region, in the AWS account the backend runs against (the
-[`build-microvm-image.sh`](#building-the-images) helper provisions them for you, or
-provision them with your own IaC):
+Provision these with your own IaC, in the **same AWS account and region your Lightdash
+backend already runs in**:
 
-- **An ECR repository** to hold the sandbox images (one image each for data apps and AI
-  writeback — they bundle different toolchains).
-- **A registered Lambda MicroVM image per feature.** Built on the AWS-managed base image
-  (`arn:aws:lambda:<region>:aws:microvm-image:al2023-1`) with your sandbox image and the
-  exec agent layered on, **ARM_64 / Graviton**, 4 GB memory (→16 GB disk), and the
-  agent's **`/ready` build hook on port 8080**. Registering each one yields the **image
-  ARN** you set in the config below.
-- **A build IAM role** that trusts `lambda.amazonaws.com` — the MicroVM image build
-  assumes it to pull your ECR image and read the staged build context.
-- **An S3 bucket** to stage the build context for image registration.
-- **Control-plane IAM permissions on the backend's role** — the running backend calls
-  `RunMicrovm`, `GetMicrovm`, `SuspendMicrovm`, `ResumeMicrovm`, `TerminateMicrovm`, and
+- **Two MicroVM images** — one for data app generation and one for AI writeback (they
+  bundle different toolchains). Build them from the Dockerfiles in the Lightdash repo
+  (`sandboxes/data-apps/`, `sandboxes/ai-writeback/`, and the exec agent in
+  `sandboxes/microvm-agent/`), push them to ECR, and register each as a Lambda MicroVM
+  image on the AWS-managed `al2023` base — `ARM_64`, 4 GB memory, with the agent's
+  `/ready` hook on port 8080. Each registration returns an **image ARN** for the config
+  below.
+- **Control-plane permissions on your backend's existing IAM role** — add `RunMicrovm`,
+  `GetMicrovm`, `SuspendMicrovm`, `ResumeMicrovm`, `TerminateMicrovm`, and
   `CreateMicrovmAuthToken`.
 
-### Building the images
-
-The sandbox image definitions live in the Lightdash repo — `sandboxes/data-apps/` and
-`sandboxes/ai-writeback/` (the same Dockerfiles used for E2B and local Docker), plus the
-in-microVM exec agent in `sandboxes/microvm-agent/`. Build each image, push it to your
-ECR, then register it as a MicroVM image with the settings above.
-
-The repo includes a reference script that does the whole flow end-to-end (build → push →
-register → print ARN), and is the simplest way to get started or to see exactly how the
-resources fit together:
-
-```bash
-# From a checkout of the Lightdash repo, in sandboxes/microvm-agent/,
-# with Docker running and AWS credentials for the target account:
-./build-microvm-image.sh data-app      # -> prints LAMBDA_MICROVM_DATA_APP_IMAGE_ARN
-./build-microvm-image.sh writeback     # -> prints LAMBDA_MICROVM_AI_WRITEBACK_IMAGE_ARN
-```
-
-Re-run (or rebuild) when you upgrade Lightdash so the sandbox toolchain matches your
-version.
+<Note>
+Registering an image uses AWS's `create-microvm-image`, which needs a build role (trusting
+`lambda.amazonaws.com`) and an S3 location to stage the build context. These are
+**build-time only** — not the S3 bucket Lightdash already uses for results and snapshots,
+and the backend never touches them at runtime.
+</Note>
 
 ### Configure the provider
 
@@ -142,7 +116,7 @@ ANTHROPIC_API_KEY=sk-ant-...   # the agent (Claude Code) runs inside the microVM
 # Region the microVMs run in (defaults to eu-west-1, the EU launch region)
 LAMBDA_MICROVM_REGION=eu-west-1
 
-# The image ARNs from registering the MicroVM images above. Required.
+# The image ARNs from registering the two MicroVM images above. Required.
 LAMBDA_MICROVM_DATA_APP_IMAGE_ARN=arn:aws:lambda:<region>:<account>:microvm-image/...
 LAMBDA_MICROVM_AI_WRITEBACK_IMAGE_ARN=arn:aws:lambda:<region>:<account>:microvm-image/...
 ```
