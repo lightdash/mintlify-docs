@@ -37,11 +37,13 @@ the provider with the `SANDBOX_PROVIDER` environment variable.
 | --- | --- | --- | --- |
 | **E2B** (default) | `e2b` | Production / managed | microVM |
 | **AWS Lambda MicroVMs** | `lambda-microvm` | Production on AWS (self-hosted) | microVM |
+| **Azure Container Apps dynamic sessions** | `azure-container-sessions` | Production on Azure (self-hosted) | Hyper-V-isolated container |
 | **Local Docker** | `docker` | Local development only | container |
 
-Both **E2B** and **AWS Lambda MicroVMs** are supported production backends. E2B is
-the managed default; Lambda MicroVMs is for teams who want sandboxes to run inside
-their own AWS account. More providers (Kubernetes, ECS) are planned.
+**E2B**, **AWS Lambda MicroVMs**, and **Azure Container Apps dynamic sessions** are all
+supported production backends. E2B is the managed default; the AWS and Azure providers are
+for teams who want sandboxes to run inside their own cloud account. More providers
+(Kubernetes, ECS) are planned.
 
 <Warning>
 The **local Docker provider is for development only**. It launches plain Docker containers
@@ -151,6 +153,76 @@ LAMBDA_MICROVM_INGRESS_CONNECTOR_ARN=arn:aws:lambda:<region>:aws:network-connect
 LAMBDA_MICROVM_EGRESS_CONNECTOR_ARN=arn:aws:lambda:<region>:aws:network-connector:aws-network-connector:INTERNET_EGRESS
 ```
 
+## Azure Container Apps dynamic sessions (self-hosted production)
+
+Azure Container Apps [dynamic sessions](https://learn.microsoft.com/azure/container-apps/sessions)
+run each sandbox as a Hyper-V-isolated custom container **inside your own Azure subscription**,
+so untrusted agent code and your repository contents never leave your infrastructure. Sessions
+are allocated on demand from a warm pool and reached through the pool's management endpoint —
+your backend authenticates to it with a short-lived Microsoft Entra token, so no session ever
+has a public, unauthenticated ingress.
+
+This is the **recommended sandbox provider for customers deploying Lightdash on Azure** —
+it keeps the sandbox boundary inside your existing Azure subscription and avoids sending agent
+workloads or repository contents to a third-party service. It pairs naturally with AKS via
+[workload identity](https://learn.microsoft.com/azure/aks/workload-identity-overview).
+
+<Note>
+Dynamic sessions have no native memory snapshot, so this provider suspends a sandbox by tarring
+its workspace to **S3-compatible object storage** (the same bucket Lightdash already uses) and
+destroying the session, then restores it on the next turn. Object storage is therefore required —
+see [external object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage).
+</Note>
+
+### Prerequisites
+
+Provision these with your own IaC, in the **same Azure subscription your Lightdash backend
+runs in**:
+
+- **Two session-pool container images** — one for data app generation and one for AI writeback
+  (they bundle different toolchains). Build them from the Dockerfiles in the Lightdash repo
+  (`sandboxes/data-apps/`, `sandboxes/ai-writeback/`, and the exec agent in
+  `sandboxes/microvm-agent/`) for `linux/amd64`, and push them to a registry the pool can pull
+  (e.g. Azure Container Registry).
+- **A workload-profile Container Apps environment**, and **two custom-container dynamic
+  session pools** in it (one per image), each with its **ingress target port set to `8080`**
+  (the exec agent's port). Custom-container sessions require a workload-profile environment —
+  a Consumption-only environment is rejected. Each pool exposes a **pool management endpoint**
+  for the config below.
+- **A managed identity** assigned to each pool, granted the built-in **Azure ContainerApps
+  Session Executor** role on the pool. Your backend authenticates as this identity (via workload
+  identity on AKS, or any credential `DefaultAzureCredential` resolves) to allocate and drive
+  sessions — so no client secret is configured.
+
+### Configure the provider
+
+```bash
+SANDBOX_PROVIDER=azure-container-sessions
+ANTHROPIC_API_KEY=sk-ant-...   # the agent (Claude Code) runs inside the session
+
+# The pool management endpoints for the two session pools above. Required.
+AZURE_CONTAINER_SESSIONS_DATA_APP_POOL_ENDPOINT=https://<pool>.<env>.<region>.azurecontainerapps.io
+AZURE_CONTAINER_SESSIONS_AI_WRITEBACK_POOL_ENDPOINT=https://<pool>.<env>.<region>.azurecontainerapps.io
+```
+
+The backend authenticates to the dynamic-sessions data plane with `DefaultAzureCredential`, so
+no keys or secrets are set here — grant the backend's identity the **Azure ContainerApps Session
+Executor** role on each pool instead. In AKS, this is a user-assigned managed identity federated
+to the backend's service account via workload identity.
+
+<Note>
+Both `AZURE_CONTAINER_SESSIONS_API_VERSION` (dynamic-sessions data-plane API version) and
+`AZURE_CONTAINER_SESSIONS_TOKEN_SCOPE` (the Entra token scope) have sensible defaults and
+rarely need to be set.
+</Note>
+
+### Networking
+
+Constrain a session's outbound access on the **pool's own configuration** (its egress settings /
+the environment's network), not in Lightdash. As with any sandbox provider, we recommend denying
+outbound traffic by default and only allowing the destinations the agent needs (your dbt
+repository host, the Anthropic / Azure OpenAI API, your container registry).
+
 ## Local Docker provider (development)
 
 For local development you can run sandboxes as plain Docker containers on your own machine
@@ -212,13 +284,15 @@ SANDBOX_SNAPSHOT_RETENTION_MS=604800000 # auto-terminate a suspended microVM (de
 ```
 
 These are read only by the Lambda MicroVMs provider. **E2B** manages idle sandboxes
-itself, and the **Docker** dev provider has no idle handling.
+itself; **Azure Container Apps dynamic sessions** are reclaimed by the session pool's own
+cooldown lifecycle (configured on the pool) and lose nothing, since the snapshot lives in
+object storage; and the **Docker** dev provider has no idle handling.
 
 ## Environment variable reference
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `SANDBOX_PROVIDER` | `e2b` | Sandbox backend: `e2b`, `lambda-microvm`, or `docker`. |
+| `SANDBOX_PROVIDER` | `e2b` | Sandbox backend: `e2b`, `lambda-microvm`, `azure-container-sessions`, or `docker`. |
 | `ANTHROPIC_API_KEY` | — | API key for the Claude Code agent running inside the sandbox. |
 | `E2B_API_KEY` | — | E2B API key (required when `SANDBOX_PROVIDER=e2b`). |
 | `E2B_TEMPLATE_NAME` | `lightdash/lightdash-data-app` | E2B template for data app sandboxes. |
@@ -231,7 +305,11 @@ itself, and the **Docker** dev provider has no idle handling.
 | `LAMBDA_MICROVM_EXECUTION_ROLE_ARN` | — | Optional IAM role the microVM assumes. |
 | `LAMBDA_MICROVM_INGRESS_CONNECTOR_ARN` | AWS-managed `ALL_INGRESS` | Optional ingress network connector. |
 | `LAMBDA_MICROVM_EGRESS_CONNECTOR_ARN` | AWS-managed `INTERNET_EGRESS` | Optional egress network connector. |
+| `AZURE_CONTAINER_SESSIONS_DATA_APP_POOL_ENDPOINT` | — | Pool management endpoint for data app sessions (required when `SANDBOX_PROVIDER=azure-container-sessions`). |
+| `AZURE_CONTAINER_SESSIONS_AI_WRITEBACK_POOL_ENDPOINT` | — | Pool management endpoint for writeback sessions (required when `SANDBOX_PROVIDER=azure-container-sessions`). |
+| `AZURE_CONTAINER_SESSIONS_API_VERSION` | `2025-02-02-preview` | Dynamic-sessions data-plane API version. |
+| `AZURE_CONTAINER_SESSIONS_TOKEN_SCOPE` | `https://dynamicsessions.io/.default` | Microsoft Entra token scope for the dynamic-sessions data plane. |
 | `SANDBOX_DOCKER_IMAGE` | `lightdash-sandbox:local` | Local image for data app sandboxes (`docker` provider). |
 | `SANDBOX_AI_WRITEBACK_DOCKER_IMAGE` | `lightdash-ai-writeback:local` | Local image for writeback sandboxes (`docker` provider). |
-| `SANDBOX_IDLE_TIMEOUT_MS` | `1800000` (30 min) | Lambda MicroVMs idle policy: auto-suspend a running-but-idle microVM. Ignored by `e2b`/`docker`. |
-| `SANDBOX_SNAPSHOT_RETENTION_MS` | `604800000` (7 days) | Lambda MicroVMs idle policy: auto-terminate a suspended microVM (also how long a thread stays resumable). Ignored by `e2b`/`docker`. |
+| `SANDBOX_IDLE_TIMEOUT_MS` | `1800000` (30 min) | Lambda MicroVMs idle policy: auto-suspend a running-but-idle microVM. Ignored by `e2b`/`azure-container-sessions`/`docker`. |
+| `SANDBOX_SNAPSHOT_RETENTION_MS` | `604800000` (7 days) | Lambda MicroVMs idle policy: auto-terminate a suspended microVM (also how long a thread stays resumable). Ignored by `e2b`/`azure-container-sessions`/`docker`. |
