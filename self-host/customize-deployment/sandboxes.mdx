@@ -37,11 +37,13 @@ the provider with the `SANDBOX_PROVIDER` environment variable.
 | --- | --- | --- | --- |
 | **E2B** (default) | `e2b` | Production / managed | microVM |
 | **AWS Lambda MicroVMs** | `lambda-microvm` | Production on AWS (self-hosted) | microVM |
+| **Azure Container Apps Sandboxes** | `azure-sandboxes` | Production on Azure (self-hosted) | microVM |
 | **Local Docker** | `docker` | Local development only | container |
 
-Both **E2B** and **AWS Lambda MicroVMs** are supported production backends. E2B is
-the managed default; Lambda MicroVMs is for teams who want sandboxes to run inside
-their own AWS account. More providers (Kubernetes, ECS) are planned.
+**E2B**, **AWS Lambda MicroVMs**, and **Azure Container Apps Sandboxes** are all supported
+production backends. E2B is the managed default; the AWS and Azure providers are for teams
+who want sandboxes to run inside their own cloud account. More providers (Kubernetes, ECS)
+are planned.
 
 <Warning>
 The **local Docker provider is for development only**. It launches plain Docker containers
@@ -151,6 +153,69 @@ LAMBDA_MICROVM_INGRESS_CONNECTOR_ARN=arn:aws:lambda:<region>:aws:network-connect
 LAMBDA_MICROVM_EGRESS_CONNECTOR_ARN=arn:aws:lambda:<region>:aws:network-connector:aws-network-connector:INTERNET_EGRESS
 ```
 
+## Azure Container Apps Sandboxes (self-hosted production)
+
+[Azure Container Apps Sandboxes](https://learn.microsoft.com/azure/container-apps/sandboxes-overview)
+run each sandbox as an isolated, microVM-class environment **inside your own Azure
+subscription**, so untrusted agent code and your repository contents never leave your
+infrastructure. Sandboxes have **native suspend/resume** (a full memory + disk snapshot
+with sub-second restore), which is what keeps multi-turn agent conversations fast.
+
+This is the **recommended sandbox provider for customers deploying Lightdash on Azure** —
+it keeps the sandbox boundary inside your existing Azure tenant and avoids sending agent
+workloads or repository contents to a third-party service.
+
+<Note>
+Azure Container Apps Sandboxes is currently an Azure **preview** feature. It requires a
+Microsoft Entra ID account (personal Microsoft accounts aren't supported), and its API
+surface may change while in preview.
+</Note>
+
+### Prerequisites
+
+Provision these in the **same Azure subscription and region your Lightdash backend runs
+in**, using the [`aca` CLI](https://aka.ms/aca/sandboxes/dev) or the
+[Sandboxes portal](https://aka.ms/aca/sandboxes/portal):
+
+- **A sandbox group per feature** — one for data app generation and one for AI writeback
+  (they bundle different toolchains). A sandbox group (`Microsoft.App/SandboxGroups`) is the
+  management boundary that holds a feature's sandboxes and disk image. Give each group a
+  **Memory-mode auto-suspend** lifecycle policy so idle sandboxes snapshot and scale to zero.
+- **A disk image per group** — build the two images from the Dockerfiles in the Lightdash
+  repo (`sandboxes/data-apps/`, `sandboxes/ai-writeback/`), push them to a container registry
+  (e.g. Azure Container Registry), and register each as a disk image in its sandbox group.
+  Registration returns a disk image **ID** for the config below. (Unlike the AWS provider,
+  there is no in-VM agent to build — Sandboxes expose a native command/file API.)
+- **A workload identity with the data-plane role** — grant your backend's managed identity
+  the **Container Apps SandboxGroup Data Owner** role on each sandbox group. Lightdash uses
+  `DefaultAzureCredential` (workload identity on AKS, or the standard Azure credential chain)
+  to authenticate — **no client secret is configured here**.
+
+### Configure the provider
+
+```bash
+SANDBOX_PROVIDER=azure-sandboxes
+ANTHROPIC_API_KEY=sk-ant-...   # the agent (Claude Code) runs inside the sandbox
+
+# Where your sandbox groups live
+AZURE_SANDBOXES_SUBSCRIPTION_ID=<subscription-id>
+AZURE_SANDBOXES_RESOURCE_GROUP=<resource-group>
+AZURE_SANDBOXES_REGION=eastus2
+
+# Per-feature sandbox group + disk image ID (from the prerequisites above). Required.
+AZURE_SANDBOXES_DATA_APP_GROUP=lightdash-data-app
+AZURE_SANDBOXES_DATA_APP_DISK_IMAGE=<data-app-disk-image-id>
+AZURE_SANDBOXES_AI_WRITEBACK_GROUP=lightdash-writeback
+AZURE_SANDBOXES_AI_WRITEBACK_DISK_IMAGE=<writeback-disk-image-id>
+
+# Optional — sandbox size (XS/S/M/L, default M)
+AZURE_SANDBOXES_RESOURCE_TIER=M
+```
+
+Egress is locked down automatically: each sandbox launches with a **default-deny egress
+policy** that only allows the hosts the agent needs (the Anthropic API and your git host),
+enforced natively by the platform.
+
 ## Local Docker provider (development)
 
 For local development you can run sandboxes as plain Docker containers on your own machine
@@ -201,24 +266,26 @@ images are used (different toolchains), mirroring the two E2B templates:
 
 ## Snapshot lifecycle
 
-Every turn suspends its own sandbox, so in steady state nothing sits idle. For the
-**Lambda MicroVMs** provider, two timers configure the AWS-side idle policy as a
-backstop — when to auto-suspend a sandbox left running and when to auto-terminate a
-suspended one:
+Every turn suspends its own sandbox, so in steady state nothing sits idle. Two timers
+configure the cloud-side idle policy as a backstop — when to auto-suspend a sandbox left
+running and when to auto-terminate a suspended one:
 
 ```bash
-SANDBOX_IDLE_TIMEOUT_MS=1800000        # auto-suspend a running-but-idle microVM (default 30 min)
+SANDBOX_IDLE_TIMEOUT_MS=1800000        # auto-suspend a running-but-idle sandbox (default 30 min)
 SANDBOX_SNAPSHOT_RETENTION_MS=604800000 # auto-terminate a suspended microVM (default 7 days); also how long a thread stays resumable
 ```
 
-These are read only by the Lambda MicroVMs provider. **E2B** manages idle sandboxes
-itself, and the **Docker** dev provider has no idle handling.
+`SANDBOX_IDLE_TIMEOUT_MS` feeds the auto-suspend policy on both the **Lambda MicroVMs** and
+**Azure Sandboxes** providers (for Azure it sets each sandbox's Memory-mode auto-suspend
+interval). `SANDBOX_SNAPSHOT_RETENTION_MS` is read only by Lambda MicroVMs — on Azure,
+suspended-sandbox retention is governed by the sandbox group's own auto-delete policy.
+**E2B** manages idle sandboxes itself, and the **Docker** dev provider has no idle handling.
 
 ## Environment variable reference
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `SANDBOX_PROVIDER` | `e2b` | Sandbox backend: `e2b`, `lambda-microvm`, or `docker`. |
+| `SANDBOX_PROVIDER` | `e2b` | Sandbox backend: `e2b`, `lambda-microvm`, `azure-sandboxes`, or `docker`. |
 | `ANTHROPIC_API_KEY` | — | API key for the Claude Code agent running inside the sandbox. |
 | `E2B_API_KEY` | — | E2B API key (required when `SANDBOX_PROVIDER=e2b`). |
 | `E2B_TEMPLATE_NAME` | `lightdash/lightdash-data-app` | E2B template for data app sandboxes. |
@@ -231,7 +298,17 @@ itself, and the **Docker** dev provider has no idle handling.
 | `LAMBDA_MICROVM_EXECUTION_ROLE_ARN` | — | Optional IAM role the microVM assumes. |
 | `LAMBDA_MICROVM_INGRESS_CONNECTOR_ARN` | AWS-managed `ALL_INGRESS` | Optional ingress network connector. |
 | `LAMBDA_MICROVM_EGRESS_CONNECTOR_ARN` | AWS-managed `INTERNET_EGRESS` | Optional egress network connector. |
+| `AZURE_SANDBOXES_SUBSCRIPTION_ID` | — | Azure subscription holding the sandbox groups (required when `SANDBOX_PROVIDER=azure-sandboxes`). |
+| `AZURE_SANDBOXES_RESOURCE_GROUP` | — | Resource group holding the sandbox groups (required when `azure-sandboxes`). |
+| `AZURE_SANDBOXES_REGION` | `eastus2` | Region the sandboxes run in (selects the data-plane endpoint). |
+| `AZURE_SANDBOXES_DATA_APP_GROUP` | — | Sandbox group for data app sandboxes (required when `azure-sandboxes`). |
+| `AZURE_SANDBOXES_DATA_APP_DISK_IMAGE` | — | Disk image ID for data app sandboxes (required when `azure-sandboxes`). |
+| `AZURE_SANDBOXES_AI_WRITEBACK_GROUP` | — | Sandbox group for writeback sandboxes (required when `azure-sandboxes`). |
+| `AZURE_SANDBOXES_AI_WRITEBACK_DISK_IMAGE` | — | Disk image ID for writeback sandboxes (required when `azure-sandboxes`). |
+| `AZURE_SANDBOXES_RESOURCE_TIER` | `M` | Sandbox size: `XS`, `S`, `M`, or `L`. |
+| `AZURE_SANDBOXES_API_VERSION` | `2026-02-01-preview` | Azure Sandboxes data-plane API version. |
+| `AZURE_SANDBOXES_TOKEN_SCOPE` | `https://management.azuredevcompute.io/.default` | Entra token scope for the data plane. |
 | `SANDBOX_DOCKER_IMAGE` | `lightdash-sandbox:local` | Local image for data app sandboxes (`docker` provider). |
 | `SANDBOX_AI_WRITEBACK_DOCKER_IMAGE` | `lightdash-ai-writeback:local` | Local image for writeback sandboxes (`docker` provider). |
-| `SANDBOX_IDLE_TIMEOUT_MS` | `1800000` (30 min) | Lambda MicroVMs idle policy: auto-suspend a running-but-idle microVM. Ignored by `e2b`/`docker`. |
-| `SANDBOX_SNAPSHOT_RETENTION_MS` | `604800000` (7 days) | Lambda MicroVMs idle policy: auto-terminate a suspended microVM (also how long a thread stays resumable). Ignored by `e2b`/`docker`. |
+| `SANDBOX_IDLE_TIMEOUT_MS` | `1800000` (30 min) | Auto-suspend a running-but-idle sandbox (`lambda-microvm` and `azure-sandboxes`). Ignored by `e2b`/`docker`. |
+| `SANDBOX_SNAPSHOT_RETENTION_MS` | `604800000` (7 days) | Lambda MicroVMs idle policy: auto-terminate a suspended microVM (also how long a thread stays resumable). Ignored by `e2b`/`azure-sandboxes`/`docker`. |
