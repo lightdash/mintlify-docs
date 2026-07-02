@@ -188,6 +188,77 @@ To promote, you need:
 
 If you embed a data app in a [dashboard](/guides/how-to-promote-content#promote-dashboards) and promote the dashboard, every referenced app is promoted alongside it. Each app is created or updated in the upstream project using the same rules as standalone app promotion, and the tile is remapped to point at the upstream app so the production dashboard renders the production copy.
 
+## Data apps as code
+
+Data apps join charts and dashboards in the [as-code workflow](/references/lightdash-cli#lightdash-download). You can download a data app's source, check it into git, edit it locally, and re-upload it — the destination Lightdash instance rebuilds the app in its sandbox and publishes a new version. This lets you version app source, review changes in pull requests, and move apps between projects or instances.
+
+Data apps as code is opt-in: it only runs when you pass the `--apps` flag to `lightdash download` or `lightdash upload`, and requires data apps to be enabled on the destination instance.
+
+### Downloading an app
+
+Use `lightdash download --apps` to fetch data apps alongside your charts and dashboards:
+
+```bash
+# Download every data app in the project
+lightdash download --apps
+
+# Download only specific apps by UUID
+lightdash download --apps 8f2b1c4d-1111-2222-3333-444455556666
+```
+
+Each app is written to `lightdash/apps/<slug>/`, where `<slug>` is derived from the app's name. Every folder contains:
+
+- `lightdash-app.yml` — the app manifest, including the `appUuid` that identifies the app when you re-upload it.
+- `src/` — the app's source tree (React components, styles, etc.).
+
+The built output is intentionally excluded — the server rebuilds the app from source on upload, so you never have to ship compiled artifacts.
+
+### Uploading an app
+
+Use `lightdash upload --apps` to send your local changes back:
+
+```bash
+# Upload every app folder under lightdash/apps/
+lightdash upload --apps
+
+# Upload only specific apps by UUID
+lightdash upload --apps 8f2b1c4d-1111-2222-3333-444455556666
+```
+
+Uploads are fire-and-forget: the CLI posts the source and returns immediately. The destination rebuilds the app in its sandbox and publishes a new version once the build succeeds. Until then, the app shows a `building` status in the UI. If the build fails, the error appears in the app's version history in the UI — the CLI does not wait for the build to finish.
+
+The manifest's `appUuid` is the source of truth for identity — the `<slug>` folder name is only a hint derived from the app's name. Renaming the folder locally does not create a new app.
+
+### Moving an app between projects or instances
+
+Because identity lives in the manifest, the same download-then-upload flow lets you copy apps between projects or between Lightdash instances.
+
+**Between projects on the same instance** — pass `--project` to target a different project:
+
+```bash
+lightdash upload --apps --project <target-project-uuid>
+```
+
+The destination project creates a new app (with a new UUID on the server) and builds it in its own sandbox. The `appUuid` in your local manifest is unchanged; the next `lightdash download` from the source project still finds the original app.
+
+**Between Lightdash instances** — point the CLI at the destination first, then upload:
+
+```bash
+lightdash login <destination-url>
+lightdash upload --apps --project <target-project-uuid>
+```
+
+You can also set `LIGHTDASH_URL` and `LIGHTDASH_API_KEY` instead of running `lightdash login`. The destination instance rebuilds the source in its own sandbox — no built artifacts are ever transferred between instances.
+
+### Constraints
+
+Before you rely on data apps as code in a workflow, keep the following in mind:
+
+- **Enterprise only.** Both the source and destination instances must have data apps enabled, including the build sandbox. See [Self-hosting Data apps](/guides/data-apps/self-hosting) for the configuration required on self-hosted instances.
+- **Fixed dependency set.** The sandbox rebuilds against a pre-installed library set. You can edit any source file, but you can't add libraries that the sandbox doesn't already provide.
+- **Semantic layer coupling.** A moved app's queries run against the target project's fields **by name**. If a field the app references is missing in the target project, the upload still succeeds and the build still finishes — but the app surfaces query errors at runtime when a user opens it. Check the app in the destination after uploading.
+- **Concurrent build rate limit.** Each project has a cap on how many app builds can run at once. If you upload a large batch and exceed the cap, the server returns HTTP 429 and the CLI reports the error for that app. Re-run the upload for the failed apps once earlier builds complete.
+
 ## Data context and the app model
 
 Data apps don't ship with their own copy of your data. They run inside a sandboxed iframe with no direct access to the Lightdash API, so every query the app wants to run is proxied through the Lightdash UI hosting the iframe.
