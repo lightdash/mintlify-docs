@@ -45,6 +45,7 @@ The more context you give the agent, the better the result. You can attach sever
 - **Dashboards** - attach a dashboard to pull in every query on it at once.
 - **Images** - upload screenshots, mockups, or design references. Images are one of the fastest ways to nail the visual style you want.
 - **Sample data** - each chart and dashboard chip has an **Include sample data** toggle. When you turn it on, Lightdash runs the query and passes the first 10 rows to the agent so it can make better decisions about formatting, content, and copy. Sample data is opt-in per resource because rows can be sensitive - the agent will see whatever you send it.
+- **Live-linked charts** - each chart chip also has a **Link** toggle next to Include sample data. When Link is off (the default), the agent embeds a frozen copy of the chart's metric query into the app - later edits to the chart in Lightdash won't flow through. When Link is on, the app runs the chart live by its UUID on every load, so changes made to the saved chart in Lightdash (metric swaps, filter tweaks, additional dimensions) show up in the app on the next refresh. Linked charts still respect the viewer's permissions and appear in the Queries tab of the inspector like any other query. Link is not yet supported for embedded apps that authenticate via JWT, and dashboard-tile filter and cache inheritance don't yet propagate to linked charts.
 
 ### Iterating on your app
 
@@ -94,9 +95,19 @@ The following is **not** carried over:
 
 To duplicate, you need **view** access on the source app and **create** permission for data apps on the project.
 
-### Query inspector
+### Network inspector
 
-When an app runs a query, it will appear in the query inspector. Open it to see every query the running app is making - the underlying metric query, the fields it's pulling, and the results it gets back. Use it to verify the app is asking for the right data, debug unexpected numbers, or sanity-check performance.
+The inspector is a tabbed network panel that captures everything the running app talks to. Open it from **View network** in the preview header.
+
+- **Queries** - every metric query the app runs against your semantic layer, including the underlying query definition, the fields it's pulling, and the rows it gets back. Live-linked charts show up here too. Use it to verify the app is asking for the right data, debug unexpected numbers, or sanity-check performance.
+- **Requests** - every external fetch the app makes at runtime through a linked external connection, with the method, path, status, response, and round-trip duration. Use it to confirm the app is calling the right endpoint and that the response shape matches what the UI expects. The inspector only ever sees the connection alias and path - credentials are injected server-side, so they're never displayed here.
+
+Both tabs are always visible so you can see at a glance whether the app has run any queries or external requests yet. Entries are held in-memory and cleared when you refresh the preview or load a new version unless you turn on the **Persist** toggle in the panel.
+
+Each Query row has two actions:
+
+- **Open in Explore** - opens the query in a full explore view so you can pivot on it, tweak filters, or dig into a single number.
+- **Save to Lightdash** - creates a governed table chart from the exact query the app ran. You pick a chart name and a target space; the chart is created via the same flow as saving from an explore, so your normal chart-create permission on the space applies. Save to Lightdash is available on inline app queries; linked charts already live in Lightdash, so the action is hidden there.
 
 <Frame>
   ![Clean Shot 2026 04 29 At 18 38 42@2x](/images/CleanShot-2026-04-29-at-18.38.42@2x.png)
@@ -204,7 +215,7 @@ This means:
 - **Use images to lock in style.** A screenshot of a dashboard, a brand guideline, or even a hand-drawn mockup goes a long way toward getting the layout, typography, and colors right on the first try.
 - **Attach sample data when content matters.** If the app is making decisions based on what's actually in your data - picking a chart type, writing copy, or formatting values - turn on sample data for the relevant charts. Just remember the agent will see the rows you share.
 - **Reference existing charts and dashboards.** Pointing the agent at a working metric query is faster and more reliable than describing the query in prose.
-- **Use the query inspector early.** If something looks off, check the queries the app is running before tweaking the prompt.
+- **Use the network inspector early.** If something looks off, check the queries and external requests the app is running before tweaking the prompt.
 
 ## Troubleshooting
 
