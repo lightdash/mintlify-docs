@@ -141,6 +141,10 @@ The Lightdash CLI doesn't ship a native Windows binary, and running it directly 
 
 If you can't use WSL, you can install the CLI on native Windows via NPM. This path is less well-tested than WSL — if you hit issues with dbt, file paths, or Node globals, switch to [WSL](#install-on-windows-wsl-recommended).
 
+<Info>
+  On locked-down corporate laptops (Zscaler / Netskope / SSL inspection) you'll likely hit TLS errors on `lightdash login` and `lightdash deploy`. Jump to [Windows troubleshooting](#windows-troubleshooting) before you start — it covers the corporate CA fix and the Cursor / VS Code agent-terminal gotcha.
+</Info>
+
 <Steps>
   <Step title="Install Node.js">
     Download the **LTS** installer from [nodejs.org](https://nodejs.org/en/download) and run it, or install via winget from PowerShell:
@@ -174,6 +178,112 @@ If you can't use WSL, you can install the CLI on native Windows via NPM. This pa
     ```
   </Step>
 </Steps>
+
+## Windows troubleshooting
+
+These issues come up on locked-down corporate Windows laptops. Try them in order.
+
+### `unable to get local issuer certificate` on `lightdash login` or `deploy`
+
+You'll see errors like:
+
+```text
+FetchError: request to https://app.lightdash.cloud/... failed,
+reason: unable to get local issuer certificate
+```
+
+or
+
+```text
+OAuth failed due to corporate SSL (Zscaler / Netskope / etc.)
+```
+
+This is your corporate proxy (Zscaler, Netskope, ZIA, a Palo Alto firewall, etc.) doing TLS inspection — Node.js doesn't trust the intercepting certificate. Fix it by pointing Node at your company CA bundle.
+
+<Steps>
+  <Step title="Get your corporate root CA as a .pem file">
+    Ask IT for the company root CA certificate as a `.pem` (or `.crt`) file. You can often export it yourself from Windows: run `certmgr.msc`, find the Zscaler / corporate root under **Trusted Root Certification Authorities**, then **All Tasks → Export → Base-64 encoded X.509 (.CER)** and rename to `.pem`.
+  </Step>
+
+  <Step title="Point Node at it permanently">
+    In **PowerShell**, set a user-level environment variable so every new shell picks it up:
+
+    ```powershell
+    [Environment]::SetEnvironmentVariable(
+      "NODE_EXTRA_CA_CERTS",
+      "C:\Users\<you>\certs\corporate-root.pem",
+      "User"
+    )
+    ```
+
+    Close and reopen your terminal (and Cursor / VS Code) so the variable is picked up. Then retry:
+
+    ```powershell
+    lightdash login https://app.lightdash.cloud
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  **Last-resort workaround only:** if you cannot get the CA file, you can run a single command with TLS verification disabled:
+
+  ```powershell
+  $env:NODE_TLS_REJECT_UNAUTHORIZED=0; lightdash login https://app.lightdash.cloud
+  ```
+
+  This disables certificate verification for that shell session and is insecure — use it only to confirm the issue is the corporate proxy, then set `NODE_EXTRA_CA_CERTS` for the real fix. Never bake this into scripts or CI.
+</Warning>
+
+### `lightdash: command not found` in one terminal but works in another
+
+Different terminals inside the same editor can use different shells (Git Bash, PowerShell, WSL, or the Cursor / VS Code agent sandbox), and each has its own `PATH`.
+
+- Check where `lightdash` actually lives: `where lightdash` (PowerShell) or `which lightdash` (Bash / WSL).
+- If npm's global bin isn't on `PATH`, add it. Find it with `npm config get prefix`, then in PowerShell:
+
+  ```powershell
+  [Environment]::SetEnvironmentVariable(
+    "Path",
+    $env:Path + ";C:\Users\<you>\AppData\Roaming\npm",
+    "User"
+  )
+  ```
+- Close **all** terminals (and the editor) and reopen so the new `PATH` takes effect.
+
+### Interactive prompts (project picker, OAuth) don't work inside the Cursor/VS Code agent
+
+The AI agent's built-in terminal is a non-interactive sandbox — `lightdash login` and the "select a project" arrow-key prompt from `lightdash deploy` can hang or get skipped there.
+
+Run these commands in a **regular terminal tab** (open one via the `+` icon in the terminal pane, not the agent chat), or in WSL / PowerShell directly:
+
+```bash
+lightdash login https://app.lightdash.cloud
+lightdash config set-project      # pick your project non-interactively later if needed
+lightdash deploy
+```
+
+### OAuth browser callback never completes
+
+If clicking the OAuth link opens Lightdash in the browser but the CLI keeps waiting:
+
+- Your corporate proxy may be blocking the callback to `localhost`. Try again on a personal network / hotspot to confirm.
+- Or use token-based login instead of OAuth — generate a personal access token in **Settings → Personal access tokens** and run:
+
+  ```bash
+  lightdash login https://app.lightdash.cloud --token <your-token>
+  ```
+
+  Token login doesn't need a browser callback and sidesteps most corporate-network OAuth issues.
+
+### `No active Lightdash project` after login
+
+Login and project selection are separate steps. After `lightdash login` succeeds, set the active project:
+
+```bash
+lightdash config set-project
+```
+
+Pick your project from the list, then re-run `lightdash deploy`.
 
 ## Download binary directly
 
