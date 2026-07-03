@@ -207,17 +207,23 @@ Data apps as code is opt-in: it only runs when you pass the `--apps` or `--inclu
 
 ### Downloading an app
 
-Use `lightdash download --apps <appUuids...>` to fetch specific apps by UUID, or `--include-apps` to grab every app in a space (capped at the first 10):
+Use `lightdash download --apps <appUuids...>` to fetch specific apps by UUID, or `--include-apps` to grab the project's apps (capped at the first 10; only apps that have been added to a space are listed):
 
 ```bash
 # Download specific apps by UUID (works for apps not in a space)
 lightdash download --apps 8f2b1c4d-1111-2222-3333-444455556666
 
-# Download every data app in a space in the project (up to 10)
+# Download the project's data apps (up to 10; only apps that are in a space)
 lightdash download --include-apps
 ```
 
-To reach apps that are not in a space, or to download more than 10 in one go, you must list them explicitly with `--apps`.
+To reach apps that are not in a space, or to download more than 10 in one go, list them explicitly with `--apps`.
+
+For an app-only checkout — no charts, dashboards, or space files — add `--apps-only` (it implies `--skip-charts --skip-dashboards --skip-spaces`, which also work individually). This is the recommended way to work on apps: it keeps the folder clean and avoids accidentally re-uploading unrelated project content later.
+
+```bash
+lightdash download --apps-only --apps 8f2b1c4d-1111-2222-3333-444455556666
+```
 
 Each app is written to `lightdash/apps/<slug>/`, where `<slug>` is derived from the app's name. Every folder is a locally buildable project:
 
@@ -233,7 +239,7 @@ The built output is intentionally excluded — the server rebuilds the app from 
 Once an app is on disk you can iterate on it locally:
 
 1. Edit files under `src/`.
-2. Optionally run `pnpm install && pnpm build` inside the app folder to check that the source compiles. This is a **local pre-check only** — the server does its own build on upload.
+2. Optionally run `pnpm install && pnpm build` inside the app folder to check that the source compiles. This is a **local pre-check only** — if `pnpm install` fails in your environment (registry policies, no network), skip this step rather than fighting it; the server does its own build on upload and any build errors appear on the app's page.
 3. Run `lightdash upload --apps` to send the source back. The server rebuilds and publishes a new version.
 
 The bundled `.claude/skills/` and `AGENTS.md` files describe the SDK surface and this workflow so coding agents (Claude Code and similar) can help you edit apps locally without extra prompting.
@@ -264,13 +270,13 @@ Because identity lives in the manifest, the same download-then-upload flow lets 
 lightdash upload --apps --project <target-project-uuid>
 ```
 
-In non-interactive shells (CI, scripts) the CLI aborts instead of prompting. Pass `--create-new` to opt in explicitly:
+In non-interactive shells (CI, scripts) the CLI reports an error for that app and skips it instead of prompting. Pass `--create-new` to opt in explicitly:
 
 ```bash
 lightdash upload --apps --project <target-project-uuid> --create-new
 ```
 
-The destination project creates a new app (with a new UUID on the server) and builds it in its own sandbox. The `appUuid` in your local manifest is unchanged; the next `lightdash download` from the source project still finds the original app. Pass `--create-new` any time you want to fork an app into a new record, even inside the same project.
+The destination project creates a new app (with a new UUID on the server) and builds it in its own sandbox. After creating, the CLI prints the new app's URL and offers to retarget your local `lightdash-app.yml` at it (updating `appUuid`, `projectUuid`, and `version` together) so future uploads update the new app. Accept if you're moving the app; decline if you're copying it and want to keep working against the original — the CLI tells you which manifest fields to edit later if you change your mind. Pass `--create-new` any time you want to fork an app into a new record, even inside the same project.
 
 **Between Lightdash instances** — point the CLI at the destination first, then upload:
 
