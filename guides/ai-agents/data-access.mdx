@@ -49,7 +49,7 @@ With this setting on, a non-technical viewer gets plain-language answers and is 
 
 **What the agent receives when enabled:**
 - The user's name
-- Their role
+- Their role (organization role, or the name of their custom role)
 - Their group memberships
 
 To turn it on, open your agent settings, go to the **Data Access** section, and enable **Pass user information**. It's off by default, so answers stay uniform until you opt in.
@@ -61,9 +61,35 @@ To turn it on, open your agent settings, go to the **Data Access** section, and 
   />
 </Frame>
 
+### How role shapes the answer
+
+The user's role decides which register the agent uses:
+
+- **Plain-language register** — Viewer, Interactive Viewer, and Member roles (and any role the agent can't classify) get answers pitched at a business user consuming data. The agent avoids data-modeling jargon and, when the available data can't answer a question, it says so and suggests raising it with the data team rather than proposing model changes.
+- **Technical register** — Editor, Developer, and Admin roles get full technical detail. The agent is free to name explores and fields, explain modeling limitations, and suggest semantic-layer changes when relevant.
+
+For **custom organization roles**, the register is derived from the role's scopes: if the role holds any scope exclusive to editor tier or above, it's treated as technical; otherwise it uses the plain-language register.
+
+### Team-based terminology
+
+When the user belongs to one or more groups, the agent prefers that team's interpretation, metrics, and terminology on ambiguous questions. For example, at a fictional ecommerce company, if "active customer" means one thing to a marketing team and something else to a finance team, the agent leans toward the definition used by whichever team the requester is on.
+
+### Where it applies
+
+Pass user information takes effect anywhere the agent can trust the identity of the person asking:
+
+- The Lightdash web app (always the logged-in user)
+- MCP clients
+- Personal access token (PAT) requests
+- Service account requests that carry a specific user identity
+
 <Note>
-  This only applies when the agent knows who is asking. In the Lightdash app that's always the logged-in user. On **Slack**, you need to enable the [AI Agents OAuth requirement](/references/integrations/slack-integration#ai-agents-configuration) so each Slack user is identified individually — otherwise user information is left out and answers stay generic.
+  **Slack caveat.** When your organization's Slack integration has the [AI Agents OAuth requirement](/references/integrations/slack-integration#ai-agents-configuration) (`aiRequireOAuth`) turned **off**, prompts run under the workspace installer's identity rather than the person who actually asked. In that case the user-information section is omitted from the prompt even when the toggle is on — the agent falls back to generic answers. This is the same trust boundary that gates SQL execution, AI writeback, and repository discovery on Slack. Turn on the OAuth requirement so each Slack user is identified individually if you want personalization to work there.
 </Note>
+
+<Info>
+  **User attributes are not shared.** [User attributes](/references/workspace/user-attributes) are deliberately excluded from the user-information payload. They're already enforced as row-level security values inside every query the agent runs, so the agent never needs to see them to respect them.
+</Info>
 
 ## Limiting access to specific explores and fields
 
