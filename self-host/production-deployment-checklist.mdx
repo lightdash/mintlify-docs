@@ -8,15 +8,38 @@ with the official Helm chart ([lightdash/helm-charts](https://github.com/lightda
 The recommendations mirror how Lightdash Cloud runs every customer instance, translated onto the
 options the public Helm chart exposes.
 
-Work through the checklist below. Every item links to either the deep-dive docs page for that
-topic, or to a best-practice section further down this page when the recommendation isn't
-documented anywhere else.
+Deployments come in three tiers. Find your tier, then work through its checklist. Every item
+links to either the deep-dive docs page for that topic, or to a best-practice section further
+down this page when the recommendation isn't documented anywhere else.
 
-**Audience:** platform/infra engineers deploying Lightdash on Kubernetes. If you're starting from
-scratch, follow the [self-hosting guide](/self-host/self-host-lightdash) first, then work through this
-checklist. **Chart:** `lightdash/lightdash` ≥ 2.7.2 (required for NATS worker support).
+- **Tier 1 — Evaluation / PoC:** the chart defaults, following the self-hosting guide. Fine for
+  trying Lightdash out; not a place for real users or production credentials.
+- **Tier 2 — Scalable production deployment:** external infrastructure, dedicated workers,
+  SSO, hardening, and an operations story. This is the bar for serving real users.
+- **Tier 3 — Optional features and observability:** the Enterprise features you bought,
+  integrations, and monitoring. Layer these on top of a solid Tier 2.
 
-## The checklist
+**Audience:** platform/infra engineers deploying Lightdash on Kubernetes.
+**Chart:** `lightdash/lightdash` ≥ 2.7.2 (required for NATS worker support).
+
+## Tier 1 — Evaluation / PoC
+
+Follow the [self-hosting guide](/self-host/self-host-lightdash) (or
+[docker compose](/self-host/self-host-lightdash-docker-compose) for a local spin-up). The chart
+defaults — bundled Postgres, in-process scheduler, no NATS — are fine for a PoC, and nothing
+else on this page is required yet.
+
+- [ ] Deploy with the [self-hosting guide](/self-host/self-host-lightdash)
+- [ ] [Enterprise license key](/self-host/customize-deployment/enterprise-license-keys) if you're evaluating Enterprise features
+- [ ] Treat it as disposable — no real users, no production warehouse credentials; there's no backup or HA story at this tier
+
+<Note>
+  Plan to **rebuild rather than promote** a PoC: moving from the bundled Postgres to an
+  external database later means a data migration. Graduating to Tier 2 is easiest as a fresh
+  install with production values.
+</Note>
+
+## Tier 2 — Scalable production deployment
 
 ### Configuration
 
@@ -25,7 +48,6 @@ checklist. **Chart:** `lightdash/lightdash` ≥ 2.7.2 (required for NATS worker 
 - [ ] [Generate a strong `LIGHTDASH_SECRET`](#core-configuration) and store it somewhere durable — losing it means losing access to encrypted data
 - [ ] [`SECURE_COOKIES` and `TRUST_PROXY`](/self-host/customize-deployment/secure-lightdash-with-https) both `"true"` behind your TLS-terminating load balancer
 - [ ] [Keep credentials out of Helm values](#secrets-management) — use `existingSecret` populated from your secret manager
-- [ ] [Enterprise license key](/self-host/customize-deployment/enterprise-license-keys) set, with outbound access to `https://api.keygen.sh`
 
 ### Infrastructure dependencies
 
@@ -51,17 +73,26 @@ checklist. **Chart:** `lightdash/lightdash` ≥ 2.7.2 (required for NATS worker 
 
 - [ ] [SSO](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash) (Okta / Azure AD / Google / generic OIDC) with password authentication disabled
 - [ ] [Account linking and personal access token policy](#authentication-policy)
-- [ ] [SCIM provisioning](/references/workspace/scim-integration) from your IdP (Enterprise)
 - [ ] [CSP enforcement and explicit CORS](#security-hardening)
 - [ ] [Egress policy and NetworkPolicies](#security-hardening)
 - [ ] [Pod security contexts](#security-hardening) — the chart sets none by default
 - [ ] [Soft delete](#security-hardening) for content recovery
 
+### Operations
+
+- [ ] [Deliberate upgrades](#upgrades-and-operations) — pinned image tag, at least monthly cadence
+- [ ] [UAT instance](#upgrades-and-operations) that mirrors production config for rehearsing upgrades
+- [ ] [Tested DR runbook](#upgrades-and-operations) — Postgres backup + `LIGHTDASH_SECRET` + Helm values rebuilds the instance
+
+## Tier 3 — Optional features and observability
+
 ### Enterprise features
 
+- [ ] [Enterprise license key](/self-host/customize-deployment/enterprise-license-keys) set, with outbound access to `https://api.keygen.sh`
 - [ ] [Pre-aggregations](/self-host/nats-workers/pre-aggregate-workers) — pre-aggregate NATS workers + a dedicated S3 bucket
 - [ ] [AI Analyst](#ai-analyst) — model provider key + `pgvector` in Postgres
 - [ ] [Data apps](#data-apps) — sandboxes runtime, apps bucket, and a separate preview origin
+- [ ] [SCIM provisioning](/references/workspace/scim-integration) from your IdP
 - [ ] [Results caching, embedding, service accounts, custom roles](#enterprise-feature-flags) — enable what you bought
 
 ### Integrations (enable what you use)
@@ -76,12 +107,6 @@ checklist. **Chart:** `lightdash/lightdash` ≥ 2.7.2 (required for NATS worker 
 - [ ] [Prometheus metrics](/self-host/customize-deployment/configure-prometheus-metrics-for-self-hosted-lightdash) enabled, and [scraped on every pod](#observability)
 - [ ] [Structured JSON logging](/self-host/customize-deployment/configure-logging-for-lightdash) shipped to your log platform
 - [ ] [Alerts](#observability) on HTTP error rate/latency, queue depth, and Postgres pool saturation
-
-### Operations
-
-- [ ] [Deliberate upgrades](#upgrades-and-operations) — pinned image tag, at least monthly cadence
-- [ ] [UAT instance](#upgrades-and-operations) that mirrors production config for rehearsing upgrades
-- [ ] [Tested DR runbook](#upgrades-and-operations) — Postgres backup + `LIGHTDASH_SECRET` + Helm values rebuilds the instance
 
 ## Architecture: what you're deploying
 
@@ -384,6 +409,47 @@ Also consider:
 - **PAT policy:** `PAT_ALLOWED_ORG_ROLES`, `PAT_MAX_EXPIRATION_TIME_IN_DAYS`, or `DISABLE_PAT`
 - Keep `ALLOW_MULTIPLE_ORGS: "false"` (default) for a single-company instance
 
+## Security hardening
+
+- [ ] SSO-only auth ([authentication policy](#authentication-policy)), `SECURE_COOKIES`,
+      sensible `COOKIES_MAX_AGE_HOURS`
+- [ ] **CSP enforcement:** `LIGHTDASH_CSP_REPORT_ONLY: "false"` (default is report-only;
+      enforce in production), plus `LIGHTDASH_CSP_ALLOWED_DOMAINS` for any extra origins you
+      load from
+- [ ] **CORS:** leave disabled unless embedding; if embedding, `LIGHTDASH_CORS_ENABLED:
+      "true"` with an explicit `LIGHTDASH_CORS_ALLOWED_DOMAINS` list — never `*`
+- [ ] Secrets via `existingSecret` + your secret manager; no credentials in Helm values or
+      git ([secrets management](#secrets-management))
+- [ ] Egress policy: Lightdash needs your warehouse, S3, SMTP, `api.keygen.sh` (license),
+      your IdP, and any AI provider endpoints — everything else can be blocked
+- [ ] NetworkPolicies: the chart only ships one for NATS; add your own default-deny +
+      allow rules for backend ↔ postgres/browserless/S3 if your cluster uses them
+- [ ] `podSecurityContext` / `securityContext`: the chart sets none by default — add
+      `runAsNonRoot`, drop capabilities per your Pod Security Standards baseline
+- [ ] IP allowlisting/WAF at the load balancer for extra-sensitive instances
+- [ ] Soft delete for content recovery: `SOFT_DELETE_ENABLED: "true"`
+      (+ `SOFT_DELETE_RETENTION_DAYS`, default 30)
+
+## Upgrades and operations
+
+Upgrade mechanics are in [update Lightdash](/self-host/update-lightdash) and the version
+policy in [versioning](/self-host/upgrading-lightdash-versioning). Operational best practice:
+
+- **Pin `image.tag`** and upgrade deliberately. There is no LTS tag. Lightdash versioning:
+  patch = routine, minor = check release notes (may be backwards-incompatible), major = read
+  the upgrade guide
+- **Keep a UAT instance** that mirrors production config, and rehearse upgrades there against
+  a refreshed copy of the production database (Lightdash dogfoods every release on internal
+  instances before rolling to Cloud customers)
+- Upgrade path: bump `image.tag` → `helm upgrade` → the `migrationJob` hook migrates the
+  database → rolling restart. Roll back the image only if the release notes say the
+  migrations are backwards-compatible; otherwise restore the database backup
+- **Upgrade cadence:** at least monthly. Lightdash ships continuously; falling many minor
+  versions behind makes the eventual migration jump riskier
+- **DR runbook:** you need three things to rebuild an instance from scratch — the Postgres
+  backup, the `LIGHTDASH_SECRET`, and your Helm values. Test that you can
+- Watch chart release notes too (e.g. chart 1.0.0 required stepping through 0.10.1)
+
 ## Enterprise features
 
 License key setup and validation is covered in
@@ -500,47 +566,6 @@ configMap:
   `OTEL_EXPORTER_OTLP_ENDPOINT=...`) if you run a collector
 - Error tracking: point `SENTRY_BE_DSN` / `SENTRY_FE_DSN` at your own Sentry project if you
   have one
-
-## Security hardening
-
-- [ ] SSO-only auth ([authentication policy](#authentication-policy)), `SECURE_COOKIES`,
-      sensible `COOKIES_MAX_AGE_HOURS`
-- [ ] **CSP enforcement:** `LIGHTDASH_CSP_REPORT_ONLY: "false"` (default is report-only;
-      enforce in production), plus `LIGHTDASH_CSP_ALLOWED_DOMAINS` for any extra origins you
-      load from
-- [ ] **CORS:** leave disabled unless embedding; if embedding, `LIGHTDASH_CORS_ENABLED:
-      "true"` with an explicit `LIGHTDASH_CORS_ALLOWED_DOMAINS` list — never `*`
-- [ ] Secrets via `existingSecret` + your secret manager; no credentials in Helm values or
-      git ([secrets management](#secrets-management))
-- [ ] Egress policy: Lightdash needs your warehouse, S3, SMTP, `api.keygen.sh` (license),
-      your IdP, and any AI provider endpoints — everything else can be blocked
-- [ ] NetworkPolicies: the chart only ships one for NATS; add your own default-deny +
-      allow rules for backend ↔ postgres/browserless/S3 if your cluster uses them
-- [ ] `podSecurityContext` / `securityContext`: the chart sets none by default — add
-      `runAsNonRoot`, drop capabilities per your Pod Security Standards baseline
-- [ ] IP allowlisting/WAF at the load balancer for extra-sensitive instances
-- [ ] Soft delete for content recovery: `SOFT_DELETE_ENABLED: "true"`
-      (+ `SOFT_DELETE_RETENTION_DAYS`, default 30)
-
-## Upgrades and operations
-
-Upgrade mechanics are in [update Lightdash](/self-host/update-lightdash) and the version
-policy in [versioning](/self-host/upgrading-lightdash-versioning). Operational best practice:
-
-- **Pin `image.tag`** and upgrade deliberately. There is no LTS tag. Lightdash versioning:
-  patch = routine, minor = check release notes (may be backwards-incompatible), major = read
-  the upgrade guide
-- **Keep a UAT instance** that mirrors production config, and rehearse upgrades there against
-  a refreshed copy of the production database (Lightdash dogfoods every release on internal
-  instances before rolling to Cloud customers)
-- Upgrade path: bump `image.tag` → `helm upgrade` → the `migrationJob` hook migrates the
-  database → rolling restart. Roll back the image only if the release notes say the
-  migrations are backwards-compatible; otherwise restore the database backup
-- **Upgrade cadence:** at least monthly. Lightdash ships continuously; falling many minor
-  versions behind makes the eventual migration jump riskier
-- **DR runbook:** you need three things to rebuild an instance from scratch — the Postgres
-  backup, the `LIGHTDASH_SECRET`, and your Helm values. Test that you can
-- Watch chart release notes too (e.g. chart 1.0.0 required stepping through 0.10.1)
 
 ## Appendix: quick-reference production values skeleton
 
