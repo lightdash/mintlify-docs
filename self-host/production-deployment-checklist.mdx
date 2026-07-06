@@ -3,12 +3,14 @@ title: "Production deployment checklist"
 description: "Best practices for running an enterprise-grade self-hosted Lightdash deployment with the official Helm chart."
 ---
 
-This page is the single checklist for running a production-grade, enterprise self-hosted Lightdash
-deployment with the official Helm chart ([lightdash/helm-charts](https://github.com/lightdash/helm-charts)).
-
+This is the checklist for running a production-grade, enterprise self-hosted Lightdash deployment
+with the official Helm chart ([lightdash/helm-charts](https://github.com/lightdash/helm-charts)).
 The recommendations mirror how Lightdash Cloud runs every customer instance, translated onto the
-options the public Helm chart exposes. Where the chart default is fine we say so; where it isn't
-production-ready we tell you what to change. Each section links to the deep-dive page for that topic.
+options the public Helm chart exposes.
+
+Work through the checklist below. Every item links to either the deep-dive docs page for that
+topic, or to a best-practice section further down this page when the recommendation isn't
+documented anywhere else.
 
 **Audience:** platform/infra engineers deploying Lightdash on Kubernetes. If you're starting from
 scratch, follow the [self-hosting guide](/self-host/self-host-lightdash) first, then work through this
@@ -16,40 +18,72 @@ checklist. **Chart:** `lightdash/lightdash` ≥ 2.7.2 (required for NATS worker 
 
 ## The checklist
 
-Everything below is expanded in its own section. A great deployment ticks all of these:
+### Configuration
 
-### Must do (Lightdash won't work properly without these)
+- [ ] [Pin an image version](#core-configuration) — set `image.tag` explicitly; don't ride the chart's `appVersion`
+- [ ] [Set `SITE_URL`](#core-configuration) to your final `https://` URL before first boot
+- [ ] [Generate a strong `LIGHTDASH_SECRET`](#core-configuration) and store it somewhere durable — losing it means losing access to encrypted data
+- [ ] [`SECURE_COOKIES` and `TRUST_PROXY`](/self-host/customize-deployment/secure-lightdash-with-https) both `"true"` behind your TLS-terminating load balancer
+- [ ] [Keep credentials out of Helm values](#secrets-management) — use `existingSecret` populated from your secret manager
+- [ ] [Enterprise license key](/self-host/customize-deployment/enterprise-license-keys) set, with outbound access to `https://api.keygen.sh`
 
-- [ ] **Pin an image version** — set `image.tag` explicitly; don't ride the chart's `appVersion`
-- [ ] **Set `SITE_URL`** to your final `https://` URL before first boot
-- [ ] **Generate a strong `LIGHTDASH_SECRET`** and store it somewhere durable — losing it means losing access to encrypted data (warehouse credentials, tokens)
-- [ ] **External PostgreSQL** — disable the bundled Postgres subchart (`postgresql.enabled: false`)
-- [ ] **S3-compatible object storage** — required; Lightdash fails to start without `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`
-- [ ] **HTTPS end-to-end** — `SECURE_COOKIES: "true"`, `TRUST_PROXY: "true"` behind your load balancer
-- [ ] **SMTP email** — invites, password resets, and scheduled deliveries need it
-- [ ] **Headless browser enabled** (`browserless-chrome.enabled: true`, the default) — image previews, PDF exports, Slack unfurls
-- [ ] **Enterprise license key** (`LIGHTDASH_LICENSE_KEY`) and outbound access to `https://api.keygen.sh`
+### Infrastructure dependencies
 
-### Should do (the difference between "it runs" and "it runs well")
+- [ ] [External PostgreSQL](/self-host/customize-deployment/configure-lightdash-to-use-an-external-database) — `postgresql.enabled: false`; the bundled subchart is for evaluation only
+- [ ] [Postgres HA, backups and point-in-time recovery](#postgresql), plus the `pgvector` extension if you use Enterprise AI features
+- [ ] [Migration job](#postgresql) — `migrationJob.enabled: true` so migrations run once per upgrade, not racing across replicas
+- [ ] [S3-compatible object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage) — required; Lightdash fails to start without it
+- [ ] [Bucket strategy and lifecycle rules](#object-storage) — a dedicated bucket per purpose, with a 1-day lifecycle delete on the results bucket
+- [ ] [SMTP email](/self-host/customize-deployment/configure-smtp-for-lightdash-email-notifications) — invites, password resets, and scheduled deliveries need it
+- [ ] [Email deliverability](#email-deliverability) — transactional provider, SPF/DKIM on the sender domain
+- [ ] [HTTPS end-to-end](/self-host/customize-deployment/secure-lightdash-with-https) via your ingress or load balancer
+- [ ] [Load balancer settings](#load-balancer-and-networking) — timeout ≥ 300s, health check on `/api/v1/health`, request body limit ≥ `LIGHTDASH_MAX_PAYLOAD`
 
-- [ ] **Dedicated scheduler worker** — `scheduler.enabled: true` so background jobs don't compete with user traffic
-- [ ] **NATS + warehouse workers** — `nats.enabled: true` **and** `warehouseNatsWorker.enabled: true` (always together) for async query execution
-- [ ] **Migration job** — `migrationJob.enabled: true` so database migrations run once per upgrade, not racing across replicas
-- [ ] **≥ 2 backend replicas** with `podAntiAffinity.enabled: true`
-- [ ] **Resource requests** on every component (sizing table below)
-- [ ] **SSO** (Okta / Azure AD / Google / generic OIDC) with password auth disabled
-- [ ] **Prometheus metrics** enabled and scraped
-- [ ] **Structured JSON logging** shipped to your log platform
-- [ ] **Postgres HA, backups and point-in-time recovery** on the database side
+### Workers and scaling
 
-### Enterprise features (enable what you bought)
+- [ ] [Dedicated scheduler worker](#scheduler-worker) — `scheduler.enabled: true` so background jobs don't compete with user traffic
+- [ ] [NATS + warehouse workers](/self-host/nats-workers/overview) — `nats.enabled: true` **and** `warehouseNatsWorker.enabled: true`, always together
+- [ ] [Headless browser](#headless-browser) enabled (the chart default) and tuned — image previews, PDF exports, Slack unfurls
+- [ ] [≥ 2 backend replicas](#sizing-and-availability) with pod anti-affinity and a pod disruption budget
+- [ ] [Resource requests on every component](#sizing-and-availability)
 
-- [ ] Pre-aggregations (NATS pre-aggregate workers + dedicated S3 bucket)
-- [ ] AI Analyst (`AI_COPILOT_ENABLED` + a model provider key)
-- [ ] Data apps (sandboxes runtime + apps S3 bucket + preview origin)
-- [ ] Embedding, SCIM, service accounts, custom roles, results caching
+### Security and authentication
 
-## 1. Architecture: what you're deploying
+- [ ] [SSO](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash) (Okta / Azure AD / Google / generic OIDC) with password authentication disabled
+- [ ] [Account linking and personal access token policy](#authentication-policy)
+- [ ] [SCIM provisioning](/references/workspace/scim-integration) from your IdP (Enterprise)
+- [ ] [CSP enforcement and explicit CORS](#security-hardening)
+- [ ] [Egress policy and NetworkPolicies](#security-hardening)
+- [ ] [Pod security contexts](#security-hardening) — the chart sets none by default
+- [ ] [Soft delete](#security-hardening) for content recovery
+
+### Enterprise features
+
+- [ ] [Pre-aggregations](/self-host/nats-workers/pre-aggregate-workers) — pre-aggregate NATS workers + a dedicated S3 bucket
+- [ ] [AI Analyst](#ai-analyst) — model provider key + `pgvector` in Postgres
+- [ ] [Data apps](#data-apps) — sandboxes runtime, apps bucket, and a separate preview origin
+- [ ] [Results caching, embedding, service accounts, custom roles](#enterprise-feature-flags) — enable what you bought
+
+### Integrations (enable what you use)
+
+- [ ] [Slack](/self-host/customize-deployment/configure-a-slack-app-for-lightdash) — scheduled deliveries, unfurls, AI agents in Slack
+- [ ] [GitHub](/self-host/customize-deployment/configure-github-for-lightdash) or GitLab — dbt repo write-back
+- [ ] [Google Sheets sync](/self-host/customize-deployment/google-sheets-integration)
+- [ ] [Integration gotchas](#integrations) — quoting, key encoding, socket mode
+
+### Observability
+
+- [ ] [Prometheus metrics](/self-host/customize-deployment/configure-prometheus-metrics-for-self-hosted-lightdash) enabled, and [scraped on every pod](#observability)
+- [ ] [Structured JSON logging](/self-host/customize-deployment/configure-logging-for-lightdash) shipped to your log platform
+- [ ] [Alerts](#observability) on HTTP error rate/latency, queue depth, and Postgres pool saturation
+
+### Operations
+
+- [ ] [Deliberate upgrades](#upgrades-and-operations) — pinned image tag, at least monthly cadence
+- [ ] [UAT instance](#upgrades-and-operations) that mirrors production config for rehearsing upgrades
+- [ ] [Tested DR runbook](#upgrades-and-operations) — Postgres backup + `LIGHTDASH_SECRET` + Helm values rebuilds the instance
+
+## Architecture: what you're deploying
 
 A production Lightdash deployment is **not** one container. The Helm chart can create all of
 these — a good deployment runs all of them:
@@ -72,21 +106,15 @@ The chart wires up environment variables for you in three buckets:
 - `secrets.*` — sensitive env vars, rendered into a Kubernetes Secret (or bring your own via `existingSecret`)
 - `extraEnv` / `schedulerExtraEnv` — raw env entries, including `valueFrom.secretKeyRef`
 
-<Tip>
-  **Secrets tip:** `secrets.*` values live in plaintext in your Helm values. For enterprise
-  deployments, prefer `existingSecret` populated by External Secrets Operator / a CSI driver
-  from your secret manager, and keep Helm values free of credentials.
-</Tip>
-
 The full list of supported environment variables lives in the
 [environment variables reference](/self-host/customize-deployment/environment-variables).
 
-## 2. Core configuration (identity of the instance)
+## Core configuration
 
 ```yaml
 image:
   repository: lightdash/lightdash
-  tag: "0.xxxx.x"        # ALWAYS pin. Upgrade deliberately (see section 12)
+  tag: "0.xxxx.x"        # ALWAYS pin. Upgrade deliberately (see Upgrades & operations)
 
 configMap:
   SITE_URL: https://lightdash.yourcompany.com
@@ -95,7 +123,6 @@ configMap:
   LIGHTDASH_MODE: default
   LIGHTDASH_MAX_PAYLOAD: "40mb"   # default 5mb is too small for large dbt manifests
 
-secrets: {}                # prefer existingSecret (see below)
 existingSecret: lightdash-secrets   # contains LIGHTDASH_SECRET, S3 keys, SMTP password, ...
 ```
 
@@ -109,48 +136,29 @@ Key points:
   ship that. Generate 32+ random characters, store it in your secret manager, and **never
   rotate it casually**: if it changes, previously encrypted data becomes unreadable.
 - `SECURE_COOKIES` + `TRUST_PROXY` are both `"false"` by default — production behind HTTPS
-  needs both `"true"`.
+  needs both `"true"` (see [Secure Lightdash with HTTPS](/self-host/customize-deployment/secure-lightdash-with-https)).
 - Session length is controlled by `COOKIES_MAX_AGE_HOURS` (unset = session cookie). Set it to
   your security policy, e.g. `"24"`.
 - If backend pods can't reach `SITE_URL` from inside the cluster (hairpin/NAT issues), set
   `INTERNAL_LIGHTDASH_HOST` to the in-cluster service URL — the headless browser and internal
   calls use it.
 
-## 3. PostgreSQL
+### Secrets management
 
-<Info>
-  Deep dive: [Configure Lightdash to use an external database](/self-host/customize-deployment/configure-lightdash-to-use-an-external-database)
-</Info>
+`secrets.*` values live in plaintext in your Helm values. For enterprise deployments, prefer
+`existingSecret` populated by External Secrets Operator / a CSI driver from your secret
+manager, and keep Helm values (and git) free of credentials.
 
-The bundled Postgres subchart (`postgresql.enabled: true` by default) is fine for a demo and
-wrong for production: single instance, no backup story.
+## PostgreSQL
 
-```yaml
-postgresql:
-  enabled: false
-
-externalDatabase:
-  host: your-postgres-host
-  port: 5432
-  user: lightdash
-  database: lightdash
-  existingSecret: lightdash-db          # key: postgresql-password
-  secretKeys:
-    passwordKey: postgresql-password
-
-# TLS to the database (recommended)
-ssl:
-  enabled: true                          # injects PGSSLMODE=verify-full + NODE_EXTRA_CA_CERTS
-  configMapName: lightdash-db-ca         # your CA cert
-  certFileName: ca.pem
-```
-
-Checklist for the database itself:
+Setup is covered in
+[Configure Lightdash to use an external database](/self-host/customize-deployment/configure-lightdash-to-use-an-external-database).
+This section is what to run *on the database side*, matching Lightdash Cloud:
 
 - [ ] **Managed Postgres** (Cloud SQL / RDS / Azure Database) — version **14+** recommended
       (12 is the documented minimum)
-- [ ] **Extensions:** `uuid-ossp` (required) and **`pgvector` (required for Enterprise
-      features** — AI Analyst embeddings, verified answers)
+- [ ] **Extensions:** `uuid-ossp` (required) and **`pgvector`, required for Enterprise AI
+      features** (AI Analyst embeddings, verified answers)
 - [ ] **HA:** regional/multi-AZ primary. Lightdash Cloud runs regional HA primaries with a
       **cross-region replica for disaster recovery**
 - [ ] **Backups:** daily automated backups, **point-in-time recovery enabled**, ≥ 7 days of
@@ -162,6 +170,14 @@ Checklist for the database itself:
       `PGMAXCONNECTIONS: "50"` and `PGMINCONNECTIONS: "0"` in `configMap`, then make sure
       Postgres `max_connections` covers `pods × PGMAXCONNECTIONS` with headroom
 - [ ] **Query insights / slow-query logging** enabled on the database side
+- [ ] **TLS to the database:**
+
+```yaml
+ssl:
+  enabled: true                          # injects PGSSLMODE=verify-full + NODE_EXTRA_CA_CERTS
+  configMapName: lightdash-db-ca         # your CA cert
+  certFileName: ca.pem
+```
 
 Migrations run automatically at startup. To avoid multiple replicas racing on the migration
 lock, enable the migration job — it runs migrations as a Helm `pre-install,pre-upgrade` hook
@@ -175,29 +191,12 @@ migrationJob:
 (If a deploy is ever interrupted mid-migration, the lock lives in the
 `knex_migrations_lock` table.)
 
-## 4. Object storage (S3) — required
+## Object storage
 
-<Info>
-  Deep dive: [Configure Lightdash to use external object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage)
-</Info>
-
-Lightdash **fails to start** without S3. All query results (including Snowflake) are
-streamed to and served from object storage.
-
-```yaml
-configMap:
-  S3_REGION: eu-west-1
-  S3_BUCKET: yourco-lightdash-results
-  S3_ENDPOINT: https://s3.eu-west-1.amazonaws.com
-  S3_EXPIRATION_TIME: "259200"      # signed URL / results TTL, default 3 days
-  # S3_FORCE_PATH_STYLE: "true"     # required for MinIO
-
-secrets:                             # omit both to use IAM roles (IRSA / workload identity)
-  S3_ACCESS_KEY: ...
-  S3_SECRET_KEY: ...
-```
-
-Best practices (this is how Lightdash Cloud sets up storage):
+Setup (env vars, per-provider instructions, IAM roles) is covered in
+[Configure Lightdash to use external object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage).
+Bucket strategy is where enterprise deployments differ from the basic setup — this is how
+Lightdash Cloud sets up storage:
 
 - [ ] **Dedicated bucket per purpose**, each with a scoped credential that can only touch its
       own bucket:
@@ -208,65 +207,25 @@ Best practices (this is how Lightdash Cloud sets up storage):
 - [ ] **Block all public access** on every bucket
 - [ ] Prefer **IAM roles** (IRSA on EKS, Workload Identity on GKE) over static keys — but
       note signed URLs are then capped at 7 days
-- [ ] GCS works via the S3 interoperability API: endpoint `https://storage.googleapis.com`,
-      region `auto`, HMAC keys. Azure Blob is **not** S3-compatible — front it with MinIO or
-      s3proxy
-- [ ] If users share download links that must outlive the signed-URL TTL, enable
+- [ ] If users share download links that must outlive the signed-URL TTL
+      (`S3_EXPIRATION_TIME`, default 3 days), enable
       `PERSISTENT_DOWNLOAD_URLS_ENABLED: "true"`
 
-## 5. Email (SMTP)
+## Email deliverability
 
-<Info>
-  Deep dive: [Configure SMTP for email notifications](/self-host/customize-deployment/configure-smtp-for-lightdash-email-notifications)
-</Info>
-
-Without SMTP there are no invite emails, no password resets, and no scheduled email
-deliveries.
-
-```yaml
-configMap:
-  EMAIL_SMTP_HOST: smtp.yourprovider.com
-  EMAIL_SMTP_PORT: "587"
-  EMAIL_SMTP_SECURE: "true"
-  EMAIL_SMTP_USER: apikey-or-username
-  EMAIL_SMTP_SENDER_NAME: "Lightdash"
-  EMAIL_SMTP_SENDER_EMAIL: lightdash@yourcompany.com
-
-secrets:
-  EMAIL_SMTP_PASSWORD: ...     # or EMAIL_SMTP_ACCESS_TOKEN for OAuth2
-```
+Env vars are in the
+[SMTP reference](/self-host/customize-deployment/configure-smtp-for-lightdash-email-notifications).
+Best practice on top:
 
 - Use a transactional provider (SES, Postmark, SendGrid) — Lightdash Cloud sends through
   Postmark
 - Set up SPF/DKIM for the sender domain so scheduled deliveries don't land in spam
 - Internal open relay without auth: set `EMAIL_SMTP_USE_AUTH: "false"`
 
-## 6. HTTPS, ingress and networking
+## Load balancer and networking
 
-<Info>
-  Deep dive: [Secure Lightdash with HTTPS](/self-host/customize-deployment/secure-lightdash-with-https)
-</Info>
-
-```yaml
-service:
-  type: ClusterIP
-  port: 8080
-
-ingress:
-  enabled: true
-  className: your-ingress-class
-  annotations:
-    # your cert-manager / LB annotations
-  hosts:
-    - host: lightdash.yourcompany.com
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: lightdash-tls
-      hosts: [lightdash.yourcompany.com]
-```
-
+Ingress and TLS setup is covered in
+[Secure Lightdash with HTTPS](/self-host/customize-deployment/secure-lightdash-with-https).
 Match what Lightdash Cloud configures at the load balancer:
 
 - [ ] **Redirect HTTP → HTTPS**, minimum **TLS 1.2**
@@ -280,13 +239,7 @@ Match what Lightdash Cloud configures at the load balancer:
   true`, `backendConfig.spec`) — this is how timeouts, CDN and Cloud Armor policies are
   attached on Lightdash Cloud
 
-## 7. Workers and async execution
-
-### 7.1 Scheduler worker
-
-<Info>
-  Deep dive: [Configure a standalone scheduled worker](/self-host/customize-deployment/configure-standalone-scheduled-worker)
-</Info>
+## Scheduler worker
 
 By default the backend runs scheduled jobs in-process. In production, run a **dedicated
 scheduler worker** so a heavy dashboard export can't starve the API:
@@ -308,105 +261,33 @@ the backend — don't set it yourself.
 
 Tuning: `SCHEDULER_JOB_TIMEOUT` (default 600000 ms), `SCHEDULER_SCREENSHOT_TIMEOUT`, and
 `scheduler.tasks.include` / `scheduler.tasks.exclude` if you want to shard task types across
-worker groups.
+worker groups. (Running the worker outside Kubernetes? See
+[standalone scheduled worker](/self-host/customize-deployment/configure-standalone-scheduled-worker).)
 
-### 7.2 NATS + warehouse workers (async queries)
+## Async queries (NATS)
 
-<Info>
-  Deep dive: [NATS workers overview](/self-host/nats-workers/overview) and
-  [warehouse workers](/self-host/nats-workers/warehouse-workers)
-</Info>
+Lightdash ≥ 0.2675.0 executes warehouse queries asynchronously through NATS JetStream. This
+is enabled on every Lightdash Cloud instance and is the recommended architecture. Setup,
+configuration reference, and troubleshooting are covered in the
+[NATS workers overview](/self-host/nats-workers/overview) and
+[warehouse workers](/self-host/nats-workers/warehouse-workers) pages — including the critical
+rule: **never enable `nats.enabled` without `warehouseNatsWorker.enabled`**.
 
-Lightdash ≥ 0.2675.0 executes warehouse queries asynchronously through NATS JetStream.
-This is enabled on every Lightdash Cloud instance and is the recommended architecture:
+Cloud-proven defaults worth knowing:
 
-```yaml
-nats:
-  enabled: true
-  config:
-    cluster:
-      enabled: false
-    jetstream:
-      enabled: true
-      fileStore:
-        enabled: false
-      memoryStore:
-        enabled: true
-        maxSize: 1Gi
-
-warehouseNatsWorker:
-  enabled: true
-  replicas: 1            # Lightdash Cloud scales this to 3+ for very heavy instances
-  concurrency: 100       # sets NATS_WORKER_CONCURRENCY
-  resources:
-    requests:
-      cpu: 500m
-      memory: 1.5Gi
-      ephemeral-storage: 9Gi   # workers buffer result sets on disk before S3 upload
-    limits:
-      memory: 1.5Gi            # memory limit = request; no CPU limit
-      ephemeral-storage: 9Gi
-```
-
-<Warning>
-  **Never enable `nats.enabled` without `warehouseNatsWorker.enabled`.** With NATS on and
-  no worker consuming the stream, queries are published and nothing executes — the app
-  appears to hang.
-</Warning>
-
-Notes:
-
-- The chart auto-sets `NATS_ENABLED` and `NATS_URL` — no manual wiring needed
-- Memory-store JetStream (the default above) is what Lightdash Cloud runs; in-flight jobs on
-  a NATS restart fail visibly and can be retried. Enable fileStore only if you need queued
-  jobs to survive restarts
+- Memory-store JetStream (the chart's documented default) is what Lightdash Cloud runs;
+  in-flight jobs on a NATS restart fail visibly and can be retried
+- Workers buffer large result sets on ephemeral disk before uploading to S3 — give them a
+  **9Gi ephemeral-storage request** (see the sizing table below)
+- Lightdash Cloud scales warehouse workers to 3+ replicas for very heavy instances
 - Keep the NATS network policy on (`nats.networkPolicy.enabled: true`, chart default) so only
   Lightdash pods can reach the bus
-- The workers write large result sets to ephemeral disk before uploading to S3 — the 9Gi
-  ephemeral-storage request is not a typo
 
-### 7.3 Pre-aggregations (Enterprise)
+For [pre-aggregations](/self-host/nats-workers/pre-aggregate-workers) (Enterprise), the docs
+page covers everything: the dedicated S3 bucket, `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT`,
+lifecycle rules, and sizing.
 
-<Info>
-  Deep dive: [Pre-aggregate workers](/self-host/nats-workers/pre-aggregate-workers)
-</Info>
-
-Pre-aggregations materialize metrics into parquet on S3 and serve them through DuckDB.
-Requires NATS (7.2) plus:
-
-```yaml
-preAggregateNatsWorker:
-  enabled: true          # also auto-sets PRE_AGGREGATES_ENABLED + PRE_AGGREGATES_PARQUET_ENABLED
-  replicas: 1
-  concurrency: 100
-  resources:
-    requests:
-      cpu: 650m
-      memory: 4Gi
-      ephemeral-storage: 9Gi
-    limits:
-      memory: 4Gi
-      ephemeral-storage: 9Gi
-
-configMap:
-  PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT: "3GB"   # strongly recommended — unbounded DuckDB will OOM the pod
-
-secrets:
-  PRE_AGGREGATE_RESULTS_S3_BUCKET: yourco-lightdash-preagg   # MUST be a separate bucket
-  PRE_AGGREGATE_RESULTS_S3_REGION: eu-west-1
-  PRE_AGGREGATE_RESULTS_S3_ACCESS_KEY: ...
-  PRE_AGGREGATE_RESULTS_S3_SECRET_KEY: ...
-```
-
-- The pre-agg bucket must be **separate** from the results bucket; credentials need
-  `s3:PutObject`; add a ~30-day lifecycle delete rule
-- Keep individual materializations under ~100k rows (`PRE_AGGREGATES_MAX_ROWS`)
-
-### 7.4 Headless browser
-
-<Info>
-  Deep dive: [Enable headless browser](/self-host/customize-deployment/enable-headless-browser-for-lightdash)
-</Info>
+## Headless browser
 
 Enabled by default in the chart — keep it on, and tune it like Lightdash Cloud does:
 
@@ -429,15 +310,14 @@ browserless-chrome:
 
 The chart auto-wires `HEADLESS_BROWSER_HOST` / `HEADLESS_BROWSER_PORT`. Remember: the browser
 renders dashboards by calling **`SITE_URL`** — it must be able to resolve and reach that URL
-from inside the cluster (use `INTERNAL_LIGHTDASH_HOST` if it can't).
+from inside the cluster (use `INTERNAL_LIGHTDASH_HOST` if it can't). For timeout/retry
+troubleshooting and internal-HTTPS setups, see
+[enable headless browser](/self-host/customize-deployment/enable-headless-browser-for-lightdash).
 
-## 8. Sizing and availability
+## Sizing and availability
 
-<Info>
-  Deep dive: [Recommended resources](/self-host/customize-deployment/recommended-resources)
-</Info>
-
-Baseline per-component requests for a standard instance:
+Baseline per-component requests for a standard instance (see also
+[recommended resources](/self-host/customize-deployment/recommended-resources)):
 
 | Component | CPU | Memory | Ephemeral | Replicas |
 |---|---|---|---|---|
@@ -483,12 +363,10 @@ load balancer, liveness fails slow at ~95s so a busy pod isn't restarted). Leave
 unless migrations are slow on your database — then raise
 `lightdashBackend.startupProbe.failureThreshold`.
 
-## 9. Authentication & SSO
+## Authentication policy
 
-<Info>
-  Deep dive: [Use SSO login for self-hosted Lightdash](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash)
-</Info>
-
+Per-provider SSO setup (Okta, Azure AD, Google, generic OIDC — env vars and redirect URIs) is
+covered in [use SSO login for self-hosted Lightdash](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash).
 Enterprise deployments should be SSO-only:
 
 ```yaml
@@ -498,15 +376,6 @@ configMap:
   AUTH_ENABLE_OIDC_TO_EMAIL_LINKING: "true"   # required for SCIM+SSO and LD_SETUP admin login
 ```
 
-Pick your provider (all can coexist; secrets go in `secrets`/`existingSecret`):
-
-| Provider | Required vars | Redirect URI |
-|---|---|---|
-| **Okta** | `AUTH_OKTA_DOMAIN`, `AUTH_OKTA_OAUTH_ISSUER`, `AUTH_OKTA_OAUTH_CLIENT_ID`, `AUTH_OKTA_OAUTH_CLIENT_SECRET` | `{SITE_URL}/api/v1/oauth/redirect/okta` |
-| **Azure AD / Entra** | `AUTH_AZURE_AD_OAUTH_CLIENT_ID`, `AUTH_AZURE_AD_OAUTH_CLIENT_SECRET`, `AUTH_AZURE_AD_OAUTH_TENANT_ID` | `{SITE_URL}/api/v1/oauth/redirect/azuread` |
-| **Google** | `AUTH_GOOGLE_ENABLED=true`, `AUTH_GOOGLE_OAUTH2_CLIENT_ID`, `AUTH_GOOGLE_OAUTH2_CLIENT_SECRET` | `{SITE_URL}/api/v1/oauth/redirect/google` |
-| **Generic OIDC** | `AUTH_OIDC_CLIENT_ID`, `AUTH_OIDC_METADATA_DOCUMENT_URL`, `AUTH_OIDC_CLIENT_SECRET` | `{SITE_URL}/api/v1/oauth/redirect/oidc` |
-
 Also consider:
 
 - **[SCIM provisioning](/references/workspace/scim-integration)** (Enterprise):
@@ -515,19 +384,18 @@ Also consider:
 - **PAT policy:** `PAT_ALLOWED_ORG_ROLES`, `PAT_MAX_EXPIRATION_TIME_IN_DAYS`, or `DISABLE_PAT`
 - Keep `ALLOW_MULTIPLE_ORGS: "false"` (default) for a single-company instance
 
-## 10. Enterprise features
+## Enterprise features
 
-<Info>
-  Deep dive: [Enterprise license keys](/self-host/customize-deployment/enterprise-license-keys)
-</Info>
+License key setup and validation is covered in
+[enterprise license keys](/self-host/customize-deployment/enterprise-license-keys) — remember
+the key is validated against `https://api.keygen.sh` on every server start, so allowlist that
+domain in your egress policy.
+
+### Enterprise feature flags
 
 ```yaml
-secrets:
-  LIGHTDASH_LICENSE_KEY: ...      # validated against https://api.keygen.sh on every server
-                                  # start — allowlist that domain in egress policy
-
 configMap:
-  # Caching (Enterprise)
+  # Caching
   RESULTS_CACHE_ENABLED: "true"       # warehouse results cache in S3
   AUTOCOMPLETE_CACHE_ENABLED: "true"  # filter autocomplete cache
   CACHE_STALE_TIME_SECONDS: "86400"
@@ -562,15 +430,11 @@ secrets:
   to pilot on one project first
 - MCP details: [Configure MCP for Lightdash](/self-host/customize-deployment/configure-mcp-for-lightdash)
 
-### Data apps (sandboxes)
+### Data apps
 
-<Info>
-  Deep dive: [Sandboxes](/self-host/customize-deployment/sandboxes) and
-  [self-hosting data apps](/guides/data-apps/self-hosting)
-</Info>
-
-Data apps run generated code in isolated sandboxes (E2B) and store built apps in their own
-bucket:
+Sandbox providers (E2B, AWS Lambda MicroVMs, Azure) and their security model are covered in
+[sandboxes](/self-host/customize-deployment/sandboxes); model configuration in
+[self-hosting data apps](/guides/data-apps/self-hosting). Production checklist on top:
 
 ```yaml
 configMap:
@@ -582,49 +446,35 @@ secrets:
   E2B_API_KEY: ...
   APPS_S3_BUCKET: yourco-lightdash-apps    # persistent bucket, no delete lifecycle
   APPS_S3_REGION: eu-west-1
-  APPS_S3_ACCESS_KEY: ...
-  APPS_S3_SECRET_KEY: ...
 ```
 
 Serve app previews from a **separate domain** (Lightdash Cloud uses `*.lightdash.app` next
 to `*.lightdash.cloud`) so untrusted app content never shares an origin with your Lightdash
 session cookies, and restrict that hostname to `/api/apps/*` paths at the ingress.
 
-## 11. Integrations
+## Integrations
 
-**[Slack](/self-host/customize-deployment/configure-a-slack-app-for-lightdash)** (scheduled
-deliveries, unfurls, AI agents in Slack):
+Setup guides: [Slack](/self-host/customize-deployment/configure-a-slack-app-for-lightdash),
+[GitHub](/self-host/customize-deployment/configure-github-for-lightdash),
+[Google Sheets](/self-host/customize-deployment/google-sheets-integration). Gotchas that trip
+up production deployments:
 
-```yaml
-secrets:
-  SLACK_CLIENT_ID: "1234.5678"     # quote it — must be a string
-  SLACK_CLIENT_SECRET: ...
-  SLACK_SIGNING_SECRET: ...
-  SLACK_STATE_SECRET: some-random-string
-  # For instances not reachable from the public internet:
-  # SLACK_APP_TOKEN + configMap.SLACK_SOCKET_MODE: "true"
-```
+- **Slack:** quote `SLACK_CLIENT_ID` (`"1234.5678"` — it must be a string), and set a random
+  `SLACK_STATE_SECRET`. Instances not reachable from the public internet need
+  `SLACK_APP_TOKEN` + `SLACK_SOCKET_MODE: "true"`
+- **GitHub:** `GITHUB_PRIVATE_KEY` must be the **base64-encoded** PEM; callback is
+  `{SITE_URL}/api/v1/github/oauth/callback`. GitLab equivalent: `GITLAB_CLIENT_ID`,
+  `GITLAB_CLIENT_SECRET`, `GITLAB_REDIRECT_DOMAIN`
+- **Google Sheets:** requires the Google OAuth client from SSO plus `GOOGLE_DRIVE_API_KEY`
+  (Picker + Sheets APIs enabled) and `GOOGLE_CLOUD_PROJECT_ID`. You can keep Google *login*
+  hidden with `AUTH_GOOGLE_ENABLED: "false"` while Sheets sync still works
+- **Microsoft Teams deliveries:** `MICROSOFT_TEAMS_ENABLED: "true"`
 
-**[GitHub](/self-host/customize-deployment/configure-github-for-lightdash)** (dbt repo
-write-back): `GITHUB_APP_ID`, `GITHUB_APP_NAME`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`,
-`GITHUB_PRIVATE_KEY` (**base64-encoded** PEM), callback
-`{SITE_URL}/api/v1/github/oauth/callback`. GitLab equivalent: `GITLAB_CLIENT_ID`,
-`GITLAB_CLIENT_SECRET`, `GITLAB_REDIRECT_DOMAIN`.
+## Observability
 
-**[Google Sheets sync](/self-host/customize-deployment/google-sheets-integration):** requires
-the Google OAuth client from SSO plus `GOOGLE_DRIVE_API_KEY` (Picker + Sheets APIs enabled)
-and `GOOGLE_CLOUD_PROJECT_ID`. You can keep Google *login* hidden with
-`AUTH_GOOGLE_ENABLED: "false"` while Sheets sync still works.
-
-**Microsoft Teams deliveries:** `MICROSOFT_TEAMS_ENABLED: "true"`.
-
-## 12. Observability
-
-<Info>
-  Deep dives: [Configure logging](/self-host/customize-deployment/configure-logging-for-lightdash)
-  and [Prometheus metrics](/self-host/customize-deployment/configure-prometheus-metrics-for-self-hosted-lightdash)
-</Info>
-
+The metric catalogue, alerting guidance, and Prometheus server setup are covered in
+[Prometheus metrics](/self-host/customize-deployment/configure-prometheus-metrics-for-self-hosted-lightdash);
+log configuration in [configure logging](/self-host/customize-deployment/configure-logging-for-lightdash).
 Run what Lightdash Cloud runs on every instance:
 
 ```yaml
@@ -644,23 +494,24 @@ configMap:
   this, 30s interval)
 - Metrics worth alerting on: HTTP p95/error rate (`http_server_request_duration_seconds`),
   queue depth / scheduler job failures, pg pool saturation, event-loop lag
-- If you use the NATS setup above, the NATS Prometheus exporter is on port **7777**
+- If you run NATS, its Prometheus exporter is on port **7777**
   (`nats.promExporter.enabled: true`)
 - OpenTelemetry: the standard `OTEL_*` env vars work (`OTEL_TRACES_EXPORTER=otlp`,
   `OTEL_EXPORTER_OTLP_ENDPOINT=...`) if you run a collector
 - Error tracking: point `SENTRY_BE_DSN` / `SENTRY_FE_DSN` at your own Sentry project if you
   have one
 
-## 13. Security hardening
+## Security hardening
 
-- [ ] SSO-only auth (section 9), `SECURE_COOKIES`, sensible `COOKIES_MAX_AGE_HOURS`
+- [ ] SSO-only auth ([authentication policy](#authentication-policy)), `SECURE_COOKIES`,
+      sensible `COOKIES_MAX_AGE_HOURS`
 - [ ] **CSP enforcement:** `LIGHTDASH_CSP_REPORT_ONLY: "false"` (default is report-only;
       enforce in production), plus `LIGHTDASH_CSP_ALLOWED_DOMAINS` for any extra origins you
       load from
 - [ ] **CORS:** leave disabled unless embedding; if embedding, `LIGHTDASH_CORS_ENABLED:
       "true"` with an explicit `LIGHTDASH_CORS_ALLOWED_DOMAINS` list — never `*`
 - [ ] Secrets via `existingSecret` + your secret manager; no credentials in Helm values or
-      git
+      git ([secrets management](#secrets-management))
 - [ ] Egress policy: Lightdash needs your warehouse, S3, SMTP, `api.keygen.sh` (license),
       your IdP, and any AI provider endpoints — everything else can be blocked
 - [ ] NetworkPolicies: the chart only ships one for NATS; add your own default-deny +
@@ -671,12 +522,10 @@ configMap:
 - [ ] Soft delete for content recovery: `SOFT_DELETE_ENABLED: "true"`
       (+ `SOFT_DELETE_RETENTION_DAYS`, default 30)
 
-## 14. Upgrades & operations
+## Upgrades and operations
 
-<Info>
-  Deep dives: [Update Lightdash](/self-host/update-lightdash) and
-  [versioning](/self-host/upgrading-lightdash-versioning)
-</Info>
+Upgrade mechanics are in [update Lightdash](/self-host/update-lightdash) and the version
+policy in [versioning](/self-host/upgrading-lightdash-versioning). Operational best practice:
 
 - **Pin `image.tag`** and upgrade deliberately. There is no LTS tag. Lightdash versioning:
   patch = routine, minor = check release notes (may be backwards-incompatible), major = read
@@ -785,7 +634,7 @@ configMap:
   AUTH_DISABLE_PASSWORD_AUTHENTICATION: "true"
   AUTH_ENABLE_OIDC_LINKING: "true"
   AUTH_ENABLE_OIDC_TO_EMAIL_LINKING: "true"
-  # + your SSO provider vars (section 9)
+  # + your SSO provider vars (see authentication policy)
 
   LIGHTDASH_LOG_LEVEL: info
   LIGHTDASH_LOG_FORMAT: json
