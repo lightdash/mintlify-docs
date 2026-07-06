@@ -12,8 +12,8 @@ Deployments come in three tiers. Find your tier, then work through its checklist
 links to either the deep-dive docs page for that topic, or to a best-practice section further
 down this page when the recommendation isn't documented anywhere else.
 
-- **Tier 1 — Evaluation / PoC:** the chart defaults, following the self-hosting guide. Fine for
-  trying Lightdash out; not a place for real users or production credentials.
+- **Tier 1 — Evaluation / PoC:** the self-hosting guide plus a real Postgres and S3 bucket.
+  Fine for trying Lightdash out; not a place for real users or production credentials.
 - **Tier 2 — Scalable production deployment:** external infrastructure, dedicated workers,
   SSO, hardening, and an operations story. This is the bar for serving real users.
 - **Tier 3 — Optional features and observability:** the Enterprise features you bought,
@@ -25,18 +25,22 @@ down this page when the recommendation isn't documented anywhere else.
 ## Tier 1 — Evaluation / PoC
 
 Follow the [self-hosting guide](/self-host/self-host-lightdash) (or
-[docker compose](/self-host/self-host-lightdash-docker-compose) for a local spin-up). The chart
-defaults — bundled Postgres, in-process scheduler, no NATS — are fine for a PoC, and nothing
-else on this page is required yet.
+[docker compose](/self-host/self-host-lightdash-docker-compose) for a local spin-up). Most chart
+defaults — in-process scheduler, no NATS, single replica — are fine for a PoC, but set up the
+two stateful dependencies properly from day one: an external Postgres and an S3 bucket. They're
+cheap, and they mean the PoC can graduate to Tier 2 as a Helm values change instead of a data
+migration.
 
 - [ ] Deploy with the [self-hosting guide](/self-host/self-host-lightdash)
+- [ ] [External PostgreSQL](/self-host/customize-deployment/configure-lightdash-to-use-an-external-database) — `postgresql.enabled: false` even for a PoC; a small managed instance is fine, no HA or backup requirements yet
+- [ ] [S3-compatible object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage) — required regardless; Lightdash fails to start without it
 - [ ] [Enterprise license key](/self-host/customize-deployment/enterprise-license-keys) if you're evaluating Enterprise features
-- [ ] Treat it as disposable — no real users, no production warehouse credentials; there's no backup or HA story at this tier
+- [ ] Still treat it as a PoC — no real users or production warehouse credentials until you've worked through Tier 2
 
 <Note>
-  Plan to **rebuild rather than promote** a PoC: moving from the bundled Postgres to an
-  external database later means a data migration. Graduating to Tier 2 is easiest as a fresh
-  install with production values.
+  With a real database and bucket underneath it, a PoC **graduates in place**: Tier 2 is
+  layered on top as Helm values (workers, replicas, SSO, hardening) plus operational practice
+  around the same Postgres and S3.
 </Note>
 
 ## Tier 2 — Scalable production deployment
@@ -51,10 +55,8 @@ else on this page is required yet.
 
 ### Infrastructure dependencies
 
-- [ ] [External PostgreSQL](/self-host/customize-deployment/configure-lightdash-to-use-an-external-database) — `postgresql.enabled: false`; the bundled subchart is for evaluation only
-- [ ] [Postgres HA, backups and point-in-time recovery](#postgresql), plus the `pgvector` extension if you use Enterprise AI features
+- [ ] [Postgres HA, backups and point-in-time recovery](#postgresql) on the external database from Tier 1, plus the `pgvector` extension if you use Enterprise AI features
 - [ ] [Migration job](#postgresql) — `migrationJob.enabled: true` so migrations run once per upgrade, not racing across replicas
-- [ ] [S3-compatible object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage) — required; Lightdash fails to start without it
 - [ ] [Bucket strategy and lifecycle rules](#object-storage) — a dedicated bucket per purpose, with a 1-day lifecycle delete on the results bucket
 - [ ] [SMTP email](/self-host/customize-deployment/configure-smtp-for-lightdash-email-notifications) — invites, password resets, and scheduled deliveries need it
 - [ ] [Email deliverability](#email-deliverability) — transactional provider, SPF/DKIM on the sender domain
@@ -122,7 +124,7 @@ these — a good deployment runs all of them:
 | Pre-aggregate NATS worker | `preAggregateNatsWorker.enabled` | Builds pre-aggregated materializations (Enterprise) |
 | Headless browser | `browserless-chrome.enabled` | Chromium pool for screenshots/PDFs |
 | Migration job | `migrationJob.enabled` | Pre-upgrade Helm hook that runs database migrations exactly once |
-| PostgreSQL | **external** (`postgresql.enabled: false`) | Application state. The bundled subchart is for evaluation only |
+| PostgreSQL | **external** (`postgresql.enabled: false`) | Application state. Don't use the bundled subchart, even for a PoC |
 | S3 bucket(s) | external | Query results, downloads, pre-agg materializations, data apps |
 
 The chart wires up environment variables for you in three buckets:
