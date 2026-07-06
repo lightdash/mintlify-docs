@@ -3,106 +3,76 @@ title: "Production deployment checklist"
 description: "Best practices for running an enterprise-grade self-hosted Lightdash deployment with the official Helm chart."
 ---
 
-This is the checklist for running a production-grade, enterprise self-hosted Lightdash deployment
+This is the checklist for running a production-grade, self-hosted Lightdash deployment
 with the official Helm chart ([lightdash/helm-charts](https://github.com/lightdash/helm-charts)).
-The recommendations mirror how Lightdash Cloud runs every customer instance, translated onto the
-options the public Helm chart exposes.
-
-Deployments come in three tiers. Find your tier, then work through its checklist. Every item
-links to either the deep-dive docs page for that topic, or to a best-practice section further
-down this page when the recommendation isn't documented anywhere else.
-
-- **Tier 1 — Evaluation / PoC:** the self-hosting guide plus a real Postgres and S3 bucket.
-  Fine for trying Lightdash out; not a place for real users or production credentials.
-- **Tier 2 — Scalable production deployment:** external infrastructure, dedicated workers,
-  SSO, hardening, and an operations story. This is the bar for serving real users.
-- **Tier 3 — Optional features and observability:** the Enterprise features you bought,
-  integrations, and monitoring. Layer these on top of a solid Tier 2.
 
 **Audience:** platform/infra engineers deploying Lightdash on Kubernetes.
-**Chart:** `lightdash/lightdash` ≥ 2.7.2 (required for NATS worker support).
 
 ## Tier 1 — Evaluation / PoC
 
 Follow the [self-hosting guide](/self-host/self-host-lightdash) (or
-[docker compose](/self-host/self-host-lightdash-docker-compose) for a local spin-up). Most chart
-defaults — in-process scheduler, no NATS, single replica — are fine for a PoC, but set up the
-two stateful dependencies properly from day one: an external Postgres and an S3 bucket. They're
-cheap, and they mean the PoC can graduate to Tier 2 as a Helm values change instead of a data
-migration.
+[docker compose](/self-host/self-host-lightdash-docker-compose) for a local spin-up) for a minimum production
+setup suitable for evaluating Lightdash.
 
-- [ ] Deploy with the [self-hosting guide](/self-host/self-host-lightdash)
+**Prerequisites**
+
 - [ ] [External PostgreSQL](/self-host/customize-deployment/configure-lightdash-to-use-an-external-database) — `postgresql.enabled: false` even for a PoC; a small managed instance is fine, no HA or backup requirements yet
 - [ ] [S3-compatible object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage) — required regardless; Lightdash fails to start without it
-- [ ] [Enterprise license key](/self-host/customize-deployment/enterprise-license-keys) if you're evaluating Enterprise features
-- [ ] Still treat it as a PoC — no real users or production warehouse credentials until you've worked through Tier 2
+- [ ] [Enterprise license key](/self-host/customize-deployment/enterprise-license-keys) if you're evaluating Enterprise features — needs outbound access to `https://api.keygen.sh`
 
-<Note>
-  With a real database and bucket underneath it, a PoC **graduates in place**: Tier 2 is
-  layered on top as Helm values (workers, replicas, SSO, hardening) plus operational practice
-  around the same Postgres and S3.
-</Note>
-
-## Tier 2 — Scalable production deployment
-
-### Configuration
+**Checklist**
 
 - [ ] [Pin an image version](#core-configuration) — set `image.tag` explicitly; don't ride the chart's `appVersion`
 - [ ] [Set `SITE_URL`](#core-configuration) to your final `https://` URL before first boot
 - [ ] [Generate a strong `LIGHTDASH_SECRET`](#core-configuration) and store it somewhere durable — losing it means losing access to encrypted data
 - [ ] [`SECURE_COOKIES` and `TRUST_PROXY`](/self-host/customize-deployment/secure-lightdash-with-https) both `"true"` behind your TLS-terminating load balancer
 - [ ] [Keep credentials out of Helm values](#secrets-management) — use `existingSecret` populated from your secret manager
+- [ ] [Headless browser](#headless-browser) enabled (the chart default) — image previews, PDF exports, Slack unfurls
+- [ ] [HTTPS end-to-end](/self-host/customize-deployment/secure-lightdash-with-https) via your ingress or load balancer
+- [ ] Deploy with the [self-hosting guide](/self-host/self-host-lightdash)
+
+## Tier 2 — Scalable production deployment
+
+### Operations
+
+- [ ] [Choose upgrade strategy](#upgrades-and-operations) — pinned image tag, at least monthly cadence
+
+### Workers and scaling
+
+- [ ] [Dedicated workers](#scheduler-worker) — `scheduler.enabled: true` to enable scalable scheduled deliveries
+- [ ] [NATS + warehouse workers](/self-host/nats-workers/overview) — `nats.enabled: true` **and** `warehouseNatsWorker.enabled: true` for handling large volumes of warehouse queries
+- [ ] [≥ 2 backend replicas](#sizing-and-availability) with pod anti-affinity and a pod disruption budget
+- [ ] [Size resource requests](#sizing-and-availability)
 
 ### Infrastructure dependencies
 
 - [ ] [Postgres HA, backups and point-in-time recovery](#postgresql) on the external database from Tier 1, plus the `pgvector` extension if you use Enterprise AI features
-- [ ] [Migration job](#postgresql) — `migrationJob.enabled: true` so migrations run once per upgrade, not racing across replicas
 - [ ] [Bucket strategy and lifecycle rules](#object-storage) — a dedicated bucket per purpose, with a 1-day lifecycle delete on the results bucket
-- [ ] [SMTP email](/self-host/customize-deployment/configure-smtp-for-lightdash-email-notifications) — invites, password resets, and scheduled deliveries need it
+- [ ] [SMTP email](/self-host/customize-deployment/configure-smtp-for-lightdash-email-notifications)
 - [ ] [Email deliverability](#email-deliverability) — transactional provider, SPF/DKIM on the sender domain
-- [ ] [HTTPS end-to-end](/self-host/customize-deployment/secure-lightdash-with-https) via your ingress or load balancer
 - [ ] [Load balancer settings](#load-balancer-and-networking) — timeout ≥ 300s, health check on `/api/v1/health`, request body limit ≥ `LIGHTDASH_MAX_PAYLOAD`
-
-### Workers and scaling
-
-- [ ] [Dedicated scheduler worker](#scheduler-worker) — `scheduler.enabled: true` so background jobs don't compete with user traffic
-- [ ] [NATS + warehouse workers](/self-host/nats-workers/overview) — `nats.enabled: true` **and** `warehouseNatsWorker.enabled: true`, always together
-- [ ] [Headless browser](#headless-browser) enabled (the chart default) and tuned — image previews, PDF exports, Slack unfurls
-- [ ] [≥ 2 backend replicas](#sizing-and-availability) with pod anti-affinity and a pod disruption budget
-- [ ] [Resource requests on every component](#sizing-and-availability)
 
 ### Security and authentication
 
 - [ ] [SSO](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash) (Okta / Azure AD / Google / generic OIDC) with password authentication disabled
 - [ ] [Account linking and personal access token policy](#authentication-policy)
 - [ ] [CSP enforcement and explicit CORS](#security-hardening)
-- [ ] [Egress policy and NetworkPolicies](#security-hardening)
-- [ ] [Pod security contexts](#security-hardening) — the chart sets none by default
-- [ ] [Soft delete](#security-hardening) for content recovery
-
-### Operations
-
-- [ ] [Deliberate upgrades](#upgrades-and-operations) — pinned image tag, at least monthly cadence
-- [ ] [UAT instance](#upgrades-and-operations) that mirrors production config for rehearsing upgrades
-- [ ] [Tested DR runbook](#upgrades-and-operations) — Postgres backup + `LIGHTDASH_SECRET` + Helm values rebuilds the instance
 
 ## Tier 3 — Optional features and observability
 
 ### Enterprise features
 
-- [ ] [Enterprise license key](/self-host/customize-deployment/enterprise-license-keys) set, with outbound access to `https://api.keygen.sh`
 - [ ] [Pre-aggregations](/self-host/nats-workers/pre-aggregate-workers) — pre-aggregate NATS workers + a dedicated S3 bucket
 - [ ] [AI Analyst](#ai-analyst) — model provider key + `pgvector` in Postgres
 - [ ] [Data apps](#data-apps) — sandboxes runtime, apps bucket, and a separate preview origin
 - [ ] [SCIM provisioning](/references/workspace/scim-integration) from your IdP
-- [ ] [Results caching, embedding, service accounts, custom roles](#enterprise-feature-flags) — enable what you bought
+- [ ] [Results caching, embedding, service accounts, custom roles](#enterprise-feature-flags)
 
 ### Integrations (enable what you use)
 
 - [ ] [Slack](/self-host/customize-deployment/configure-a-slack-app-for-lightdash) — scheduled deliveries, unfurls, AI agents in Slack
 - [ ] [GitHub](/self-host/customize-deployment/configure-github-for-lightdash) or GitLab — dbt repo write-back
 - [ ] [Google Sheets sync](/self-host/customize-deployment/google-sheets-integration)
-- [ ] [Integration gotchas](#integrations) — quoting, key encoding, socket mode
 
 ### Observability
 
@@ -176,6 +146,131 @@ Key points:
 `existingSecret` populated by External Secrets Operator / a CSI driver from your secret
 manager, and keep Helm values (and git) free of credentials.
 
+## Headless browser
+
+Enabled by default in the chart — keep it on, and tune it like Lightdash Cloud does:
+
+```yaml
+browserless-chrome:
+  enabled: true
+  replicaCount: 1              # scale with scheduled-delivery volume
+  image:
+    repository: ghcr.io/browserless/chromium
+    tag: v2.49.0               # pin it; this is what Lightdash Cloud runs
+  resources:
+    requests: { cpu: "2", memory: 4Gi }
+    limits: { memory: 4Gi }    # the memory-pressure guard below needs a limit to exist
+  env:
+    CONNECTION_TIMEOUT: "300000"   # 5 min; the chart default 180s truncates big dashboards
+    TIMEOUT: "120000"              # per-session; raising this is the most common screenshot fix
+    HEALTH: "true"                 # reject new sessions under memory pressure (HTTP 429)…
+    MAX_MEMORY_PERCENT: "85"       # …instead of OOM-killing mid-screenshot
+```
+
+The chart auto-wires `HEADLESS_BROWSER_HOST` / `HEADLESS_BROWSER_PORT`. Remember: the browser
+renders dashboards by calling **`SITE_URL`** — it must be able to resolve and reach that URL
+from inside the cluster (use `INTERNAL_LIGHTDASH_HOST` if it can't). For timeout/retry
+troubleshooting and internal-HTTPS setups, see
+[enable headless browser](/self-host/customize-deployment/enable-headless-browser-for-lightdash).
+
+## Upgrades and operations
+
+Upgrade mechanics are in [update Lightdash](/self-host/update-lightdash) and the version
+policy in [versioning](/self-host/upgrading-lightdash-versioning). Operational best practice:
+
+- **Pin `image.tag`** and upgrade deliberately. There is no LTS tag. Lightdash versioning:
+  patch = routine, minor = check release notes (may be backwards-incompatible), major = read
+  the upgrade guide
+- **Upgrade cadence:** at least monthly. Lightdash ships continuously; falling many minor
+  versions behind makes the eventual migration jump riskier
+- Upgrade path: bump `image.tag` → `helm upgrade` → the `migrationJob` hook migrates the
+  database → rolling restart. Roll back the image only if the release notes say the
+  migrations are backwards-compatible; otherwise restore the database backup
+- **Keep a UAT instance** that mirrors production config, and rehearse upgrades there against
+  a refreshed copy of the production database
+- **DR runbook:** you need three things to rebuild an instance from scratch — the Postgres
+  backup, the `LIGHTDASH_SECRET`, and your Helm values. Test that you can
+
+## Scheduler worker
+
+By default the backend runs scheduled jobs in-process. In production, run a **dedicated
+scheduler worker** so a heavy dashboard export can't starve the API:
+
+```yaml
+scheduler:
+  enabled: true
+  replicas: 1            # scale up if deliveries queue at peak times
+  concurrency: 3         # jobs per replica (sets SCHEDULER_CONCURRENCY)
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1425Mi
+      ephemeral-storage: 1Gi
+```
+
+When `scheduler.enabled: true` the chart automatically sets `SCHEDULER_ENABLED: "false"` on
+the backend — don't set it yourself.
+
+Tuning: `SCHEDULER_JOB_TIMEOUT` (default 600000 ms), `SCHEDULER_SCREENSHOT_TIMEOUT`, and
+`scheduler.tasks.include` / `scheduler.tasks.exclude` if you want to shard task types across
+worker groups.
+
+For async warehouse queries, see the [NATS workers overview](/self-host/nats-workers/overview)
+and [warehouse workers](/self-host/nats-workers/warehouse-workers) — including the critical
+rule: **never enable `nats.enabled` without `warehouseNatsWorker.enabled`**.
+
+## Sizing and availability
+
+Baseline per-component requests for a standard instance (see also
+[recommended resources](/self-host/customize-deployment/recommended-resources)):
+
+| Component | CPU | Memory | Ephemeral | Replicas |
+|---|---|---|---|---|
+| Backend | 500m–1 | 1.5–4 Gi | 1–2 Gi | **2+** |
+| Scheduler worker | 500m | 1425 Mi | 1 Gi | 1 |
+| Warehouse NATS worker | 500m | 1.5 Gi | 9 Gi | 1 |
+| Pre-agg NATS worker | 650m | 4 Gi | 9 Gi | 1 |
+| Browserless | 2 | 4 Gi | 1 Gi | 1 |
+| NATS | 100m | 256 Mi–1 Gi | — | 1 |
+
+NATS workers buffer large result sets on ephemeral disk before uploading to S3 — the 9Gi
+ephemeral-storage request is not a typo.
+
+For large orgs (hundreds of weekly users, heavy AI/scheduler usage), Lightdash Cloud
+routinely runs: backend 1 CPU / 6 Gi with `NODE_OPTIONS: "--max-old-space-size=4096"` in
+`configMap` (raise the Node heap whenever you raise memory past ~2 Gi), scheduler 1 CPU /
+2–6 Gi, 3× warehouse workers at 5 Gi, 4+ backend replicas.
+
+```yaml
+replicaCount: 2
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 60   # backend only; workers scale via replicas
+
+podAntiAffinity:
+  enabled: true        # spreads each component across nodes (hard) and zones (soft)
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+```
+
+<Warning>
+  **PDB gotcha:** the single `podDisruptionBudget` block applies to *every* component. With
+  `minAvailable: 1` and single-replica workers, node drains will block on those pods. Either
+  accept manual intervention during node maintenance, run 2 replicas of critical workers, or
+  tune the PDB.
+</Warning>
+
+Probes: the chart's defaults are already tuned the way Lightdash Cloud runs them
+(startup ~185s budget for migrations, readiness fails fast at ~15s to pull the pod from the
+load balancer, liveness fails slow at ~95s so a busy pod isn't restarted). Leave them alone
+unless migrations are slow on your database — then raise
+`lightdashBackend.startupProbe.failureThreshold`.
+
 ## PostgreSQL
 
 Setup is covered in
@@ -206,9 +301,9 @@ ssl:
   certFileName: ca.pem
 ```
 
-Migrations run automatically at startup. To avoid multiple replicas racing on the migration
-lock, enable the migration job — it runs migrations as a Helm `pre-install,pre-upgrade` hook
-and the backend then starts without migrating:
+Migrations run automatically at startup. Once you run multiple backend replicas, enable the
+migration job so replicas don't race on the migration lock — it runs migrations as a Helm
+`pre-install,pre-upgrade` hook and the backend then starts without migrating:
 
 ```yaml
 migrationJob:
@@ -266,130 +361,6 @@ Match what Lightdash Cloud configures at the load balancer:
   true`, `backendConfig.spec`) — this is how timeouts, CDN and Cloud Armor policies are
   attached on Lightdash Cloud
 
-## Scheduler worker
-
-By default the backend runs scheduled jobs in-process. In production, run a **dedicated
-scheduler worker** so a heavy dashboard export can't starve the API:
-
-```yaml
-scheduler:
-  enabled: true
-  replicas: 1            # scale up if deliveries queue at peak times
-  concurrency: 3         # jobs per replica (sets SCHEDULER_CONCURRENCY)
-  resources:
-    requests:
-      cpu: 500m
-      memory: 1425Mi
-      ephemeral-storage: 1Gi
-```
-
-When `scheduler.enabled: true` the chart automatically sets `SCHEDULER_ENABLED: "false"` on
-the backend — don't set it yourself.
-
-Tuning: `SCHEDULER_JOB_TIMEOUT` (default 600000 ms), `SCHEDULER_SCREENSHOT_TIMEOUT`, and
-`scheduler.tasks.include` / `scheduler.tasks.exclude` if you want to shard task types across
-worker groups. (Running the worker outside Kubernetes? See
-[standalone scheduled worker](/self-host/customize-deployment/configure-standalone-scheduled-worker).)
-
-## Async queries (NATS)
-
-Lightdash ≥ 0.2675.0 executes warehouse queries asynchronously through NATS JetStream. This
-is enabled on every Lightdash Cloud instance and is the recommended architecture. Setup,
-configuration reference, and troubleshooting are covered in the
-[NATS workers overview](/self-host/nats-workers/overview) and
-[warehouse workers](/self-host/nats-workers/warehouse-workers) pages — including the critical
-rule: **never enable `nats.enabled` without `warehouseNatsWorker.enabled`**.
-
-Cloud-proven defaults worth knowing:
-
-- Memory-store JetStream (the chart's documented default) is what Lightdash Cloud runs;
-  in-flight jobs on a NATS restart fail visibly and can be retried
-- Workers buffer large result sets on ephemeral disk before uploading to S3 — give them a
-  **9Gi ephemeral-storage request** (see the sizing table below)
-- Lightdash Cloud scales warehouse workers to 3+ replicas for very heavy instances
-- Keep the NATS network policy on (`nats.networkPolicy.enabled: true`, chart default) so only
-  Lightdash pods can reach the bus
-
-For [pre-aggregations](/self-host/nats-workers/pre-aggregate-workers) (Enterprise), the docs
-page covers everything: the dedicated S3 bucket, `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT`,
-lifecycle rules, and sizing.
-
-## Headless browser
-
-Enabled by default in the chart — keep it on, and tune it like Lightdash Cloud does:
-
-```yaml
-browserless-chrome:
-  enabled: true
-  replicaCount: 1              # scale with scheduled-delivery volume
-  image:
-    repository: ghcr.io/browserless/chromium
-    tag: v2.49.0               # pin it; this is what Lightdash Cloud runs
-  resources:
-    requests: { cpu: "2", memory: 4Gi }
-    limits: { memory: 4Gi }    # the memory-pressure guard below needs a limit to exist
-  env:
-    CONNECTION_TIMEOUT: "300000"   # 5 min; the chart default 180s truncates big dashboards
-    TIMEOUT: "120000"              # per-session; raising this is the most common screenshot fix
-    HEALTH: "true"                 # reject new sessions under memory pressure (HTTP 429)…
-    MAX_MEMORY_PERCENT: "85"       # …instead of OOM-killing mid-screenshot
-```
-
-The chart auto-wires `HEADLESS_BROWSER_HOST` / `HEADLESS_BROWSER_PORT`. Remember: the browser
-renders dashboards by calling **`SITE_URL`** — it must be able to resolve and reach that URL
-from inside the cluster (use `INTERNAL_LIGHTDASH_HOST` if it can't). For timeout/retry
-troubleshooting and internal-HTTPS setups, see
-[enable headless browser](/self-host/customize-deployment/enable-headless-browser-for-lightdash).
-
-## Sizing and availability
-
-Baseline per-component requests for a standard instance (see also
-[recommended resources](/self-host/customize-deployment/recommended-resources)):
-
-| Component | CPU | Memory | Ephemeral | Replicas |
-|---|---|---|---|---|
-| Backend | 500m–1 | 1.5–4 Gi | 1–2 Gi | **2+** |
-| Scheduler worker | 500m | 1425 Mi | 1 Gi | 1 |
-| Warehouse NATS worker | 500m | 1.5 Gi | 9 Gi | 1 |
-| Pre-agg NATS worker | 650m | 4 Gi | 9 Gi | 1 |
-| Browserless | 2 | 4 Gi | 1 Gi | 1 |
-| NATS | 100m | 256 Mi–1 Gi | — | 1 |
-
-For large orgs (hundreds of weekly users, heavy AI/scheduler usage), Lightdash Cloud
-routinely runs: backend 1 CPU / 6 Gi with `NODE_OPTIONS: "--max-old-space-size=4096"` in
-`configMap` (raise the Node heap whenever you raise memory past ~2 Gi), scheduler 1 CPU /
-2–6 Gi, 3× warehouse workers at 5 Gi, 4+ backend replicas.
-
-```yaml
-replicaCount: 2
-
-autoscaling:
-  enabled: true
-  minReplicas: 2
-  maxReplicas: 10
-  targetCPUUtilizationPercentage: 60   # backend only; workers scale via replicas
-
-podAntiAffinity:
-  enabled: true        # spreads each component across nodes (hard) and zones (soft)
-
-podDisruptionBudget:
-  enabled: true
-  minAvailable: 1
-```
-
-<Warning>
-  **PDB gotcha:** the single `podDisruptionBudget` block applies to *every* component. With
-  `minAvailable: 1` and single-replica workers, node drains will block on those pods. Either
-  accept manual intervention during node maintenance, run 2 replicas of critical workers, or
-  tune the PDB.
-</Warning>
-
-Probes: the chart's defaults are already tuned the way Lightdash Cloud runs them
-(startup ~185s budget for migrations, readiness fails fast at ~15s to pull the pod from the
-load balancer, liveness fails slow at ~95s so a busy pod isn't restarted). Leave them alone
-unless migrations are slow on your database — then raise
-`lightdashBackend.startupProbe.failureThreshold`.
-
 ## Authentication policy
 
 Per-provider SSO setup (Okta, Azure AD, Google, generic OIDC — env vars and redirect URIs) is
@@ -405,52 +376,25 @@ configMap:
 
 Also consider:
 
-- **[SCIM provisioning](/references/workspace/scim-integration)** (Enterprise):
-  `SCIM_ENABLED: "true"`, then configure your IdP against the SCIM endpoint — prefer this
-  over the deprecated Okta `AUTH_ENABLE_GROUP_SYNC`
 - **PAT policy:** `PAT_ALLOWED_ORG_ROLES`, `PAT_MAX_EXPIRATION_TIME_IN_DAYS`, or `DISABLE_PAT`
 - Keep `ALLOW_MULTIPLE_ORGS: "false"` (default) for a single-company instance
 
 ## Security hardening
 
-- [ ] SSO-only auth ([authentication policy](#authentication-policy)), `SECURE_COOKIES`,
-      sensible `COOKIES_MAX_AGE_HOURS`
 - [ ] **CSP enforcement:** `LIGHTDASH_CSP_REPORT_ONLY: "false"` (default is report-only;
       enforce in production), plus `LIGHTDASH_CSP_ALLOWED_DOMAINS` for any extra origins you
       load from
 - [ ] **CORS:** leave disabled unless embedding; if embedding, `LIGHTDASH_CORS_ENABLED:
       "true"` with an explicit `LIGHTDASH_CORS_ALLOWED_DOMAINS` list — never `*`
-- [ ] Secrets via `existingSecret` + your secret manager; no credentials in Helm values or
-      git ([secrets management](#secrets-management))
 - [ ] Egress policy: Lightdash needs your warehouse, S3, SMTP, `api.keygen.sh` (license),
       your IdP, and any AI provider endpoints — everything else can be blocked
-- [ ] NetworkPolicies: the chart only ships one for NATS; add your own default-deny +
-      allow rules for backend ↔ postgres/browserless/S3 if your cluster uses them
+- [ ] NetworkPolicies: the chart only ships one for NATS (keep `nats.networkPolicy.enabled:
+      true`, the default); add your own default-deny + allow rules for backend ↔
+      postgres/browserless/S3 if your cluster uses them
 - [ ] `podSecurityContext` / `securityContext`: the chart sets none by default — add
       `runAsNonRoot`, drop capabilities per your Pod Security Standards baseline
-- [ ] IP allowlisting/WAF at the load balancer for extra-sensitive instances
 - [ ] Soft delete for content recovery: `SOFT_DELETE_ENABLED: "true"`
       (+ `SOFT_DELETE_RETENTION_DAYS`, default 30)
-
-## Upgrades and operations
-
-Upgrade mechanics are in [update Lightdash](/self-host/update-lightdash) and the version
-policy in [versioning](/self-host/upgrading-lightdash-versioning). Operational best practice:
-
-- **Pin `image.tag`** and upgrade deliberately. There is no LTS tag. Lightdash versioning:
-  patch = routine, minor = check release notes (may be backwards-incompatible), major = read
-  the upgrade guide
-- **Keep a UAT instance** that mirrors production config, and rehearse upgrades there against
-  a refreshed copy of the production database (Lightdash dogfoods every release on internal
-  instances before rolling to Cloud customers)
-- Upgrade path: bump `image.tag` → `helm upgrade` → the `migrationJob` hook migrates the
-  database → rolling restart. Roll back the image only if the release notes say the
-  migrations are backwards-compatible; otherwise restore the database backup
-- **Upgrade cadence:** at least monthly. Lightdash ships continuously; falling many minor
-  versions behind makes the eventual migration jump riskier
-- **DR runbook:** you need three things to rebuild an instance from scratch — the Postgres
-  backup, the `LIGHTDASH_SECRET`, and your Helm values. Test that you can
-- Watch chart release notes too (e.g. chart 1.0.0 required stepping through 0.10.1)
 
 ## Enterprise features
 
@@ -520,24 +464,6 @@ Serve app previews from a **separate domain** (Lightdash Cloud uses `*.lightdash
 to `*.lightdash.cloud`) so untrusted app content never shares an origin with your Lightdash
 session cookies, and restrict that hostname to `/api/apps/*` paths at the ingress.
 
-## Integrations
-
-Setup guides: [Slack](/self-host/customize-deployment/configure-a-slack-app-for-lightdash),
-[GitHub](/self-host/customize-deployment/configure-github-for-lightdash),
-[Google Sheets](/self-host/customize-deployment/google-sheets-integration). Gotchas that trip
-up production deployments:
-
-- **Slack:** quote `SLACK_CLIENT_ID` (`"1234.5678"` — it must be a string), and set a random
-  `SLACK_STATE_SECRET`. Instances not reachable from the public internet need
-  `SLACK_APP_TOKEN` + `SLACK_SOCKET_MODE: "true"`
-- **GitHub:** `GITHUB_PRIVATE_KEY` must be the **base64-encoded** PEM; callback is
-  `{SITE_URL}/api/v1/github/oauth/callback`. GitLab equivalent: `GITLAB_CLIENT_ID`,
-  `GITLAB_CLIENT_SECRET`, `GITLAB_REDIRECT_DOMAIN`
-- **Google Sheets:** requires the Google OAuth client from SSO plus `GOOGLE_DRIVE_API_KEY`
-  (Picker + Sheets APIs enabled) and `GOOGLE_CLOUD_PROJECT_ID`. You can keep Google *login*
-  hidden with `AUTH_GOOGLE_ENABLED: "false"` while Sheets sync still works
-- **Microsoft Teams deliveries:** `MICROSOFT_TEAMS_ENABLED: "true"`
-
 ## Observability
 
 The metric catalogue, alerting guidance, and Prometheus server setup are covered in
@@ -564,8 +490,6 @@ configMap:
   queue depth / scheduler job failures, pg pool saturation, event-loop lag
 - If you run NATS, its Prometheus exporter is on port **7777**
   (`nats.promExporter.enabled: true`)
-- OpenTelemetry: the standard `OTEL_*` env vars work (`OTEL_TRACES_EXPORTER=otlp`,
-  `OTEL_EXPORTER_OTLP_ENDPOINT=...`) if you run a collector
 - Error tracking: point `SENTRY_BE_DSN` / `SENTRY_FE_DSN` at your own Sentry project if you
   have one
 
