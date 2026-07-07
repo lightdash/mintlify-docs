@@ -1,0 +1,176 @@
+---
+title: AI coding agent (Beta)
+description: Ask an AI agent in chat to edit any connected repository — not just your dbt project — and open a pull request with the changes.
+---
+
+<Warning>
+  The AI coding agent is currently in Beta and gated by a feature flag. It is an
+  **enterprise** feature. Contact Lightdash support to enable it for your
+  organization.
+</Warning>
+
+The AI coding agent lets you ask an AI agent in chat to change files in **any repository your organization has connected to Lightdash** — not only the dbt repo behind a project — and have the agent open a pull request (or GitLab merge request) with the change.
+
+It's the general-purpose counterpart to [AI writeback](/guides/ai-agents/ai-writeback): where writeback edits the dbt project that backs a Lightdash project and validates the change with `lightdash compile`, the coding agent targets any repo you can write to and delegates verification to that repository's own CI.
+
+## When to use it
+
+Use the coding agent when the change belongs in a repository that isn't your dbt project — for example:
+
+- Update a copy string or config value in a frontend or backend app repo
+- Fix a typo in a README or a docs site
+- Add a small feature or tweak business logic in a service repo
+- Adjust a shared library used by several services
+
+For changes that belong in the dbt / semantic-layer repository backing a Lightdash project, keep using [AI writeback](/guides/ai-agents/ai-writeback) — it also runs `lightdash compile` to validate the diff before opening the PR.
+
+For questions that don't need a code change, the agent will pick a different tool:
+
+| You want to… | The agent uses… |
+| --- | --- |
+| Ask a question about data | Query and discovery tools |
+| Edit an existing chart or dashboard in Lightdash | `editContent` |
+| Change the dbt project behind a Lightdash project | `editDbtProject` (AI writeback) |
+| Change any other connected repository | `editRepo` (this feature) |
+
+## Prerequisites
+
+- The **AI coding agent** feature flag (`ai-coding-agent`) must be enabled for your organization. The `ai-writeback` flag also unlocks the tool — either is sufficient.
+- Your instance must have a valid enterprise license.
+- The Lightdash **GitHub App** (or **GitLab App**) must be installed on the repository you want to edit, and the installation must grant write access.
+- Your user account must itself have access to that repository. The agent only acts on repositories where **both** the org's Lightdash Git App and your user can write.
+- The user asking for the change needs the **manage source code** permission on the project.
+- On self-hosted instances you need to bring your own E2B and Anthropic API keys, the same way you do for AI writeback. See [AI writeback self-hosting](/guides/developer/ai-writeback-self-hosting) — the coding agent uses a separate, leaner sandbox image but the same key setup.
+
+## How it works
+
+When you ask the agent for a code change, it calls a tool called `editRepo`. The tool:
+
+1. Resolves the target repository against the connected Lightdash Git app and confirms that both the app installation and your user can write to it. Non-writable repos are rejected up front.
+2. Starts a fresh, isolated E2B sandbox — a **lean** image containing only `git` and the Claude CLI. There is no dbt toolchain and no `lightdash compile` step, so the sandbox has no way to run a build even if it wanted to.
+3. Clones the target repo with a short-lived, `contents:read`-scoped token, subject to a pre-clone repository size guard.
+4. Edits files based on a self-contained instruction generated from your request. The sandbox does not see your chat history.
+5. Pushes a new branch and opens a **pull request** on GitHub or a **merge request** on GitLab against the repository's default branch.
+6. Returns the PR / MR URL to you in chat.
+
+Verification is deliberately delegated to the PR's own CI — the coding agent does not run tests or a build inside the sandbox. Whatever checks are configured on the target repository (unit tests, linters, type-checks, deploy previews) run on the PR just like they would for any human contribution.
+
+<Note>
+  GitHub commits are signed by the Lightdash GitHub App. GitLab commits are
+  pushed over OAuth and are unsigned.
+</Note>
+
+The tool call is synchronous and can take a few minutes. The agent tells you a pull request is being prepared while it waits.
+
+## Using it in chat
+
+Phrase your request as a direct change to a specific repository, and, where possible, name the files or areas you want touched. The more specific you are, the more reliably the agent finds the right place to edit.
+
+**Good prompts**
+
+```text
+In acme/web-app, update the copy in components/PricingBanner.tsx so
+the CTA reads "Start free trial" instead of "Sign up now."
+```
+
+```text
+In acme/checkout-service, add a feature flag called `enable_new_tax_calc`
+to config/flags.yaml, defaulted to false, and gate the code path in
+services/tax.ts on it.
+```
+
+```text
+Fix the typo in the README of acme/web-app: change "recieve" to "receive"
+in the "Notifications" section.
+```
+
+### Mentioning repositories with `@`
+
+Type `@` in the chat input to open the mention menu. Alongside Charts, Dashboards, and Files, you'll see the repositories your organization has connected. Each entry is badged so you can tell at a glance which repos the agent can and can't write to — non-writable repositories are shown as read-only. Picking a repository inserts it as a pill in your message and pins the coding agent to that target.
+
+```text
+Update @acme/web-app: bump the `default_theme` in config/app.yaml from
+"light" to "auto" and adjust the fallback in src/theme/index.ts to match.
+```
+
+The badge is a display hint. The real authorisation check runs server-side when the tool executes and always fails closed if the repository isn't writable at that moment.
+
+**Less effective prompts**
+
+```text
+Clean up our repos.
+```
+
+```text
+Make the frontend nicer.
+```
+
+## Multiple pull requests in one thread
+
+A single conversation can hold **several workstreams** in parallel. Each workstream is one repository + one open pull request, and a thread can have multiple workstreams — even more than one against the same repository (for example, two independent changes to `acme/web-app`).
+
+The agent uses two extra tools to keep them straight:
+
+- `listWorkstreams` — lists the pull requests this conversation has already opened, optionally filtered to one repository. The agent calls this before `editRepo` when it needs to decide whether a follow-up should continue an existing PR or start a new one.
+- `closePullRequest` — closes (without merging) a PR the conversation opened, for example after folding the change into another PR or when it's no longer wanted. Closing is reversible on the provider.
+
+Follow-up messages are routed automatically:
+
+- **Continuing existing work.** If you ask for a related change and there's already an open PR on the same repo for this thread, the agent commits onto that PR's branch and refreshes the PR title / description.
+- **Starting a separate PR.** If you make it clear the next change is independent — a different area of the codebase, a different feature — the agent opens a fresh pull request in the same thread rather than piling everything onto the previous one.
+- **Pasting a PR link.** Include the PR URL in your message to force the agent to iterate on that specific pull request.
+
+There is a **cap of 3 concurrent sandboxes per thread**, and a per-workstream lock so two overlapping turns against the same PR serialise safely instead of racing.
+
+The chat thread shows a **Pull requests in this conversation** panel with every workstream the thread has opened, their status, and links back to the provider.
+
+## Security and safety
+
+The coding agent runs under several deliberate constraints:
+
+- **Repository allowlist.** Only repos writable by *both* the Lightdash Git App installation *and* the user asking for the change are eligible. If your user's own access can't be confirmed (for example, GitHub's API is rate-limiting the check), the agent fails closed and refuses to edit the repo.
+- **Denied-path commit gate.** The host inspects every commit before opening the PR and rejects any change that touches:
+  - CI configuration — `.github/workflows/**`, `.gitlab-ci.yml`/`.yaml`, `azure-pipelines.yml`/`.yaml`, `bitbucket-pipelines.yml`/`.yaml`.
+  - Secret-shaped files — `.env` and `<name>.env` (including `prod.env`, `app.env.local`), key material (`*.pem`, `*.key`, `*.keystore`, `*.jks`), and credential files.
+
+  A commit that touches any of these is refused and no PR is opened.
+- **No shell in the sandbox.** The general-purpose agent's tool allowlist has zero `Bash` entries. Combined with a lean image that has no dbt, no build tools, and no Lightdash CLI, there is nothing on the sandbox to run even if a prompt tried.
+- **Scoped clone token.** The token used to clone your repo is minted with `contents:read`, held only long enough to clone, and revoked immediately after. The sandbox has no long-lived credentials.
+- **Pre-clone size guard.** Repositories larger than the configured ceiling (default 500 MB) are rejected before any clone, with a clear error, instead of failing later with an opaque timeout.
+- **Audit logging.** Every write is logged with the acting user, repo, and PR.
+
+## Reviewing and acting on the pull request
+
+The coding agent posts a chat card for each PR it opens with the same actions as writeback:
+
+- **View ▾** — dropdown with **Pull request** (opens on GitHub/GitLab) and, when applicable, **Diff** (opens an in-Lightdash diff viewer with a file list and per-file `+/−` counts). Coding-agent PRs don't build a Lightdash preview project, so the **Preview** entry isn't shown.
+- **Close PR** / **Merge PR** — merge is disabled until the provider reports the PR as mergeable (CI green, no conflicts, branch not blocked). The card pins the head commit SHA it was opened against so a later commit can't be merged by mistake.
+- Once the PR is merged or closed, the button group collapses to a **Merged** / **Closed** marker and the card stops polling.
+
+Because verification is delegated to the target repository's CI, treat coding-agent PRs the same way you'd treat any other machine-generated pull request: **review the diff, wait for CI, and rely on the target repo's branch protection**. The agent is a contributor, not a merger.
+
+## Iterating on an existing pull request
+
+You can continue an existing coding-agent PR in three ways:
+
+- **Same thread, related change.** Ask for a follow-up in the same thread — the agent picks the right open PR automatically.
+- **Force a specific PR.** Paste the PR / MR URL alongside your request. The URL must belong to a repo this feature is enabled for, and the PR must be open. Merged or closed PRs are rejected.
+- **Force a new PR.** Say the next change is separate. The agent opens a fresh pull request in the same thread instead of committing onto the previous one.
+
+## What happens if it can't run
+
+| Situation | Result |
+| --- | --- |
+| Feature flag is off | The `editRepo` tool isn't available. The agent answers normally without offering to open a pull request in another repo. |
+| Repository isn't writable by the Git App installation or by your user | The agent refuses the edit with a `repo_write_forbidden` error and explains which check failed. |
+| Lightdash GitHub App / GitLab App isn't installed for the org | The agent surfaces a `github_not_installed` / `gitlab_not_installed` error with an install CTA. |
+| Repository is over the size ceiling | The agent rejects the request before cloning with a `repo_too_large` error. |
+| Commit touches a denied path (CI or secrets) | The commit is refused, no PR is opened, and the agent reports which path was blocked. |
+| Pasted PR link is merged, closed, or from a different repo | The agent rejects the link and does not open a new pull request. |
+| Agent makes no file changes | No pull request is opened. The agent reports back that nothing needed to change. |
+
+## Related
+
+- [AI writeback](/guides/ai-agents/ai-writeback) — the same experience for changes to your project's dbt repository, with `lightdash compile` validation built in.
+- [Choosing the right AI workflow](/guides/choosing-ai-workflow) — where the coding agent fits alongside AI writeback, dashboards as code, and other write surfaces.
+- [AI writeback self-hosting](/guides/developer/ai-writeback-self-hosting) — E2B and Anthropic key setup that also applies to the coding agent.
