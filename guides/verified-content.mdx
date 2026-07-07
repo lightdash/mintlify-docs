@@ -57,8 +57,14 @@ Verification stays atomic per item: a chart inside a verified dashboard is only 
 
 You don't need to configure anything for this — any chart or dashboard you've verified is automatically preferred by every AI agent in the project. To benefit, verify the canonical charts and dashboards you want your team (and your agents) to start from.
 
+### External agents and MCP
+
+Verified content is also exposed to external agents through the [Lightdash MCP](/references/integrations/lightdash-mcp) `list_verified_content` tool. This lets tools like Claude, Cursor, or your own agents discover the charts and dashboards your team trusts and build on them instead of guessing.
+
+The tool returns both admin-verified content and [verified answers](/guides/ai-agents/verified-answers) that have been saved as charts or dashboards, deduplicated into a single list. Each item includes enough signal for an agent to rank and drill into it — `description`, `views`, and `lastUpdatedAt`, plus `chartKind` and `exploreName` for charts. As with in-product retrieval, verification is an absolute trump: a verified item is preferred over a more relevant but unverified one, with relevance order preserved within each group.
+
 <Info>
-This is separate from [verified answers](/guides/ai-agents/verified-answers), where users mark answers an AI agent produced as good examples. Both signals are used by the agent today and will be unified in a single trusted-content stream in a future release.
+This works hand in hand with [verified answers](/guides/ai-agents/verified-answers), where users mark answers an AI agent produced as good examples. When one of those answers is saved as a chart or dashboard, verifying it also makes it verified content — see [Verified answers and verified content](#verified-answers-and-verified-content) below.
 </Info>
 
 ## Verification is automatically removed when someone else edits the content
@@ -121,10 +127,20 @@ Only users with permission to verify content (admins, developers, and any custom
 
 This means CI pipelines run by deployers without verify permission (for example, a custom role that has `manage:ContentAsCode` but not `manage:ContentVerification`) won't fail just because a YAML file contains a `verified` field they can't act on.
 
-## Coming soon: unified verified content
+## Verified answers and verified content
 
-Today, admin-verified charts and dashboards live in a separate stream from [verified answers](/guides/ai-agents/verified-answers) (the AI-agent-generated content that users mark as verified inside an AI agent conversation). We're working on bringing them together so that any verified piece of content, wherever it was verified, is treated as a single trusted signal across:
+Lightdash has two places you can verify something, and they now feed into each other:
 
-- The `list_verified_content` MCP tool returning AI-verified artifacts alongside admin-verified ones
-- Content-as-code YAML round-trip for AI-verified content
-- Using verified content as templates when the AI agent generates new charts and dashboards
+- **Verified content** — a saved chart or dashboard that someone with verify permission has approved. It gets the green badge and everything described on this page: listings, search, content-as-code, MCP, and in-product AI retrieval.
+- **[Verified answers](/guides/ai-agents/verified-answers)** — an answer an AI agent produced that a user marks as a good example inside a conversation. It trains that agent (few-shot examples, suggested questions, Slack replies).
+
+**When you verify an AI answer that has been saved as a chart or dashboard, it also becomes verified content** — the same green badge appears everywhere, and it shows up in search, content-as-code, and the `list_verified_content` MCP tool alongside admin-verified content. Removing verification from the answer removes it from both places too.
+
+A few things worth knowing about how the two interact:
+
+- **Only saved answers bridge.** An answer that lives only inside an agent conversation stays an agent example — it won't get a badge or appear in MCP until it's saved as a chart or dashboard. Save it first, then verify it, to make it verified content.
+- **The link is one-way.** Verifying an AI answer promotes the saved chart or dashboard to verified content. Verifying a chart or dashboard directly does *not* reach back and mark the originating agent answer.
+
+### Still on the way
+
+One piece of the unified experience isn't here yet: using verified content as templates when the AI agent generates brand-new charts and dashboards. (Once a saved answer is verified, it already flows through content-as-code, search, and MCP like any other verified content.)
