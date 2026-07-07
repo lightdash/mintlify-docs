@@ -22,16 +22,18 @@ setup suitable for evaluating Lightdash.
 
 **Checklist**
 
-- [ ] [Pin an image version](#core-configuration) — set `image.tag` explicitly; don't ride the chart's `appVersion`
-- [ ] [Set `SITE_URL`](#core-configuration) to your final `https://` URL before first boot
-- [ ] [Generate a strong `LIGHTDASH_SECRET`](#core-configuration) and store it somewhere durable — losing it means losing access to encrypted data
-- [ ] [`SECURE_COOKIES` and `TRUST_PROXY`](/self-host/customize-deployment/secure-lightdash-with-https) both `"true"` behind your TLS-terminating load balancer
-- [ ] [Keep credentials out of Helm values](#secrets-management) — use `existingSecret` populated from your secret manager
-- [ ] [Headless browser](#headless-browser) enabled (the chart default) — image previews, PDF exports, Slack unfurls
-- [ ] [HTTPS end-to-end](/self-host/customize-deployment/secure-lightdash-with-https) via your ingress or load balancer
 - [ ] Deploy with the [self-hosting guide](/self-host/self-host-lightdash)
+- [ ] [Pin an image version](#core-configuration) - pin `image.tag` to the [latest version](https://hub.docker.com/r/lightdash/lightdash/tags)
+- [ ] [Set `SITE_URL`](#core-configuration) to your final `https://` URL before first boot
+- [ ] [Generate a strong `LIGHTDASH_SECRET`](#core-configuration) and store it somewhere durable - losing it means losing access to encrypted data
+- [ ] [`SECURE_COOKIES` and `TRUST_PROXY`](/self-host/customize-deployment/secure-lightdash-with-https) both `"true"` behind your TLS-terminating load balancer
+- [ ] [Headless browser](#headless-browser) enabled (the chart default) - image previews, PDF exports, Slack unfurls
+- [ ] [HTTPS end-to-end](/self-host/customize-deployment/secure-lightdash-with-https) via your ingress or load balancer
+- [ ] [AI Analyst](#ai-analyst) — model provider key + `pgvector` in Postgres
 
 ## Tier 2 — Scalable production deployment
+
+None of these steps are required but are recommended for running Lightdash beyond a PoC.
 
 ### Operations
 
@@ -39,18 +41,19 @@ setup suitable for evaluating Lightdash.
 
 ### Workers and scaling
 
-- [ ] [Dedicated workers](#scheduler-worker) — `scheduler.enabled: true` to enable scalable scheduled deliveries
-- [ ] [NATS + warehouse workers](/self-host/nats-workers/overview) — `nats.enabled: true` **and** `warehouseNatsWorker.enabled: true` for handling large volumes of warehouse queries
+- [ ] [Data apps](#data-apps) — sandboxes runtime, apps bucket, and a separate preview origin
+- [ ] [Dedicated workers](#scheduler-worker) - `scheduler.enabled: true` to enable scalable scheduled deliveries
+- [ ] [NATS + warehouse workers](/self-host/nats-workers/overview) - `nats.enabled: true` **and** `warehouseNatsWorker.enabled: true` for handling large volumes of warehouse queries
 - [ ] [≥ 2 backend replicas](#sizing-and-availability) with pod anti-affinity and a pod disruption budget
 - [ ] [Size resource requests](#sizing-and-availability)
 
 ### Infrastructure dependencies
 
 - [ ] [Postgres HA, backups and point-in-time recovery](#postgresql) on the external database from Tier 1, plus the `pgvector` extension if you use Enterprise AI features
-- [ ] [Bucket strategy and lifecycle rules](#object-storage) — a dedicated bucket per purpose, with a 1-day lifecycle delete on the results bucket
+- [ ] [Bucket strategy and lifecycle rules](#object-storage) - a dedicated bucket per purpose, with a 1-day lifecycle delete on the results bucket
 - [ ] [SMTP email](/self-host/customize-deployment/configure-smtp-for-lightdash-email-notifications)
-- [ ] [Email deliverability](#email-deliverability) — transactional provider, SPF/DKIM on the sender domain
-- [ ] [Load balancer settings](#load-balancer-and-networking) — timeout ≥ 300s, health check on `/api/v1/health`, request body limit ≥ `LIGHTDASH_MAX_PAYLOAD`
+- [ ] [Email deliverability](#email-deliverability) - transactional provider, SPF/DKIM on the sender domain
+- [ ] [Load balancer settings](#load-balancer-and-networking) - timeout ≥ 300s, health check on `/api/v1/health`, request body limit ≥ `LIGHTDASH_MAX_PAYLOAD`
 
 ### Security and authentication
 
@@ -63,8 +66,6 @@ setup suitable for evaluating Lightdash.
 ### Enterprise features
 
 - [ ] [Pre-aggregations](/self-host/nats-workers/pre-aggregate-workers) — pre-aggregate NATS workers + a dedicated S3 bucket
-- [ ] [AI Analyst](#ai-analyst) — model provider key + `pgvector` in Postgres
-- [ ] [Data apps](#data-apps) — sandboxes runtime, apps bucket, and a separate preview origin
 - [ ] [SCIM provisioning](/references/workspace/scim-integration) from your IdP
 - [ ] [Results caching, embedding, service accounts, custom roles](#enterprise-feature-flags)
 
@@ -82,8 +83,6 @@ setup suitable for evaluating Lightdash.
 
 ## Architecture: what you're deploying
 
-A production Lightdash deployment is **not** one container. The Helm chart can create all of
-these — a good deployment runs all of them:
 
 | Component | Chart value | What it does |
 |---|---|---|
@@ -125,14 +124,12 @@ existingSecret: lightdash-secrets   # contains LIGHTDASH_SECRET, S3 keys, SMTP p
 
 Key points:
 
-- **`SITE_URL` must be right from day one.** It's baked into invite emails, OAuth redirect
+- **`SITE_URL` is required** for invite emails, OAuth redirect
   URIs, Slack unfurls, and scheduled-delivery links. Changing it later means reconfiguring
   every OAuth integration.
-- **`LIGHTDASH_SECRET` is the crown jewel.** It signs session cookies and encrypts data at
-  rest in Postgres (warehouse credentials, tokens). The chart default is `changeme` — never
-  ship that. Generate 32+ random characters, store it in your secret manager, and **never
-  rotate it casually**: if it changes, previously encrypted data becomes unreadable.
-- `SECURE_COOKIES` + `TRUST_PROXY` are both `"false"` by default — production behind HTTPS
+- **`LIGHTDASH_SECRET` must be changed and stored securely.** It signs session cookies and encrypts data at
+  rest in Postgres (warehouse credentials, tokens). You must set this
+  - `SECURE_COOKIES` + `TRUST_PROXY` are both `"false"` by default — production behind HTTPS
   needs both `"true"` (see [Secure Lightdash with HTTPS](/self-host/customize-deployment/secure-lightdash-with-https)).
 - Session length is controlled by `COOKIES_MAX_AGE_HOURS` (unset = session cookie). Set it to
   your security policy, e.g. `"24"`.
@@ -236,10 +233,6 @@ Baseline per-component requests for a standard instance (see also
 NATS workers buffer large result sets on ephemeral disk before uploading to S3 — the 9Gi
 ephemeral-storage request is not a typo.
 
-For large orgs (hundreds of weekly users, heavy AI/scheduler usage), Lightdash Cloud
-routinely runs: backend 1 CPU / 6 Gi with `NODE_OPTIONS: "--max-old-space-size=4096"` in
-`configMap` (raise the Node heap whenever you raise memory past ~2 Gi), scheduler 1 CPU /
-2–6 Gi, 3× warehouse workers at 5 Gi, 4+ backend replicas.
 
 ```yaml
 replicaCount: 2
@@ -257,19 +250,6 @@ podDisruptionBudget:
   enabled: true
   minAvailable: 1
 ```
-
-<Warning>
-  **PDB gotcha:** the single `podDisruptionBudget` block applies to *every* component. With
-  `minAvailable: 1` and single-replica workers, node drains will block on those pods. Either
-  accept manual intervention during node maintenance, run 2 replicas of critical workers, or
-  tune the PDB.
-</Warning>
-
-Probes: the chart's defaults are already tuned the way Lightdash Cloud runs them
-(startup ~185s budget for migrations, readiness fails fast at ~15s to pull the pod from the
-load balancer, liveness fails slow at ~95s so a busy pod isn't restarted). Leave them alone
-unless migrations are slow on your database — then raise
-`lightdashBackend.startupProbe.failureThreshold`.
 
 ## PostgreSQL
 
@@ -490,109 +470,3 @@ configMap:
   queue depth / scheduler job failures, pg pool saturation, event-loop lag
 - If you run NATS, its Prometheus exporter is on port **7777**
   (`nats.promExporter.enabled: true`)
-- Error tracking: point `SENTRY_BE_DSN` / `SENTRY_FE_DSN` at your own Sentry project if you
-  have one
-
-## Appendix: quick-reference production values skeleton
-
-```yaml
-image:
-  repository: lightdash/lightdash
-  tag: "0.xxxx.x"
-
-replicaCount: 2
-podAntiAffinity:
-  enabled: true
-autoscaling:
-  enabled: true
-  minReplicas: 2
-  maxReplicas: 10
-  targetCPUUtilizationPercentage: 60
-resources:
-  requests: { cpu: 500m, memory: 2Gi, ephemeral-storage: 1Gi }
-
-migrationJob:
-  enabled: true
-
-postgresql:
-  enabled: false
-externalDatabase:
-  host: your-postgres
-  port: 5432
-  user: lightdash
-  database: lightdash
-  existingSecret: lightdash-db
-
-scheduler:
-  enabled: true
-  replicas: 1
-  concurrency: 3
-  resources:
-    requests: { cpu: 500m, memory: 1425Mi, ephemeral-storage: 1Gi }
-
-nats:
-  enabled: true
-warehouseNatsWorker:
-  enabled: true
-  replicas: 1
-  concurrency: 100
-  resources:
-    requests: { cpu: 500m, memory: 1.5Gi, ephemeral-storage: 9Gi }
-    limits: { memory: 1.5Gi, ephemeral-storage: 9Gi }
-
-browserless-chrome:
-  enabled: true
-  image: { repository: ghcr.io/browserless/chromium, tag: v2.49.0 }
-  resources:
-    requests: { cpu: "2", memory: 4Gi }
-    limits: { memory: 4Gi }
-  env:
-    CONNECTION_TIMEOUT: "300000"
-    TIMEOUT: "120000"
-    HEALTH: "true"
-    MAX_MEMORY_PERCENT: "85"
-
-ingress:
-  enabled: true
-  # className / annotations / tls per your platform
-  hosts:
-    - host: lightdash.yourcompany.com
-      paths: [{ path: /, pathType: Prefix }]
-
-existingSecret: lightdash-secrets
-# ^ contains: LIGHTDASH_SECRET, S3_ACCESS_KEY/S3_SECRET_KEY, EMAIL_SMTP_PASSWORD,
-#   LIGHTDASH_LICENSE_KEY, SSO client secrets, Slack secrets, AI provider keys, ...
-
-configMap:
-  SITE_URL: https://lightdash.yourcompany.com
-  SECURE_COOKIES: "true"
-  TRUST_PROXY: "true"
-  LIGHTDASH_MAX_PAYLOAD: "40mb"
-  PGMAXCONNECTIONS: "50"
-  PGMINCONNECTIONS: "0"
-
-  S3_REGION: eu-west-1
-  S3_BUCKET: yourco-lightdash-results
-  S3_ENDPOINT: https://s3.eu-west-1.amazonaws.com
-
-  EMAIL_SMTP_HOST: smtp.yourprovider.com
-  EMAIL_SMTP_PORT: "587"
-  EMAIL_SMTP_SECURE: "true"
-  EMAIL_SMTP_USER: your-user
-  EMAIL_SMTP_SENDER_EMAIL: lightdash@yourcompany.com
-  EMAIL_SMTP_SENDER_NAME: Lightdash
-
-  AUTH_DISABLE_PASSWORD_AUTHENTICATION: "true"
-  AUTH_ENABLE_OIDC_LINKING: "true"
-  AUTH_ENABLE_OIDC_TO_EMAIL_LINKING: "true"
-  # + your SSO provider vars (see authentication policy)
-
-  LIGHTDASH_LOG_LEVEL: info
-  LIGHTDASH_LOG_FORMAT: json
-  LIGHTDASH_PROMETHEUS_ENABLED: "true"
-  LIGHTDASH_PROMETHEUS_HTTP_METRICS_ENABLED: "true"
-
-  LIGHTDASH_CSP_REPORT_ONLY: "false"
-  SOFT_DELETE_ENABLED: "true"
-  PERSISTENT_DOWNLOAD_URLS_ENABLED: "true"
-```
