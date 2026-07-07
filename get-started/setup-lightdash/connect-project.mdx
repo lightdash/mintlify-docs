@@ -855,6 +855,48 @@ This controls how dbt connects to Trino database using SSL.
 
 This controls what day is the start of the week in Lightdash. `Auto` sets it to whatever the default is for your data warehouse. Or, you can customize it and select the day of the week from the drop-down menu. This will be taken into account when using 'WEEK' time interval in Lightdash.
 
+##### Query context tags (`X-Trino-Client-Tags`)
+
+Lightdash automatically attaches metadata about each query to the [`X-Trino-Client-Tags`](https://trino.io/docs/current/admin/resource-groups.html) HTTP header when it submits SQL to Trino. Trino administrators can use these tags to configure [resource groups](https://trino.io/docs/current/admin/resource-groups.html), routing rules, or query monitoring server-side — for example, giving dashboard queries different concurrency limits from ad-hoc explore queries.
+
+Tags are sent as a comma-separated list of `key=value` pairs. Keys and values are restricted to `[a-zA-Z0-9_-]` and truncated to 60 characters. The tags Lightdash emits include:
+
+| Tag                 | Description                                                                                        |
+| ------------------- | -------------------------------------------------------------------------------------------------- |
+| `query_context`     | Where the query originated — for example `dashboardView`, `exploreView`, `scheduledDelivery`, `api`, `csvDownload`, `sqlRunner`, `embed`, `ai`. |
+| `project_uuid`      | The Lightdash project running the query.                                                           |
+| `organization_uuid` | The Lightdash organization the project belongs to.                                                 |
+| `user_uuid`         | The user who initiated the query (omitted for background jobs).                                    |
+| `explore_name`      | The explore being queried, when applicable.                                                        |
+| `chart_uuid`        | The chart being viewed or refreshed, when applicable.                                              |
+| `dashboard_uuid`    | The dashboard being viewed or refreshed, when applicable.                                          |
+| `scheduler_uuid`    | The scheduler that triggered the query, for scheduled deliveries.                                  |
+| `scheduler_name`    | A human-readable scheduler name, for scheduled deliveries.                                         |
+| `job_id`            | The background job that submitted the query, when applicable.                                      |
+
+An outgoing header looks like:
+
+```http
+X-Trino-Client-Tags: query_context=dashboardView,project_uuid=abc123,user_uuid=def456,dashboard_uuid=ghi789
+```
+
+You can then match on these tags in your Trino resource-groups selector file. For example, to route dashboard queries into a dedicated resource group:
+
+```json
+{
+  "rootGroups": [
+    { "name": "lightdash_dashboards", "softMemoryLimit": "40%", "maxQueued": 100, "hardConcurrencyLimit": 20 },
+    { "name": "lightdash_adhoc",      "softMemoryLimit": "20%", "maxQueued": 50,  "hardConcurrencyLimit": 5  }
+  ],
+  "selectors": [
+    { "clientTags": ["query_context=dashboardView"], "group": "lightdash_dashboards" },
+    { "clientTags": ["query_context=exploreView"],   "group": "lightdash_adhoc" }
+  ]
+}
+```
+
+See Trino's [resource groups documentation](https://trino.io/docs/current/admin/resource-groups.html) for the full selector syntax.
+
 ***
 
 ### ClickHouse
