@@ -232,7 +232,7 @@ If you're building your own agents or automated workflows, you can integrate dir
 - **Authentication**: For interactive setups use OAuth 2.0. For headless agents and automated workflows, you can authenticate with a Personal Access Token by passing `Authorization: ApiKey <token>` instead. Create the token under **Settings → Personal access tokens** for the user whose permissions and attributes you want the integration to use. Service account tokens are also supported on plans that include them.
 - **Documentation**: See the [MCP specification](https://modelcontextprotocol.io/docs) for implementation details
 - **Pin a project (optional)**: pass `X-Lightdash-Project: <project-uuid>` to scope the MCP session to a specific project, skipping the `set_project` step. See [details below](#pin-a-project-with-the-x-lightdash-project-header).
-- **Override user attributes per request (optional)**: pass `X-Lightdash-User-Attributes: <json>` to override the authenticated user's attributes for that request (useful for row-level security when an agent acts on behalf of different end-users).
+- **Override user attributes per request (optional)**: pass `X-Lightdash-User-Attributes: <json>` to override the authenticated user's attributes for that request (useful for row-level security when an agent acts on behalf of different end-users). See [details below](#override-user-attributes).
 
 ##### Pin a project with the `X-Lightdash-Project` header
 
@@ -273,6 +273,52 @@ curl https://<your_instance_name>.lightdash.cloud/api/v1/mcp \
 
 <Info>
   If the header value isn't a valid UUID, it's ignored and the request falls back to the user's stored project context. Permissions are always checked against the resolved project, so a header for a project the caller can't view will return a "no access" error.
+</Info>
+
+<a id="override-user-attributes" />
+
+##### Override user attributes with the `X-Lightdash-User-Attributes` header
+
+The `X-Lightdash-User-Attributes` header overrides the authenticated user's Lightdash user attributes for that specific MCP request. This is designed for agents that act on behalf of multiple end-users with row-level security: one PAT (or service account) user handles all requests, and per-request RLS scoping is applied via the header.
+
+<Info>
+  The PAT or service account user must have the **org admin** role to use this header. Non-admins will receive a `ForbiddenError`.
+</Info>
+
+The header value must be a JSON object where each value is either a string or an array of strings. For example:
+
+- `{"user_id": "abc123"}`
+- `{"user_id": ["abc123", "def456"]}`
+
+<Info>
+  If the agent user already has a value set for an attribute, the header can only **narrow** that value (set a subset of the pre-configured values), not expand access. If no value is pre-configured for the attribute on the agent user, any value can be set via the header.
+</Info>
+
+<CodeGroup>
+```bash curl
+curl https://<your_instance_name>.lightdash.cloud/api/v1/mcp \
+  -H 'Authorization: ApiKey <your_token>' \
+  -H 'X-Lightdash-User-Attributes: {"user_id": "abc123"}' \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+```json Cursor (.cursor/mcp.json)
+{
+  "mcpServers": {
+    "lightdash-agent": {
+      "url": "https://<your_instance_name>.lightdash.cloud/api/v1/mcp",
+      "headers": {
+        "X-Lightdash-User-Attributes": "{"user_id": "abc123"}"
+      }
+    }
+  }
+}
+```
+</CodeGroup>
+
+<Info>
+  Setting the header statically in an MCP client config is suitable for development and testing. For production, where the attribute needs to change per end-user, the calling application must set the `X-Lightdash-User-Attributes` header programmatically on each request.
 </Info>
 
 {/*<Accordion title="Example: Inspecting the MCP endpoint">
