@@ -462,11 +462,17 @@ Enable to input your **SSH Remote Host**, **SSH Remote Port**, **SSH Username**,
 
 ##### Authentication type
 
-By default Lightdash connects to Redshift with a database **username and password**. You can instead authenticate with **AWS IAM**: Lightdash assumes an AWS identity and mints short-lived database credentials (valid up to 1 hour) from AWS at connection time, then connects over the standard Postgres protocol. No long-lived database password is stored. This is useful when your security policy disallows static or hashed passwords, or when your cluster fronts Lake Formation.
+By default Lightdash connects to Redshift with a database **username and password**. You can instead authenticate with **AWS IAM**: Lightdash mints short-lived Redshift database credentials from AWS at connection time, then connects over the standard Postgres protocol. No long-lived database password is stored. This is useful when your security policy disallows static or hashed passwords, or when your cluster fronts Lake Formation.
 
-<Note>If you don't see the **AWS IAM** option, it isn't enabled for your organization yet — contact Lightdash support.</Note>
+Lightdash supports three Redshift authentication methods:
 
-When **Authentication type** is set to **AWS IAM**, the following fields replace the password. Your **Host**, **DB name**, **Schema**, SSL, and SSH tunnel settings still apply.
+- **Username & password**: store a shared Redshift database user and password on the project connection.
+- **AWS IAM (CLI credentials)**: users paste temporary AWS credentials, or admins configure an IAM role/access-key identity, and Lightdash uses those AWS credentials to mint temporary Redshift database credentials.
+- **User Account (Sign in with AWS)**: users sign in through AWS IAM Identity Center in the browser. The project stores the AWS access portal and account/role metadata; each user signs in with AWS and Lightdash stores short-lived per-user AWS credentials.
+
+<Note>If you don't see the AWS IAM authentication options, they aren't enabled for your organization yet — contact Lightdash support.</Note>
+
+When **Authentication type** is set to **AWS IAM (CLI credentials)** or **User Account (Sign in with AWS)**, the following fields replace the password. Your **Host**, **DB name**, **Schema**, SSL, and SSH tunnel settings still apply.
 
 ##### AWS region
 
@@ -488,6 +494,8 @@ Enable if you're connecting to a Redshift Serverless workgroup rather than a pro
 
 (Provisioned clusters) The Redshift database user to request temporary credentials for. Serverless derives the user automatically.
 
+When using **User Account (Sign in with AWS)**, users can optionally set their own database user when they sign in. If they leave it blank, Redshift derives the user from their IAM Identity Center role.
+
 ##### Assume role ARN
 
 Optional. An IAM role to assume — within your own AWS account — before minting credentials, instead of using the access-key identity directly. Self-hosted instances running on AWS can leave this and the access keys blank to use the host's IAM role.
@@ -504,7 +512,23 @@ The access key for the IAM user Lightdash uses to mint temporary Redshift creden
 
 (Provisioned clusters) Create the database user automatically if it does not already exist.
 
-<Accordion title="Setting up AWS IAM for Redshift">
+##### AWS access portal URL
+
+Required for **User Account (Sign in with AWS)**. The IAM Identity Center access portal URL users open to sign in, for example `https://d-xxxxxxxxxx.awsapps.com/start`.
+
+##### IAM Identity Center region
+
+Required for **User Account (Sign in with AWS)**. The AWS region where IAM Identity Center is enabled.
+
+##### AWS account ID
+
+Required for **User Account (Sign in with AWS)**. The AWS account users should access through IAM Identity Center.
+
+##### AWS role name
+
+Required for **User Account (Sign in with AWS)**. The IAM Identity Center permission set role name users select when signing in. This is usually the permission set name shown in the AWS access portal, for example `LightdashRedshiftReadOnly`.
+
+<Accordion title="Setting up AWS IAM CLI credentials for Redshift">
 
 <Note>
   IAM changes how Lightdash **authenticates**, not how it **reaches** your warehouse. Lightdash still opens a network connection to your cluster, so its [static IP addresses](#adding-lightdashs-static-ip-addresses-to-your-allow-list) must be allow-listed in your Redshift security group or VPC firewall (or use an SSH tunnel), exactly as with password authentication. Minting credentials happens over public AWS API endpoints and needs no extra allow-listing.
@@ -553,7 +577,55 @@ Serverless workgroup:
 
 - **Host role (self-hosted on AWS only).** If you run Lightdash yourself on AWS, attach the policy to the instance or task role (EC2 instance profile, ECS task role, or IRSA) and leave the access-key and role fields blank.
 
-**3. Configure the connection in Lightdash.** Open your project's connection settings — [**Project settings** via the gear icon in the top-right navigation](#open-up-your-lightdash-instance-to-get-started) for an existing project, or **Organization settings → All projects → Create new** for a new one. In the Redshift form, switch **Authentication type** to **AWS IAM** (this reveals the AWS fields), then fill in the **AWS region**, **cluster identifier** (or serverless **workgroup name**), **database user**, and your access keys under **Advanced**, and click **Test & save**.
+**3. Configure the connection in Lightdash.** Open your project's connection settings — [**Project settings** via the gear icon in the top-right navigation](#open-up-your-lightdash-instance-to-get-started) for an existing project, or **Organization settings → All projects → Create new** for a new one. In the Redshift form, switch **Authentication type** to **AWS IAM (CLI credentials)** (this reveals the AWS fields), then fill in the **AWS region**, **cluster identifier** (or serverless **workgroup name**), **database user**, and your access keys under **Advanced**, and click **Test & save**.
+
+</Accordion>
+
+<Accordion title="Setting up AWS IAM Identity Center for Redshift">
+
+Use **User Account (Sign in with AWS)** when each Lightdash user should authenticate with their own AWS identity in the browser. This is the best fit for shared Lightdash instances because the AWS access portal, account ID, and role name are stored on the project connection, while each user's AWS session is stored as personal warehouse credentials.
+
+<Note>
+  Do not configure this with Lightdash environment variables. IAM Identity Center settings are project-specific: different Redshift projects can use different AWS accounts, access portals, regions, and permission sets.
+</Note>
+
+**Requirements**
+
+- An AWS Organizations-backed IAM Identity Center instance. Account instances of IAM Identity Center do not support permission sets or AWS account access.
+- A user or group assigned to the AWS account through an IAM Identity Center permission set.
+- A permission set or IAM policy that can mint Redshift database credentials:
+  - Provisioned Redshift: `redshift:GetClusterCredentials` and, if needed, `redshift:CreateClusterUser` / `redshift:JoinGroup`.
+  - Redshift Serverless: `redshift-serverless:GetCredentials`.
+- The Redshift database user created by IAM must have database permissions such as `USAGE` on the schema and `SELECT` on the tables Lightdash queries.
+- Network access from Lightdash to Redshift, exactly as with password authentication.
+
+**1. Enable IAM Identity Center.** In AWS, enable IAM Identity Center as an organization instance and choose the region users will sign in through.
+
+**2. Create a permission set.** Attach a policy that can mint Redshift credentials for your cluster or serverless workgroup. For production, keep this policy scoped to the cluster/workgroup and database your Lightdash project uses.
+
+**3. Assign users or groups to the AWS account.** Assign the permission set to the AWS account your Redshift warehouse lives in. Users should be able to open the AWS access portal and see that account and role.
+
+**4. Grant Redshift database permissions.** IAM authentication creates or uses a Redshift database user derived from the AWS role. Grant that database user access to the schemas and tables Lightdash should query.
+
+Example for a Redshift Serverless IAM role-derived user:
+
+```sql
+GRANT USAGE ON SCHEMA analytics TO "IAMR:AWSReservedSSO_LightdashRedshiftReadOnly_xxxxxxxxxxxxxxxx";
+GRANT SELECT ON ALL TABLES IN SCHEMA analytics TO "IAMR:AWSReservedSSO_LightdashRedshiftReadOnly_xxxxxxxxxxxxxxxx";
+ALTER DEFAULT PRIVILEGES IN SCHEMA analytics
+  GRANT SELECT ON TABLES TO "IAMR:AWSReservedSSO_LightdashRedshiftReadOnly_xxxxxxxxxxxxxxxx";
+```
+
+**5. Configure the connection in Lightdash.** In the Redshift form, switch **Authentication type** to **User Account (Sign in with AWS)**, then fill in:
+
+- **AWS region**: Redshift cluster/workgroup region.
+- **Cluster identifier** or **Workgroup name**.
+- **AWS access portal URL**: the IAM Identity Center start URL.
+- **IAM Identity Center region**.
+- **AWS account ID**.
+- **AWS role name**: the permission set/role users select in the AWS access portal.
+
+After saving, users who open the project will see **Sign in with AWS**. They complete the AWS browser login and Lightdash stores their personal short-lived AWS credentials for queries.
 
 </Accordion>
 
