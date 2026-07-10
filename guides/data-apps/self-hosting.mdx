@@ -59,6 +59,18 @@ Restart the backend. The "Data apps" entry will appear in the **New** menu for u
 | --- | --- | --- |
 | `E2B_TEMPLATE_TAG` | Running Lightdash version (e.g. `0.2917.1`) | Pins the sandbox image to a specific tag of the E2B template. Each Lightdash release publishes a matching tag so the backend and sandbox stay in sync. You can override this to roll back to a previous build (e.g. `E2B_TEMPLATE_TAG=0.2916.0`) or set it to an empty string to use the template's `default` tag. Most operators don't need to touch this. |
 
+### Custom dependencies
+
+Data apps can [declare their own npm dependencies](/guides/data-apps#declared-dependencies) alongside the sandbox template's built-in library set. The feature is gated by an instance-wide flag, off by default.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `LIGHTDASH_APP_CUSTOM_DEPENDENCIES_ENABLED` | `false` | Master switch for custom dependencies. When `false`, uploads that declare a non-empty dependency set are rejected at the API, and builds or AI iterations of versions that already have stored custom dependencies also refuse to run — flipping the toggle back to `false` is a hard stop that also blocks sandbox restores of previously-approved dependency sets. Template-only uploads are always accepted. |
+| `LIGHTDASH_APP_DEPENDENCY_REGISTRY_HOSTS` | `registry.npmjs.org` | Comma-separated list of npm registry hostnames added to the sandbox egress allowlist when a version has custom dependencies. Use this to point at an internal mirror. Template-only builds never gain these hosts. |
+| `LIGHTDASH_APP_DEPENDENCY_INSTALL_TIMEOUT_MS` | `120000` (2 minutes) | Timeout in milliseconds for the `pnpm install` step that runs before the Vite build when a version has custom dependencies. Raise this if your registry is slow, or lower it to fail faster in CI-style setups. |
+
+Turning `LIGHTDASH_APP_CUSTOM_DEPENDENCIES_ENABLED` back off is a full kill-switch: it stops installs on every path, including new uploads, AI-iterate carry-forward builds, and sandbox restores of versions whose dependency sets were previously approved. Use it if you need to disable third-party installs on the instance without redeploying app source.
+
 ## Costs
 
 Self-hosting Data apps means you pay E2B and your Claude provider directly:
