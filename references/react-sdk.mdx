@@ -91,6 +91,7 @@ The Lightdash SDK exports components for embedding Lightdash content and hooks f
 - `Lightdash.Explore` - Embed interactive data exploration interface
 - `Lightdash.AiAgent` - Embed an AI agent so users can chat with their data
 - `Lightdash.useLightdashContent` - List spaces, dashboards, charts, and data apps for a custom content catalog
+- `Lightdash.useLightdashAiAgentThreads` - List an embed user's previous AI agent threads to build a thread history UI
 
 All components share common props for authentication and styling.
 
@@ -465,6 +466,7 @@ type AiAgentProps = {
 
   // Optional
   threadUuid?: string;              // Open a specific thread on load
+  onThreadChange?: (options: { threadUuid: string }) => void; // Fires when the embed opens or creates a thread
   theme?: 'light' | 'dark';
   styles?: {
     backgroundColor?: string;
@@ -475,6 +477,8 @@ type AiAgentProps = {
 <Info>
 `Lightdash.AiAgent` does not accept `filters`, `contentOverrides`, or `onExplore`. Threads, navigation, and chart actions are managed inside the embedded agent UI.
 </Info>
+
+`onThreadChange` fires whenever the embedded agent creates a new thread or opens an existing one. Use it together with `threadUuid` to persist the current conversation in your app (for example in `localStorage` or your own backend) and resume it the next time the user returns. Under the hood, the SDK passes a `targetOrigin` query parameter to the iframe and listens for `lightdash:aiAgentThreadChanged` `postMessage` events from the embedded page — no extra setup is required on your side.
 
 #### Basic usage
 
@@ -494,6 +498,8 @@ function MyAiAgent() {
 
 #### Open a specific thread
 
+Pass `threadUuid` to deep-link the embed into a specific conversation on mount:
+
 ```tsx
 <Lightdash.AiAgent
   instanceUrl="https://app.lightdash.cloud"
@@ -501,6 +507,36 @@ function MyAiAgent() {
   threadUuid="thread-uuid"
   token={token}
 />
+```
+
+#### Persist and resume the last conversation
+
+Combine `threadUuid` and `onThreadChange` to keep users on their most recent thread across page reloads. This example stores the latest thread UUID in `localStorage`:
+
+```tsx
+import Lightdash from '@lightdash/sdk';
+import { useState } from 'react';
+
+const STORAGE_KEY = 'acme-shop:lightdash-ai-thread';
+
+function ShopInsightsAgent({ token }: { token: string }) {
+  const [threadUuid, setThreadUuid] = useState<string | undefined>(
+    () => localStorage.getItem(STORAGE_KEY) ?? undefined,
+  );
+
+  return (
+    <Lightdash.AiAgent
+      instanceUrl="https://app.lightdash.cloud"
+      agentUuid="agent-shop-insights"
+      token={token}
+      threadUuid={threadUuid}
+      onThreadChange={({ threadUuid: nextThreadUuid }) => {
+        setThreadUuid(nextThreadUuid);
+        localStorage.setItem(STORAGE_KEY, nextThreadUuid);
+      }}
+    />
+  );
+}
 ```
 
 #### Token generation for AI agents
@@ -647,6 +683,114 @@ Use the `spaceUuids` option as a filter, not as an authorization boundary. Autho
 <Warning>
 `apiAccess` tokens are for API reads such as content listing. To let embedded users save charts or dashboards, use an embed token that supports `writeActions`.
 </Warning>
+
+### Lightdash.useLightdashAiAgentThreads
+
+Use `useLightdashAiAgentThreads` when you want to show your users a list of their previous AI agent conversations — for example a "Recent chats" sidebar next to a `Lightdash.AiAgent` embed. The hook calls the AI agent threads endpoint with the embed JWT, so it returns only threads that belong to the JWT-authenticated embed user and are scoped to their embed space.
+
+Pair it with `Lightdash.AiAgent`'s `threadUuid` and `onThreadChange` props to let users resume any past conversation.
+
+#### Options
+
+```typescript
+type ListAiAgentThreadsOptions = {
+  agentUuid: string;      // The agent whose threads should be listed
+  projectUuid?: string;   // Falls back to the projectUuid on LightdashApiClientConfig
+};
+```
+
+The hook takes the same `LightdashApiClientConfig` as `useLightdashContent`, with `auth.type: 'embedToken'` and the AI agent embed JWT as the token.
+
+#### Types
+
+```typescript
+type LightdashAiAgentThreadResults = LightdashAiAgentThread[];
+
+// One entry per thread the embed user can see. Full shape lives in
+// @lightdash/common's ApiAiAgentThreadSummaryListResponse; the useful fields
+// for building thread history UIs are:
+type LightdashAiAgentThread = {
+  uuid: string;
+  title?: string;
+  firstMessage: { message: string };
+  // ...additional metadata such as timestamps
+};
+```
+
+#### Example: thread history + resume
+
+```tsx
+import Lightdash, {
+  useLightdashAiAgentThreads,
+  type LightdashApiClientConfig,
+} from '@lightdash/sdk';
+import { useState } from 'react';
+
+const STORAGE_KEY = 'acme-shop:lightdash-ai-thread';
+
+function ShopInsightsAgentWithHistory({
+  token,
+  projectUuid,
+  agentUuid,
+}: {
+  token: string;
+  projectUuid: string;
+  agentUuid: string;
+}) {
+  const apiConfig: LightdashApiClientConfig = {
+    instanceUrl: 'https://app.lightdash.cloud',
+    projectUuid,
+    auth: { type: 'embedToken', token },
+  };
+
+  const threads = Lightdash.useLightdashAiAgentThreads(apiConfig, {
+    agentUuid,
+    projectUuid,
+  });
+
+  const [threadUuid, setThreadUuid] = useState<string | undefined>(
+    () => localStorage.getItem(STORAGE_KEY) ?? undefined,
+  );
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr' }}>
+      <aside>
+        <button type="button" onClick={() => setThreadUuid(undefined)}>
+          New thread
+        </button>
+
+        {threads.isLoading && <p>Loading history…</p>}
+        {threads.data?.map((thread) => (
+          <button
+            key={thread.uuid}
+            type="button"
+            onClick={() => setThreadUuid(thread.uuid)}
+          >
+            {thread.title ?? thread.firstMessage.message}
+          </button>
+        ))}
+      </aside>
+
+      <Lightdash.AiAgent
+        instanceUrl="https://app.lightdash.cloud"
+        token={token}
+        agentUuid={agentUuid}
+        threadUuid={threadUuid}
+        onThreadChange={({ threadUuid: nextThreadUuid }) => {
+          setThreadUuid(nextThreadUuid);
+          localStorage.setItem(STORAGE_KEY, nextThreadUuid);
+          // Refresh the sidebar so new threads show up immediately.
+          threads.refetch();
+        }}
+      />
+    </div>
+  );
+}
+```
+
+<Info>
+`useLightdashAiAgentThreads` uses the same embed JWT you pass to `Lightdash.AiAgent`. The token's `content.agentUuid` and `writeActions.spaceUuid` are what scope the returned threads — the hook cannot list threads from a different agent or space, even if you pass a different `agentUuid` argument.
+</Info>
 
 ## Generating embed tokens
 
