@@ -117,7 +117,7 @@ The writeback PR card has two action groups:
   - Both actions ask you to confirm before sending the request.
   - Once the PR reaches a terminal state, the button group collapses to a **Merged** or **Closed** marker and the card stops polling.
 
-After merging, refresh dbt in Lightdash (or let your CI/CD do it) so the change takes effect.
+When you merge from the card, Lightdash recompiles the project automatically — the same refresh as **Settings → Project → Sync dbt project** — so the merged change goes live without a manual sync. If the change renamed or removed a field, the agent then presents a plan to migrate the affected charts and dashboards to the new fields and, where it has edit access, repoints them for you once you confirm.
 
 <Note>
   Merging or closing a writeback PR from the card uses your project permissions
@@ -127,6 +127,14 @@ After merging, refresh dbt in Lightdash (or let your CI/CD do it) so the change 
   example, branch protection blocks it or the head moved), the error is
   surfaced on the card.
 </Note>
+
+## Impact and safety checks
+
+For changes that could break existing content or change results, the agent does extra work around the pull request so you can review it with confidence.
+
+**What the change would break.** When a change removes or renames a metric or dimension, saved charts, dashboards, dependent metrics, and scheduled deliveries may still reference the old field. After opening the pull request, the agent reports the impact in its reply — whether the change is breaking, how many items of each kind are affected, and a few of the most notable ones — or tells you it's safe when nothing references the field. This is advisory and never delays opening the PR; pure additions and description-only edits skip it.
+
+**That the numbers still hold.** When a change relies on results staying the same — consolidating two duplicate metrics, replacing one field with another, splitting a metric into parts, or refactoring a field's SQL — the agent proves it rather than asserting it. It either shows the guarantee from the model SQL, or runs the affected fields at a total and across a time dimension and confirms they match, before calling the change safe. If the numbers diverge, it tells you exactly what differs instead of shipping the change.
 
 ## Reading the dbt repository
 
