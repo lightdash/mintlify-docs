@@ -39,6 +39,26 @@ The overview shares the page's project and agent filters, so the numbers always 
 
 Below the overview is a paginated feed of every recorded MCP tool call. The feed loads more rows as you scroll and each row shows the tool name, status, user, agent, project, MCP client, timestamp, and duration.
 
+### Session grouping
+
+When sorted by time, tool calls are grouped into **sessions** — one client connection to the MCP server. Each group has a header row showing the short session id, the MCP client name and version, the number of calls and errors in the session, and the time of the latest call. Click the header to collapse or expand the group.
+
+A session is split into segments whenever there's a **1-hour gap** with no activity, so a client that reconnects the next day appears as a new group at the top of the feed instead of hoisting old calls out of place.
+
+Calls without a session id are collected under a **No session ID** header. This happens when the MCP client doesn't participate in session tracking (see [How sessions are tracked](#how-sessions-are-tracked) below). A single sessionless call renders as a plain row.
+
+Sorting the feed by duration falls back to a flat, ungrouped view.
+
+#### How sessions are tracked
+
+Session ids are minted server-side using the [Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http)'s standard `Mcp-Session-Id` mechanism:
+
+- On `initialize`, the Lightdash MCP server returns an `Mcp-Session-Id` response header.
+- Spec-compliant clients echo that header on every subsequent request, and Lightdash records the id on each resulting tool call.
+- Clients that don't echo the header still work — their tool calls are recorded but appear under **No session ID** instead of grouped.
+
+You don't need to configure anything; any MCP client that follows the Streamable HTTP spec gets session grouping for free.
+
 ### Filtering and sorting
 
 Filters live above the table and are persisted in the URL, so you can share a filtered view by copying the link. You can filter by:
@@ -60,6 +80,7 @@ Click any row to open a drawer with the full details of that tool call:
 - **Error message** — the exception or protocol error returned to the client, if the call failed.
 - **Duration** — how long the tool took to execute.
 - **Client identity** — the MCP client's name and version as reported in the MCP handshake, the raw user agent, the auth method used, and the MCP protocol version.
+- **Session** — the full session id this call belongs to, when the client participated in session tracking.
 
 The drawer is the same view opened from the **Recent errors** list in the overview panel.
 
@@ -99,7 +120,7 @@ curl -H "Authorization: ApiKey $LIGHTDASH_TOKEN" \
   "https://app.lightdash.cloud/api/v1/aiAgents/admin/mcp-activity?status=error&pageSize=20"
 ```
 
-Each tool call in the response includes the caller, the tool name and arguments, status, error message (if any), duration, and MCP client identity (client name, client version, user agent, auth method, protocol version).
+Each tool call in the response includes the caller, the tool name and arguments, status, error message (if any), duration, MCP client identity (client name, client version, user agent, auth method, protocol version), and — when the client participated in session tracking — a `sessionId` and a `sessionGroup` describing the session segment the call belongs to (segment key, total calls, and errors). When sorted by `createdAt`, results are ordered by session segment so calls from the same session stay contiguous; sorting by `durationMs` returns flat chronological order.
 
 ### MCP activity stats
 
