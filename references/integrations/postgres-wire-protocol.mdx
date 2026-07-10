@@ -1,0 +1,223 @@
+---
+title: "Postgres wire protocol"
+icon: "plug"
+description: "Connect any standard Postgres client to Lightdash and query your explores as if they were Postgres tables."
+---
+
+<Info>
+  The Postgres wire protocol endpoint is an **experimental**, **enterprise-only** feature.
+
+  - On **Lightdash Cloud**, availability is instance-dependent — [contact Lightdash](/contact/contact-info) to enable it for your organization.
+  - On **self-hosted** deployments, admins enable it via the `PGWIRE_PORT` environment variable and a valid enterprise license (see [Enable the endpoint](#enable-the-endpoint)).
+</Info>
+
+## What it is
+
+The Postgres wire protocol endpoint exposes your Lightdash [semantic layer](/guides/lightdash-semantic-layer) as a read-only Postgres database. Any standard Postgres client — `psql`, `node-postgres`, `psycopg`, JDBC drivers, SQL notebooks, and most BI tools — can connect, authenticate, and query your [explores](/get-started/exploring-data/using-explores) as if they were Postgres tables.
+
+Behind the scenes, Lightdash parses the incoming SQL, compiles it into a `MetricQuery`, and runs it through the same query path as the explorer. That means:
+
+- **Project access controls, joins, metric definitions, and user attribute row-level rules apply exactly as they would in the Lightdash UI.** The endpoint is not a warehouse passthrough — it's a semantic-layer query interface.
+- **Metrics, dimensions, and joins are honored automatically.** You reference [field IDs](/references/dimensions#field-id) (for example, `orders_total_order_amount`), and Lightdash generates the correct warehouse SQL, including joins between explores.
+- **Queries are read-only.** Only `SELECT` is supported — the endpoint cannot modify warehouse data.
+
+Typical use cases:
+
+- Query your semantic layer from a Python or Node script without going through the HTTP API.
+- Connect BI tools or notebooks that speak Postgres but don't have a native Lightdash integration.
+- Use `psql` for quick ad-hoc analysis against governed, semantically consistent data.
+
+## Enable the endpoint
+
+The Postgres wire protocol server lives in the enterprise codebase and only starts when both an enterprise license and the `PGWIRE_PORT` environment variable are configured.
+
+<Tabs>
+  <Tab title="Self-hosted">
+    Set `PGWIRE_PORT` on the Lightdash backend to the port you want the endpoint to listen on:
+
+    ```bash
+    PGWIRE_PORT=5433
+    ```
+
+    On startup Lightdash logs `Postgres wire protocol server listening on port 5433`. Without a valid enterprise license the server logs a warning and does not listen, even if `PGWIRE_PORT` is set.
+
+    Expose the port to the clients that need it (for example, through your ingress or load balancer). SSL/GSS negotiation is not supported — clients will fall back to plaintext, so we recommend terminating TLS in front of the endpoint or restricting it to a private network.
+  </Tab>
+  <Tab title="Lightdash Cloud">
+    Availability is instance-dependent. [Contact Lightdash](/contact/contact-info) to enable the endpoint for your organization and to get the host and port to connect to.
+  </Tab>
+</Tabs>
+
+## Connect
+
+Use any Postgres client. The connection parameters are:
+
+| Parameter | Value |
+| --- | --- |
+| Host | Your Lightdash instance host |
+| Port | The value of `PGWIRE_PORT` (self-hosted) or the port provided by Lightdash (Cloud) |
+| User (`-U`) | Any string — the value is ignored |
+| Database (`-d`) | The project UUID or the slugified project name (for example, `ecom-store`) |
+| Password | A service account token (`ldsvc_…`) or personal access token (`ldpat_…`) |
+
+### Example: `psql`
+
+```bash
+psql -h analytics.example.com \
+     -p 5433 \
+     -U lightdash \
+     -d ecom-store
+# Password: ldsvc_...
+```
+
+### Authentication
+
+The password must be one of:
+
+- **Service account token** (`ldsvc_` prefix) — recommended for automation and production integrations. Create one from **Settings → Service accounts**. See [Service accounts](/references/workspace/service-accounts). Service accounts scoped only to SCIM are rejected.
+- **Personal access token** (`ldpat_` prefix) — useful for interactive use. Create one from **Settings → Personal access tokens**. See [Personal access tokens](/references/workspace/personal-tokens).
+
+The `-U` value is not used for authentication — the user identity is derived entirely from the token, so any placeholder works.
+
+### Choosing a database
+
+The `-d` value can be either the **project UUID** (always unambiguous) or a **slugified project name** derived from the display name in Lightdash (for example, the project _"Ecom Store"_ becomes `ecom-store`).
+
+If two projects share the same slugified name, the endpoint returns error code `3D000` at connect time and lists the candidate UUIDs — use one of those UUIDs to connect.
+
+## What maps to what
+
+| Lightdash concept | Postgres concept |
+| --- | --- |
+| Explore | Table |
+| Field ID (for example, `orders_total_order_amount`) | Column |
+| Joined-table field (for example, `customers_region` when joined into `orders`) | Column on the base explore |
+| Dimensions and metrics | Columns (distinguished by `field_type` in `information_schema.columns`) |
+
+Because explores already flatten joins in the semantic layer, joined-table fields appear as columns on the base explore — you do not (and cannot) write `JOIN` clauses yourself.
+
+## Discovering tables and columns
+
+The endpoint serves a virtual `information_schema` so clients and users can list explores and fields:
+
+```sql
+-- List all explores in the project
+SELECT table_name
+FROM information_schema.tables;
+
+-- List the columns of an explore, showing whether each is a dimension or metric
+SELECT column_name, data_type, field_type
+FROM information_schema.columns
+WHERE table_name = 'orders';
+```
+
+The `field_type` column is a Lightdash extension that returns `dimension` or `metric`. Standard columns like `column_name`, `data_type`, and `is_nullable` behave the same as in real Postgres.
+
+<Info>
+  `pg_catalog` is **not** implemented. GUI schema browsers that rely on `pg_catalog` (for example, DBeaver's schema tree) will show an empty catalog. Query `information_schema` instead, or use a client that respects it (for example, `psql \dt` and `\d` work).
+</Info>
+
+## Example queries
+
+The examples below assume an explore called `orders` in an `ecom-store` project.
+
+### Basic query
+
+```sql
+SELECT
+  orders_status,
+  orders_total_order_amount
+FROM orders
+WHERE orders_order_date >= '2026-01-01'
+  AND orders_status IN ('completed', 'shipped')
+ORDER BY orders_total_order_amount DESC
+LIMIT 100;
+```
+
+Because `orders_total_order_amount` is a metric and `orders_status` is a dimension, Lightdash automatically:
+
+- Adds `orders_status` to the group-by.
+- Runs the query through the metric definition (so aggregation logic lives in YAML, not the SQL you write).
+- Applies the same permissions and user attributes as the Lightdash explorer.
+
+### Filtering on metrics (routed to `HAVING`)
+
+Metric conditions in `WHERE` are automatically routed to metric filters, so this works:
+
+```sql
+SELECT
+  customers_region,
+  orders_total_order_amount
+FROM orders
+WHERE orders_total_order_amount > 10000
+ORDER BY orders_total_order_amount DESC;
+```
+
+You can also use `HAVING` explicitly — it maps to the same metric filters.
+
+### Table calculations
+
+Expressions in the `SELECT` list become [table calculations](/guides/table-calculations):
+
+```sql
+SELECT
+  orders_order_month,
+  orders_total_order_amount,
+  orders_total_order_amount
+    - LAG(orders_total_order_amount) OVER (ORDER BY orders_order_month) AS mom_change,
+  CASE
+    WHEN orders_total_order_amount > 10000 THEN 'high'
+    ELSE 'normal'
+  END AS revenue_tier
+FROM orders
+ORDER BY orders_order_month;
+```
+
+Table calculations support arithmetic, functions, `CASE` expressions, window functions, and references to other calculations in the same query.
+
+## Supported SQL
+
+The parser accepts a practical subset of Postgres SQL, focused on what maps cleanly onto a semantic-layer query:
+
+- **`SELECT`** — including `*`, column aliases, and table-qualified names (`orders.orders_status`).
+- **`WHERE`** — `=`, `!=`, `<`, `<=`, `>`, `>=`, `IN` / `NOT IN`, `LIKE` / `ILIKE`, `BETWEEN`, `IS NULL` / `IS NOT NULL`, boolean columns, and nested `AND` / `OR`. Metric conditions are automatically routed to metric filters.
+- **`HAVING`** — routed to metric filters.
+- **`GROUP BY`** — optional (Lightdash groups by the selected dimensions automatically), but accepted.
+- **`ORDER BY`** — on field IDs, ordinal positions, column aliases, and table calculations. `NULLS FIRST` / `NULLS LAST` are honored.
+- **`LIMIT`**.
+- **Table calculations** — arithmetic, functions, `CASE`, window functions, and references to other calculations in the same query.
+- **Catalog discovery** — virtual `information_schema.tables` and `information_schema.columns` (with an extra `field_type` column).
+- **Session shims** — `BEGIN`, `COMMIT`, `SET`, `SHOW`, `SELECT version()`, and `FROM`-less selects (for example, `SELECT 1`) are accepted so that clients and drivers connect cleanly.
+
+## Not supported
+
+The following are rejected by design, so that queries stay within the semantic-layer contract:
+
+- **Extended query protocol / bind parameters** — clients that force prepared statements will receive error code `0A000`. Configure your driver to use the simple query protocol.
+- **`pg_catalog`** — GUI schema browsers (for example, DBeaver's tree) will not populate. Use `information_schema` instead.
+- **Explicit `JOIN`s** — joins are defined in your explores; you cannot join tables in ad-hoc SQL.
+- **Subqueries and CTEs**.
+- **DML** (`INSERT`, `UPDATE`, `DELETE`, `MERGE`) and DDL — the endpoint is read-only.
+- **Ad-hoc custom metrics** — only pre-defined metrics from your semantic layer can be selected. Aggregate expressions like `count(*)` or `sum(...)` in the `SELECT` list are rejected.
+- **Period-over-period** and other Lightdash features that require additional query-time metadata beyond what SQL can express.
+- **`SELECT DISTINCT`** and **`OFFSET`**.
+
+## Errors
+
+Errors are returned as standard Postgres `ErrorResponse` messages, so your client's error handling behaves normally.
+
+| SQLSTATE | Meaning |
+| --- | --- |
+| `28P01` | Authentication failed — the password is not a valid `ldsvc_` or `ldpat_` token, or the token belongs to a SCIM-only service account. |
+| `3D000` | The database name is unknown or ambiguous. Use a project UUID, or one of the slugs listed in the error message. |
+| `0A000` | The client tried to use an unsupported feature — for example, the extended query protocol, `pg_catalog`, or an operator that isn't allowed on `information_schema`. |
+
+## Security and permissions
+
+All queries flow through the same services as the Lightdash UI, so:
+
+- Every query is authorized against the caller's project and space permissions.
+- User attributes and row-level rules are applied to metric queries exactly as they are in the explorer.
+- The endpoint is read-only — it cannot mutate warehouse data or Lightdash content.
+
+Because service accounts and personal access tokens carry the same permissions as the user or scopes they belong to, we recommend using a **service account with only the scopes needed for the queries the integration will run**, rather than a personal token, for any long-lived integration.
