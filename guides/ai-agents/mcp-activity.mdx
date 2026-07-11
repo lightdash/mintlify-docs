@@ -1,0 +1,145 @@
+---
+title: "MCP activity"
+sidebarTitle: "MCP activity"
+description: "See every tool call made against your Lightdash MCP server, filter and drill in, and monitor MCP usage at a glance."
+---
+
+MCP activity gives AI admins visibility into how the [Lightdash MCP server](/references/integrations/lightdash-mcp) is being used across the organization. Every tool call is recorded with who ran it, which agent (if any) it belonged to, the arguments it received, whether it succeeded, and which MCP client made the call.
+
+Use it to:
+
+- Spot MCP clients or agents that are erroring repeatedly.
+- See which tools are actually in use and which aren't.
+- Investigate a specific tool call — inspect the exact arguments and error message.
+- Answer questions like "who is calling our MCP server, and from where?".
+
+## Where to find it
+
+Open **Organization Settings → Ask AI → MCP**.
+
+The tab is visible to users with an AI admin role:
+
+- **Org-level AI admins** see every MCP tool call in the organization, including calls made outside any project.
+- **Project-scoped AI admins** see only tool calls made against their projects. Calls made without a project (for example, admin tools) are visible to org-level admins only.
+
+Activity is retained for **90 days**. Older records are cleaned up automatically.
+
+## Overview panel
+
+The overview panel at the top of the page summarizes MCP usage across whatever the page is filtered to:
+
+- **Total calls**, **success rate**, and **error count** as headline tiles.
+- **Top tools** — the six most-called tools with proportional usage bars.
+- **Active agents** — per-agent call counts, plus a bucket for tool calls made without an agent (for example, direct MCP client sessions).
+- **Recent errors** — the five most recent failing tool calls. Click one to open the same detail drawer as a row in the activity feed.
+
+The overview shares the page's project and agent filters, so the numbers always describe exactly what the table is scoped to. The **status** filter (success / error) intentionally does not affect the overview — the success/error split stays meaningful even when you've filtered the table down to errors only.
+
+## Activity feed
+
+Below the overview is a paginated feed of every recorded MCP tool call. The feed loads more rows as you scroll and each row shows the tool name, status, user, agent, project, MCP client, timestamp, and duration.
+
+### Session grouping
+
+When sorted by time, tool calls are grouped into **sessions** — one client connection to the MCP server. Each group has a header row showing the short session id, the MCP client name and version, the number of calls and errors in the session, and the time of the latest call. Click the header to collapse or expand the group.
+
+A session is split into segments whenever there's a **1-hour gap** with no activity, so a client that reconnects the next day appears as a new group at the top of the feed instead of hoisting old calls out of place.
+
+Calls without a session id are collected under a **No session ID** header. This happens when the MCP client doesn't participate in session tracking (see [How sessions are tracked](#how-sessions-are-tracked) below). A single sessionless call renders as a plain row.
+
+Sorting the feed by duration falls back to a flat, ungrouped view.
+
+#### How sessions are tracked
+
+Session ids are minted server-side using the [Streamable HTTP transport](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http)'s standard `Mcp-Session-Id` mechanism:
+
+- On `initialize`, the Lightdash MCP server returns an `Mcp-Session-Id` response header.
+- Spec-compliant clients echo that header on every subsequent request, and Lightdash records the id on each resulting tool call.
+- Clients that don't echo the header still work — their tool calls are recorded but appear under **No session ID** instead of grouped.
+
+You don't need to configure anything; any MCP client that follows the Streamable HTTP spec gets session grouping for free.
+
+### Filtering and sorting
+
+Filters live above the table and are persisted in the URL, so you can share a filtered view by copying the link. You can filter by:
+
+- **Project**
+- **Agent**
+- **Tool**
+- **MCP client**
+- **Status** — success or error
+- **Date range**
+
+Sort the feed by **time** or **duration**, ascending or descending.
+
+### Per-call detail drawer
+
+Click any row to open a drawer with the full details of that tool call:
+
+- **Tool arguments** — the full JSON payload the MCP client sent.
+- **Error message** — the exception or protocol error returned to the client, if the call failed.
+- **Duration** — how long the tool took to execute.
+- **Client identity** — the MCP client's name and version as reported in the MCP handshake, the raw user agent, the auth method used, and the MCP protocol version.
+- **Session** — the full session id this call belongs to, when the client participated in session tracking.
+
+The drawer is the same view opened from the **Recent errors** list in the overview panel.
+
+## Admin API
+
+Both endpoints back the settings page and are available on the Lightdash API for scripting and integrations. They require an AI admin role and follow the same visibility rules as the UI: org-level admins see all activity, project-scoped admins see only their projects.
+
+### List MCP activity
+
+```http
+GET /api/v1/aiAgents/admin/mcp-activity
+```
+
+Returns a paginated feed of MCP tool calls.
+
+Query parameters:
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `page` | number | Page number, defaults to `1`. |
+| `pageSize` | number | Page size, defaults to `50`, capped at `100`. |
+| `projectUuids` | string[] | Filter to specific projects. |
+| `agentUuids` | string[] | Filter to specific agents. |
+| `userUuids` | string[] | Filter to specific users. |
+| `toolNames` | string[] | Filter to specific tool names. |
+| `clientNames` | string[] | Filter to specific MCP client names. |
+| `status` | `success` \| `error` | Filter by outcome. |
+| `dateFrom` | ISO date | Inclusive lower bound. |
+| `dateTo` | ISO date | Inclusive upper bound. A date-only value is interpreted as midnight — send a full timestamp to include the end of the day. |
+| `sortField` | `createdAt` \| `durationMs` | Field to sort by. |
+| `sortDirection` | `asc` \| `desc` | Defaults to `desc`. |
+
+Example:
+
+```bash
+curl -H "Authorization: ApiKey $LIGHTDASH_TOKEN" \
+  "https://app.lightdash.cloud/api/v1/aiAgents/admin/mcp-activity?status=error&pageSize=20"
+```
+
+Each tool call in the response includes the caller, the tool name and arguments, status, error message (if any), duration, MCP client identity (client name, client version, user agent, auth method, protocol version), and — when the client participated in session tracking — a `sessionId` and a `sessionGroup` describing the session segment the call belongs to (segment key, total calls, and errors). When sorted by `createdAt`, results are ordered by session segment so calls from the same session stay contiguous; sorting by `durationMs` returns flat chronological order.
+
+### MCP activity stats
+
+```http
+GET /api/v1/aiAgents/admin/mcp-activity/stats
+```
+
+Returns the aggregated overview: total call count, error count, the top 6 tools by call count, per-agent call counts (with a bucket for calls made without an agent), and the 5 most recent errors as full activity items.
+
+Query parameters are the same as the list endpoint, **except** `status` — the response already breaks results down by status and `recentErrors` is always error-only, so status is deliberately not accepted.
+
+Example:
+
+```bash
+curl -H "Authorization: ApiKey $LIGHTDASH_TOKEN" \
+  "https://app.lightdash.cloud/api/v1/aiAgents/admin/mcp-activity/stats?projectUuids=<project-uuid>"
+```
+
+## Related
+
+- [Connecting MCP servers](/guides/ai-agents/mcp-servers) — attach external MCP servers to your agents.
+- [Lightdash MCP](/references/integrations/lightdash-mcp) — the MCP server whose activity is recorded here.
