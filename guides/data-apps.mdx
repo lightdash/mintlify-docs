@@ -233,21 +233,26 @@ If you embed a data app in a [dashboard](/guides/how-to-promote-content#promote-
 
 Data apps join charts and dashboards in the [as-code workflow](/references/lightdash-cli#lightdash-download). You can download a data app's source, check it into git, edit it locally, and re-upload it — the destination Lightdash instance rebuilds the app in its sandbox and publishes a new version. This lets you version app source, review changes in pull requests, and move apps between projects or instances.
 
-Data apps as code is opt-in: it only runs when you pass the `--apps` or `--include-apps` flag to `lightdash download`, or `--apps` to `lightdash upload`, and requires data apps to be enabled on the destination instance.
+Data apps as code is opt-in: it only runs when you pass the `--apps` or `--include-apps` flag to `lightdash download` or `lightdash upload`, and requires data apps to be enabled on the destination instance.
 
 ### Downloading an app
 
-Use `lightdash download --apps <appUuids...>` to fetch specific apps by UUID, or `--include-apps` to grab the project's apps (capped at the first 10; only apps that have been added to a space are listed):
+Use `lightdash download --apps <appUuids...>` to fetch specific apps by UUID, or `--include-apps` to grab every app in the project (capped at `--apps-limit`, default 50):
 
 ```bash
-# Download specific apps by UUID (works for apps not in a space)
+# Download specific apps by UUID
 lightdash download --apps 8f2b1c4d-1111-2222-3333-444455556666
 
-# Download the project's data apps (up to 10; only apps that are in a space)
+# Download every app in the project (up to 50)
 lightdash download --include-apps
+
+# Raise the cap for larger projects
+lightdash download --include-apps --apps-limit 200
 ```
 
-To reach apps that are not in a space, or to download more than 10 in one go, list them explicitly with `--apps`.
+`--include-apps` returns every app in the project, including apps that haven't been added to a space. Explicit `--apps <uuids...>` values are never subject to `--apps-limit`, so use them when you need to guarantee a specific app is included. On older servers that don't expose the project-wide app listing endpoint, the CLI logs a warning and falls back to listing only apps that are in a space; upgrade the destination instance to see every app.
+
+Apps with no built version yet (for example, apps still building or that failed to build) are skipped and reported in the download summary rather than failing the whole run.
 
 For an app-only checkout — no charts, dashboards, or space files — add `--apps-only` (it implies `--skip-charts --skip-dashboards --skip-spaces`, which also work individually). This is the recommended way to work on apps: it keeps the folder clean and avoids accidentally re-uploading unrelated project content later.
 
@@ -270,21 +275,27 @@ Once an app is on disk you can iterate on it locally:
 
 1. Edit files under `src/`.
 2. Optionally run `pnpm install && pnpm build` inside the app folder to check that the source compiles. This is a **local pre-check only** — if `pnpm install` fails in your environment (registry policies, no network), skip this step rather than fighting it; the server does its own build on upload and any build errors appear on the app's page.
-3. Run `lightdash upload --apps` to send the source back. The server rebuilds and publishes a new version.
+3. Run `lightdash upload --apps <appUuid>` (or `--include-apps` to send every folder) to push the source back. The server rebuilds and publishes a new version.
 
 The bundled `.claude/skills/` and `AGENTS.md` files describe the SDK surface and this workflow so coding agents (Claude Code and similar) can help you edit apps locally without extra prompting.
 
 ### Uploading an app
 
-Use `lightdash upload --apps` to send your local changes back:
+Use `lightdash upload` to send your local changes back:
 
 ```bash
-# Upload every app folder under lightdash/apps/
-lightdash upload --apps
-
-# Upload only specific apps by UUID
+# Upload only specific apps by UUID (recommended when a script or agent is editing a single app)
 lightdash upload --apps 8f2b1c4d-1111-2222-3333-444455556666
+
+# Upload every app folder under lightdash/apps/
+lightdash upload --include-apps
 ```
+
+For agents and scripts that edit one app at a time, prefer `--apps <appUuid>` (the UUID comes from that app's `lightdash-app.yml`). Folders under `lightdash/apps/` are filtered by manifest `appUuid`, so unrelated sibling apps aren't re-uploaded.
+
+<Warning>
+**Breaking change.** In earlier CLI versions, bare `lightdash upload --apps` uploaded every app folder on disk. It now requires one or more `<appUuid>` values — use `--include-apps` for the previous "upload every folder" behavior.
+</Warning>
 
 Uploads are fire-and-forget: the CLI posts the source and returns immediately. The destination rebuilds the app in its sandbox and publishes a new version once the build succeeds. Until then, the app shows a `building` status in the UI. If the build fails, the error appears in the app's version history in the UI — the CLI does not wait for the build to finish. Only the `src/` tree and manifest are sent; the scaffolding files and context snapshot stay on disk.
 
@@ -297,13 +308,13 @@ Because identity lives in the manifest, the same download-then-upload flow lets 
 **Between projects on the same instance** — pass `--project` to target a different project. Because the manifest's `projectUuid` doesn't match the target, the CLI asks you to confirm creating a new app there:
 
 ```bash
-lightdash upload --apps --project <target-project-uuid>
+lightdash upload --apps <appUuid> --project <target-project-uuid>
 ```
 
 In non-interactive shells (CI, scripts) the CLI reports an error for that app and skips it instead of prompting. Pass `--create-new` to opt in explicitly:
 
 ```bash
-lightdash upload --apps --project <target-project-uuid> --create-new
+lightdash upload --apps <appUuid> --project <target-project-uuid> --create-new
 ```
 
 The destination project creates a new app (with a new UUID on the server) and builds it in its own sandbox. After creating, the CLI prints the new app's URL and offers to retarget your local `lightdash-app.yml` at it (updating `appUuid`, `projectUuid`, and `version` together) so future uploads update the new app. Accept if you're moving the app; decline if you're copying it and want to keep working against the original — the CLI tells you which manifest fields to edit later if you change your mind. Pass `--create-new` any time you want to fork an app into a new record, even inside the same project.
@@ -312,7 +323,7 @@ The destination project creates a new app (with a new UUID on the server) and bu
 
 ```bash
 lightdash login <destination-url>
-lightdash upload --apps --project <target-project-uuid> --create-new
+lightdash upload --apps <appUuid> --project <target-project-uuid> --create-new
 ```
 
 You can also set `LIGHTDASH_URL` and `LIGHTDASH_API_KEY` instead of running `lightdash login`. The destination instance rebuilds the source in its own sandbox — no built artifacts are ever transferred between instances.
@@ -325,7 +336,7 @@ Before you rely on data apps as code in a workflow, keep the following in mind:
 - **Fixed dependency set.** The sandbox rebuilds against a pre-installed library set. You can edit any source file, but you can't add libraries that the sandbox doesn't already provide, and edits to root config files (`package.json`, `vite.config.js`, `tsconfig.json`, etc.) have no effect on the deployed app.
 - **Semantic layer coupling.** A moved app's queries run against the target project's fields **by name**. If a field the app references is missing in the target project, the upload still succeeds and the build still finishes — but the app surfaces query errors at runtime when a user opens it. Check the app in the destination after uploading.
 - **Concurrent build rate limit.** Each project has a cap on how many app builds can run at once. If you upload a large batch and exceed the cap, the server returns HTTP 429 and the CLI reports the error for that app. Re-run the upload for the failed apps once earlier builds complete.
-- **Bulk download cap.** `--include-apps` returns at most the first 10 apps in a space. Use `--apps <uuids>` to fetch more or to reach apps that aren't in a space.
+- **Bulk download cap.** `--include-apps` returns at most `--apps-limit` apps (default 50). Raise the flag for larger projects, or list specific UUIDs with `--apps <uuids>` — explicit UUIDs are never capped.
 
 ## Data context and the app model
 
