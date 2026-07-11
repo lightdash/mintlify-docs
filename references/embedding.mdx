@@ -31,7 +31,7 @@ Embedded Lightdash content is available to view by anyone (not just folks with a
 
 ## Known limitations
 
-- Embedding works for dashboards, charts, and [data apps](/guides/data-apps). To embed explores, use the `canExplore` flag in a dashboard.
+- Embedding works for dashboards, charts, [AI agents](/guides/embedding/ai-agents), the [metrics catalog](/guides/embedding/metrics-catalog), and [data apps](/guides/data-apps). To embed explores, use the `canExplore` flag in a dashboard or metrics catalog token.
 - The **Filter dashboard to** option when clicking on individual chart segments will not work on embedded dashboards.
 
 If you're interested in embedding and one or more of these items are blockers, please reach out.
@@ -62,7 +62,7 @@ All tokens share these fields:
 {
   content: {
     // Content configuration (required)
-    type: 'dashboard' | 'chart' | 'aiAgent' | 'apiAccess',
+    type: 'dashboard' | 'chart' | 'aiAgent' | 'metricsCatalog' | 'dataApp' | 'apiAccess',
     projectUuid?: string,
     // ... type-specific fields
   },
@@ -290,6 +290,71 @@ const token = jwt.sign({
     type: 'aiAgent',
     projectUuid: 'your-project-uuid',
     agentUuid: 'your-agent-uuid',
+  },
+  writeActions: {
+    serviceAccountUserUuid: 'service-account-user-uuid',
+    spaceUuid: 'destination-space-uuid',
+  },
+  userAttributes: {
+    tenant_id: 'tenant-abc',
+  },
+  user: {
+    email: 'customer@example.com',
+  },
+}, SECRET, { expiresIn: '1h' });
+```
+
+### Metrics catalog token
+
+For embedding the project [metrics catalog](/get-started/develop-in-lightdash/how-to-create-metrics) so embedded users can browse metrics and, optionally, continue into Explore. See [Embedding the metrics catalog](/guides/embedding/metrics-catalog) for the full walkthrough.
+
+```typescript
+{
+  content: {
+    type: 'metricsCatalog',
+
+    // Project identifier (required — pins the catalog to a single project)
+    projectUuid: string,
+
+    // Allow embedded users to open Explore from a metric (optional)
+    canExplore?: boolean,
+  },
+
+  // Optional: enable saving charts from the embedded Explore. Required only
+  // when canExplore is true and you want embedded users to save results.
+  writeActions?: {
+    spaceUuid: string,
+    serviceAccountUserUuid?: string,
+    userUuid?: string,
+  },
+
+  // Optional: row- and column-level filtering for the embedded viewer
+  userAttributes?: {
+    [attributeName: string]: string,
+  },
+
+  // Optional: user information surfaced in audit/analytics
+  user?: {
+    externalId?: string,
+    email?: string,
+  },
+}
+```
+
+<Info>
+Metrics catalog tokens only authorize the metrics catalog surface (and, when `canExplore` is `true`, the embedded Explore launched from a metric). Dashboard, chart, AI agent, and data app tokens are rejected by the metrics catalog routes, and metrics catalog tokens are rejected on other embed routes.
+</Info>
+
+**Example:**
+
+```javascript
+import jwt from 'jsonwebtoken';
+
+const token = jwt.sign({
+  content: {
+    type: 'metricsCatalog',
+    projectUuid: 'your-project-uuid',
+    canExplore: true,
   },
   writeActions: {
     serviceAccountUserUuid: 'service-account-user-uuid',
