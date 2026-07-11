@@ -333,7 +333,15 @@ Before you rely on data apps as code in a workflow, keep the following in mind:
 
 An app can declare its own npm dependencies alongside the sandbox's built-in library set. This lets a locally-authored app pull in libraries the template doesn't ship — for example, adding `date-fns` to a small ecommerce dashboard for date formatting, or a niche chart library for a one-off visualization.
 
-Custom dependencies are gated by an instance-wide flag, so first check with your admin that they're enabled on your Lightdash instance (see [Self-hosting Data apps](/guides/data-apps/self-hosting#custom-dependencies)). Uploads that declare dependencies while the flag is off are rejected with a clear error.
+Custom dependencies are gated because adding third-party npm packages is a supply-chain capability. Three checks must all pass for an upload to declare dependencies:
+
+1. **Instance flag on** — `LIGHTDASH_APP_CUSTOM_DEPENDENCIES_ENABLED=true` (see [Self-hosting Data apps](/guides/data-apps/self-hosting#custom-dependencies)).
+2. **Organization flag on** — the `enable-data-app-custom-dependencies` feature flag, enabled per organization. On single-org self-hosted instances an admin can enable it globally via `LIGHTDASH_ENABLE_FEATURE_FLAGS`.
+3. **User has `manage:DataAppDependency` scope** — a dedicated admin-only scope required specifically to add or change custom dependencies. Everyone with `create:DataApp` or `manage:DataApp` can still upload template-only apps; they just can't declare new dependencies.
+
+If any of these is missing, the upload is rejected at the API with a clear error. Template-only uploads (no declared dependencies) are unaffected.
+
+Additional upload-time security screens may also run before your version is accepted (see [Upload-time dependency checks](/guides/data-apps/self-hosting#upload-time-dependency-checks)): a known-malware feed screen (OSV, default on) and an optional minimum release-age guard.
 
 **Adding a dependency locally**
 

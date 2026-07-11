@@ -61,7 +61,13 @@ Restart the backend. The "Data apps" entry will appear in the **New** menu for u
 
 ### Custom dependencies
 
-Data apps can [declare their own npm dependencies](/guides/data-apps#declared-dependencies) alongside the sandbox template's built-in library set. The feature is gated by an instance-wide flag, off by default.
+Data apps can [declare their own npm dependencies](/guides/data-apps#declared-dependencies) alongside the sandbox template's built-in library set. Because installing third-party packages is a supply-chain capability, the feature is gated at three layers — all three must pass for an upload to declare dependencies:
+
+1. **Instance env flag** (this page): `LIGHTDASH_APP_CUSTOM_DEPENDENCIES_ENABLED=true`. Off by default. Also acts as an instance-wide kill-switch — see below.
+2. **Per-organization feature flag**: `enable-data-app-custom-dependencies`. Lets Lightdash Cloud enable the feature for specific orgs without instance-wide exposure. On single-org self-hosted instances, add it to `LIGHTDASH_ENABLE_FEATURE_FLAGS` to turn it on globally.
+3. **Admin-only scope**: `manage:DataAppDependency` (see [Permissions](#permissions)). Required to add or change custom dependencies specifically; template-only uploads are unaffected.
+
+Template-only uploads always succeed regardless of these settings.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -70,6 +76,15 @@ Data apps can [declare their own npm dependencies](/guides/data-apps#declared-de
 | `LIGHTDASH_APP_DEPENDENCY_INSTALL_TIMEOUT_MS` | `120000` (2 minutes) | Timeout in milliseconds for the `pnpm install` step that runs before the Vite build when a version has custom dependencies. Raise this if your registry is slow, or lower it to fail faster in CI-style setups. |
 
 Turning `LIGHTDASH_APP_CUSTOM_DEPENDENCIES_ENABLED` back off is a full kill-switch: it stops installs on every path, including new uploads, AI-iterate carry-forward builds, and sandbox restores of versions whose dependency sets were previously approved. Use it if you need to disable third-party installs on the instance without redeploying app source.
+
+### Upload-time dependency checks
+
+Two optional guards run on uploads that pass the gates above. Both apply to the resolved lockfile (direct + transitive), so a malicious transitive dependency is caught even if the top-level package looks fine.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `LIGHTDASH_APP_DEPENDENCY_MALWARE_CHECK_ENABLED` | `true` | Screens every resolved package in the lockfile against the [OSV](https://osv.dev/) malicious-packages feed and rejects the upload if any version carries a `MAL-` advisory. Precise (near-zero false positives) and defaults on for that reason. **Fails closed** — if `api.osv.dev` can't be reached the upload is rejected. Set to `false` on air-gapped instances or during an OSV outage to keep uploading. |
+| `LIGHTDASH_APP_DEPENDENCY_MIN_RELEASE_AGE_DAYS` | `0` (off) | Minimum age in days a resolved dependency's version must have since publication on npm. Guards against freshly published, potentially compromised versions before advisory feeds catch up. Off by default because it adds registry round-trips and can block legitimate recent releases; `3` is a sensible starting point if you want it on. Fails closed when a publish date can't be verified. |
 
 ## Costs
 
@@ -83,6 +98,8 @@ Both providers expose usage dashboards. We recommend setting spend limits on bot
 ## Permissions
 
 Data apps follow the same space-based permission model as charts and dashboards. The relevant scopes (`view:DataApp`, `create:DataApp`, `manage:DataApp`) are bundled into the default system roles - but on enterprise instances using custom roles, you'll need to grant them explicitly. See [Custom roles](/references/workspace/custom-roles) for details.
+
+Adding [custom npm dependencies](#custom-dependencies) to an app requires an additional scope, `manage:DataAppDependency`, which is granted to admins only in the default role set. This is deliberate — declaring third-party packages is a supply-chain capability distinct from uploading a template-only app. Grant it to a custom role only when you're comfortable with those users choosing which packages your build sandbox pulls from your configured registry.
 
 ## Troubleshooting
 
