@@ -1,0 +1,141 @@
+---
+title: "Metrics SQL API"
+description: "Query your Lightdash semantic layer over the Postgres wire protocol from any SQL client or BI tool."
+icon: "database"
+tag: "Beta"
+---
+
+The Metrics SQL API is a Postgres wire protocol compatible interface for querying your Lightdash semantic layer. Any tool that can connect to a PostgreSQL database — `psql`, BI tools, notebooks, database drivers — can connect to Lightdash and query your metrics and dimensions with SQL.
+
+Your explores are exposed as tables, and their dimensions and metrics as columns. When you run a query, Lightdash compiles it through the semantic layer, so metric calculations, joins, and access controls are handled for you — you get the same numbers as in the Lightdash UI.
+
+<Info>
+  **The Metrics SQL API is currently in beta and only available on Lightdash Enterprise plans.** It's disabled by default and must be enabled for your organization by an admin.
+
+  For more information on our plans, visit our [pricing page](https://www.lightdash.com/pricing).
+</Info>
+
+## Connect
+
+You can find copy-paste connection details in your project settings under **Semantic Layer API**. Connect with any Postgres-compatible client using:
+
+| Field | Value |
+|---|---|
+| Host | `pg.<your_instance_name>.lightdash.cloud` |
+| Port | `5432` |
+| Database | Your project UUID. The slugified project name also works, but changes if the project is renamed — the UUID is stable. You can find it in the Lightdash URL when viewing a project (`/projects/<projectUuid>/...`) |
+| User | Your Lightdash account email. This value is informational — authentication is via the token |
+| Password | A service account token (`ldsvc_...`, recommended) or a [personal access token](/references/workspace/personal-tokens) (`ldpat_...`) |
+
+As a connection URI:
+
+```bash
+psql "postgresql://<your_email>:<token>@pg.<your_instance_name>.lightdash.cloud:5432/<project_uuid>?sslmode=disable"
+```
+
+<Warning>
+  TLS is not supported yet, so clients need `sslmode=disable` to connect. TLS support is coming before general availability — don't send tokens over networks you don't trust in the meantime.
+</Warning>
+
+Queries run with the permissions of the token, so you can only query explores and fields that the token's account has access to.
+
+## How queries work
+
+- **Tables are explores.** Each explore in your project appears as a table, and `FROM` takes a single explore. Fields from tables joined in the explore are included as columns — joins are defined in the semantic layer, not in your SQL.
+- **Columns are field IDs.** Dimensions and metrics use their Lightdash field IDs, e.g. `orders_status`, `orders_total_order_amount`.
+- **Metrics are pre-aggregated.** Select a metric like any other column and Lightdash computes the aggregation for you. `GROUP BY` is optional — results are implicitly grouped by the dimensions you select. If you do write one, it's validated against your `SELECT` list.
+- **Results are limited to 500 rows** by default. Add a `LIMIT` to override it.
+
+Supported SQL includes `WHERE` (`=`, `!=`, `<`, `<=`, `>`, `>=`, `IN`, `LIKE`/`ILIKE`, `BETWEEN`, `IS NULL`, `AND`/`OR`), `HAVING`, `ORDER BY`, `LIMIT`, and calculated expressions in the `SELECT` list (arithmetic, functions, `CASE`, and window functions).
+
+## Examples
+
+### Discover explores and fields
+
+The catalog is exposed through `information_schema`. The `field_type` column on `information_schema.columns` tells you whether a field is a dimension or a metric:
+
+```sql
+SELECT table_name
+FROM information_schema.tables;
+
+SELECT column_name, data_type, field_type
+FROM information_schema.columns
+WHERE table_name = 'orders';
+```
+
+### Query a metric by a dimension
+
+Select the dimensions and metrics you want — no `GROUP BY` or aggregate functions needed:
+
+```sql
+SELECT
+  orders_status,
+  orders_total_order_amount
+FROM orders
+ORDER BY orders_total_order_amount DESC;
+```
+
+### Filter and limit
+
+```sql
+SELECT
+  orders_order_date_month,
+  orders_total_order_amount,
+  payments_unique_payment_count
+FROM orders
+WHERE orders_order_date >= '2026-01-01'
+  AND orders_status IN ('completed', 'shipped')
+ORDER BY 1
+LIMIT 12;
+```
+
+### Calculated expressions
+
+Combine metrics and dimensions with expressions in the `SELECT` list, like table calculations in the Lightdash UI:
+
+```sql
+SELECT
+  orders_status,
+  orders_total_order_amount,
+  orders_total_order_amount / payments_unique_payment_count AS amount_per_payment
+FROM orders;
+```
+
+### Query from Python
+
+Because the interface speaks the Postgres wire protocol, existing Postgres drivers work:
+
+```python
+import psycopg2
+import pandas as pd
+
+conn = psycopg2.connect(
+    host="pg.<your_instance_name>.lightdash.cloud",
+    port=5432,
+    dbname="<project_uuid>",
+    user="<your_email>",
+    password="<token>",
+    sslmode="disable",
+)
+
+df = pd.read_sql(
+    "SELECT orders_status, orders_total_order_amount FROM orders",
+    conn,
+)
+```
+
+<Tip>
+  If a query isn't valid, error messages include hints — an unknown column error lists the available fields, and using an aggregate function suggests the matching metric instead.
+</Tip>
+
+## Limitations
+
+- **No explicit joins, subqueries, or CTEs.** Queries select from a single explore; joins are defined in the semantic layer.
+- **No DML.** The API is read-only — `SELECT` queries only.
+- **No custom metrics or period-over-period comparisons.**
+- **Simple query protocol only.** Prepared statements and bind parameters (the extended query protocol) aren't supported. `psql` and drivers sending plain-text queries work; some GUI tools won't.
+- **No `pg_catalog` emulation.** Schema browsers in GUI clients (e.g. DBeaver) won't populate their sidebar — query `information_schema.tables` and `information_schema.columns` instead.
+
+<Tip>
+  If you're working in Python, the [Lightdash Python SDK](/sdk/python-sdk) offers a typed, dataframe-native way to query the semantic layer without writing SQL.
+</Tip>
