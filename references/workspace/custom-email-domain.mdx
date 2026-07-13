@@ -4,20 +4,20 @@ description: "Send Lightdash report emails from your own domain (white-labeled e
 ---
 
 <CardGroup cols={2}>
-  <Card title="Cloud Enterprise" icon="rocket" horizontal />
+  <Card title="Lightdash Cloud" icon="cloud" horizontal />
 </CardGroup>
 
 <Info>
-  Custom email domains are an Enterprise feature and are enabled per
-  organization. Contact the Lightdash team if you don't see the **Email
-  domain** panel in your organization settings.
+  Custom email domains are a Lightdash Cloud feature and are rolled out per
+  organization. If you don't see the **Email domain** tab in your
+  organization settings, contact the Lightdash team to have it enabled.
 </Info>
 
 ## What is a custom email domain?
 
 By default, scheduled deliveries and alerts are emailed from a Lightdash
 address. With a custom email domain, those emails send from an address on
-**your own domain** instead — for example `reports@yourcompany.com`.
+**your own domain** instead — for example `reports@ecom-store.com`.
 
 Emails are authenticated with DKIM and a custom return-path so they pass
 DMARC alignment for your domain. This is useful when you want to:
@@ -30,6 +30,9 @@ DMARC alignment for your domain. This is useful when you want to:
   and open it.
 - **Keep replies.** Recipients who reply reach an address you own.
 
+Transactional emails (sign-in links, password resets, invites) are not
+affected — they always send from the Lightdash address.
+
 ## Set up your sending domain
 
 You must be an organization admin, and you'll need access to your domain's
@@ -37,23 +40,25 @@ DNS settings.
 
 1. In your Lightdash instance, click your initials at the top right and
    select **Organization settings**.
-2. Open the **Email domain** panel.
+2. Open the **Email domain** tab.
 3. Enter the domain you want to send from. We recommend a dedicated
-   subdomain like `reports.yourcompany.com` — it keeps your report email
+   subdomain like `reports.ecom-store.com` — it keeps your report email
    reputation separate from your primary mail domain.
 4. Enter the **From address** (an address at that domain, e.g.
-   `reports@reports.yourcompany.com`) and an optional **From name**.
+   `reports@reports.ecom-store.com`) and an optional **From name**.
 5. Click **Set up domain**. Lightdash shows two DNS records to add at your
-   DNS provider: a **DKIM** TXT record and a **Return-Path** CNAME record.
+   DNS provider: a **DKIM** `TXT` record and a **Return-Path** `CNAME`
+   record (default host `pm-bounces`).
 6. Add both records at your DNS provider, then click **Verify DNS records**.
 
 DNS changes can take anywhere from a few minutes to 24 hours to propagate.
 You can leave the page and come back — Lightdash re-checks pending domains
-in the background and emails your organization's admins once the domain
-verifies.
+in the background and emails your organization's admins once verification
+completes. If both records haven't verified within **72 hours**, the domain
+is marked failed and you can re-run **Verify DNS records** to restart.
 
 <Warning>
-  **Using Cloudflare?** The Return-Path CNAME record must be set to **DNS
+  **Using Cloudflare?** The Return-Path `CNAME` record must be set to **DNS
   Only** (grey cloud), not proxied. A proxied record will never verify.
 </Warning>
 
@@ -63,16 +68,37 @@ Both records must verify before you can enable sending. Once the domain
 shows as **Verified**, turn on **Send from this domain**. From then on,
 scheduled deliveries and alerts send from your address.
 
-Until your domain is verified and enabled, emails keep sending from the
-Lightdash address with your from-address set as the reply-to — setup never
-blocks or delays your scheduled deliveries.
+Behavior at each stage:
+
+| State | `From:` header | `Reply-To:` |
+| --- | --- | --- |
+| Not configured | Lightdash address | Lightdash address |
+| Configured, not yet verified | Lightdash address | Your custom address |
+| Verified but not enabled | Lightdash address | Lightdash address |
+| Verified and enabled | Your custom address | Your custom address |
+
+Setup never blocks or delays scheduled deliveries — if verification is
+pending or has failed, emails keep sending from the Lightdash address.
 
 ## Disable or remove
 
-- Turn off **Send from this domain** to revert to the Lightdash sending
-  identity. Your domain stays verified so you can re-enable it anytime.
+- Turn off **Send from this domain** to revert cleanly to the Lightdash
+  sending identity. Your domain stays verified so you can re-enable it
+  anytime.
 - Click **Remove domain** to delete the sending domain and its DNS
   configuration entirely.
+
+## Limitations
+
+- **One sender identity per organization.** The current release supports a
+  single custom domain per organization. Multi-domain sending is not
+  available.
+- **DMARC policy is up to you.** Lightdash configures DKIM and the return
+  path so your emails align for DMARC, but publishing (or tightening) a
+  DMARC policy on your domain is something you manage at your DNS
+  provider. Postmark's
+  [DMARC guide](https://postmarkapp.com/support/article/1104-what-is-dmarc)
+  is a good starting point.
 
 ## Related resources
 
