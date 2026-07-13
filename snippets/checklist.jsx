@@ -1,4 +1,4 @@
-// Interactive, persistent checklist components for Mintlify docs.
+// Interactive, persistent checklist components for Mintlify docs (v2).
 //
 // Usage on a page:
 //
