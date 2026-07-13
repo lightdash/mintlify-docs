@@ -5,82 +5,129 @@
 //   import { Checklist, ChecklistItem } from '/snippets/checklist.jsx';
 //
 //   <Checklist storageKey="business-user-training">
-//     <ChecklistItem id="semantic-layer">
-//       **Understand the Lightdash semantic layer** — one governed source of truth.
-//     </ChecklistItem>
-//     <ChecklistItem id="dims-vs-metrics">
-//       **Understand the difference between dimensions and metrics** — ...
+//     ## Section heading (regular MDX headings are fine)
+//
+//     <ChecklistItem id="stable-slug">
+//       **Item text** — supports full MDX inside.
 //     </ChecklistItem>
 //   </Checklist>
 //
-// Each item's checked state is persisted per-reader in localStorage under
-// `lightdash-checklist:<storageKey>`. The wrapper renders a progress bar and a
-// "Reset" button.
+// State lives on the <Checklist> parent and is injected into every
+// <ChecklistItem> descendant via cloneElement — no React context, so this
+// works reliably as a Mintlify snippet. Progress persists per-reader in
+// localStorage under `lightdash-checklist:<storageKey>`.
 
-const ChecklistContext = React.createContext(null);
+export const ChecklistItem = ({ id, children, __checked, __onToggle }) => {
+  const isChecked = !!__checked;
+  const inputId = `checklist-${id}`;
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: '0.65rem',
+        padding: '0.5rem 0',
+        borderBottom: '1px solid rgba(127,127,127,0.15)',
+      }}
+    >
+      <input
+        id={inputId}
+        type="checkbox"
+        checked={isChecked}
+        onChange={() => __onToggle && __onToggle(id)}
+        style={{
+          marginTop: '0.35rem',
+          width: '1.05rem',
+          height: '1.05rem',
+          cursor: 'pointer',
+          accentColor: '#7857FE',
+          flexShrink: 0,
+        }}
+      />
+      <label
+        htmlFor={inputId}
+        style={{
+          cursor: 'pointer',
+          opacity: isChecked ? 0.55 : 1,
+          textDecoration: isChecked ? 'line-through' : 'none',
+          lineHeight: 1.5,
+        }}
+      >
+        {children}
+      </label>
+    </div>
+  );
+};
 
 export const Checklist = ({ storageKey, children }) => {
   const key = `lightdash-checklist:${storageKey || 'default'}`;
   const [checked, setChecked] = React.useState({});
   const [hydrated, setHydrated] = React.useState(false);
 
-  // Hydrate from localStorage on mount (client-only).
   React.useEffect(() => {
     try {
-      const raw = typeof window !== 'undefined' ? window.localStorage.getItem(key) : null;
+      const raw =
+        typeof window !== 'undefined' ? window.localStorage.getItem(key) : null;
       if (raw) setChecked(JSON.parse(raw));
     } catch (e) {
-      // ignore malformed storage
+      /* ignore */
     }
     setHydrated(true);
   }, [key]);
 
-  // Persist on change.
   React.useEffect(() => {
     if (!hydrated) return;
     try {
       window.localStorage.setItem(key, JSON.stringify(checked));
     } catch (e) {
-      // storage full / blocked — ignore
+      /* ignore */
     }
   }, [checked, hydrated, key]);
 
-  const toggle = React.useCallback((id) => {
+  const toggle = (id) =>
     setChecked((prev) => ({ ...prev, [id]: !prev[id] }));
-  }, []);
 
-  const reset = React.useCallback(() => {
+  const reset = () => {
     setChecked({});
     try {
       window.localStorage.removeItem(key);
     } catch (e) {
-      // ignore
+      /* ignore */
     }
-  }, [key]);
+  };
 
-  // Count items by walking the children tree for ChecklistItem elements.
-  const { total, done } = React.useMemo(() => {
-    let t = 0;
-    let d = 0;
-    const walk = (nodes) => {
-      React.Children.forEach(nodes, (child) => {
-        if (!React.isValidElement(child)) return;
-        if (child.type === ChecklistItem) {
-          t += 1;
-          if (checked[child.props.id]) d += 1;
-        } else if (child.props && child.props.children) {
-          walk(child.props.children);
-        }
-      });
-    };
-    walk(children);
-    return { total: t, done: d };
-  }, [children, checked]);
+  // Recursively walk children:
+  //   - inject checked/onToggle into every <ChecklistItem>
+  //   - leave headings, paragraphs, and everything else untouched
+  //   - collect item ids for progress counting
+  const itemIds = [];
 
+  const inject = (nodes) =>
+    React.Children.map(nodes, (child) => {
+      if (!React.isValidElement(child)) return child;
+      if (child.type === ChecklistItem) {
+        itemIds.push(child.props.id);
+        return React.cloneElement(child, {
+          __checked: !!checked[child.props.id],
+          __onToggle: toggle,
+        });
+      }
+      if (child.props && child.props.children) {
+        return React.cloneElement(child, {
+          children: inject(child.props.children),
+        });
+      }
+      return child;
+    });
+
+  const rendered = inject(children);
+  const total = itemIds.length;
+  const done = itemIds.filter((id) => checked[id]).length;
   const percent = total === 0 ? 0 : Math.round((done / total) * 100);
 
   return (
-    <ChecklistContext.Provider value={{ checked, toggle }}>
+    <div>
       <div
         style={{
           position: 'sticky',
@@ -95,6 +142,7 @@ export const Checklist = ({ storageKey, children }) => {
           alignItems: 'center',
           gap: '1rem',
           flexWrap: 'wrap',
+          backdropFilter: 'blur(6px)',
         }}
       >
         <div style={{ flex: '1 1 12rem', minWidth: '12rem' }}>
@@ -150,52 +198,7 @@ export const Checklist = ({ storageKey, children }) => {
           Reset
         </button>
       </div>
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>{children}</ul>
-    </ChecklistContext.Provider>
-  );
-};
-
-export const ChecklistItem = ({ id, children }) => {
-  const ctx = React.useContext(ChecklistContext);
-  const isChecked = !!(ctx && ctx.checked[id]);
-  const onChange = () => ctx && ctx.toggle(id);
-  const inputId = `checklist-${id}`;
-
-  return (
-    <li
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: '0.65rem',
-        padding: '0.5rem 0',
-        borderBottom: '1px solid rgba(127,127,127,0.15)',
-      }}
-    >
-      <input
-        id={inputId}
-        type="checkbox"
-        checked={isChecked}
-        onChange={onChange}
-        style={{
-          marginTop: '0.35rem',
-          width: '1.05rem',
-          height: '1.05rem',
-          cursor: 'pointer',
-          accentColor: '#7857FE',
-          flexShrink: 0,
-        }}
-      />
-      <label
-        htmlFor={inputId}
-        style={{
-          cursor: 'pointer',
-          opacity: isChecked ? 0.55 : 1,
-          textDecoration: isChecked ? 'line-through' : 'none',
-          lineHeight: 1.5,
-        }}
-      >
-        {children}
-      </label>
-    </li>
+      {rendered}
+    </div>
   );
 };
