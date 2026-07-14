@@ -257,7 +257,7 @@ lightdash download --apps-only --apps 8f2b1c4d-1111-2222-3333-444455556666
 
 Each app is written to `lightdash/apps/<slug>/`, where `<slug>` is derived from the app's name. Every folder is a locally buildable project:
 
-- `lightdash-app.yml` — the manifest, including the `appUuid` that identifies the app when you re-upload it, plus editable `name` and `description` fields.
+- `lightdash-app.yml` — the manifest, including the `appUuid` that identifies the app when you re-upload it, plus editable `name` and `description` fields. For [data app visualizations](/guides/data-apps/visualizations), the manifest also carries a `vizSchema` field describing the declared fields (dimensions, metrics, series) the viz needs — the schema is stored in the database, not the source tree, so the CLI persists it here to round-trip a viz through download and upload.
 - `src/` — the app's source tree (React components, styles, etc.). **This is the only directory you should edit.**
 - `package.json`, `README.md`, `.gitignore`, `AGENTS.md`, and `.claude/skills/` — a template that lets you install dependencies and run `pnpm build` locally to sanity-check that the source compiles. Editing these files has no effect on the deployed app — the server rebuilds against its own trusted template.
 - `.lightdash/context/` — a read-only, point-in-time snapshot of the source project so you (or an AI agent) have the context needed to edit the app: `semantic-layer.yml` (tables, dimensions, metrics you can query), `parameters.yml`, `prompt-history.md`, and `theme/` styling assets. Re-download to refresh.
@@ -273,6 +273,8 @@ Once an app is on disk you can iterate on it locally:
 3. Run `lightdash upload --apps` to send the source back. The server rebuilds and publishes a new version.
 
 The bundled `.claude/skills/` and `AGENTS.md` files describe the SDK surface and this workflow so coding agents (Claude Code and similar) can help you edit apps locally without extra prompting.
+
+Data app visualizations follow the same loop: the download writes the viz's declared field schema into `lightdash-app.yml`, and the upload sends it back so the viz shows up in the viz picker on the destination. If you edit the manifest's `vizSchema` directly, the upload validates it and rejects malformed schemas. Bundles downloaded before viz schemas round-tripped have no `vizSchema` field — re-download from the source project to pick it up before uploading elsewhere.
 
 ### Uploading an app
 
