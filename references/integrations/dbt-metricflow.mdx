@@ -1,0 +1,122 @@
+---
+title: "dbt MetricFlow metrics"
+sidebarTitle: dbt MetricFlow
+description: "Deploy dbt MetricFlow semantic layer metrics straight into Lightdash from the CLI — no dbt Cloud required."
+tag: "Beta"
+---
+
+If your dbt project defines metrics using [MetricFlow](https://docs.getdbt.com/docs/build/about-metricflow) (dbt's semantic layer), the Lightdash CLI can translate them into Lightdash metrics automatically when you deploy. You keep a single source of truth for metric definitions in MetricFlow format, and Lightdash reads them directly from your compiled dbt project — you don't need a dbt Cloud subscription or the dbt Semantic Layer API, and you don't need to duplicate the definitions as Lightdash `meta` tags.
+
+## How it works
+
+When you run `lightdash deploy` (or `lightdash compile` / `lightdash preview`), the CLI reads your project's compiled `manifest.json`. Alongside your models, that manifest contains everything MetricFlow knows about your project: the `semantic_models` (entities, dimensions, measures) and the `metrics` defined on top of them.
+
+For each MetricFlow metric it can represent, the CLI builds an equivalent Lightdash metric and attaches it to the dbt model that the semantic model is based on. These translated metrics then flow through the normal explore compilation, exactly as if you had written them in your model's `meta.metrics` — so they get real compiled SQL, appear in the Explore view, and work everywhere Lightdash metrics work (charts, dashboards, the API, AI agents).
+
+```bash
+dbt parse                # or dbt compile — writes target/manifest.json
+lightdash deploy         # translates MetricFlow metrics as part of the deploy
+```
+
+During the deploy you'll see a summary line:
+
+```
+> Translated 8 MetricFlow metric(s) into Lightdash metrics (skipped 5 unsupported, run with --verbose for details)
+```
+
+Anything Lightdash can't represent is **skipped with a warning** — an unsupported metric never fails your deploy. Run with `--verbose` to see the per-metric reason for every skipped definition.
+
+<Info>
+  If you define a metric with the same name in both MetricFlow and your model's
+  `meta.metrics`, the `meta.metrics` (Lightdash YAML) definition wins.
+</Info>
+
+### Both metrics specs are supported
+
+dbt has two ways of authoring MetricFlow definitions, and both work — they compile to the same manifest, which is what Lightdash reads:
+
+- **Legacy spec** (dbt Core 1.6+): top-level `semantic_models:` and `metrics:` blocks with `type_params`.
+- **[Latest spec](https://docs.getdbt.com/docs/build/latest-metrics-spec)** (dbt Fusion engine, dbt platform, dbt Core 1.12+): `semantic_model:` enabled inline on the model, with entities/dimensions on columns and metrics using top-level `agg` / `expr` keys.
+
+### CLI only (for now)
+
+Translation happens in the CLI deploy flow. Projects that refresh dbt from a git connection in the Lightdash UI do **not** pick up MetricFlow metrics on refresh yet — use `lightdash deploy` (locally or [from CI](/references/integrations/dbt-projects)) to publish them.
+
+## What's supported
+
+`simple` metrics, and measures flagged `create_metric: true`, translate into Lightdash metrics:
+
+| MetricFlow | Lightdash metric type |
+| --- | --- |
+| `agg: sum` | `sum` |
+| `agg: count` | `count` |
+| `agg: count_distinct` | `count_distinct` |
+| `agg: average` | `average` |
+| `agg: median` | `median` |
+| `agg: min` / `agg: max` | `min` / `max` |
+| `agg: percentile` | `percentile` |
+
+Also carried over:
+
+- **Measure `expr`** — bare column references and SQL expressions both become the metric's SQL.
+- **Labels and descriptions** — from the metric, falling back to the measure's.
+- **Percentile values** — the legacy spec's 0–1 fractions (`0.95`) and the latest spec's 0–100 values (`95.0`) are both normalized to Lightdash's 0–100 scale.
+
+## What's not supported yet
+
+These are skipped with a warning on deploy (details under `--verbose`):
+
+| MetricFlow feature | Notes |
+| --- | --- |
+| `ratio` metrics | numerator/denominator over other metrics |
+| `derived` metrics | expressions over other metrics |
+| `cumulative` metrics | require time-spine semantics |
+| `conversion` metrics | require entity-journey semantics |
+| Metric or measure `filter:` | MetricFlow where-filter templates (e.g. `{{ Dimension('order__status') }} = 'completed'`) don't map to Lightdash metric filters |
+| `agg: sum_boolean` | no Lightdash equivalent |
+| `percentile_type: discrete` | Lightdash percentiles always compile to `PERCENTILE_CONT` |
+| `join_to_timespine`, `fill_nulls_with`, `non_additive_dimension` | no equivalents |
+
+And these parts of the semantic model are ignored rather than skipped:
+
+- **Entities / joins.** MetricFlow joins semantic models implicitly at query time through shared entity keys. Lightdash joins are explicit and authored per-explore ([joining tables](/references/joins)), so entities aren't translated — each semantic model's metrics land only on its own dbt model. Define any cross-model joins in your Lightdash YAML as usual.
+- **Dimensions and `agg_time_dimension`.** Lightdash generates dimensions from your model's real columns, so all of your columns are already available as dimensions, and metrics can be grouped by any of them — the MetricFlow dimension definitions aren't needed.
+
+## Example
+
+A complete working example (both specs, with a reproducible test) lives in the Lightdash repo under [`examples/metricflow-demo`](https://github.com/lightdash/lightdash/tree/main/examples/metricflow-demo). The short version, in the legacy spec:
+
+```yaml
+semantic_models:
+  - name: orders
+    model: ref('orders')
+    defaults:
+      agg_time_dimension: ordered_at
+    entities:
+      - name: order
+        type: primary
+        expr: order_id
+    dimensions:
+      - name: ordered_at
+        type: time
+        type_params:
+          time_granularity: day
+    measures:
+      - name: total_revenue
+        agg: sum
+        expr: amount
+      # create_metric: true auto-creates a metric — also translated
+      - name: unique_customers
+        agg: count_distinct
+        expr: customer_id
+        create_metric: true
+
+metrics:
+  - name: total_revenue
+    label: Total revenue
+    type: simple
+    type_params:
+      measure: total_revenue
+```
+
+Deploying this project gives the `orders` explore two metrics, `Total revenue` (`SUM("orders".amount)`) and `unique_customers` (`COUNT(DISTINCT "orders".customer_id)`), with no Lightdash-specific YAML.
