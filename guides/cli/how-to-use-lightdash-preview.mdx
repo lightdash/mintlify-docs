@@ -33,3 +33,24 @@ While your preview is running, you can run `dbt compile` in a separate terminal 
 
   When you create preview projects, Lightdash will use the same warehouse connection settings you have in your `profiles.yml` file for your current dbt project. This can be a problem if you're using a local database that your laptop can reach but your Lightdash instance cannot.
 </Info>
+
+### Redshift with `method: iam`
+
+If your dbt Redshift profile authenticates with `method: iam`, `lightdash preview` resolves an AWS identity from your local AWS credential chain and forwards the resulting access key ID, secret access key, and (if present) session token to the backend. The backend then uses them to mint short-lived Redshift credentials per query, but **only for the preview project**.
+
+- If `iam_profile` is set on the dbt target, the CLI resolves credentials from that profile (`fromIni`), matching dbt's own precedence. This covers AWS SSO profiles.
+- Otherwise the CLI walks the default provider chain (`fromNodeProviderChain`): environment variables, the default profile, SSO, then an instance role.
+- If the chain resolves nothing, `lightdash preview` fails fast with an actionable error pointing at `aws sso login` (or configuring a profile) rather than creating a broken preview.
+
+The common workflow is signing in with SSO and then starting a preview — no long-lived per-user AWS keys required:
+
+```bash
+aws sso login --profile my-redshift-profile
+lightdash preview
+```
+
+Because SSO and role credentials are short-lived, the CLI prints a warning showing the expiry when it forwards temporary credentials. Queries in the preview project will stop working once the session expires — re-run `aws sso login` and `lightdash preview` to refresh them.
+
+<Note>
+This applies to ephemeral preview projects created from your local dbt profile. For a durable, persistent project connection to Redshift with IAM, use a role the Lightdash backend assumes (`assumeRoleArn`) — see [Connect Redshift](/get-started/setup-lightdash/connect-project#redshift).
+</Note>
