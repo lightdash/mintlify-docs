@@ -537,14 +537,37 @@ All standard [dbt options](#dbt-options) work with `lightdash validate`.
 - `--only [elems...]`
   - (default: ["charts","dashboards","tables"])
   - Specify project elements to validate
+- `--include-spaces <spaceSlugs...>`
+  - Only report chart and dashboard validation errors from these spaces. Matching cascades recursively into sub-spaces via parent space relationships, so passing a parent space slug also includes everything under it. Use the same `spaceSlug` identifiers that appear in `lightdash download` output. Space slugs aren't unique — if the same slug exists in multiple spaces, all of them (and their sub-spaces) are matched. Mutually exclusive with `--exclude-spaces`.
+- `--exclude-spaces <spaceSlugs...>`
+  - Skip chart and dashboard validation errors from these spaces (and their sub-spaces, applied recursively). Everything else is reported. Mutually exclusive with `--include-spaces`.
 
+<Info>
+  **Notes on space filtering:**
+  - Unknown slugs fail fast **before** the compile step with an actionable error listing the available slugs, so a typo in CI fails in about a second instead of after a full validation run.
+  - Spaces that aren't visible to the credentials running the CLI (for example, private spaces the token can't see) can't be matched.
+  - Table-level errors are project-level and aren't scoped to a space, so they're never affected by these flags. Use `--only tables` (or omit `tables` from `--only`) to control whether table errors are reported.
+  - When errors are hidden by a space filter, the CLI prints an `(N errors in filtered-out spaces hidden)` note. The exit code reflects only the visible errors, so filtered-out errors won't fail CI.
+</Info>
 
-**Example:**
+**Examples:**
 
 Validate only dashboards and use the existing compiled dbt manifest:
 
 ```bash
 lightdash validate --only ["dashboards"] --skip-dbt-compile
+```
+
+Validate production content only, so errors in an `archive` space don't fail CI:
+
+```bash
+lightdash validate --exclude-spaces archive
+```
+
+Validate a single space and everything nested under it:
+
+```bash
+lightdash validate --include-spaces orders
 ```
 
 
