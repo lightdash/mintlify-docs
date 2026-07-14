@@ -783,6 +783,216 @@ And the matching tile entry on a dashboard:
   tileSlug: orders-by-status
 ```
 
+## Scheduled deliveries, alerts, and Google Sheets syncs as code
+
+Beyond charts and dashboards, `lightdash download` and `lightdash upload` can also manage three scheduler-driven domains as code:
+
+- **Scheduled deliveries** — recurring email or Slack deliveries of a chart or dashboard as CSV, XLSX, image, or PDF.
+- **Alerts** — chart-based notifications that fire when a threshold on a field is met, with a configurable notification frequency.
+- **Google Sheets syncs** — recurring exports of a chart or dashboard's results into a specific Google spreadsheet.
+
+Each domain has its own YAML contract and its own opt-in CLI flags, but they share the same content-as-code machinery as charts and dashboards: project-scoped slug identity, no-change detection, forced updates via `--force`, and portable references to charts, dashboards, dashboard tiles, and selected dashboard tabs (tab UUIDs are resolved from portable tab slugs on upload). Uploads preserve the original uploader's ownership on the scheduler side.
+
+The same content-as-code permission scopes (`view:ContentAsCode`, `manage:ContentAsCode`, and so on) that apply to charts and dashboards also apply to these domains. Google Sheets uploads additionally require the personal access token's user to have Google Sheets permission and access to the referenced spreadsheet — the API validates the Google OAuth connection before writing changes.
+
+Schedulers that use variants the content-as-code contract doesn't yet cover (for example webhook targets) are reported in the CLI output rather than downloaded, so it's clear which items were skipped and why.
+
+### Directory layout
+
+After `lightdash download`, these domains live alongside `charts/` and `dashboards/` in your `lightdash/` directory:
+
+```text
+lightdash/
+├── charts/
+├── dashboards/
+├── scheduled-deliveries/
+│   ├── charts/
+│   │   └── weekly-orders-summary/
+│   │       └── weekly-orders-email.yml
+│   └── dashboards/
+│       └── ecommerce-overview/
+│           └── monday-morning-digest.yml
+├── alerts/
+│   └── charts/
+│       └── weekly-orders-summary/
+│           └── revenue-drop-alert.yml
+└── google-sheets/
+    ├── charts/
+    │   └── weekly-orders-summary/
+    │       └── orders-sheet-sync.yml
+    └── dashboards/
+        └── ecommerce-overview/
+            └── kpi-sheet-sync.yml
+```
+
+Each file is identified by a project-scoped `slug`, and each item references the chart or dashboard it belongs to by its slug too — so files stay valid when copied between projects that share the same chart and dashboard slugs.
+
+### Scheduled deliveries
+
+Scheduled deliveries send a chart or dashboard on a cron schedule to email or Slack. Use them as code when you want deliveries to move alongside their charts and dashboards — for example, when templating a project or when Git-managing a set of executive email digests.
+
+Chart deliveries can carry portable filters and parameter values. Dashboard deliveries can additionally pin a `customViewportWidth` and a portable list of `selectedTabs` (tab slugs, which the server resolves back to tab UUIDs on upload).
+
+```yml Chart scheduled delivery example
+contentType: scheduled_delivery
+version: 1
+slug: weekly-orders-email
+name: Weekly orders summary
+message: Weekly snapshot of ecommerce orders.
+cron: "0 9 * * 1"
+timezone: Europe/London
+enabled: true
+includeLinks: true
+resource:
+  type: chart
+  slug: weekly-orders-summary
+format: csv
+options:
+  formatted: true
+  limit: table
+targets:
+  - type: email
+    recipient: analytics@ecom.example
+  - type: slack
+    channel: "#ecom-analytics"
+filters: null
+parameters: null
+customViewportWidth: null
+selectedTabs: null
+```
+
+```yml Dashboard scheduled delivery example
+contentType: scheduled_delivery
+version: 1
+slug: monday-morning-digest
+name: Monday morning digest
+message: null
+cron: "0 8 * * 1"
+timezone: Europe/London
+enabled: true
+includeLinks: true
+resource:
+  type: dashboard
+  slug: ecommerce-overview
+format: image
+options:
+  withPdf: false
+targets:
+  - type: slack
+    channel: "#ecom-leadership"
+filters: null
+parameters: null
+customViewportWidth: 1400
+selectedTabs:
+  - revenue
+  - customers
+```
+
+Supported formats are `csv`, `xlsx`, `image`, and `pdf`, each with the same options they expose in the UI. Supported targets are `email` (with a `recipient`) and `slack` (with a `channel`). Deliveries that use unsupported variants — for example webhook targets — are reported as skipped during download.
+
+Manage scheduled deliveries with the `--scheduled-deliveries` and `--skip-scheduled-deliveries` flags on `lightdash download` and `lightdash upload`. See [`lightdash download`](/references/lightdash-cli#lightdash-download) and [`lightdash upload`](/references/lightdash-cli#lightdash-upload) for full details.
+
+### Alerts
+
+Alerts are chart-based notifications that fire when a threshold on a field is met. Alerts as code use their own YAML contract that adds `thresholds` and `notificationFrequency` on top of the scheduler contract, and always target a chart.
+
+Alerts are stored under `alerts/charts/<chart-slug>/<alert-slug>.yml`.
+
+```yml Alert example
+contentType: alert
+version: 1
+slug: revenue-drop-alert
+name: Revenue drop alert
+message: Weekly revenue fell below the threshold.
+cron: "0 9 * * 1"
+timezone: Europe/London
+enabled: true
+includeLinks: true
+resource:
+  type: chart
+  slug: weekly-orders-summary
+thresholds:
+  - fieldId: orders_total_revenue
+    operator: greaterThan
+    value: 1000
+notificationFrequency: once
+targets:
+  - type: email
+    recipient: analytics@ecom.example
+filters: null
+parameters: null
+```
+
+`notificationFrequency` controls how often the alert fires while the threshold remains met (for example, `once` only sends the first time the condition is met until it resets). Manage alerts with the `--alerts` and `--skip-alerts` flags on `lightdash download` and `lightdash upload`.
+
+### Google Sheets syncs
+
+Google Sheets syncs push a chart or dashboard's results into a specific Google spreadsheet on a schedule. Google Sheets syncs as code are a separate content domain from scheduled deliveries — they live under `google-sheets/` and use their own YAML contract that includes the explicit spreadsheet `destination` metadata.
+
+```yml Chart Google Sheets sync example
+contentType: google_sheets_sync
+version: 1
+slug: orders-sheet-sync
+name: Orders sheet
+message: null
+cron: "0 6 * * *"
+timezone: Europe/London
+enabled: true
+includeLinks: false
+resource:
+  type: chart
+  slug: weekly-orders-summary
+destination:
+  spreadsheetId: 1AbCdEfGhIjKlMnOpQrStUvWxYz-ecom-example
+  spreadsheetName: Ecommerce KPIs
+  organizationName: Ecom Analytics
+  url: https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz-ecom-example/edit
+  tabName: Orders
+filters: null
+parameters: null
+customViewportWidth: null
+selectedTabs: null
+```
+
+Dashboard syncs follow the same shape but with `resource.type: dashboard`, and can pin `customViewportWidth` and portable `selectedTabs` the same way dashboard scheduled deliveries do.
+
+`destination.spreadsheetId` is the identifier the sync writes to; the other destination fields (`spreadsheetName`, `organizationName`, `url`, `tabName`) are captured for readability and to help identify the correct spreadsheet across environments. Uploads require the personal access token user to have Google Sheets permission in Lightdash and access to the referenced spreadsheet through the connected Google account — Lightdash validates the Google OAuth connection before persisting the sync, so an invalid or missing connection surfaces as an upload error.
+
+Manage Google Sheets syncs with the `--google-sheets` and `--skip-google-sheets` flags on `lightdash download` and `lightdash upload`.
+
+### Typical CLI flows
+
+Download everything, including deliveries, alerts, and Google Sheets syncs:
+
+```bash
+lightdash download
+```
+
+Download only a specific scheduled delivery, alert, or Google Sheets sync by slug:
+
+```bash
+lightdash download --scheduled-deliveries weekly-orders-email
+lightdash download --alerts revenue-drop-alert
+lightdash download --google-sheets orders-sheet-sync
+```
+
+Upload changes to deliveries, alerts, or Google Sheets syncs. Use `--force` to create new items or to re-upload unchanged files:
+
+```bash
+lightdash upload --scheduled-deliveries weekly-orders-email --force
+lightdash upload --alerts revenue-drop-alert
+lightdash upload --google-sheets orders-sheet-sync --force
+```
+
+Skip these domains when you only want to work with charts and dashboards:
+
+```bash
+lightdash download --skip-scheduled-deliveries --skip-alerts --skip-google-sheets
+lightdash upload  --skip-scheduled-deliveries --skip-alerts --skip-google-sheets
+```
+
+When any content filter is provided (for example `-c`, `-d`, `--scheduled-deliveries`, `--alerts`, or `--google-sheets`), the CLI limits work to the domains you filtered — the other domains are skipped for that run so you don't accidentally download or upload everything.
+
 ## Editing with AI agents
 
 You can use AI coding assistants like Cursor, Claude Code, and Codex to create and edit charts using natural language instead of clicking through the UI.

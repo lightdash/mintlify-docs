@@ -128,8 +128,8 @@ For examples and command-specific options, click through the command in the tabl
 |[`lightdash generate`](/references/lightdash-cli#lightdash-generate)                     | Generate or update `schema.yml` file(s) for the selected model(s)                  |
 |[`lightdash dbt run`](/references/lightdash-cli#lightdash-dbt-run)                       | Run dbt, then generate or update `schema.yml` file(s) for the selected model(s)    |
 |[`lightdash generate-exposures`](/references/lightdash-cli#lightdash-generate-exposures) | [Experimental command] Generates a YAML file for Lightdash exposures               |
-|[`lightdash download`](/references/lightdash-cli#lightdash-download)                     | Download all charts and dashboards from your Lightdash project as code             |
-|[`lightdash upload`](/references/lightdash-cli#lightdash-upload)                         | Upload charts and dashboards as code to your Lightdash project                     |
+|[`lightdash download`](/references/lightdash-cli#lightdash-download)                     | Download project content — charts, dashboards, scheduled deliveries, alerts, and Google Sheets syncs — as code |
+|[`lightdash upload`](/references/lightdash-cli#lightdash-upload)                         | Upload project content — charts, dashboards, scheduled deliveries, alerts, and Google Sheets syncs — as code   |
 |[`lightdash rename`](/references/lightdash-cli#lightdash-rename)                         | Rename model or field names across all your Lightdash content                      |
 |[`lightdash diagnostics`](/references/lightdash-cli#lightdash-diagnostics)               | Show diagnostic information about the CLI environment                              |
 |[`lightdash sql`](/references/lightdash-cli#lightdash-sql)                               | Run raw SQL query against the warehouse using project credentials                  |
@@ -641,7 +641,9 @@ lightdash dbt run --select mymodel
 
 ### `lightdash download`
 
-Downloads all charts and dashboards from your Lightdash project as code. A `lightdash` directory is created in your working directory and all of the charts and dashboards are written there as .yml files.
+Downloads project content from your Lightdash project as code. A `lightdash` directory is created in your working directory and all of the content is written there as `.yml` files.
+
+Alongside charts and dashboards, the CLI also downloads three scheduler-driven domains — scheduled deliveries, alerts, and Google Sheets syncs — into their own subfolders (`scheduled-deliveries/`, `alerts/`, and `google-sheets/`). See [Scheduled deliveries, alerts, and Google Sheets syncs as code](/guides/developer/dashboards-as-code#scheduled-deliveries-alerts-and-google-sheets-syncs-as-code) for the YAML contracts and directory layout.
 
 E.g. if you're running this command inside your dbt directory (eg: `/home/javi/dbt`) then it will create a folder (`/home/javi/dbt/lightdash`).
 
@@ -654,6 +656,12 @@ You can make changes to the code and upload these changes back to your Lightdash
   - select specific charts as code to download from your project. Use the chart SLUG, UUID or URL to specify the chart
 - `--dashboards` or `-d`
   - select specific dashboards as code to download from your project. This will also download all charts in the dashboard as code. Use the dashboard SLUG, UUID or URL to specify the dashboard
+- `--scheduled-deliveries <slugs...>`
+  - select specific scheduled deliveries to download by their project-scoped slug. See [Scheduled deliveries as code](/guides/developer/dashboards-as-code#scheduled-deliveries) for the YAML contract
+- `--alerts <slugs...>`
+  - select specific alerts to download by their project-scoped slug. Alerts are stored under `alerts/charts/<chart-slug>/<alert-slug>.yml`. See [Alerts as code](/guides/developer/dashboards-as-code#alerts) for the YAML contract
+- `--google-sheets <slugs...>`
+  - select specific Google Sheets syncs to download by their project-scoped slug. See [Google Sheets syncs as code](/guides/developer/dashboards-as-code#google-sheets-syncs) for the YAML contract
 - `--path` or `-p`
   - specify a custom path to a directory where you want the downloaded files to be written to. You can use the full path, or a relative path to a directory
 - `--project <project uuid>`
@@ -681,6 +689,15 @@ You can make changes to the code and upload these changes back to your Lightdash
 - `--skip-dashboards`
   - (default: false)
   - skip downloading dashboards
+- `--skip-scheduled-deliveries`
+  - (default: false)
+  - skip downloading scheduled deliveries
+- `--skip-alerts`
+  - (default: false)
+  - skip downloading alerts
+- `--skip-google-sheets`
+  - (default: false)
+  - skip downloading Google Sheets syncs
 
 **Examples:**
 
@@ -746,10 +763,24 @@ Download just one data app and nothing else.
 lightdash download --apps-only --apps 8f2b1c4d-1111-2222-3333-444455556666
 ```
 
+Download a specific scheduled delivery, alert, or Google Sheets sync by slug.
+
+```bash
+lightdash download --scheduled-deliveries weekly-orders-email
+lightdash download --alerts revenue-drop-alert
+lightdash download --google-sheets orders-sheet-sync
+```
+
+Download charts and dashboards only, skipping scheduler-driven content.
+
+```bash
+lightdash download --skip-scheduled-deliveries --skip-alerts --skip-google-sheets
+```
+
 
 ### `lightdash upload`
 
-Uploads charts and dashboards that you've made changes to from the `lightdash/` directory in your dbt project to your Lightdash project. To upload new content as code to your project, you need to use the option `--force` (see **Options** below).
+Uploads project content that you've made changes to from the `lightdash/` directory in your dbt project to your Lightdash project. This includes charts and dashboards, plus scheduled deliveries, alerts, and Google Sheets syncs when their YAML files are present. To upload new content as code to your project, you need to use the option `--force` (see **Options** below).
 
 If there have been changes made to a chart or dashboard in the application that is being uploaded from code, `lightdash upload` will overwrite the changes.
 
@@ -765,6 +796,21 @@ If there have been changes made to a chart or dashboard in the application that 
   - select specific charts as code to upload back to your project. Use the chart SLUG to specify the chart
 - `--dashboards` or `-d`
   - select specific dashboards as code to upload back to your project. Use the dashboard SLUG to specify the dashboard
+- `--scheduled-deliveries <slugs...>`
+  - select specific scheduled deliveries to upload by their project-scoped slug. Combine with `--force` to create new deliveries or re-upload unchanged files
+- `--alerts <slugs...>`
+  - select specific alerts to upload by their project-scoped slug
+- `--google-sheets <slugs...>`
+  - select specific Google Sheets syncs to upload by their project-scoped slug. Uploads require the PAT user to have Google Sheets permission and access to the referenced spreadsheet — Lightdash validates the Google OAuth connection before writing changes
+- `--skip-scheduled-deliveries`
+  - (default: false)
+  - skip uploading scheduled deliveries
+- `--skip-alerts`
+  - (default: false)
+  - skip uploading alerts
+- `--skip-google-sheets`
+  - (default: false)
+  - skip uploading Google Sheets syncs
 - `--path` or `-p`
   - specify a custom path to a directory where the files you want to upload are. You can use the full path, or a relative path to a directory
 - `--project <project uuid>`
@@ -852,6 +898,14 @@ Copy a data app to a different project as a brand-new app (non-interactive).
 
 ```bash
 lightdash upload --apps --project 21eef0b9-5bae-40f3-851e-9554588e71a6 --create-new
+```
+
+Upload a specific scheduled delivery, alert, or Google Sheets sync by slug. Add `--force` to create new items or to re-upload unchanged files.
+
+```bash
+lightdash upload --scheduled-deliveries weekly-orders-email --force
+lightdash upload --alerts revenue-drop-alert
+lightdash upload --google-sheets orders-sheet-sync --force
 ```
 
 
