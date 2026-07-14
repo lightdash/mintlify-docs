@@ -671,7 +671,10 @@ You can make changes to the code and upload these changes back to your Lightdash
   - opt-in flag to also download specific [data apps](/guides/data-apps#data-apps-as-code) as code (enterprise only). Pass one or more app UUIDs to download just those apps — this is the only way to download apps that haven't been added to a space. Each app is written to `lightdash/apps/<slug>/` as a locally buildable project: `lightdash-app.yml` manifest, the app's `src/` tree, `package.json`, a read-only `.lightdash/context/` snapshot of the project's semantic layer, and agent skill files. The built output is not included — the server rebuilds it on upload.
 - `--include-apps`
   - (default: false)
-  - opt-in flag to download every [data app](/guides/data-apps#data-apps-as-code) in the project that has been added to a space (enterprise only), capped at the first 10. Use `--apps <appUuids...>` to reach apps that aren't in a space, or to download more than 10.
+  - opt-in flag to download every [data app](/guides/data-apps#data-apps-as-code) in the project (enterprise only), including apps that haven't been added to a space, capped at `--apps-limit` (default: 50). On older servers that don't expose the project-wide app listing endpoint, the CLI logs a warning and falls back to listing only apps that are in a space. Use `--apps <appUuids...>` to bypass the cap for specific apps.
+- `--apps-limit <number>`
+  - (default: 50)
+  - maximum number of data apps downloaded by `--include-apps`. Only affects the `--include-apps` listing; explicit `--apps <appUuids...>` values are never capped. Raise this if your project has more than 50 apps and you want them all in one run.
 - `--apps-only`
   - (default: false)
   - download only data apps, skipping charts, dashboards, and space files (implies `--skip-charts --skip-dashboards --skip-spaces`). Requires `--apps <appUuids...>` or `--include-apps`. Recommended for app-focused checkouts.
@@ -728,19 +731,25 @@ Download charts with portable, pivot-value-free YAML (handy when reusing charts 
 lightdash download --strip-pivot-series
 ```
 
-Download all charts and dashboards, plus every data app in a space (up to the first 10).
+Download all charts and dashboards, plus every data app in the project (up to the first 50).
 
 ```bash
 lightdash download --include-apps
 ```
 
-Download specific data apps by UUID (charts and dashboards are still downloaded as usual). Required for apps that are not in a space.
+Raise the cap when a project has more than 50 apps.
+
+```bash
+lightdash download --include-apps --apps-limit 200
+```
+
+Download specific data apps by UUID (charts and dashboards are still downloaded as usual). Explicit UUIDs are never capped by `--apps-limit`.
 
 ```bash
 lightdash download --apps 8f2b1c4d-1111-2222-3333-444455556666 a1b2c3d4-5555-6666-7777-888899990000
 ```
 
-Download just one data app and nothing else.
+Download just one data app and nothing else. Apps that don't yet have a built version are skipped and reported in the summary rather than failing the run.
 
 ```bash
 lightdash download --apps-only --apps 8f2b1c4d-1111-2222-3333-444455556666
@@ -784,8 +793,12 @@ If there have been changes made to a chart or dashboard in the application that 
 - `--nested`
   - (default: false)
   - expect content to be organized in sub-folders matching the spaces in your project (use this if content was downloaded with `--nested`)
-- `--apps [appUuids...]`
-  - opt-in flag to also upload [data apps](/guides/data-apps#data-apps-as-code) as code (enterprise only). Bare `--apps` uploads every app folder under `lightdash/apps/`. Pass one or more app UUIDs to upload just those apps. The CLI posts each app's `src/` tree and returns immediately — the destination rebuilds the app in its sandbox and publishes a new version. The app shows a `building` status in the UI until the build finishes. Uploading to the same project appends a new version and applies any edits to the manifest's `name` or `description`; uploading to a different project prompts for confirmation (in non-interactive shells the app is skipped with an error unless you also pass `--create-new`) and creates a new app in the target. After any create, the CLI prints the new app's URL and offers to retarget the local `lightdash-app.yml` (updating `appUuid`, `projectUuid`, and `version`) so future uploads update the new app.
+- `--apps <appUuids...>`
+  - opt-in flag to upload specific [data apps](/guides/data-apps#data-apps-as-code) as code (enterprise only). Pass one or more app UUIDs — folders under `lightdash/apps/` are filtered by their manifest `appUuid` and only matching apps are uploaded. This is the recommended workflow for agents or scripts editing a single app, so unrelated sibling apps aren't re-uploaded. The `appUuid` is set in each app's `lightdash-app.yml`. The CLI posts each app's `src/` tree and returns immediately — the destination rebuilds the app in its sandbox and publishes a new version. The app shows a `building` status in the UI until the build finishes. Uploading to the same project appends a new version and applies any edits to the manifest's `name` or `description`; uploading to a different project prompts for confirmation (in non-interactive shells the app is skipped with an error unless you also pass `--create-new`) and creates a new app in the target. After any create, the CLI prints the new app's URL and offers to retarget the local `lightdash-app.yml` (updating `appUuid`, `projectUuid`, and `version`) so future uploads update the new app.
+  - <Warning>Breaking change: `--apps` now requires one or more `<appUuid>` values. Bare `--apps` no longer uploads every app folder — use `--include-apps` for that.</Warning>
+- `--include-apps`
+  - (default: false)
+  - opt-in flag to upload every folder under `lightdash/apps/` (enterprise only). Use this when you want to push every local app; use `--apps <appUuids...>` when you only want to push specific ones. With no `--apps`/`--include-apps` flag, apps are skipped.
 - `--create-new`
   - (default: false)
   - always create a new data app from the uploaded source instead of appending a new version to the app referenced by `lightdash-app.yml`. Combine with `--apps` and `--project` when copying an app to a different project or instance in a non-interactive shell.
@@ -836,22 +849,28 @@ Upload all charts and dashboards and validate them after upload to check for err
 lightdash upload --validate
 ```
 
-Upload all charts, dashboards, and data app folders under `lightdash/apps/`.
+Upload all charts, dashboards, and every data app folder under `lightdash/apps/`.
 
 ```bash
-lightdash upload --apps
+lightdash upload --include-apps
 ```
 
-Upload only specific data apps by UUID.
+Upload only specific data apps by UUID. Recommended when a script or agent is editing a single app — sibling apps in `lightdash/apps/` are left untouched. The UUID comes from the app's `lightdash-app.yml`.
 
 ```bash
 lightdash upload --apps 8f2b1c4d-1111-2222-3333-444455556666
 ```
 
+Upload two specific data apps by UUID in one run.
+
+```bash
+lightdash upload --apps 8f2b1c4d-1111-2222-3333-444455556666 a1b2c3d4-5555-6666-7777-888899990000
+```
+
 Copy a data app to a different project as a brand-new app (non-interactive).
 
 ```bash
-lightdash upload --apps --project 21eef0b9-5bae-40f3-851e-9554588e71a6 --create-new
+lightdash upload --apps 8f2b1c4d-1111-2222-3333-444455556666 --project 21eef0b9-5bae-40f3-851e-9554588e71a6 --create-new
 ```
 
 
