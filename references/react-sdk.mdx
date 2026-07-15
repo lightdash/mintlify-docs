@@ -90,6 +90,7 @@ The Lightdash SDK exports components for embedding Lightdash content and hooks f
 - `Lightdash.Chart` - Embed individual saved charts
 - `Lightdash.Explore` - Embed interactive data exploration interface
 - `Lightdash.AiAgent` - Embed an AI agent so users can chat with their data
+- `Lightdash.MetricsCatalog` - Embed the project metrics catalog so users can browse and explore metrics
 - `Lightdash.useLightdashContent` - List spaces, dashboards, charts, and data apps for a custom content catalog
 - `Lightdash.useLightdashAiAgentThreads` - List an embed user's previous AI agent threads to build a thread history UI
 
@@ -566,6 +567,76 @@ export function generateAiAgentToken() {
 ```
 
 See [Embedding AI agents](/guides/embedding/ai-agents) for the full guide and [AI agent token](/references/embedding#ai-agent-token) for the complete JWT structure.
+
+### Lightdash.MetricsCatalog
+
+Embed the Lightdash [metrics catalog](/get-started/develop-in-lightdash/how-to-create-metrics) so embedded users can browse the metrics defined in a project, preview them, and — when the JWT allows it — continue into Explore without leaving your app.
+
+The component renders the catalog inside an iframe. When a viewer clicks **Explore from here** on a metric, the SDK swaps in an embedded Explore view; a **Back** action returns them to the catalog.
+
+#### Props
+
+```typescript
+type MetricsCatalogProps = {
+  // Required
+  instanceUrl: string;              // Your Lightdash instance URL
+  token: string | Promise<string>;  // JWT with content.type: 'metricsCatalog'
+
+  // Optional
+  theme?: 'light' | 'dark';         // Force light or dark color scheme
+  styles?: {
+    backgroundColor?: string;       // Background color or 'transparent'
+    fontFamily?: string;            // Font family for all text
+  };
+};
+```
+
+<Info>
+`Lightdash.MetricsCatalog` does not accept `filters`, `contentOverrides`, or `onExplore`. The catalog and the embedded Explore it launches are managed inside the component.
+</Info>
+
+#### Basic usage
+
+```tsx
+import Lightdash from '@lightdash/sdk';
+
+function MyMetricsCatalog() {
+  return (
+    <Lightdash.MetricsCatalog
+      instanceUrl="https://app.lightdash.cloud"
+      token={generateMetricsCatalogToken()} // Server-side function
+    />
+  );
+}
+```
+
+#### Token generation for the metrics catalog
+
+Metrics catalog embeds require a JWT with `content.type: 'metricsCatalog'` and a `projectUuid`. Set `content.canExplore` to `true` to let embedded users open Explore from a metric, and include a `writeActions` claim if you want them to save the resulting charts back to Lightdash.
+
+```javascript
+// Backend API endpoint
+import jwt from 'jsonwebtoken';
+
+export function generateMetricsCatalogToken() {
+  return jwt.sign({
+    content: {
+      type: 'metricsCatalog',
+      projectUuid: 'your-project-uuid',
+      canExplore: true,
+    },
+    writeActions: {
+      serviceAccountUserUuid: 'service-account-user-uuid',
+      spaceUuid: 'destination-space-uuid',
+    },
+    userAttributes: {
+      tenant_id: 'tenant-abc',
+    },
+  }, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
+}
+```
+
+Omit `canExplore` (or set it to `false`) to publish a read-only browse experience. See [Embedding the metrics catalog](/guides/embedding/metrics-catalog) for the full guide and [Metrics catalog token](/references/embedding#metrics-catalog-token) for the complete JWT structure.
 
 ## API hooks
 
