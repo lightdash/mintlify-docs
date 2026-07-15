@@ -42,11 +42,65 @@ Lightdash supports the latest and legacy spec, though it's recommended to use th
 | `agg: median` | `median` |
 | `agg: min` / `agg: max` | `min` / `max` |
 | `agg: percentile` | `percentile` |
+| `agg: sum_boolean` | `sum` over `CASE WHEN bool THEN 1 ELSE 0 END` |
 
 Also carried over:
 
 - **Measure** `expr`: bare column references and SQL expressions both become the metric's SQL.
 - **Labels and descriptions**: from the metric, falling back to the measure's.
+
+### Filters
+
+Metric-level and measure-level `filter:` templates translate when every reference is a `{{ Dimension('entity__dimension') }}` that resolves on the metric's own semantic model. The filter is compiled into the metric SQL:
+
+```yaml
+- name: completed_revenue
+  type: simple
+  type_params:
+    measure: total_revenue
+  filter: |
+    {{ Dimension('order__status') }} = 'completed'
+```
+
+becomes a Lightdash `sum` metric with SQL `CASE WHEN ("orders".status = 'completed') THEN ("orders".amount) END`. The dimension's `expr` is used when it isn't a plain column.
+
+Filters referencing dimensions on **other** semantic models, or using other template functions (`TimeDimension()`, `Entity()`, `Metric()`), are skipped with a warning.
+
+### Ratio metrics
+
+`ratio` metrics translate to a non-aggregate Lightdash `number` metric dividing the two input metrics, when the numerator and denominator both live on the **same model**:
+
+```yaml
+- name: revenue_per_order
+  type: ratio
+  type_params:
+    numerator: total_revenue
+    denominator: order_count
+```
+
+becomes `(${total_revenue} * 1.0) / NULLIF(${order_count}, 0)` — the `* 1.0` avoids integer division on warehouses that truncate, and `NULLIF` avoids division-by-zero errors.
+
+Filtered inputs work too: a numerator with its own `filter:` (e.g. completion rate = completed orders ÷ all orders) compiles the filter into a hidden helper metric that the visible ratio references. A ratio-level `filter:` applies to both inputs.
+
+### Derived metrics
+
+`derived` metrics translate to a `number` metric with the expression rewritten over the input metrics (aliases supported), again when all inputs live on the same model:
+
+```yaml
+- name: revenue_per_customer
+  type: derived
+  type_params:
+    expr: total_revenue / unique_customers
+    metrics:
+      - name: total_revenue
+      - name: unique_customers
+```
+
+becomes `${total_revenue} / ${unique_customers}`. Inputs using `offset_window` or `offset_to_grain` (time-shifted metrics) are skipped with a warning.
+
+<Info>
+  **Why same-model only?** MetricFlow computes each input metric in its own aggregation subquery — even across unrelated tables — and joins the already-aggregated results. Lightdash compiles one query per explore, so ratio/derived metrics translate faithfully only when all inputs resolve to metrics on the same dbt model. Cross-model inputs are skipped with a warning naming the models involved.
+</Info>
 
 ## What's not supported yet
 
@@ -54,23 +108,22 @@ These are skipped with a warning on deploy (details under `--verbose`):
 
 | MetricFlow feature | Notes |
 | --- | --- |
-| `ratio` metrics | numerator/denominator over other metrics |
-| `derived` metrics | expressions over other metrics |
 | `cumulative` metrics | require time-spine semantics |
 | `conversion` metrics | require entity-journey semantics |
-| Metric or measure `filter:` | MetricFlow where-filter templates (e.g. `{{ Dimension('order__status') }} = 'completed'`) don't map to Lightdash metric filters |
-| `agg: sum_boolean` | no Lightdash equivalent |
+| Cross-model `ratio` / `derived` inputs | inputs must resolve to metrics on the same model (see above) |
+| `offset_window` / `offset_to_grain` inputs | time-shifted inputs have no Lightdash metric equivalent |
+| Cross-model or non-`Dimension()` `filter:` templates | only same-model `{{ Dimension('entity__dim') }}` references translate |
 | `percentile_type: discrete` | Lightdash percentiles always compile to `PERCENTILE_CONT` |
 | `join_to_timespine`, `fill_nulls_with`, `non_additive_dimension` | no equivalents |
 
 And these parts of the semantic model are currently skipped:
 
 - **Entities / joins.** MetricFlow joins semantic models implicitly at query time through shared entity keys. Lightdash joins are explicit and authored per-explore ([joining tables](/references/joins)).
-- **Dimensions and `agg_time_dimension`.** Lightdash generates dimensions from your model's real columns, so all of your columns are already available as dimensions, and metrics can be grouped by any of them — the MetricFlow dimension definitions aren't needed.
+- **Dimensions and `agg_time_dimension`.** Lightdash generates dimensions from your model's real columns, so all of your columns are already available as dimensions, and metrics can be grouped by any of them — the MetricFlow dimension definitions aren't needed. (Dimension `expr` is honored when resolving filter references.)
 
 ## Example
 
-A complete working example (both specs, with a reproducible test) lives in the Lightdash repo under [`examples/metricflow-demo`](https://github.com/lightdash/lightdash/tree/main/examples/metricflow-demo). The short version, in the legacy spec:
+A complete working example (both specs, with a reproducible test) lives in the Lightdash repo under [`examples/metricflow-demo`](https://github.com/lightdash/lightdash/tree/main/examples/metricflow-demo) — it exercises every supported shape, including filtered, ratio, derived, and `sum_boolean` metrics. The short version, in the legacy spec:
 
 ```yaml
 semantic_models:
