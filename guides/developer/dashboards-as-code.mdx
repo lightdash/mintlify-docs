@@ -890,7 +890,7 @@ selectedTabs:
 
 Supported formats are `csv`, `xlsx`, `image`, and `pdf`, each with the same options they expose in the UI. Supported targets are `email` (with a `recipient`) and `slack` (with a `channel`). Deliveries that use unsupported variants — for example webhook targets — are reported as skipped during download.
 
-Manage scheduled deliveries with the `--scheduled-deliveries` and `--skip-scheduled-deliveries` flags on `lightdash download` and `lightdash upload`. See [`lightdash download`](/references/lightdash-cli#lightdash-download) and [`lightdash upload`](/references/lightdash-cli#lightdash-upload) for full details.
+Scheduled deliveries are opt-in on `lightdash download`. Use `--include-scheduled-deliveries` to download every delivery, or pass `--scheduled-deliveries <slugs...>` to download a specific set. On `lightdash upload`, deliveries are uploaded whenever their YAML files are present; use `--skip-scheduled-deliveries` to skip them. See [`lightdash download`](/references/lightdash-cli#lightdash-download) and [`lightdash upload`](/references/lightdash-cli#lightdash-upload) for full details.
 
 ### Alerts
 
@@ -923,7 +923,7 @@ filters: null
 parameters: null
 ```
 
-`notificationFrequency` controls how often the alert fires while the threshold remains met (for example, `once` only sends the first time the condition is met until it resets). Manage alerts with the `--alerts` and `--skip-alerts` flags on `lightdash download` and `lightdash upload`.
+`notificationFrequency` controls how often the alert fires while the threshold remains met (for example, `once` only sends the first time the condition is met until it resets). Alerts are opt-in on `lightdash download`: use `--include-alerts` to download every alert, or `--alerts <slugs...>` for a specific set. On `lightdash upload`, alerts upload whenever their YAML files are present; use `--skip-alerts` to skip them.
 
 ### Google Sheets syncs
 
@@ -958,17 +958,27 @@ Dashboard syncs follow the same shape but with `resource.type: dashboard`, and c
 
 `destination.spreadsheetId` is the identifier the sync writes to; the other destination fields (`spreadsheetName`, `organizationName`, `url`, `tabName`) are captured for readability and to help identify the correct spreadsheet across environments. Uploads require the personal access token user to have Google Sheets permission in Lightdash and access to the referenced spreadsheet through the connected Google account — Lightdash validates the Google OAuth connection before persisting the sync, so an invalid or missing connection surfaces as an upload error.
 
-Manage Google Sheets syncs with the `--google-sheets` and `--skip-google-sheets` flags on `lightdash download` and `lightdash upload`.
+Google Sheets syncs are opt-in on `lightdash download`: use `--include-google-sheets` to download every sync, or `--google-sheets <slugs...>` for a specific set. On `lightdash upload`, syncs upload whenever their YAML files are present; use `--skip-google-sheets` to skip them.
 
 ### Typical CLI flows
 
-Download everything, including deliveries, alerts, and Google Sheets syncs:
+Scheduled deliveries, alerts, and Google Sheets syncs are **opt-in** on `lightdash download`. A plain `lightdash download` downloads charts, dashboards, and spaces, and leaves the scheduler-driven domains untouched — you opt each category in per-run.
+
+Download everything, including every optional category (scheduled deliveries, alerts, Google Sheets syncs, virtual views, and data apps up to `--apps-limit`):
 
 ```bash
-lightdash download
+lightdash download --include-all
 ```
 
-Download only a specific scheduled delivery, alert, or Google Sheets sync by slug:
+Opt in to one category at a time:
+
+```bash
+lightdash download --include-scheduled-deliveries
+lightdash download --include-alerts
+lightdash download --include-google-sheets
+```
+
+Download only a specific scheduled delivery, alert, or Google Sheets sync by slug. Passing a slug filter also opts that category in for the run:
 
 ```bash
 lightdash download --scheduled-deliveries weekly-orders-email
@@ -976,22 +986,16 @@ lightdash download --alerts revenue-drop-alert
 lightdash download --google-sheets orders-sheet-sync
 ```
 
-Upload changes to deliveries, alerts, or Google Sheets syncs. Use `--force` to create new items or to re-upload unchanged files:
+Upload behaves the other way around: it uploads whatever it finds under `scheduled-deliveries/`, `alerts/`, and `google-sheets/` by default. Use `--force` to create new items or to re-upload unchanged files, and use `--skip-*` to leave a category alone:
 
 ```bash
 lightdash upload --scheduled-deliveries weekly-orders-email --force
 lightdash upload --alerts revenue-drop-alert
 lightdash upload --google-sheets orders-sheet-sync --force
+
+# Upload charts and dashboards only
+lightdash upload --skip-scheduled-deliveries --skip-alerts --skip-google-sheets
 ```
-
-Skip these domains when you only want to work with charts and dashboards:
-
-```bash
-lightdash download --skip-scheduled-deliveries --skip-alerts --skip-google-sheets
-lightdash upload  --skip-scheduled-deliveries --skip-alerts --skip-google-sheets
-```
-
-When any content filter is provided (for example `-c`, `-d`, `--scheduled-deliveries`, `--alerts`, or `--google-sheets`), the CLI limits work to the domains you filtered — the other domains are skipped for that run so you don't accidentally download or upload everything.
 
 ## Editing with AI agents
 
