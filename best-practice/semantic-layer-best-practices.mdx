@@ -1,0 +1,196 @@
+---
+title: "Semantic layer best practices"
+sidebarTitle: "Semantic layer best practices"
+icon: "layer-group"
+description: "Practical guidance for designing and maintaining the Lightdash semantic layer, based on recurring customer implementation patterns."
+---
+
+Use this as implementation guidance for POCs, onboarding, and internal enablement. It captures the patterns that repeatedly lead to better self-serve BI, AI agent accuracy, migration success, and lower maintenance overhead.
+
+## Core principles
+
+### Curate the business-facing surface
+
+Do not expose every dbt model to business users by default. Treat each Lightdash Explore as a product surface, not a raw table list. Use dbt tags to [limit which models are exposed to Lightdash](/get-started/develop-in-lightdash/adding-tables-to-lightdash#limiting-the-tables-in-lightdash-using-dbt-tags) so only curated models appear in the project.
+
+Start with curated marts, reporting models, or the 40-60 models that already power production reporting. Keep the first user experience tight: a small number of well-labelled, well-described explorers is better than a large list of staging, intermediate, and raw tables.
+
+Use groups and labels to organize lower-priority explorers, but avoid making business users choose between dozens of similar tables. If a data person knows the difference between two tables but a stakeholder will not, the semantic layer needs more curation.
+
+### Keep metrics simple and reusable
+
+Prefer a small set of reusable base metrics plus dimensions for segmentation. For example, define `unique_accounts` once, then let users split it by segment, region, owner, or time.
+
+Create pre-filtered or highly specific metrics only when the logic is complex, business-critical, or hard for users to reconstruct reliably. Too many near-duplicate metrics make self-serve harder and reduce AI accuracy.
+
+Only promote canonical business metrics to Spotlight or the [Metrics Catalog](/guides/metrics-catalog). Technical, operational, or duplicate helper metrics can still exist in the semantic layer without becoming part of the primary business glossary.
+
+### Put durable logic in dbt
+
+If a KPI is reused across dashboards, teams, alerts, or AI workflows, model it upstream in dbt and expose it clearly in Lightdash.
+
+Use chart-level [table calculations](/guides/table-calculations) for one-off exploration or highly local presentation logic. Formula table calculations, chained calculations, total references, and SQL table calculations are useful for analysis at the chart level, but do not rely on them for core metrics that need to be reused or trusted across the business.
+
+For complex time logic, semi-additive metrics, DAU/WAU/MAU, last-week-vs-last-year comparisons, or KPIs that require a different grain from the source table, create a dedicated dbt model or aggregate model. Surface the result to Lightdash as a clean metric rather than forcing every chart to recreate the same logic. Use [date zoom](/guides/date-zoom) and `${ld.parameters.date_zoom}` when the logic is presentation-specific and should follow the viewer's selected dashboard granularity.
+
+### Prefer governed builders over raw SQL
+
+[SQL Runner](/guides/developer/sql-runner) is useful for debugging, validation, and fast exploration, but it should not become the main production path for reusable reporting.
+
+Charts built directly from raw SQL have less access to Lightdash's semantic features: reusable metrics, dashboard filters, drill-downs, cross-filtering, writeback, and AI-friendly context. When a SQL query becomes useful, convert it into a Virtual View, write it back to dbt, or model it properly in the semantic layer.
+
+Virtual Views are a good bridge for power users and migration work. They are especially useful when replacing BI tools where important logic currently lives inside saved SQL queries. Treat them as a pragmatic migration step, not the long-term home for core business logic.
+
+### Model joins deliberately
+
+Define primary keys and explicit [joins](/references/joins) in the semantic layer when models need to be combined at query time. This lets Lightdash reason about relationships, fan-out, and metric behavior.
+
+For most business reporting, pre-join common dimensions and facts in dbt when performance and simplicity matter more than maximum flexibility. Runtime joins are useful, but they can add query cost and cognitive overhead.
+
+Avoid many-to-many joins unless there is a clear reason and the metrics have been tested carefully. Many-to-many relationships can work for dimension-only exploration, but they are risky for metrics because they can multiply rows and distort aggregates. See [fanout protection](/references/joins#many-to-many-or-one-to-many-with-fanout-protection) for how Lightdash handles this at query time.
+
+### Design for AI from the start
+
+AI performance depends on semantic layer quality. Every model, dimension, and metric should have a human-readable description that would help a new analyst understand the business meaning.
+
+Descriptions should explain what the field means, not merely restate the column name. If a human would still ask "converted from what?" or "which revenue?", the description is not good enough for an AI agent either.
+
+Use `ai_hint` and project context files for extra context that helps the agent but does not belong in the user-facing description. Good candidates include routing instructions, known edge cases, preferred metrics for ambiguous terms, or warnings about confusing fields.
+
+Scope [AI agents](/guides/ai-agents) by domain. A marketing agent, finance agent, or product analytics agent with access to a focused set of tagged explorers will usually perform better than one broad agent pointed at the entire project.
+
+Use verified answers, thumbs-up/thumbs-down feedback, reviews, and evals as a semantic layer improvement loop. Failed agent answers should become a backlog of missing descriptions, ambiguous metrics, missing joins, missing models, or writeback candidates.
+
+### Use a safe development workflow
+
+Keep one YAML file per model where possible. It reduces merge conflicts, makes review easier, and gives AI coding agents a smaller context window.
+
+Use `lightdash generate` to scaffold Lightdash metadata from dbt models, then add metric definitions, descriptions, groups, labels, and Spotlight settings manually or with an AI coding assistant.
+
+Use `lightdash preview` or `lightdash start preview` before merging semantic layer changes. [Preview projects](/guides/cli/how-to-use-lightdash-preview) let analysts test model changes, generated SQL, dashboard behavior, and AI behavior against an isolated copy of the project.
+
+Run `lightdash validate` in CI for important projects. [Validation](/guides/developer/validating-your-content) catches semantic changes that compile successfully but break existing content, such as renamed fields, removed metrics, or invalid sorts.
+
+Automate refresh or deploy from CI once the workflow is mature. Avoid relying on local manual deploys for production semantic layer updates.
+
+### Govern access without fragmenting unnecessarily
+
+Default to one Lightdash project when teams need cross-domain dashboards or shared executive reporting. Use [user attributes](/references/workspace/user-attributes), groups, tags, spaces, and row-level or column-level controls to govern access.
+
+Consider a second project only when there is a real separation of use cases, such as a tightly governed self-serve project alongside a broader power-user migration project. This can help support messy legacy workflows without polluting the primary business-facing surface.
+
+If power users need to migrate ungoverned SQL from another BI tool, isolate that work in dbt. Use a clearly named folder for temporary or single-purpose models, keep lineage contained, and prevent those models from spreading into core marts until they are cleaned up.
+
+### Manage performance intentionally
+
+Use dashboard caching for repeated views with stable filters. It is the simplest way to avoid unnecessary warehouse hits on common dashboards.
+
+Use pre-aggregates for predictable, high-traffic query patterns where users slice the same metrics by known dimensions, filters, and time grains. Define the metrics, dimensions, filters, and time grain explicitly so matching queries can be served from materialized rollups instead of re-running expensive warehouse queries.
+
+Be careful with count distinct and semi-additive metrics. Some aggregates cannot be reconstructed safely from pre-aggregated data unless the modeling strategy supports it. For those cases, use dedicated dbt aggregate models, warehouse-specific sketching functions where appropriate, or accept that the query needs to hit the warehouse.
+
+Audit pre-aggregate coverage before treating a dashboard as "accelerated." Use the UI for spot checks and the CLI/API audit path for dashboard-wide or CI-style coverage checks. Miss reasons are useful input for analytics engineers and coding agents when tuning YAML.
+
+## Working with multiple star schemas
+
+Most real projects have more than one fact table: orders, sessions, subscriptions, tickets, invoices. Each fact usually sits at the center of its own star, surrounded by shared dimensions like customer, product, date, and geography. How you expose these stars to Lightdash has a big impact on self-serve usability, query correctness, and AI accuracy.
+
+### Choose a shape per star
+
+For each star, decide up front how it will be surfaced:
+
+- **Wide, denormalized fact model** — pre-join the dimensions you care about into the fact in dbt and expose it as a single Explore. Best for self-serve business users and AI agents. Best for the 5-10 highest-value business surfaces (revenue, orders, pipeline, retention).
+- **Semantic-layer joins on a lean fact** — keep the fact narrow and define primary keys and joins in Lightdash. Best for power users, ad-hoc analysis, and stars where dimensions change often.
+- **Both** — surface a wide model for business users and a joined model for the data team. [Hide the joined version](/references/workspace/user-attributes) behind user attributes or a "power user" tag.
+
+See [wide tables vs. multi-join models](/guides/developer/dbt-model-best-practices#wide-tables-vs-multi-join-models) for the underlying tradeoff.
+
+### Give each fact its own Explore
+
+Do not try to combine multiple facts into one Explore just because they share dimensions. Two fact tables joined through a shared dimension almost always create fanout and double-counted metrics.
+
+Instead:
+
+- Create one Explore per fact (`orders`, `sessions`, `subscriptions`, ...).
+- Join shared dimensions (customer, product, date) into each fact independently.
+- Use clear, consistent labels and groups so users can tell the stars apart in the sidebar.
+
+### Conform your shared dimensions
+
+The single biggest source of wrong answers across multiple stars is inconsistent shared dimensions. Same-named fields resolve to different values across facts, or the same business concept has three names.
+
+- Model conformed dimensions once in dbt (`dim_customers`, `dim_products`, `dim_date`) and reuse them across every fact.
+- Use identical field names, data types, and descriptions everywhere the dimension appears.
+- Prefer surrogate keys for joins; document the grain of every fact clearly in its model description.
+- If two facts need a "region" that comes from different sources, resolve it upstream — do not paper over it in the semantic layer.
+
+### Answering questions that cross stars
+
+Business questions like "revenue per session" or "tickets per active subscriber" cross fact tables. Do not solve these with a runtime many-to-many join between the facts.
+
+Pick one of:
+
+- **Aggregate up to a common grain in dbt.** Build a `daily_customer_metrics` or `monthly_account_metrics` model that pre-aggregates each fact to a shared grain (customer + day, account + month) and joins them there. Expose it as its own Explore.
+- **Use a metric-per-explore pattern.** Answer each part of the question in its own Explore, then combine the results at the dashboard level with tiles side by side. Fine for one-off comparisons; not a substitute for a real cross-fact model.
+- **Model the relationship explicitly.** If two facts genuinely share a grain (for example, `line_items` and `shipments` both at order-line level), you can define the join in the semantic layer — but validate metrics carefully and beware fanout.
+
+Avoid runtime many-to-many joins between two facts for core reporting metrics.
+
+### Naming, grouping, and AI hygiene
+
+With several stars in one project:
+
+- Prefix or group metrics by domain (`Revenue › gross_revenue`, `Marketing › sessions`) so business users and AI agents can disambiguate.
+- Add `ai_hint` on each fact-level Explore describing what the fact represents, its grain, and which metrics are canonical for common business terms ("revenue", "customers", "orders").
+- Only promote the canonical metric per business term to Spotlight. If "revenue" exists in three stars, decide which one is the source of truth and mark it clearly.
+- Scope AI agents by domain (one per star or per business area) rather than pointing a single agent at every fact.
+
+### Red flags with multiple stars
+
+- The same metric name (`revenue`, `active_users`) exists in multiple Explores and returns different numbers with no description of why.
+- Users join two fact Explores at query time to answer a cross-fact question.
+- Shared dimensions (customer, product, date) are redefined per star with slightly different fields.
+- One giant Explore contains three or more fact tables joined together.
+- AI agents pick the "wrong" revenue metric because Spotlight promotes more than one.
+
+## Recommended rollout pattern
+
+1. Start with a small POC scope: one or two business domains, a handful of high-value dashboards, and a curated set of marts or reporting models.
+2. Scaffold metadata with `lightdash generate`, then invest time in descriptions, metrics, joins, labels, and Spotlight visibility.
+3. Build the first dashboards from the semantic layer, not raw SQL, unless the raw SQL is part of a deliberate migration bridge.
+4. Set up preview projects so analysts can test semantic changes before PRs merge.
+5. Add pre-aggregates for expensive, predictable dashboards after the core metrics and filters are stable.
+6. Add domain-scoped AI agents only after the relevant explorers and descriptions are strong enough.
+7. Capture user feedback, review findings, eval failures, and pre-aggregate misses, then improve the semantic layer rather than patching around symptoms.
+8. Expand model coverage gradually, keeping the business-facing explorer list curated as adoption grows.
+
+## Red flags
+
+- Business users are choosing from hundreds of raw, staging, or intermediate tables.
+- Multiple metrics with similar names produce different answers without clear descriptions.
+- Common dashboard logic lives only in chart-level table calculations.
+- High-traffic dashboards are slow, but no one has checked whether their queries fit pre-aggregates.
+- Important SQL exists only inside a BI tool, with no dbt model or version control.
+- One AI agent has access to the whole project and is expected to answer every domain question.
+- Metrics have names but no descriptions, examples, owner, or business definition.
+- Many-to-many joins are used for core reporting metrics without explicit validation.
+- A production semantic layer is updated manually from local machines without preview or validation.
+
+## Quick checklist
+
+- Curated explorers, not all tables.
+- One YAML file per model.
+- Primary keys and joins defined where needed.
+- Simple reusable base metrics.
+- Canonical metrics promoted to Spotlight or the Metrics Catalog.
+- Complex reusable KPIs modeled in dbt.
+- Human-readable descriptions for every important model, dimension, and metric.
+- `ai_hint` used sparingly for agent-only guidance.
+- Domain-specific AI agents scoped by tags or explorer access.
+- Verified answers, evals, and reviews used to improve agent context over time.
+- Pre-aggregate audit used for critical dashboard performance tuning.
+- Preview projects used before merge.
+- Validation run in CI for production projects.
+- Raw SQL migrated to Virtual Views or dbt when it becomes reusable.
+- Pre-aggregates considered for expensive, predictable dashboard queries.
+- One Explore per fact; conformed shared dimensions across stars.
