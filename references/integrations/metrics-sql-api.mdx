@@ -33,10 +33,6 @@ As a connection URI:
 psql "postgresql://<your_email>:<token>@pg.<your_instance_name>.lightdash.cloud:5432/<project_uuid>?sslmode=require"
 ```
 
-<Info>
-  **Connections are encrypted.** The server requires TLS and rejects plaintext connections before any credentials are exchanged, so your token never crosses the network unencrypted. Use `sslmode=require` or stricter — on Lightdash Cloud the certificate is publicly trusted, so `sslmode=verify-full` also works and additionally protects against server impersonation.
-</Info>
-
 Queries run with the permissions of the token, so you can only query explores and fields that the token's account has access to.
 
 ## How queries work
@@ -138,12 +134,8 @@ PGWIRE_SSL_CERT_PATH=/path/to/tls.crt   # server certificate (leaf first, then c
 PGWIRE_SSL_KEY_PATH=/path/to/tls.key    # private key
 ```
 
-Lightdash terminates TLS itself: the Postgres handshake is StartTLS-style (a plaintext `SSLRequest` precedes the TLS upgrade), so generic TLS-terminating load balancers can't sit in front of this endpoint — expose it as a raw TCP (L4) passthrough. The server watches the certificate files and picks up renewals automatically, so rotation (e.g. via cert-manager) doesn't need a restart.
-
 - If your certificate is from a public CA (e.g. Let's Encrypt), clients can use `sslmode=require` or `verify-full`.
 - If you use a private CA or a self-signed certificate, clients either pass the CA with `sslrootcert=/path/to/ca.pem` for verification, or use `sslmode=require` (encrypted, but the server identity isn't verified).
-
-Lightdash refuses to start when `PGWIRE_PORT` is set without a certificate. If you genuinely can't use TLS — for example the endpoint is only reachable inside a trusted private network, or a Postgres-aware proxy (pgbouncer-class) terminates TLS in front of it — you can explicitly opt out with `PGWIRE_SSL_MODE=disabled`. Tokens are then sent in plaintext, so never do this on a network you don't fully control.
 
 The server starts a separate TCP listener on that port, so you'll also need to expose it through your load balancer or network configuration alongside the main Lightdash port. It requires a valid `LIGHTDASH_LICENSE_KEY` — see [Enterprise License Keys](/self-host/customize-deployment/enterprise-license-keys).
 
