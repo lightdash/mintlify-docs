@@ -11,6 +11,7 @@ keywords:
   - lightdash preview
   - lightdash validate
   - lightdash dbt run
+  - lightdash warehouse-catalog
   - CLI commands
 ---
 
@@ -133,6 +134,7 @@ For examples and command-specific options, click through the command in the tabl
 |[`lightdash rename`](/references/lightdash-cli#lightdash-rename)                         | Rename model or field names across all your Lightdash content                      |
 |[`lightdash diagnostics`](/references/lightdash-cli#lightdash-diagnostics)               | Show diagnostic information about the CLI environment                              |
 |[`lightdash sql`](/references/lightdash-cli#lightdash-sql)                               | Run raw SQL query against the warehouse using project credentials                  |
+|[`lightdash warehouse-catalog`](/references/lightdash-cli#lightdash-warehouse-catalog)   | Explore the project's warehouse databases, schemas, tables, and fields             |
 |[`lightdash lint`](/references/lightdash-cli#lightdash-lint)                             | Validate Lightdash Code files against JSON schemas                                 |
 |[`lightdash pre-aggregate-audit`](/references/lightdash-cli#lightdash-pre-aggregate-audit) | Audit pre-aggregate hit/miss coverage for one or every dashboard                |
 ---
@@ -1022,6 +1024,93 @@ Run a query with verbose output to see detailed progress:
 
 ```bash
 lightdash sql "SELECT customer_id, SUM(amount) FROM orders GROUP BY 1" -o revenue.csv --verbose
+```
+
+### `lightdash warehouse-catalog`
+
+Discover the databases, schemas, tables, and fields available in the warehouse connected to your [currently selected project](#lightdash-config-get-project). The command calls Lightdash using the project's server-side warehouse credentials, so you don't need a local warehouse connection or a `profiles.yml` — just a valid Lightdash login and a selected project.
+
+Use it to explore your warehouse before writing dbt models or Lightdash explores, to look up the Lightdash-inferred type of a column, or to pipe a deterministic list of tables and fields into scripts and AI agents via `--json`.
+
+```console
+lightdash warehouse-catalog [options]
+```
+
+By default, the command prints a human-readable table of every `database.schema.table` in the project's cached warehouse catalog. Use the filter flags to narrow the list, `--include-fields` to also list the columns of a single fully qualified table, and `--json` for machine-readable output.
+
+**Options:**
+
+- `--database <name>`
+  - Filter by exact database name
+- `--schema <name>`
+  - Filter by exact schema name
+- `--table <name>`
+  - Filter by exact table name
+- `--include-fields`
+  - (default: false)
+  - Also list each field's name and Lightdash-inferred type (`number`, `string`, `boolean`, `date`, `timestamp`, …). Requires `--database`, `--schema`, and `--table` so exactly one table is targeted.
+- `--refresh`
+  - (default: false)
+  - Refetch warehouse metadata and refresh the server-side catalog cache before listing. Use this when tables have been added or removed since the catalog was last cached.
+- `--json`
+  - (default: false)
+  - Emit deterministic JSON instead of a terminal table. Handy for piping into `jq` or feeding to a script.
+- `--verbose`
+  - (default: false)
+  - Show detailed API request output
+
+<Info>
+  This command requires an active project. Set one with [`lightdash config set-project`](#lightdash-config-set-project) or the `LIGHTDASH_PROJECT` environment variable. It never returns warehouse credentials or secret connection metadata.
+</Info>
+
+**Examples:**
+
+List every database, schema, and table in the project's warehouse catalog:
+
+```bash
+lightdash warehouse-catalog
+```
+
+Narrow to a single schema:
+
+```bash
+lightdash warehouse-catalog --database jaffle --schema analytics
+```
+
+List the fields and Lightdash types on a fully qualified table:
+
+```bash
+lightdash warehouse-catalog --database jaffle --schema analytics --table orders --include-fields
+```
+
+Refresh the server-side catalog cache before listing (useful right after adding new warehouse tables):
+
+```bash
+lightdash warehouse-catalog --refresh
+```
+
+Emit JSON and extract distinct database names with `jq`:
+
+```bash
+lightdash warehouse-catalog --json | jq -r '.tables | map(.database) | unique | .[]'
+```
+
+Emit JSON and extract every schema under a specific database:
+
+```bash
+lightdash warehouse-catalog --database jaffle --json | jq -r '.tables | map(.schema) | unique | .[]'
+```
+
+Emit JSON and extract every table under a specific schema:
+
+```bash
+lightdash warehouse-catalog --database jaffle --schema analytics --json | jq -r '.tables[].table'
+```
+
+Emit JSON for a single table's fields (handy for scripts and agents):
+
+```bash
+lightdash warehouse-catalog --database jaffle --schema analytics --table orders --include-fields --json
 ```
 
 ### `lightdash lint`
