@@ -29,45 +29,82 @@ Typical use cases:
 
 ## Enable the endpoint
 
+Enabling the endpoint is a two-step process: the instance must expose a Postgres wire port, and each organization then opts in from its project settings.
+
+### 1. Enable the endpoint at the instance level
+
 The Postgres wire protocol server lives in the enterprise codebase and only starts when both an enterprise license and the `PGWIRE_PORT` environment variable are configured.
 
 <Tabs>
   <Tab title="Self-hosted">
-    Set `PGWIRE_PORT` on the Lightdash backend to the port you want the endpoint to listen on:
+    Set the following environment variables on the Lightdash backend:
 
     ```bash
     PGWIRE_PORT=5433
+    PGWIRE_HOST=analytics.example.com   # optional: the hostname clients should connect to
     ```
 
     On startup Lightdash logs `Postgres wire protocol server listening on port 5433`. Without a valid enterprise license the server logs a warning and does not listen, even if `PGWIRE_PORT` is set.
 
-    Expose the port to the clients that need it (for example, through your ingress or load balancer). SSL/GSS negotiation is not supported — clients will fall back to plaintext, so we recommend terminating TLS in front of the endpoint or restricting it to a private network.
+    - `PGWIRE_PORT` — the TCP port the server binds to. Required.
+    - `PGWIRE_HOST` — optional. The hostname advertised to users in the project settings UI. If unset, the settings page shows an empty host and admins will need to fill it in themselves.
+
+    Expose the port to the clients that need it (for example, through your ingress or load balancer). TLS is not yet supported — clients must connect with `sslmode=disable`, so we recommend terminating TLS in front of the endpoint or restricting it to a private network.
   </Tab>
   <Tab title="Lightdash Cloud">
     Availability is instance-dependent. [Contact Lightdash](/contact/contact-info) to enable the endpoint for your organization and to get the host and port to connect to.
   </Tab>
 </Tabs>
 
+### 2. Enable the endpoint for your organization
+
+Once the instance exposes a pgwire port, each organization has to explicitly opt in. The setting is off by default.
+
+1. Go to **Project settings → Semantic layer** (the tab only appears when the instance has pgwire enabled).
+2. As an organization admin, toggle **Semantic layer Postgres connection** on.
+
+Once enabled, the same page shows the connection details, an inline **Generate token** button for creating a scoped service account token, and ready-to-copy client snippets (connection URL, `psql`, and JDBC). Non-admins see the tab but not the connection details.
+
+<Info>
+  Connection details (host and port) are only returned to organization admins. The `enabled` flag is visible to all org members so the settings tab can render correctly for everyone.
+</Info>
+
 ## Connect
 
-Use any Postgres client. The connection parameters are:
+Use any Postgres client. The **Project settings → Semantic layer** page shows the exact host, port, database (project UUID), and ready-to-copy `psql`, connection URL, and JDBC snippets for your instance — copy the snippet that matches your client and paste in a token as the password.
+
+The connection parameters are:
 
 | Parameter | Value |
 | --- | --- |
-| Host | Your Lightdash instance host |
+| Host | Your Lightdash instance host (shown on the settings page) |
 | Port | The value of `PGWIRE_PORT` (self-hosted) or the port provided by Lightdash (Cloud) |
 | User (`-U`) | Any string — the value is ignored |
 | Database (`-d`) | The project UUID or the slugified project name (for example, `ecom-store`) |
 | Password | A service account token (`ldsvc_…`) or personal access token (`ldpat_…`) |
+| SSL mode | `disable` (TLS is not yet supported) |
 
 ### Example: `psql`
 
 ```bash
-psql -h analytics.example.com \
-     -p 5433 \
-     -U lightdash \
-     -d ecom-store
-# Password: ldsvc_...
+PGPASSWORD=ldsvc_... psql \
+  -h analytics.example.com \
+  -p 5433 \
+  -U lightdash \
+  -d ecom-store \
+  "sslmode=disable"
+```
+
+### Example: connection URL
+
+```
+postgresql://lightdash:ldsvc_...@analytics.example.com:5433/ecom-store?sslmode=disable
+```
+
+### Example: JDBC (DBeaver / DataGrip)
+
+```
+jdbc:postgresql://analytics.example.com:5433/ecom-store?sslmode=disable
 ```
 
 ### Authentication
