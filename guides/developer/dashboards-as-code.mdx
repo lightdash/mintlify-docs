@@ -439,6 +439,122 @@ During `lightdash upload`, the CLI scans for all `.space.yml` files and builds a
   `.space.yml` files currently store name metadata only (`spaceName` and `slug`). Access control properties (`isPrivate`, group access) are not yet supported in these files.
 </Note>
 
+## Virtual views
+
+You can manage [virtual views](/guides/developer/virtual-views) as code alongside your charts and dashboards. This is useful when you want to review virtual-view changes in a pull request, promote the same SQL across projects (for example from a staging to a production Lightdash instance), or template a set of virtual views for reuse.
+
+Virtual views are **opt-in** — a bare `lightdash download` does not pull them, and a bare `lightdash upload` does not push them. You have to ask for them explicitly with `--include-virtual-views` or `--virtual-views <slug>`.
+
+### Download virtual views
+
+Use `--include-virtual-views` to download every virtual view in the project, or `--virtual-views <slug>` to download specific ones:
+
+```bash
+# All virtual views in the project
+lightdash download --include-virtual-views
+
+# Only the virtual views you name
+lightdash download --virtual-views orders_enriched customers_enriched
+```
+
+Each virtual view is written to `lightdash/virtual-views/<slug>.yml`. To skip virtual views when a filter is otherwise selecting them, add `--skip-virtual-views`.
+
+### Virtual view YAML
+
+Virtual views serialize to a portable YAML contract keyed by a project-scoped `slug` (the immutable explore name used by any charts, dashboards, or joined models that reference the view). The `name` is the mutable display label shown in the UI.
+
+```yml Virtual view YAML example
+contentType: virtual_view
+version: 1
+slug: orders_enriched
+name: "Orders enriched"
+sql: |-
+  select
+    o.order_id,
+    o.customer_id,
+    o.status,
+    o.created_at,
+    o.total_amount,
+    c.country
+  from ecom.orders o
+  left join ecom.customers c on c.customer_id = o.customer_id
+columns:
+  - reference: country
+    type: string
+  - reference: created_at
+    type: timestamp
+  - reference: customer_id
+    type: string
+  - reference: order_id
+    type: string
+  - reference: status
+    type: string
+  - reference: total_amount
+    type: number
+parameters: null
+```
+
+| Field | Description |
+| --- | --- |
+| `contentType` | Always `virtual_view`. |
+| `version` | Schema version. Currently `1`. |
+| `slug` | Immutable project-scoped identifier. Must be canonical `snake_case` — this is the explore name that downstream charts and dashboards reference. |
+| `name` | Display label for the UI. Safe to rename. |
+| `sql` | Raw SELECT for the virtual view. Referenced parameters must have matching keys in `parameters`. |
+| `columns` | The list of columns exposed as dimensions. Each entry needs a unique `reference` and a valid dimension `type`. Columns are sorted by reference on download. |
+| `parameters` | Saved parameter values used by the view's SQL, or `null` if the view takes no parameters. |
+
+### Upload virtual views
+
+Use `--virtual-views <slug>` on `lightdash upload` to target specific views, or run a bare upload (without any content filters) to include every virtual view in `lightdash/virtual-views/`.
+
+```bash
+# Upload one virtual view
+lightdash upload --virtual-views orders_enriched
+
+# Upload everything, including any virtual views on disk
+lightdash upload
+```
+
+The CLI compares each file against the current cached version of the view and reports one of:
+
+- **created** — no view with this slug existed yet.
+- **updated** — the view existed and one or more fields changed.
+- **skipped** — the file is byte-equivalent to the current view, so nothing is sent.
+
+If the same slug already exists as a **non-virtual** explore (for example, a dbt model), the upload is rejected — Lightdash won't adopt a dbt-managed explore into virtual-view storage.
+
+### Validation errors
+
+Uploads fail fast with a `ParameterError` when the YAML isn't a valid virtual view. Common causes:
+
+- `slug` is empty, contains slashes, or isn't canonical `snake_case`.
+- `name` or `sql` is empty.
+- `columns` is empty, contains duplicate or blank `reference` values, or uses an unknown `type`.
+- `parameters` includes keys that the `sql` never references.
+- `contentType` isn't `virtual_view` or `version` isn't the supported version.
+
+Fix the YAML locally and re-run `lightdash upload`.
+
+### Destructive changes and `--force`
+
+Removing a column or changing its type is a **destructive** change — any charts or dashboards that reference the removed or retyped column will break. To protect against accidental breakage, the CLI rejects destructive column changes by default and lists the offending columns in the error.
+
+Re-run the upload with `--force` when the change is intentional:
+
+```bash
+lightdash upload --virtual-views orders_enriched --force
+```
+
+`--force` also allows replacing a virtual view whose cached state can no longer be represented as YAML (for example, a legacy view with non-subquery SQL).
+
+### Permissions
+
+Virtual view download and upload reuse the same content-as-code scopes as charts and dashboards:
+
+- `view:ContentAsCode` is required to download virtual views.
+- `manage:ContentAsCode` is required to upload virtual views. Uploads also check the virtual-view edit permissions the UI enforces, so the CLI, API, and app stay in lockstep.
+
 ## Dashboard as code yml reference
 
 The yml configuration for dashboards as code is extensive. It covers both dashboards and individual charts. The best way to start is often to create your content in the Lightdash UI, download it, and in most cases the structure will be fairly intuitive. Below are outlines of the structures you will find for both types of content to provide some additional context.
