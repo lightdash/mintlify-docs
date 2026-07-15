@@ -18,8 +18,13 @@ dbt parse                # or dbt compile — writes target/manifest.json
 lightdash deploy         # translates MetricFlow metrics as part of the deploy
 ```
 
+### Requirements
+
+- **dbt Core 1.6 or later** (manifest schema `v10`, the first version to include MetricFlow's semantic layer). The legacy metrics format used by pre-1.6 dbt (`calculation_method` / `expression` / `time_grains`) is no longer read.
+- **The Lightdash CLI.** Translation happens in `lightdash compile`, `lightdash preview`, and `lightdash deploy`. Server-side jobs (scheduled runs from a connected Git repo) don't currently translate MetricFlow metrics — for now, deploy from the CLI.
+
 <Info>
-  If you define a metric with the same name in both MetricFlow and your model's `meta.metrics`, the `meta.metrics` (Lightdash YAML) definition will take precedence.
+  If you define a metric with the same name in both MetricFlow and your model's `meta.metrics`, the `meta.metrics` (Lightdash YAML) definition will take precedence — so you can always override a translated metric by hand.
 </Info>
 
 ### Use the latest MetricFlow spec
@@ -45,8 +50,9 @@ Lightdash supports the latest and legacy spec, though it's recommended to use th
 
 Also carried over:
 
-- **Measure** `expr`: bare column references and SQL expressions both become the metric's SQL.
+- **Measure** `expr`: bare column references become the metric's SQL, qualified with `${TABLE}` (for example, `expr: amount` becomes `sql: ${TABLE}.amount`). Full SQL expressions are used verbatim.
 - **Labels and descriptions**: from the metric, falling back to the measure's.
+- **Percentile value**: MetricFlow's legacy spec authors percentile as a `0–1` fraction (`percentile: 0.95`) and the latest spec authors it as `0–100` (`percentile: 95`). Both are normalized to Lightdash's `0–100` scale automatically.
 
 ## What's not supported yet
 
@@ -60,8 +66,11 @@ These are skipped with a warning on deploy (details under `--verbose`):
 | `conversion` metrics | require entity-journey semantics |
 | Metric or measure `filter:` | MetricFlow where-filter templates (e.g. `{{ Dimension('order__status') }} = 'completed'`) don't map to Lightdash metric filters |
 | `agg: sum_boolean` | no Lightdash equivalent |
+| `agg: percentile` without a numeric `percentile` value | skipped rather than defaulted — set `type_params.measure.agg_params.percentile` (legacy) or `agg_params.percentile` (latest) |
 | `percentile_type: discrete` | Lightdash percentiles always compile to `PERCENTILE_CONT` |
 | `join_to_timespine`, `fill_nulls_with`, `non_additive_dimension` | no equivalents |
+
+`ratio`, `derived`, `cumulative`, and filtered metrics, as well as server-side translation from a connected Git repo, are on the roadmap.
 
 And these parts of the semantic model are currently skipped:
 
@@ -105,4 +114,4 @@ metrics:
       measure: total_revenue
 ```
 
-Deploying this project gives the `orders` explore two metrics, `Total revenue` (`SUM("orders".amount)`) and `unique_customers` (`COUNT(DISTINCT "orders".customer_id)`), with no Lightdash-specific YAML.
+Deploying this project gives the `orders` explore two metrics — `total_revenue` (a `sum` on `${TABLE}.amount`, labelled "Total revenue") and `unique_customers` (a `count_distinct` on `${TABLE}.customer_id`, from the `create_metric: true` measure) — with no Lightdash-specific YAML.
