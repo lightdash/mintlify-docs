@@ -899,6 +899,79 @@ And the matching tile entry on a dashboard:
   tileSlug: orders-by-status
 ```
 
+## Custom roles as code
+
+[Custom roles](/references/workspace/custom-roles) are also managed as code. Unlike charts and dashboards, custom roles are **organization-scoped** rather than project-scoped, so downloading and uploading them uses the `--organization` mode of `lightdash download` and `lightdash upload` and requires an organization admin.
+
+### When to use it
+
+- Version-control your organization's custom roles alongside charts and dashboards.
+- Copy a role from one Lightdash instance (for example, staging) to another (production) without recreating it by hand in the UI.
+- Review role changes in a pull request before they hit the org.
+
+### YAML contract
+
+Each custom role serializes to a single file under `lightdash/custom-roles/<role-slug>.yml`:
+
+```yaml
+version: 1
+name: analytics-viewer
+description: Read-only access to analytics content
+level: organization
+scopes:
+  - view:Dashboard
+  - view:SavedChart
+  - view:Space
+```
+
+| Field | Description |
+| --- | --- |
+| `version` | Format version. Currently always `1`. |
+| `name` | The role's display name. This is the portable identity — a role is matched to an existing role by exact name within the organization. |
+| `description` | Optional human-readable description. Set to `null` to clear an existing description. |
+| `level` | Either `organization` or `project`. Determines which scopes are allowed. Immutable — once a role is created, its level cannot be changed via upload. |
+| `scopes` | The list of scope grants for the role. See the [scope reference](/references/workspace/custom-roles#scope-reference) for available scopes. |
+
+The filename is derived from the role name; the CLI creates safe filenames and disambiguates collisions automatically.
+
+### Download
+
+Run the download in `--organization` mode from your working directory:
+
+```bash
+lightdash download --organization
+```
+
+This writes every user-defined custom role in your organization to `lightdash/custom-roles/*.yml`. System roles are not included. The `--organization` flag switches the command into organization-content mode and cannot be combined with project-content flags such as `--charts`, `--dashboards`, or `--project`.
+
+### Upload
+
+Run the upload in `--organization` mode from the same working directory:
+
+```bash
+lightdash upload --organization
+```
+
+For each file in `lightdash/custom-roles/`, the backend resolves the role by `name` and returns one of three outcomes:
+
+- **Created** — no role with that name exists yet, so a new one is created.
+- **Updated** — the role exists and either the description or the set of scopes has changed.
+- **Unchanged** — the role exists and already matches the file. No write is performed.
+
+Uploads are per-file. A malformed or invalid file is reported with its file path and the error message from the backend, and the remaining files continue to process. If any file fails validation, the CLI exits with a non-zero status.
+
+<Note>
+  Uploads never delete roles. Removing a `.yml` file from `lightdash/custom-roles/` and re-uploading does not delete the role in Lightdash — delete unwanted roles in the UI.
+</Note>
+
+### Permissions and validation
+
+- The user running `lightdash download --organization` and `lightdash upload --organization` must be an **organization admin**.
+- The backend validates the role's version, name, description, level, and scopes on every upload. It rejects unknown fields, unsupported versions, unknown scopes, and scopes that aren't allowed at the role's level.
+- The role level is immutable — you cannot change an existing organization role into a project role (or vice versa) by editing the YAML and uploading. Create a new role instead.
+
+For backwards compatibility, an existing role may retain a legacy scope that is no longer assignable at its level; downloading and re-uploading such a role is a no-op. Scope-level validation is applied only to newly added scopes.
+
 ## Editing with AI agents
 
 You can use AI coding assistants like Cursor, Claude Code, and Codex to create and edit charts using natural language instead of clicking through the UI.
