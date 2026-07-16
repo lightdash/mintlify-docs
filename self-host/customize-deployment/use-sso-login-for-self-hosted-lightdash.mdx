@@ -35,6 +35,52 @@ You can override a user password in just a few steps:
 cd ./packages/backend && node ./dist/overrideUserPassword.js <user email> <new password>
 ```
 
+## Email-only signup and OTP login
+
+Lightdash can offer a passwordless email-first sign-in flow: new users sign up with just their email address, and returning users on those passwordless accounts sign in with a 6-digit code emailed to them instead of a password. Both behaviours are gated by the same instance-wide feature flag and are **off by default**.
+
+<Note>
+  This flow currently has **no built-in rate limiting** on the OTP request or verify endpoints. Put rate limiting in front of Lightdash (e.g. at your ingress or WAF) before enabling this feature on a production instance.
+</Note>
+
+### Enable the feature flag
+
+Set the `email-only-signup` [feature flag](/self-host/customize-deployment/environment-variables#feature-flags) on your instance:
+
+```bash
+LIGHTDASH_ENABLE_FEATURE_FLAGS=email-only-signup
+```
+
+Because [SMTP](/self-host/customize-deployment/environment-variables#smtp) is used to deliver the one-time codes, you must also have SMTP configured.
+
+### What changes when the flag is on
+
+**Register page (`/register`)**
+
+- The signup form asks only for an email address — no name, no password.
+- Lightdash creates the account with no password, sends a 6-digit code to that address, and — once the user enters the code — takes them through the standard join-or-create-organization flow.
+- Passwordless users can add a password later by clicking **Forgot your password?** on the login page: the reset link now upserts a password row for accounts that didn't previously have one.
+
+**Login page (`/login`)**
+
+- When a user enters an email that belongs to a passwordless account (no password set, no SSO identity), the password field is hidden and Lightdash emails a 6-digit code instead.
+- Entering the code signs the user in and marks the email as verified.
+- The same 5-attempt limit and expiry window used elsewhere for one-time passcodes applies.
+
+For example, a new user visits `/register` and types `alex@ecom-store.com`. They receive a code by email, enter something like `123456`, and land in the standard "create or join an organization" step. The next time they visit `/login` and type `alex@ecom-store.com`, the password field is hidden and they receive a fresh 6-digit code to sign in — no password ever set.
+
+### What stays the same
+
+- **Accounts with a password** — the password field is still shown, and the OTP login path is refused regardless of the flag.
+- **SSO users** — accounts with any linked SSO identity continue to sign in via SSO. OTP login is refused for them regardless of the flag.
+- **Invite flow** (`/invite/<code>`) — unchanged; invited users still complete the full signup form (name + password).
+
+### Security notes
+
+- OTP login only applies to accounts that have **no password and no SSO identity**. Any account with either is excluded from this flow whether or not the flag is on.
+- All failure modes (unknown email, non-passwordless account, wrong code, expired code, too many attempts) return the **same generic 401** so the endpoint can't be used to probe whether an email is registered.
+- Turning the flag off makes both the OTP request and OTP verify endpoints return `403` — existing passwordless users would then need to reset their password to sign in.
+
 ## SSO setup
 
 To enforce SSO, it's recommended to disable password authentication. This can be done by setting the following environment variable:
