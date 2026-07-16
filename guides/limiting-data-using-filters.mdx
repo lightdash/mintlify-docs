@@ -339,6 +339,73 @@ Value-less relative-date operators (`in the current`, `not in the current`) are 
 **Migration note.** Before this change, an empty active dashboard filter would clobber a chart-level filter on the same field at runtime — the tile would run without either filter. Now, the chart-level filter is honored until a viewer sets a value. If you previously used an empty dashboard filter specifically to strip a chart filter, either mark the dashboard filter as required, set an explicit default value, or remove the chart-level filter from the saved chart.
 </Note>
 
+##### Required filters and filter requirement groups
+
+Dashboard filters can be marked as **required**, so the dashboard won't load any data until a viewer picks a value. You can also combine several filters into a **requirement group**: viewers must set *at least one* of them, but any will do.
+
+<Info>
+Requirement groups and the guided setup experience are gated behind the `dashboard-filter-requirements` feature flag. [Contact Lightdash support](mailto:support@lightdash.com) to enable it, or set `LIGHTDASH_ENABLE_FEATURE_FLAGS=dashboard-filter-requirements` if you're self-hosting.
+</Info>
+
+**Building filter rules (editors)**
+
+While editing a dashboard, toggle **Required** in a filter's popover, or open the **Filter rules** popover next to the filter bar to manage all rules in one place:
+
+1. Click **Add rule** and pick the filters. One filter makes a plain required filter; more make an "at least one of" group. Required filters must start empty, so filters with a default value, or already in another rule, can't be picked.
+2. Optionally, write a **Note for viewers** explaining why the filters are required.
+3. Click **Save** in the popover, then save the dashboard.
+
+<Frame>
+  <img
+    alt="The Filter rules popover on a dashboard in edit mode, showing a required filter and an at-least-one-of group"
+    className="block dark:hidden"
+    src="/images/guides/limiting-data-using-filters/filter-requirements-rules-popover-light.png"
+  />
+  <img
+    alt="The Filter rules popover on a dashboard in edit mode, showing a required filter and an at-least-one-of group"
+    className="hidden dark:block"
+    src="/images/guides/limiting-data-using-filters/filter-requirements-rules-popover-dark.png"
+  />
+</Frame>
+
+**What viewers see**
+
+While any rule is unmet, chart tiles stay locked. The dashboard shows a **guided setup card** with a picker for each filter and your note as its subtitle. Everything loads the moment the rules are met, and locks again if a viewer clears a value a rule needed. Viewers can also dismiss the card and use the filter bar instead.
+
+<Frame>
+  <img
+    alt="The guided setup card shown to viewers while a dashboard's filter rules are unmet"
+    className="block dark:hidden"
+    src="/images/guides/limiting-data-using-filters/filter-requirements-guided-setup-light.png"
+  />
+  <img
+    alt="The guided setup card shown to viewers while a dashboard's filter rules are unmet"
+    className="hidden dark:block"
+    src="/images/guides/limiting-data-using-filters/filter-requirements-guided-setup-dark.png"
+  />
+</Frame>
+
+A rule counts as met when one of its filters has a value or uses an operator that needs none (`is null`, `is not null`, `in the current`, `not in the current`, `in the period-to-date`). On dashboards with [tabs](/get-started/exploring-data/dashboards#add-tabs), a rule only locks the tabs its filters apply to.
+
+**Dashboards-as-code**
+
+A required filter has `required: true`; filters sharing a `requiredGroupId` form an "at least one of" group. The viewer note lives on the dashboard config as `requiredFiltersNote`.
+
+```yaml
+config:
+  requiredFiltersNote: "Pick a region or a product line to load the dashboard."
+filters:
+  dimensions:
+    - id: region-filter
+      label: Region
+      requiredGroupId: geo-or-product
+      # ...
+    - id: product-line-filter
+      label: Product line
+      requiredGroupId: geo-or-product
+      # ...
+```
+
 ##### Dashboard filters autocomplete
 
 When determining possible values for a dashboard filter, the system will take into account all relevant filters, including those applied to fields from joined tables.
