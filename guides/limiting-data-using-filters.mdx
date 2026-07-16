@@ -339,6 +339,49 @@ Value-less relative-date operators (`in the current`, `not in the current`) are 
 **Migration note.** Before this change, an empty active dashboard filter would clobber a chart-level filter on the same field at runtime — the tile would run without either filter. Now, the chart-level filter is honored until a viewer sets a value. If you previously used an empty dashboard filter specifically to strip a chart filter, either mark the dashboard filter as required, set an explicit default value, or remove the chart-level filter from the saved chart.
 </Note>
 
+##### Required filters and filter requirement groups
+
+Dashboard filters can be marked as **required**, meaning the dashboard won't run any queries until a viewer supplies a value. You can also compose several filters into a **requirement group** — an "at least one of" rule that unlocks the dashboard as soon as *any* member of the group is set. Use this when a dashboard makes sense with, say, a `Region` filter **or** a `Product line` filter, but not with neither.
+
+<Info>
+Filter requirement groups are gated behind the `dashboard-filter-requirements` feature flag. With the flag off, only the per-filter `Required` toggle is available and any saved group configuration is ignored. Contact Lightdash support to enable it for your organization.
+</Info>
+
+**Building filter rules (editors)**
+
+While editing a dashboard, each dashboard filter has a **Required** toggle in its popover for the single-filter case. To build an any-of group, open the **Filter rules** popover next to the filter bar:
+
+1. Click **Add rule** and pick two or more filters that should form the group. Only filters that are eligible — active filters with no default value, and not already part of another rule — can be added.
+2. Optionally set a **Note for viewers** (`requiredFiltersNote`). This appears as the subtitle on the guided setup card, so use it to explain *why* the dashboard needs one of these filters.
+3. Rule edits are staged locally; nothing takes effect until you click **Save**.
+
+Requirement group members must be **valueless** (no default value). Setting a default value on a required filter would satisfy the requirement automatically, so Lightdash strips values from required filters on save.
+
+**What viewers see**
+
+While any required filter or any-of group is unmet, chart tiles do not run their queries. Instead, the dashboard shows a **guided setup card** with one section per unmet rule and a live picker for each filter. Individual filter chips in the filter bar also show a requirement icon and an "unmet" indicator. The dashboard unlocks the moment every rule is satisfied — and re-locks if a viewer clears a value that had been satisfying a rule.
+
+A rule is considered satisfied when at least one of its filters has a value, **or** uses a value-less operator that still filters data (`is null`, `is not null`, `in the current`, `not in the current`). Enabled filters with empty values do **not** satisfy a rule.
+
+**Dashboards-as-code**
+
+Requirement groups are stored on each member filter as a `requiredGroupId` — every filter with the same `requiredGroupId` belongs to the same "any one required" group. The editor-authored subtitle lives on the dashboard config as `requiredFiltersNote`.
+
+```yaml
+config:
+  requiredFiltersNote: "Pick a region or a product line to load the dashboard."
+filters:
+  dimensions:
+    - id: region-filter
+      label: Region
+      requiredGroupId: geo-or-product
+      # ...
+    - id: product-line-filter
+      label: Product line
+      requiredGroupId: geo-or-product
+      # ...
+```
+
 ##### Dashboard filters autocomplete
 
 When determining possible values for a dashboard filter, the system will take into account all relevant filters, including those applied to fields from joined tables.
