@@ -47,12 +47,24 @@ Lightdash supports the latest and legacy spec, though it's recommended to use th
 | `agg: median` | `median` |
 | `agg: min` / `agg: max` | `min` / `max` |
 | `agg: percentile` | `percentile` |
+| `agg: sum_boolean` | `sum` over `CASE WHEN <bool> THEN 1 ELSE 0 END` |
+| Metric or measure `filter:` (same-model `Dimension()` refs) | filter compiled into the metric SQL as `CASE WHEN <condition> THEN <expr> END` |
+| `ratio` metrics (inputs on the same dbt model) | `number` metric: `(${numerator} * 1.0) / NULLIF(${denominator}, 0)` |
+| `derived` metrics (inputs on the same dbt model, no offsets) | `number` metric with the `expr` rewritten over `${metric}` references |
 
 Also carried over:
 
 - **Measure** `expr`: bare column references become the metric's SQL, qualified with `${TABLE}` (for example, `expr: amount` becomes `sql: ${TABLE}.amount`). Full SQL expressions are used verbatim.
 - **Labels and descriptions**: from the metric, falling back to the measure's.
 - **Percentile value**: MetricFlow's legacy spec authors percentile as a `0–1` fraction (`percentile: 0.95`) and the latest spec authors it as `0–100` (`percentile: 95`). Both are normalized to Lightdash's `0–100` scale automatically.
+- **`config.meta.hidden` and `config.meta.group_label`**: read from the metric first, falling back to the measure. Use them to hide translated helper metrics from the explore sidebar or [group them](/references/metrics#groups) alongside your other Lightdash metrics. Unknown keys under `config.meta` are ignored.
+
+### Notes on filters, ratio, and derived metrics
+
+- **Filters** translate when every `{{ Dimension('entity__dim') }}` reference resolves on the metric's own semantic model. Cross-model dimension references, and other template functions (`TimeDimension()`, `Entity()`, `Metric()`), skip the metric with a warning.
+- **Ratio and derived inputs** must all resolve to metrics on the same dbt model. In MetricFlow, inputs can come from any semantic model because each input is aggregated in its own subquery; Lightdash compiles a single query per explore, so cross-model inputs are skipped with a warning. Join the relevant models in a Lightdash explore and author a `number` metric by hand if you need that today.
+- **Filtered inputs** to a ratio or derived metric (for example, a ratio whose numerator has its own `filter:`) compile the filter into a hidden helper metric that the visible metric references.
+- **Time-offset inputs** to a derived metric (`offset_window` or `offset_to_grain`) are skipped with a warning.
 
 ## What's not supported yet
 
@@ -60,17 +72,16 @@ These are skipped with a warning on deploy (details under `--verbose`):
 
 | MetricFlow feature | Notes |
 | --- | --- |
-| `ratio` metrics | numerator/denominator over other metrics |
-| `derived` metrics | expressions over other metrics |
 | `cumulative` metrics | require time-spine semantics |
 | `conversion` metrics | require entity-journey semantics |
-| Metric or measure `filter:` | MetricFlow where-filter templates (e.g. `{{ Dimension('order__status') }} = 'completed'`) don't map to Lightdash metric filters |
-| `agg: sum_boolean` | no Lightdash equivalent |
+| Cross-model `ratio` / `derived` inputs | inputs must all resolve on the same dbt model — see the notes above |
+| Derived-metric `offset_window` / `offset_to_grain` | time-offset inputs aren't translated |
+| `filter:` templates that aren't same-model `Dimension()` refs | cross-model dimensions and `TimeDimension()` / `Entity()` / `Metric()` templates don't map to Lightdash metric filters |
 | `agg: percentile` without a numeric `percentile` value | skipped rather than defaulted — set `type_params.measure.agg_params.percentile` (legacy) or `agg_params.percentile` (latest) |
 | `percentile_type: discrete` | Lightdash percentiles always compile to `PERCENTILE_CONT` |
 | `join_to_timespine`, `fill_nulls_with`, `non_additive_dimension` | no equivalents |
 
-`ratio`, `derived`, `cumulative`, and filtered metrics, as well as server-side translation from a connected Git repo, are on the roadmap.
+Cumulative and conversion metric translation, cross-model ratio/derived inputs, and server-side translation from a connected Git repo are on the roadmap.
 
 And these parts of the semantic model are currently skipped:
 
@@ -96,10 +107,15 @@ semantic_models:
         type: time
         type_params:
           time_granularity: day
+      - name: status
+        type: categorical
     measures:
       - name: total_revenue
         agg: sum
         expr: amount
+      - name: order_count
+        agg: count
+        expr: order_id
       # create_metric: true auto-creates a metric — also translated
       - name: unique_customers
         agg: count_distinct
@@ -112,6 +128,25 @@ metrics:
     type: simple
     type_params:
       measure: total_revenue
+    # config.meta carries over to the translated Lightdash metric
+    config:
+      meta:
+        group_label: Order metrics
+  # Same-model filter → CASE WHEN in the metric SQL
+  - name: completed_revenue
+    label: Completed revenue
+    type: simple
+    type_params:
+      measure: total_revenue
+    filter: |
+      {{ Dimension('order__status') }} = 'completed'
+  # Same-model ratio → Lightdash `number` metric
+  - name: revenue_per_order
+    label: Revenue per order
+    type: ratio
+    type_params:
+      numerator: total_revenue
+      denominator: order_count
 ```
 
-Deploying this project gives the `orders` explore two metrics — `total_revenue` (a `sum` on `${TABLE}.amount`, labelled "Total revenue") and `unique_customers` (a `count_distinct` on `${TABLE}.customer_id`, from the `create_metric: true` measure) — with no Lightdash-specific YAML.
+Deploying this project produces four metrics on the `orders` explore: `total_revenue` (`sum` on `${TABLE}.amount`, grouped under "Order metrics"), `unique_customers` (`count_distinct` on `${TABLE}.customer_id`, from the `create_metric: true` measure), `completed_revenue` (a `sum` over `CASE WHEN ${TABLE}.status = 'completed' THEN ${TABLE}.amount END`), and `revenue_per_order` (a `number` metric of `(${total_revenue} * 1.0) / NULLIF(${order_count}, 0)`) — all with no Lightdash-specific YAML.
