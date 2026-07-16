@@ -555,6 +555,25 @@ Virtual view download and upload reuse the same content-as-code scopes as charts
 - `view:ContentAsCode` is required to download virtual views.
 - `manage:ContentAsCode` is required to upload virtual views. Uploads also check the virtual-view edit permissions the UI enforces, so the CLI, API, and app stay in lockstep.
 
+## Who can upload content as code
+
+Content-as-code write access is split into two scopes so you can grant chart and dashboard uploads without unlocking scheduled deliveries, alerts, and Google Sheets uploads:
+
+- **Editors** hold `create:ContentAsCode`. They can create, update, and move charts and dashboards via `lightdash upload`, including through AI agent and [MCP](/references/integrations/lightdash-mcp) content tools that write the same content. Editor uploads enforce the same space-level access that the UI applies — including current-space checks on moves, checks on dashboard-contained charts, and a closest-existing-ancestor check when creating nested spaces (so a denied upload never leaves an orphaned space behind). Uploads into a dashboard use the same `SavedChart` create/update space check as the UI, so a role that can edit dashboard-contained charts in the UI can also edit them through `lightdash upload`.
+- **Developers** and **Admins** hold `manage:ContentAsCode`, which covers everything Editors can do plus scheduled deliveries, alerts, Google Sheets uploads, and space and permission mutations.
+
+Writing SQL still needs the same scopes as the UI:
+
+- SQL charts require `manage:CustomSql`.
+- New or changed custom SQL dimensions require `manage:CustomFields`.
+- New or changed custom SQL table calculations require `manage:CustomSqlTableCalculations`.
+
+Custom SQL is diffed against the persisted chart, so re-uploading a chart whose SQL hasn't changed passes without the extra scopes.
+
+If an upload is blocked, the CLI now names the content slug (and any referenced chart or space slugs) that tripped the check, and lists every failing permission on a single upload rather than only the first one — so you can see at a glance which resources need attention.
+
+Existing custom roles and service accounts that hold `manage:ContentAsCode` keep exactly their current behavior. See [Content-as-code scopes](/references/workspace/custom-roles#content-as-code-scopes) for the full scope ladder.
+
 ## Dashboard as code yml reference
 
 The yml configuration for dashboards as code is extensive. It covers both dashboards and individual charts. The best way to start is often to create your content in the Lightdash UI, download it, and in most cases the structure will be fairly intuitive. Below are outlines of the structures you will find for both types of content to provide some additional context.
