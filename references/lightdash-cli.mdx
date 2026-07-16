@@ -115,6 +115,7 @@ For examples and command-specific options, click through the command in the tabl
 | Command                                                                                 | Description                                                                        |
 | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 |[`lightdash login`](/references/lightdash-cli#lightdash-login)                           | Log in to a Lightdash instance using email/password or a token                     |
+|[`lightdash connect-snowflake`](/references/lightdash-cli#lightdash-connect-snowflake)   | Sign in to Snowflake via SSO and deposit a durable credential into the setup wizard |
 |[`lightdash config set-project`](/references/lightdash-cli#lightdash-config-set-project) | Choose or set the Lightdash project you are working on                             |
 |[`lightdash config get-project`](/references/lightdash-cli#lightdash-config-get-project) | Get the current active project                                                     |
 |[`lightdash config list-projects`](/references/lightdash-cli#lightdash-config-list-projects) | List all non-preview projects in your organization                             |
@@ -177,6 +178,54 @@ Log in to a custom domain with a personal access token (exclude `--token` to log
 
 ```bash
 lightdash login https://custom.lightdash.domain --token bv6105f53cb127087189cfib180a3131
+```
+
+### `lightdash connect-snowflake`
+
+Sign in to Snowflake using browser-based SSO and deposit a durable credential into an open Lightdash project setup wizard. Use this during project creation when your Snowflake account requires SSO or MFA and you want to avoid pasting a password, private key, or PAT.
+
+<Info>
+  This command is only useful during project creation and requires the `warehouse-connect-onboarding` feature flag to be enabled on your Lightdash instance. Start the flow from the **Connect via Lightdash CLI (SSO)** option on the Snowflake connection form — the wizard generates the one-time `--code` and shows the full command for you to run.
+</Info>
+
+The CLI opens Snowflake SSO in a browser, then provisions a durable credential in this order:
+
+1. A locally-generated **RSA-2048 key-pair**, registered on your Snowflake user with `ALTER USER … SET RSA_PUBLIC_KEY` in the first free slot and verified with a diagnostic connection.
+2. If key-pair provisioning fails, a **365-day Programmatic Access Token** (PAT).
+3. If both fail, the CLI prints admin remediation SQL and exits without depositing a credential.
+
+The resulting credential is deposited into the browser tab that generated the code and used to create the project. Raw short-lived OAuth tokens are never deposited.
+
+```console
+lightdash connect-snowflake --url <lightdash-url> --code <one-time-code> --account <account>
+```
+
+**Required options:**
+
+- `--url <lightdash-url>`
+  - The URL of your Lightdash instance (for example `https://app.lightdash.cloud`).
+- `--code <one-time-code>`
+  - The single-use connect code shown in the Snowflake connection form. Valid for 15 minutes.
+- `--account <account>`
+  - Your Snowflake [account identifier](https://docs.snowflake.com/en/user-guide/admin-account-identifier) (for example `ecomstore-xy12345`).
+
+**Optional overrides:**
+
+Any of these that you omit are resolved from your Snowflake session defaults or picked in the browser tab after the credential is deposited.
+
+- `--user <username>` — Snowflake username override.
+- `--database <database>` — default database.
+- `--warehouse <warehouse>` — default compute warehouse.
+- `--role <role>` — Snowflake role to use.
+- `--schema <schema>` — default schema.
+
+**Example:**
+
+```bash
+lightdash connect-snowflake \
+  --url https://app.lightdash.cloud \
+  --code 8f3c9a2b1e4d \
+  --account ecomstore-xy12345
 ```
 
 ### `lightdash config set-project`

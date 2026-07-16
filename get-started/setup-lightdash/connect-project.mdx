@@ -55,6 +55,14 @@ We currently support:
 
 We always recommend giving read-only permissions to Lightdash, that way you ensure than no data can be manipulated. See each section below for warehouse specific details.
 
+<Accordion title="Connect to your warehouse without a dbt project (warehouse-first onboarding)">
+  When the `warehouse-connect-onboarding` feature flag is enabled, the **Create new project** screen shows a **Connect to your warehouse** option alongside the standard "Connect via CLI" and "Connect manually" flows.
+
+  Choosing it takes you directly to the warehouse connection form and creates the project with dbt type `NONE` — no dbt project is imported and no dbt compilation runs. Explores are populated directly from the warehouse catalog instead of dbt models, so this is a good fit if you want to start exploring your data before you have a dbt project set up. You can add or switch to a dbt project later from **Project settings**.
+
+  Combine this with **Connect via Lightdash CLI (SSO)** on Snowflake (see below) to create a project without ever pasting a credential.
+</Accordion>
+
 <Accordion title="Adding Lightdash's static IP addresses to your allow-list">
   
   Since we host your Lightdash for you, you may need to add our static IP addresses to the allow-list for your security group or firewall rules so they don’t block calls from your Lightdash Cloud to your connected databases.
@@ -668,7 +676,50 @@ If you're a snowflake admin you can list all users available in the snowflake co
 
 ##### Authentication type
 
-Choose to authenticate using either a user account (using "Sign in with Snowflake") or with a service account using a JSON key file or password.
+Choose to authenticate using either a user account (using "Sign in with Snowflake" or "Connect via Lightdash CLI (SSO)") or with a service account using a JSON key file or password.
+
+##### Connect via Lightdash CLI (SSO)
+
+<Info>
+  This method is available behind the `warehouse-connect-onboarding` feature flag and only applies during **project creation**. Contact Lightdash support to enable it for your workspace.
+</Info>
+
+Use this when your Snowflake account requires SSO (or MFA) and you don't want to paste a password, private key, or PAT to create the project. The Lightdash CLI signs you in to Snowflake in your browser and provisions a durable credential that is deposited straight into the project connection form — you never handle the secret yourself.
+
+**How it works:**
+
+1. In the Snowflake connection form, choose **Connect via Lightdash CLI (SSO)**. Lightdash generates a single-use connect code (valid for 15 minutes) and shows the CLI command to run.
+2. Run the command shown in the setup wizard from a machine that has the [Lightdash CLI](/references/lightdash-cli) installed:
+
+   ```bash
+   lightdash connect-snowflake \
+     --url https://app.lightdash.cloud \
+     --code <one-time-code> \
+     --account ecomstore-xy12345
+   ```
+
+3. The CLI opens your Snowflake SSO login in a browser. Once you sign in, the CLI mints a durable Snowflake credential and deposits it into the setup wizard tab.
+4. The wizard shows **Connected as `<user>` ✓**. Pick a database, warehouse, role, and schema from the session-populated dropdowns (or accept the session defaults), then submit the form to create the project.
+
+**Credential type the CLI provisions:**
+
+The CLI never deposits your raw SSO token. It tries, in order:
+
+1. **Key-pair authentication (preferred)** — generates a local RSA-2048 key-pair and registers the public key in the first free slot on your Snowflake user with `ALTER USER … SET RSA_PUBLIC_KEY`. The key is verified with a diagnostic connection before deposit.
+2. **Programmatic Access Token (PAT)** — if key-pair provisioning fails (for example, because both `RSA_PUBLIC_KEY` slots are already in use), the CLI falls back to a Snowflake [Programmatic Access Token](https://docs.snowflake.com/en/user-guide/programmatic-access-tokens) valid for 365 days.
+
+If both fail, the CLI prints admin remediation SQL and exits without depositing a credential.
+
+**Optional flags:**
+
+You can preset any of `--user`, `--database`, `--warehouse`, `--role`, or `--schema`. Anything not provided is filled from your Snowflake session defaults, or picked in the browser tab from the discovered options.
+
+**Security notes:**
+
+- The connect code is single-use and expires after 15 minutes; only a SHA-256 hash of it is stored server-side.
+- Generating a new connect code invalidates any previous codes for your user.
+- A code can only be claimed once, by the user who created it.
+- Deposited credentials are encrypted at rest and cleared from the deposit store as soon as the browser tab claims them.
 
 ##### Sign in with Snowflake
 
