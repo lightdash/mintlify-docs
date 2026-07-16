@@ -341,31 +341,61 @@ Value-less relative-date operators (`in the current`, `not in the current`) are 
 
 ##### Required filters and filter requirement groups
 
-Dashboard filters can be marked as **required**, meaning the dashboard won't run any queries until a viewer supplies a value. You can also compose several filters into a **requirement group** — an "at least one of" rule that unlocks the dashboard as soon as *any* member of the group is set. Use this when a dashboard makes sense with, say, a `Region` filter **or** a `Product line` filter, but not with neither.
+Dashboard filters can be marked as **required**, meaning the dashboard won't load any data until a viewer picks a value. You can also combine several filters into a **requirement group** — an "at least one of" rule where setting *any* filter in the group unlocks the dashboard. This is handy when viewers should always narrow down the data, but it doesn't matter whether they do it by `Region` or by `Product line`.
 
 <Info>
-Filter requirement groups are gated behind the `dashboard-filter-requirements` feature flag. With the flag off, only the per-filter `Required` toggle is available and any saved group configuration is ignored. Contact Lightdash support to enable it for your organization.
+Filter requirement groups and the guided setup experience are gated behind the `dashboard-filter-requirements` feature flag. With the flag off, only the per-filter `Required` toggle is available and any saved group configuration is ignored. [Contact Lightdash support](mailto:support@lightdash.com) to enable it for your organization. If you're self-hosting, set `LIGHTDASH_ENABLE_FEATURE_FLAGS=dashboard-filter-requirements`.
 </Info>
 
 **Building filter rules (editors)**
 
-While editing a dashboard, each dashboard filter has a **Required** toggle in its popover for the single-filter case. To build an any-of group, open the **Filter rules** popover next to the filter bar:
+While editing a dashboard, you'll find a **Required** toggle in each filter's popover, along with an **Add an alternative filter** button to turn a single required filter into a group. To see and manage all of a dashboard's rules in one place, open the **Filter rules** popover next to the filter bar:
 
-1. Click **Add rule** and pick two or more filters that should form the group. Only filters that are eligible — active filters with no default value, and not already part of another rule — can be added.
-2. Optionally set a **Note for viewers** (`requiredFiltersNote`). This appears as the subtitle on the guided setup card, so use it to explain *why* the dashboard needs one of these filters.
-3. Rule edits are staged locally; nothing takes effect until you click **Save**.
+1. Click **Add rule** and pick the filters for the rule. A rule with a single filter is a plain required filter; add more filters to turn it into an "at least one of" group. You can only pick saved filters that have no default value and aren't already part of another rule.
+2. Optionally, write a **Note for viewers**. It appears as the subtitle on the guided setup card, so use it to explain *why* the dashboard needs these filters.
+3. Click **Save** in the popover to apply your rules, then save the dashboard as usual. Closing the popover without saving discards your changes.
 
-Requirement group members must be **valueless** (no default value). Setting a default value on a required filter would satisfy the requirement automatically, so Lightdash strips values from required filters on save.
+<Frame>
+  <img
+    alt="The Filter rules popover on a dashboard in edit mode, showing a required filter and an at-least-one-of group"
+    className="block dark:hidden"
+    src="/images/guides/limiting-data-using-filters/filter-requirements-rules-popover-light.png"
+  />
+  <img
+    alt="The Filter rules popover on a dashboard in edit mode, showing a required filter and an at-least-one-of group"
+    className="hidden dark:block"
+    src="/images/guides/limiting-data-using-filters/filter-requirements-rules-popover-dark.png"
+  />
+</Frame>
+
+Filters in a rule can't have a default value — a default would satisfy the rule on its own, defeating the point. If a required filter ends up with a value, Lightdash clears it when you save the dashboard.
 
 **What viewers see**
 
-While any required filter or any-of group is unmet, chart tiles do not run their queries. Instead, the dashboard shows a **guided setup card** with one section per unmet rule and a live picker for each filter. Individual filter chips in the filter bar also show a requirement icon and an "unmet" indicator. The dashboard unlocks the moment every rule is satisfied — and re-locks if a viewer clears a value that had been satisfying a rule.
+While any rule is unmet, chart tiles stay locked and don't load any data. Instead, the dashboard shows a **guided setup card** with one section per rule, a picker for each filter, and a footer that counts down the remaining rules. Filters in the filter bar also show a requirement icon while their rule is unmet. The dashboard loads the moment every rule is met — and locks again if a viewer clears a value that was satisfying a rule.
 
-A rule is considered satisfied when at least one of its filters has a value, **or** uses a value-less operator that still filters data (`is null`, `is not null`, `in the current`, `not in the current`). Enabled filters with empty values do **not** satisfy a rule.
+Viewers can dismiss the card with **Set filters in the toolbar instead** and pick values from the filter bar directly; either way, tiles stay locked until every rule is met.
+
+<Frame>
+  <img
+    alt="The guided setup card shown to viewers while a dashboard's filter rules are unmet"
+    className="block dark:hidden"
+    src="/images/guides/limiting-data-using-filters/filter-requirements-guided-setup-light.png"
+  />
+  <img
+    alt="The guided setup card shown to viewers while a dashboard's filter rules are unmet"
+    className="hidden dark:block"
+    src="/images/guides/limiting-data-using-filters/filter-requirements-guided-setup-dark.png"
+  />
+</Frame>
+
+A rule counts as met when at least one of its filters has a value, **or** uses an operator that filters data without needing a value (`is null`, `is not null`, `in the current`, `not in the current`, `in the period-to-date`). A filter left as `is any value` doesn't count.
+
+On dashboards with [tabs](/get-started/exploring-data/dashboards#add-tabs), rules are checked per tab: a rule only locks the tabs where its filters apply to at least one tile, so viewers can still use tabs the rule doesn't touch.
 
 **Dashboards-as-code**
 
-Requirement groups are stored on each member filter as a `requiredGroupId` — every filter with the same `requiredGroupId` belongs to the same "any one required" group. The editor-authored subtitle lives on the dashboard config as `requiredFiltersNote`.
+A single required filter is stored as `required: true` on the filter. Requirement groups are stored on each member filter as a `requiredGroupId` — every filter with the same `requiredGroupId` belongs to the same "at least one of" group. The note for viewers lives on the dashboard config as `requiredFiltersNote`.
 
 ```yaml
 config:
