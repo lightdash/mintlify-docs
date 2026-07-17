@@ -1,0 +1,111 @@
+---
+title: "Deep research"
+sidebarTitle: "Deep research"
+description: "Ask an AI agent a high-stakes question and get back an evidence-backed report — with sources, findings, methodology, and limitations."
+---
+
+<Info>
+  **Availability:** Deep research is a **Beta** feature available on **Enterprise** plans. It is gated by the `ai-deep-research` feature flag (the same flag used by the Deep Research API). Contact Lightdash to enable it for your organization.
+</Info>
+
+Deep research is a mode of the AI agent composer for questions that need more than a single-turn answer. Instead of returning one chart or a short summary, the agent plans an investigation, gathers evidence from multiple sources, and writes a structured report with numbered citations you can trace back to the underlying queries and documents.
+
+Deep research is the in-product counterpart to the Deep Research API — the same effort tiers and evidence model, exposed as a UI you can drive from an agent thread.
+
+## When to use it
+
+Reach for deep research when the question is worth a report, not a reply:
+
+- *"Which product categories are trending down this quarter, and why?"*
+- *"What's driving the drop in returning-customer revenue over the last 90 days?"*
+- *"Compare paid-vs-organic acquisition quality across our top three regions."*
+
+For a quick lookup or a single chart, stay in the default **Ask** mode — deep research is optimized for multi-step investigations, not for one-off queries.
+
+## Turning it on in the composer
+
+The agent composer has an inline **Deep research** switch next to the message input. **Ask** is the default and behaves exactly as documented in [Using AI agents](/guides/ai-agents/using-ai-agents) — turning deep research on does not change normal Ask behavior.
+
+Deep research is available only on **new** agent conversations. To start one, open the agent and click **New thread**, then toggle **Deep research** before you send your first message.
+
+## Preflight and depth tiers
+
+When deep research is on, a preflight panel appears above the composer. It lets you pick the **research depth** and shows which evidence sources the agent will search.
+
+Depths map to the same effort budgets used by the Deep Research API:
+
+| Depth       | API effort | Duration          | Warehouse queries | When to use |
+| ----------- | ---------- | ----------------- | ----------------- | ----------- |
+| **Low**         | `low`      | Up to 15 minutes  | Up to 10          | A focused check of the strongest available evidence. |
+| **Medium**      | `medium`   | Up to 30 minutes  | Up to 25          | A balanced investigation with validation and alternatives. |
+| **High**        | `high`     | Up to 45 minutes  | Up to 50          | A broad investigation with more competing explanations. |
+| **Extra High**  | `xhigh`    | Up to 55 minutes  | Up to 100         | The widest evidence review for high-stakes questions. |
+
+Duration and query counts are ceilings — many runs finish sooner. Warehouse-query allowances count executed queries against your project's semantic layer or SQL, so heavier tiers do more validation and consider more alternative explanations.
+
+The preflight also lists the **evidence sources** the current service supports (for example, project data and the public web). Sources that aren't wired up for your deployment are hidden, so you always see the actual research surface for your workspace.
+
+## The run card
+
+Submitting a deep research question registers a durable **run card** in the thread immediately. Your question is never lost, even if the network hiccups or you close the tab.
+
+The card walks through these states:
+
+- **Queued** — the run has been accepted and is waiting to start.
+- **Running** — the agent is planning, gathering evidence, and validating findings. The card shows the current phase (planning, gathering context, testing explanations, reviewing evidence, writing the report) and the last few progress events.
+- **Complete** — the report is ready. The card expands into the [report view](#report-view).
+- **Partially complete** — the run hit a limit or a soft failure but produced a usable report from the evidence it did gather.
+- **Cancelled** — you (or someone else on your team) stopped the run. The card shows sanitized recovery copy so you can retry with a new question.
+- **Failed** — the run couldn't finish. The card explains what to try next without leaking internal errors.
+
+You can safely leave the thread while a run is in progress. State is polled from durable storage, so the card stays accurate across page reloads, other browsers, and other devices signed in to the same account. Reopening the thread restores whatever state the run has reached.
+
+### Cancelling a run
+
+While a run is queued or running, the card exposes a **Cancel** action. Cancellation is best-effort and asynchronous — the card moves to a "cancellation requested" state, then to **Cancelled** once the backend confirms.
+
+## Report view
+
+A completed (or partially complete) run expands into a linear report inside the agent workspace. The report has a stable structure so you know where to look:
+
+- **Executive answer** — the headline finding in a paragraph or two.
+- **Findings** — the evidence-backed claims that support the answer, each with its own confidence badge (`low` / `medium` / `high`). The report's overall confidence is the lowest confidence across findings.
+- **Alternatives and contradictions** — competing explanations the agent considered, and evidence that pushes against the executive answer.
+- **Definitions and methodology** — the scope and approach the agent used: the metrics it relied on, how it framed the question, and any assumptions.
+- **Limitations** — caveats about data coverage, freshness, or gaps in the semantic layer.
+- **Next questions** — suggested follow-ups the agent couldn't resolve in this run.
+
+### Numbered evidence rail
+
+Every claim in the report is tagged with a numbered marker. Clicking a marker jumps to the matching entry on the **evidence rail**:
+
+- On desktop, the rail is anchored beside the report.
+- On mobile, evidence opens in a bottom drawer.
+
+Each evidence entry links back to the source that supports the claim. Lightdash and warehouse evidence link to the exact query result, so you can rerun or inspect the query. Repository and document evidence link to the source file or page. Web evidence links to the fetched URL. Links are validated before they're rendered — only `https://` sources and internal Lightdash paths are shown, so the rail is safe to click through.
+
+## Follow-up actions
+
+From a completed run card, you can:
+
+- **Challenge** — push the agent to reconsider a finding you think is wrong.
+- **Rerun deeper** — resubmit the same question at a higher depth tier.
+- **Share** — send a link to the thread so a teammate can read the report.
+- **View activity** — inspect the ordered timeline of what the agent did during the run.
+- **Cancel** — available while a run is still in progress.
+
+Actions that don't have a backend-supported operation for the current run are hidden, so what you see on a card is what you can actually do with it.
+
+## Frequently asked questions
+
+**Can I use deep research on an existing thread?**
+No. Deep research runs must be started from a new thread. This keeps the composer mode, the depth, and the run history tied to a single conversation.
+
+**Does deep research use my project's data access settings?**
+Yes. Deep research honors the same [data access](/guides/ai-agents/data-access) rules as normal Ask mode, including dbt-tag scoping and any organization-level restrictions.
+
+**Do I have to keep the tab open?**
+No. Runs execute server-side. You can close the tab, switch projects, or come back the next day — the run card in the thread will reflect the current state.
+
+**How does deep research relate to the Deep Research API?**
+They share the same backend, effort tiers, and evidence model. Use the API when you want to trigger runs programmatically or fetch reports from another system; use the composer when a human is doing the investigation from within Lightdash.
