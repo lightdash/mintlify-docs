@@ -428,6 +428,10 @@ These tools reuse the same permissions, validation, and project context as the [
 </Info>
 
 <Info>
+  **Per-user permission gate.** `create_content` and `edit_content` are also gated on the caller's role having the `create:ContentAsCode` scope. The check runs when tools are registered, so users whose role doesn't grant that scope simply won't see these tools in `tools/list`. Built-in **Editors**, **Developers**, and **Admins** hold this scope by default; **Interactive Viewers** and **Viewers** do not. Custom roles need `create:ContentAsCode` added explicitly — see [custom roles](/references/workspace/custom-roles). Project, space, and content-level checks continue to be enforced at invocation time on top of registration gating.
+</Info>
+
+<Info>
   When prompting an agent to build content, ask it to use [verified content](#data-exploration) as a reference. The agent can call `find_content` and `read_content` on a verified chart, then use that JSON as the template for `create_content` — giving you new content that follows the patterns your team has already approved.
 </Info>
 
@@ -438,6 +442,21 @@ The assistant will call `read_content` to fetch the source chart, modify the JSO
 <Tip>
   For bulk edits across many dashboards or as part of a CI/CD pipeline, the [download-edit-upload workflow](/guides/developer/editing-dashboards-with-agents) using the Lightdash CLI is still the recommended approach. MCP content tools are best for interactive edits inside an AI assistant.
 </Tip>
+
+#### Scheduled deliveries
+
+- **Create scheduled delivery** (`create_scheduled_delivery`) - Schedule an existing chart or dashboard to be delivered on a cron schedule to Slack, email, or another supported destination. Point the tool at the content by slug and pass the schedule and recipients — the delivery is created against the active project using the caller's permissions.
+
+`create_scheduled_delivery` is registered independently from the content-write tools, so an organization can enable scheduled delivery MCP without enabling broader chart/dashboard writes for the same user (or vice versa). Two conditions must both be true for the tool to appear:
+
+1. The **Allow content changes via MCP** organization setting is on (**Settings → Ask AI → General**). This is the same kill-switch that controls `create_content` and `edit_content`.
+2. The caller's role grants the `create:ScheduledDeliveries` scope. Built-in **Interactive Viewers**, **Editors**, **Developers**, and **Admins** hold this scope by default; **Viewers** do not. Custom roles need `create:ScheduledDeliveries` added explicitly.
+
+Registration is gated on both checks — a user without the scope won't see `create_scheduled_delivery` in `tools/list` at all. When the tool is invoked, project-level authorization still applies on top.
+
+**Example prompt:** _"Set up a scheduled delivery of the `weekly-ecom-orders` chart to #analytics-updates in Slack every Monday at 9am."_
+
+The assistant will call `create_scheduled_delivery` with the chart's slug, the cron schedule, and the Slack destination — mirroring the behavior of the [AI agent](/guides/ai-agents) `createScheduledDelivery` tool but exposed to any MCP client.
 
 #### Agent context
 
@@ -719,7 +738,7 @@ A: Yes, each team member can set up their own MCP connection with their individu
 
 **Q: Can MCP modify my data or dashboards?**
 
-A: MCP can create and edit Lightdash charts and dashboards via the [content-as-code tools](#editing-content) when your user account has the required permissions. MCP cannot modify your underlying warehouse data — query execution is read-only (metric queries and SQL `SELECT` only). All write operations respect your existing Lightdash permissions and project access controls.
+A: MCP can create and edit Lightdash charts and dashboards via the [content-as-code tools](#editing-content), and can create [scheduled deliveries](#scheduled-deliveries), when your user account has the required permissions. MCP cannot modify your underlying warehouse data — query execution is read-only (metric queries and SQL `SELECT` only). All write operations respect your existing Lightdash permissions and project access controls, and each write tool is only registered for users whose role grants the corresponding scope.
 
 **Q: Claude returns data as text but no visual chart is displayed. What's wrong?**
 
