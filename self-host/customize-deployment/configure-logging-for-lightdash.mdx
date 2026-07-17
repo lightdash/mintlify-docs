@@ -21,3 +21,40 @@ By default Lightdash logs to the console in a human readable format. You can con
 | `LIGHTDASH_LOG_FILE_FORMAT`    | The format of log messages in the log file                  |           | `LIGHTDASH_LOG_FORMAT` |
 | `LIGHTDASH_LOG_FILE_PATH`      | The path to the log file                                    |           |    `./logs/all.log`    |
 | `LIGHTDASH_LOG_AUDIT_ACTOR_AS_STRING` | When `true`, audit log events serialize the `actor` field to a JSON string instead of a nested object. Enable this if your log indexer (e.g. Elasticsearch) maps `actor` as text and would otherwise drop it. |           |        `false`         |
+
+## Audit log `actor` format
+
+Audit log events include an `actor` field describing the user or session that triggered the event. By default `actor` is emitted as a nested JSON object. For log pipelines that require `actor` to be a scalar/text field (for example, Elasticsearch indexers that map it as `keyword` or `text` and drop events when they receive an object), set `LIGHTDASH_LOG_AUDIT_ACTOR_AS_STRING=true` to emit the same payload as a JSON-encoded string.
+
+Toggling the flag has no effect on Lightdash's behaviour and is safe to change at any time. Only the shape of `actor` changes — all other audit-log fields (`action`, `status`, `timestamp`, `resource`, etc.) are unchanged.
+
+**Default (`LIGHTDASH_LOG_AUDIT_ACTOR_AS_STRING=false`)** — `actor` is a nested object with `uuid`, `firstName`, `lastName`, `email`, `organizationUuid`, `organizationRole`, `groupMemberships`, and `type`:
+
+```json
+{
+  "action": "update",
+  "status": "allowed",
+  "timestamp": "2026-04-02T15:00:00.000Z",
+  "actor": {
+    "type": "session",
+    "uuid": "11111111-2222-3333-4444-555555555555",
+    "firstName": "Alex",
+    "lastName": "Doe",
+    "email": "alex@ecom-store.com",
+    "organizationUuid": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    "organizationRole": "admin",
+    "groupMemberships": []
+  }
+}
+```
+
+**Flag on (`LIGHTDASH_LOG_AUDIT_ACTOR_AS_STRING=true`)** — the same payload is emitted as a JSON-encoded string under `actor`:
+
+```json
+{
+  "action": "update",
+  "status": "allowed",
+  "timestamp": "2026-04-02T15:00:00.000Z",
+  "actor": "{\"type\":\"session\",\"uuid\":\"11111111-2222-3333-4444-555555555555\",\"firstName\":\"Alex\",\"lastName\":\"Doe\",\"email\":\"alex@ecom-store.com\",\"organizationUuid\":\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\",\"organizationRole\":\"admin\",\"groupMemberships\":[]}"
+}
+```
