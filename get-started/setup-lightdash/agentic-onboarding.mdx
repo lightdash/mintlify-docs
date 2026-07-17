@@ -1,0 +1,152 @@
+---
+title: "Agentic onboarding with Aurora (Beta)"
+sidebarTitle: "Agentic onboarding"
+description: Sign up, connect a warehouse, and start chatting with Aurora — Lightdash's default AI agent — before any dbt models or explores exist.
+---
+
+<Warning>
+  Agentic onboarding is currently in Beta and gated by feature flags. Contact
+  Lightdash support to enable it for your organization.
+</Warning>
+
+Agentic onboarding is a guided flow for brand-new organizations. You sign up with an email, set up your organization, connect a warehouse, and land in a live chat with **Aurora** — a default AI agent that Lightdash provisions automatically for the new project. Because the agent runs in SQL mode from day zero, you can query your warehouse before you've built any dbt models, semantic layer, or explores.
+
+## When to use it
+
+Use agentic onboarding when you want to:
+
+- Evaluate Lightdash against a warehouse without preparing a dbt project first.
+- Get a working AI agent that can answer questions using the warehouse catalog directly.
+- Hand off the semantic-layer buildout to a coding agent (Claude Code, Cursor, etc.) and keep an analyst-facing chat live in the meantime.
+
+If you already have a dbt project you want to connect, use the standard [project setup flow](/get-started/setup-lightdash/get-project-lightdash-ready) instead.
+
+## Prerequisites
+
+Agentic onboarding is gated by four feature flags on your organization. All four must be enabled:
+
+- `email-only-signup` — allow the initial email-only signup step.
+- `organization-setup-page` — enable the two-step organization setup screen.
+- `warehouse-connect-onboarding` — enable the data-source picker and warehouse-only project creation.
+- The AI copilot feature flag — required so Aurora can be auto-provisioned and the chat composer can create real threads.
+
+If AI copilot isn't enabled for the organization, the flow still completes but the day-0 chat composer is rendered disabled with an explainer callout. Enable copilot to unlock the live chat.
+
+## The flow
+
+<Steps>
+  <Step title="Email-only signup">
+    A new user signs up with just an email address (no password, no dbt setup) — for example `alex@ecom-store.com`.
+  </Step>
+  <Step title="Organization setup">
+    A two-step screen collects the organization name and appearance. When the signup email uses a company domain, Lightdash pulls the brand (logo, colors) from that domain via Brandfetch as a starting point. You can override anything before continuing.
+  </Step>
+  <Step title="Aurora agent intro (`/onboarding/agent`)">
+    You land on a short intro screen for Aurora. The chat composer is disabled until a warehouse is connected, and a call-to-action prompts you to connect a data source.
+  </Step>
+  <Step title="Data-source picker (`/onboarding/data-source`)">
+    Pick a warehouse from the catalog. On the current Beta:
+
+    - **Snowflake** is the golden path and is fully supported. CLI SSO is pre-selected as the authentication method, with an account-identifier placeholder to guide you.
+    - Other warehouses show as "Coming soon" in this flow.
+    - Non-warehouse sources (MCP, dbt, CSV) are shown but disabled.
+  </Step>
+  <Step title="Warehouse-only project creation">
+    The Snowflake connect form is the standard warehouse settings form, minus the dbt project step. Submitting **Test & save** creates a warehouse-only project in your organization. No dbt models are required.
+  </Step>
+  <Step title="Project ready checklist (`/onboarding/project-ready/:projectUuid`)">
+    A staged checklist runs against the real warehouse catalog:
+
+    - Connecting to warehouse
+    - Reading schemas (with the schema count from the catalog)
+    - Indexing tables & columns (with the table count from the catalog)
+    - Building semantic catalog
+
+    When all four steps land, Lightdash fires a one-shot confetti burst and enables **Start chatting with Aurora**.
+  </Step>
+  <Step title="Live day-0 chat with Aurora">
+    The chat composer on the onboarding page now creates a real thread against the auto-provisioned Aurora agent with **SQL mode enabled**. Because there are no explores yet, Aurora falls back to warehouse discovery tools to answer questions using the catalog directly, rather than responding that no data is available.
+  </Step>
+</Steps>
+
+## Aurora auto-provisioning
+
+When the first non-preview project is created in a new organization, Lightdash provisions a default AI agent server-side:
+
+- The agent is named **Aurora** and is created with data access enabled and SQL mode available.
+- Provisioning is gated on AI copilot being enabled for the organization. If copilot is disabled, provisioning is skipped and the day-0 chat is rendered disabled.
+- The operation is **idempotent** — repeated project-creation events on the same organization won't create duplicate Aurora agents.
+- Provisioning is **non-throwing**. If it fails for any reason, project creation still succeeds and you can create an agent manually from [Ask AI settings](/guides/ai-agents/getting-started).
+- The `ai_agent.created` analytics event carries an `autoProvisioned: true` flag so this path can be distinguished from a manually-created agent in analytics.
+
+Preview projects don't get an auto-provisioned agent — the flag only applies to real projects that would receive an agent anyway.
+
+## SQL mode on day zero
+
+The onboarding chat composer opens Aurora with SQL mode **on** by default. This matters on a warehouse-only project:
+
+- Without any dbt models, the project has zero explores and zero semantic-layer content.
+- In SQL mode, Aurora uses the warehouse discovery tools (list schemas, list tables, describe columns, run SQL) instead of only searching explores.
+- The zero-explores system prompt is tuned so Aurora will offer warehouse-catalog answers rather than telling you there is no data.
+
+You can turn SQL mode off later once you've built explores; see [Data access](/guides/ai-agents/data-access) for how SQL mode interacts with agent permissions.
+
+<Note>
+  If AI copilot is disabled for your organization, the onboarding composer is
+  rendered disabled with an explainer, and no agent thread is created.
+</Note>
+
+## Coding-agent handoff prompt
+
+From the connect flow, you can also copy a prompt to run in your coding agent (Claude Code, Cursor, or similar). The agent uses that prompt to finish setting up the semantic layer — building the dbt project, models, and metrics — on top of the warehouse you just connected.
+
+The copiable prompt now includes the **configured database and schema** from the project's warehouse connection, alongside the warehouse type and prepared project UUID:
+
+```markdown
+# Complete Lightdash project setup
+
+## Prepared setup
+
+- Warehouse type: snowflake
+- Prepared project UUID: 00000000-0000-0000-0000-000000000000
+- Configured database: ANALYTICS
+- Configured schema: PUBLIC
+
+## Next step
+
+Fetch and follow the remaining instructions from: https://app.lightdash.cloud/api/v1/prompts/project-onboarding
+Use the prepared setup values above whenever those instructions refer to a setup value.
+```
+
+<Note>
+  Credentials from the warehouse connection are never included in the prompt.
+  Only the non-sensitive `database` and `schema` fields are copied, so the
+  coding agent knows where in the warehouse to focus.
+</Note>
+
+The database and schema fields are derived from the warehouse connection you saved, and are mapped consistently across warehouse types:
+
+| Warehouse | Database | Schema |
+| --- | --- | --- |
+| Snowflake, Athena | `database` | `schema` |
+| Postgres, Redshift, Trino | `dbname` | `schema` |
+| BigQuery | `project` | `dataset` |
+| Databricks | `catalog` | `database` |
+| ClickHouse | — | `schema` |
+| DuckDB (Ducklake) | `catalogAlias` (defaults to `ducklake`) | `schema` |
+
+The onboarding instructions the coding agent follows also changed:
+
+- The agent is told to use the warehouse type, project UUID, and — when listed — the configured database and schema from the prompt.
+- When running the broad catalog query, the agent is instructed to **prioritize tables in the configured database and schema** (matching names case-insensitively) unless repository evidence points elsewhere.
+- If the catalog spans many databases or schemas and neither the configured connection nor repository evidence identifies where to look, the agent is told to **ask you which database and schema to use** before continuing.
+
+This keeps the coding agent focused on the warehouse location the project is already pointed at, instead of picking arbitrary tables from anywhere the credentials happen to reach.
+
+## After onboarding
+
+Once you're chatting with Aurora, the project behaves like any other Lightdash project:
+
+- Add more agents or customize Aurora from [Ask AI settings](/guides/ai-agents/getting-started).
+- Build out the dbt project and semantic layer either by running the coding-agent prompt above, or by following the standard [project setup guide](/get-started/setup-lightdash/get-project-lightdash-ready).
+- Invite the rest of your team — see [Invite your team](/get-started/setup-lightdash/invite-new-users).
