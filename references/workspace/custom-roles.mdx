@@ -144,13 +144,15 @@ Custom roles are assigned at the project level to provide granular access contro
 
 ### Content-as-code scopes
 
-Three scopes control access to [content as code](/guides/developer/dashboards-as-code), the CLI workflow for managing charts and dashboards as YAML files. They form a read → write → narrow-write ladder.
+Four scopes control access to [content as code](/guides/developer/dashboards-as-code), the CLI workflow for managing charts and dashboards as YAML files. They form a read → narrow-write → write → manage ladder.
 
 **Download content as code** (`view:ContentAsCode`) lets a user pull existing charts and dashboards as YAML via `lightdash download`. It does not allow pushing changes back. This is the common "let people pull templates" grant.
 
 **Upload content as code to own previews** (`manage:ContentAsCode@self`) is a narrow upload right: users can run `lightdash upload` only against preview projects they created themselves. This is the intended day-to-day scope for non-Developer users in CI/CD-style workflows where they need to validate their own preview but shouldn't push to shared projects. Pair it with `view:ContentAsCode` so they can still pull from shared projects.
 
-**Download and upload content as code** (`manage:ContentAsCode`) grants both download and upload across any project the role applies to. Users with this scope can run `lightdash upload` to overwrite charts and dashboards in the project. This implies `view:ContentAsCode` and the `@self` upload right.
+**Upload content as code** (`create:ContentAsCode`) grants chart, dashboard, and SQL-chart uploads across any project the role applies to, without the broader scheduled-delivery, alert, and Google Sheets upload rights that `manage:ContentAsCode` includes. This is the scope built-in **Editors** hold — it unlocks `lightdash upload` for charts and dashboards (and the AI agent / MCP content tools that create or edit the same content) while still enforcing the same space-level access checks that the UI applies. Writing SQL charts still requires `manage:CustomSql`; adding or changing custom SQL dimensions still requires `manage:CustomFields`; adding or changing custom SQL table calculations still requires `manage:CustomSqlTableCalculations`. Custom SQL is diffed against the persisted chart, so re-uploading a chart whose SQL hasn't changed passes without those extra scopes.
+
+**Download and upload content as code** (`manage:ContentAsCode`) grants everything in `create:ContentAsCode` plus the ability to upload scheduled deliveries, alerts, Google Sheets uploads, and space/permission mutations via content as code. This is the scope built-in **Developers** and **Admins** hold. It implies `view:ContentAsCode`, `create:ContentAsCode`, and the `@self` upload right.
 
 Use **download-only** to let a user pull production YAML for local development, diffing, or inspection without giving them the ability to overwrite production content. Combine with a controlled promotion path (e.g., CI/CD running with a service account that holds the manage scope) so writes only land via the pipeline.
 
