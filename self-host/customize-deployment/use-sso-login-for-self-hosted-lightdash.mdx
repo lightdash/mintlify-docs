@@ -35,6 +35,54 @@ You can override a user password in just a few steps:
 cd ./packages/backend && node ./dist/overrideUserPassword.js <user email> <new password>
 ```
 
+## Email-only signup and OTP login
+
+Lightdash can offer a passwordless email-first sign-in flow: new users sign up with just their email address, and returning users on those passwordless accounts sign in with a 6-digit code emailed to them instead of a password. Signup is gated by an instance-wide feature flag and is **off by default**. OTP login for existing passwordless accounts is always available, even if the flag is later turned off — see [Security notes](#security-notes) below.
+
+<Note>
+  This flow currently has **no built-in rate limiting** on the OTP request or verify endpoints. Put rate limiting in front of Lightdash (e.g. at your ingress or WAF) before enabling this feature on a production instance.
+</Note>
+
+### Enable the feature flag
+
+Set the `new-onboarding` [feature flag](/self-host/customize-deployment/environment-variables#feature-flags) on your instance:
+
+```bash
+LIGHTDASH_ENABLE_FEATURE_FLAGS=new-onboarding
+```
+
+Because [SMTP](/self-host/customize-deployment/environment-variables#smtp) is used to deliver the one-time codes, you must also have SMTP configured.
+
+The `new-onboarding` flag is a single umbrella toggle that also enables the full-page organization setup experience shown after registration and the dbt-less "connect to your warehouse" onboarding path.
+
+### What changes when the flag is on
+
+**Register page (`/register`)**
+
+- The signup form asks only for an email address — no name, no password.
+- Lightdash creates the account with no password, sends a 6-digit code to that address, and — once the user enters the code — takes them through the standard join-or-create-organization flow.
+- Passwordless users can add a password later by clicking **Forgot your password?** on the login page: the reset link now upserts a password row for accounts that didn't previously have one.
+
+**Login page (`/login`)**
+
+- When a user enters an email that belongs to a passwordless account (no password set, no SSO identity), the password field is hidden and Lightdash emails a 6-digit code instead.
+- Entering the code signs the user in and marks the email as verified.
+- The same 5-attempt limit and expiry window used elsewhere for one-time passcodes applies.
+
+For example, a new user visits `/register` and types `alex@ecom-store.com`. They receive a code by email, enter something like `123456`, and land in the standard "create or join an organization" step. The next time they visit `/login` and type `alex@ecom-store.com`, the password field is hidden and they receive a fresh 6-digit code to sign in — no password ever set.
+
+### What stays the same
+
+- **Accounts with a password** — the password field is still shown, and the OTP login path is refused regardless of the flag.
+- **SSO users** — accounts with any linked SSO identity continue to sign in via SSO. OTP login is refused for them regardless of the flag.
+- **Invite flow** (`/invite/<code>`) — unchanged; invited users still complete the full signup form (name + password).
+
+### Security notes
+
+- OTP login only applies to accounts that have **no password and no SSO identity**. Any account with either is excluded from this flow.
+- All failure modes (unknown email, non-passwordless account, wrong code, expired code, too many attempts) return the **same generic 401** so the endpoint can't be used to probe whether an email is registered.
+- OTP login is intentionally **not** gated on the `new-onboarding` flag. Turning the flag off stops new email-only signups, but existing passwordless accounts can still sign in with a one-time code — otherwise a flag rollback would strand them with no way to authenticate. If you want to end passwordless sign-in for those users, have them reset their password via **Forgot your password?** first.
+
 ## SSO setup
 
 To enforce SSO, it's recommended to disable password authentication. This can be done by setting the following environment variable:
