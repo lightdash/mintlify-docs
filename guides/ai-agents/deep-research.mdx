@@ -18,7 +18,8 @@ Deep Research uses a managed Claude agent that has read-only access to the targe
 
 - Selects the project you scoped it to and discovers explores and fields through the same MCP tools an interactive agent uses.
 - Runs bounded warehouse queries against your semantic layer to gather evidence.
-- Synthesises a structured report containing a summary, findings with confidence and evidence, scope, caveats, unresolved questions, and suggested next steps.
+- Synthesises a **markdown report** — an intro that answers the question, one section per finding with a confidence tag and at most one embedded chart, an optional caveats section, and a conclusion. Sources are listed at the bottom when the agent uses `[n]` citations.
+- Attaches **chart snapshots** to the report so evidence renders instantly. Each chart is either a warehouse chart (a verified query from the run) or an inline chart (agent-computed data from derived analysis, capped at 100 columns × 10 rows). Warehouse charts can be refreshed on demand to fetch live data.
 
 The Deep Research agent is **read-only**. It has no content-write or writeback tools — it cannot create, edit, or delete charts, dashboards, or any other Lightdash content.
 
@@ -87,6 +88,8 @@ Body:
 
 - `prompt` *(required)* — the question or investigation brief.
 - `effort` *(optional)* — one of `low`, `medium`, `high`, `xhigh`. Defaults to `medium`.
+- `threadUuid` *(optional)* — link the run to an existing AI agent thread in the same project. The thread must exist, be in the same project, and be owned by the caller.
+- `promptUuid` *(optional)* — link the run to a specific prompt inside that thread. Requires `threadUuid`.
 
 Returns `202 Accepted` with the newly created run, including `aiDeepResearchRunUuid` and the resolved `budget` snapshot. The run then executes in the background.
 
@@ -96,7 +99,15 @@ Returns `202 Accepted` with the newly created run, including `aiDeepResearchRunU
 GET /api/v1/ee/projects/{projectUuid}/ai-deep-research/{aiDeepResearchRunUuid}
 ```
 
-Returns the durable run — its `status`, the resolved `budget`, timestamps, and the structured `result` report once the run is in a terminal state. Poll this endpoint to know when to fetch the final report.
+Returns the durable run — its `status`, the resolved `budget`, timestamps, `prompt`, any linked `aiThreadUuid`/`promptUuid`, and the `resultMarkdown` report once the run is in a terminal state. Poll this endpoint to know when to fetch the final report.
+
+### List runs for a thread
+
+```http
+GET /api/v1/ee/projects/{projectUuid}/ai-deep-research?threadUuid=<uuid>
+```
+
+Returns the caller's Deep Research runs linked to the given AI agent thread, scoped by organisation, project, and creator. Useful for rendering run history against a chat thread from your own UI.
 
 ### List progress events
 
@@ -116,9 +127,52 @@ POST /api/v1/ee/projects/{projectUuid}/ai-deep-research/{aiDeepResearchRunUuid}/
 
 Requests cancellation of an in-flight run. The run transitions to `cancelled` on the next safe checkpoint and its temporary PAT is deleted as part of the terminal cleanup.
 
+### Refresh a warehouse chart
+
+```http
+POST /api/v1/ee/projects/{projectUuid}/ai-deep-research/{aiDeepResearchRunUuid}/charts/{chartKey}/refresh
+```
+
+Re-executes the stored query for a warehouse chart in the report and returns fresh results. Use this to view live data instead of the snapshot the agent captured at publish time. Inline (agent-computed) charts have no underlying query and return a `400`.
+
+## Report shape
+
+The final report is a single markdown document plus a map of chart snapshots. The markdown always follows this outline:
+
+```markdown
+Intro prose that answers the question and states overall confidence.
+
+## First finding
+<confidence level="high">Optional caveat</confidence>
+
+Setup prose that frames the finding.
+
+[Revenue by channel, last 4 weeks](#chart-channel_revenue_4w)
+
+Interpretation of the chart above.
+
+## Second finding
+…
+
+## Caveats
+
+Optional list of caveats that apply to the whole report.
+
+## Conclusion
+
+- Bullet takeaway 1
+- Bullet takeaway 2
+
+## Sources
+
+Only present when the report uses `[n]` citations.
+```
+
+Each `[Title](#chart-<key>)` link is a placeholder for a chart snapshot. When rendering the report yourself, look up `<key>` in the run's chart-data map to get the snapshot rows and chart config, then render inline. Warehouse charts also expose a live-refresh endpoint (see above).
+
 ## Example: start, poll, and read the report
 
-The snippet below starts a run and polls for its status until it's terminal, then prints the structured report. Replace `LIGHTDASH_HOST`, `LIGHTDASH_PAT`, and `PROJECT_UUID` with your own values.
+The snippet below starts a run and polls for its status until it's terminal, then prints the markdown report. Replace `LIGHTDASH_HOST`, `LIGHTDASH_PAT`, and `PROJECT_UUID` with your own values.
 
 ```bash
 #!/usr/bin/env bash
@@ -148,8 +202,8 @@ while :; do
   sleep 10
 done
 
-# 3. Print the structured report (null on failed/cancelled runs)
-echo "$RUN" | jq '.results.result'
+# 3. Print the markdown report (null on failed/cancelled runs)
+echo "$RUN" | jq -r '.results.resultMarkdown'
 ```
 
 To follow progress in real time instead of only polling the run, call `.../events?cursor=<cursor>` in a loop and keep passing the latest `nextCursor` back in.
