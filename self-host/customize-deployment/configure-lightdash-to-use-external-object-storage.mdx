@@ -96,3 +96,43 @@ For a comprehensive list of all possible S3-related environment variables and ot
 Lightdash also supports authentication via IAM roles. If you omit the `S3_ACCESS_KEY` and `S3_SECRET_KEY` variables, the S3 library will automatically attempt to use IAM roles. For more details on how this works, refer to the [AWS SDK for JavaScript documentation on setting credentials in Node.js](https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/setting-credentials-node.html).
 
 If you are using an IAM role to generate signed URLs, be aware that these URLs have a maximum validity of 7 days due to AWS limitations, independently of the `S3_EXPIRATION_TIME` configuration.
+
+#### Selecting a credential provider with `S3_USE_CREDENTIALS_FROM`
+
+For finer control, use `S3_USE_CREDENTIALS_FROM` to specify which AWS credential providers Lightdash should try, and in what order. Multiple providers can be listed comma-separated — the first one that resolves credentials wins.
+
+| Value          | Source                                                                                              |
+| :------------- | :-------------------------------------------------------------------------------------------------- |
+| `env`          | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` environment variables                                 |
+| `token_file`   | Web identity token file (`AWS_WEB_IDENTITY_TOKEN_FILE`) — used by EKS IAM Roles for Service Accounts |
+| `ini`          | Shared credentials file (`~/.aws/credentials`)                                                      |
+| `ecs`          | Container credentials — ECS task roles **and** EKS Pod Identity (see below)                         |
+| `ec2`          | EC2 instance metadata service (IMDS)                                                                |
+
+For example, to prefer container credentials but fall back to instance metadata:
+
+```bash
+S3_USE_CREDENTIALS_FROM=ecs,ec2
+```
+
+#### Running on ECS or EKS Pod Identity
+
+The `ecs` provider covers both classic ECS task roles and [EKS Pod Identity](https://docs.aws.amazon.com/eks/latest/userguide/pod-identities.html) — no separate value is needed. Lightdash chooses the right provider automatically based on which credentials endpoint the platform exposes to your pod or task:
+
+- **ECS task roles** set `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI` in the task's environment.
+- **EKS Pod Identity** sets `AWS_CONTAINER_CREDENTIALS_FULL_URI` in the pod's environment (via the Pod Identity Agent).
+
+Both variables are injected automatically by the respective platforms — you don't need to set them yourself. Just associate the IAM role with the task or pod as usual and set `S3_USE_CREDENTIALS_FROM=ecs`.
+
+Example EKS Pod Identity configuration:
+
+```bash
+S3_ENDPOINT=https://s3.us-east-1.amazonaws.com
+S3_REGION=us-east-1
+S3_BUCKET=acme-lightdash-storage
+S3_USE_CREDENTIALS_FROM=ecs
+# S3_ACCESS_KEY / S3_SECRET_KEY intentionally omitted — credentials are resolved
+# from the IAM role bound to the pod via the arn:aws:iam::111122223333:role/lightdash-pod-role association.
+```
+
+If neither container-credentials variable is present at startup, Lightdash quietly skips the container provider and continues down the rest of the chain (for example `ec2`) rather than failing to construct the S3 client.
