@@ -690,6 +690,11 @@ You can make changes to the code and upload these changes back to your Lightdash
 - `--strip-pivot-series`
   - (default: false)
   - strip per-value pivot series config from chart YAML so it's portable across projects. Cartesian chart series that are tied to specific pivot field values are rewritten to reference only the underlying x/y fields, and duplicates collapsed into a single entry. Use this when the source project's pivot values don't exist in the target project (for example, when reusing chart YAML as a template), so the upload doesn't fail or render with the original project's hardcoded series. Only applies to regular charts; SQL charts and dashboards are unaffected.
+- `--virtual-views <slugs...>`
+  - opt-in flag to download specific [virtual views](/guides/developer/dashboards-as-code#virtual-views) as code. Pass one or more virtual-view slugs. Each view is written to `lightdash/virtual-views/<slug>.yml`. Virtual views are not included in a bare `lightdash download` — use this flag or `--include-virtual-views` to opt in.
+- `--include-virtual-views`
+  - (default: false)
+  - opt-in flag to download every [virtual view](/guides/developer/dashboards-as-code#virtual-views) in the project as code. Use `--virtual-views <slugs...>` instead when you only want specific views.
 - `--apps <appUuids...>`
   - opt-in flag to also download specific [data apps](/guides/data-apps#data-apps-as-code) as code (enterprise only). Pass one or more app UUIDs to download just those apps — this is the only way to download apps that haven't been added to a space. Each app is written to `lightdash/apps/<slug>/` as a locally buildable project: `lightdash-app.yml` manifest, the app's `src/` tree, `package.json`, a read-only `.lightdash/context/` snapshot of the project's semantic layer, and agent skill files. The built output is not included — the server rebuilds it on upload.
 - `--include-apps`
@@ -704,6 +709,9 @@ You can make changes to the code and upload these changes back to your Lightdash
 - `--skip-dashboards`
   - (default: false)
   - skip downloading dashboards
+- `--organization`
+  - (default: false)
+  - switch to organization mode and download organization-scoped content (currently [custom roles](/guides/developer/dashboards-as-code#custom-roles-as-code)) instead of project content. Files are written to `lightdash/custom-roles/<role-slug>.yml`. Requires organization admin permissions. Cannot be combined with project-content flags such as `--charts`, `--dashboards`, `--project`, or `--nested`.
 
 **Examples:**
 
@@ -769,6 +777,22 @@ Download just one data app and nothing else.
 lightdash download --apps-only --apps 8f2b1c4d-1111-2222-3333-444455556666
 ```
 
+Download all charts and dashboards, plus every virtual view in the project.
+
+```bash
+lightdash download --include-virtual-views
+```
+
+Download only specific virtual views by slug.
+
+```bash
+lightdash download --virtual-views orders_enriched customers_enriched
+Download every organization-scoped custom role as code (requires org admin).
+
+```bash
+lightdash download --organization
+```
+
 
 ### `lightdash upload`
 
@@ -783,7 +807,7 @@ If there have been changes made to a chart or dashboard in the application that 
 **Options:**
 
 - `--force`
-  - if you've created new content as code that doesn't exist in your Lightdash project yet, you need to run `lightdash upload --force` to create the new charts and dashboards—otherwise, `lightdash upload` only uploads updates to existing content
+  - required to create new content as code that doesn't exist in your Lightdash project yet — without it, `lightdash upload` only updates existing content. Also required to apply destructive [virtual view](/guides/developer/dashboards-as-code#virtual-views) column changes (removing a column or changing its type).
 - `--charts` or `-c`
   - select specific charts as code to upload back to your project. Use the chart SLUG to specify the chart
 - `--dashboards` or `-d`
@@ -807,11 +831,19 @@ If there have been changes made to a chart or dashboard in the application that 
 - `--nested`
   - (default: false)
   - expect content to be organized in sub-folders matching the spaces in your project (use this if content was downloaded with `--nested`)
+- `--virtual-views <slugs...>`
+  - specify [virtual view](/guides/developer/dashboards-as-code#virtual-views) slugs to upload from `lightdash/virtual-views/`. Combine with `--force` to apply destructive column changes.
+- `--skip-virtual-views`
+  - (default: false)
+  - skip uploading virtual views, even when `lightdash/virtual-views/` contains files
 - `--apps [appUuids...]`
   - opt-in flag to also upload [data apps](/guides/data-apps#data-apps-as-code) as code (enterprise only). Bare `--apps` uploads every app folder under `lightdash/apps/`. Pass one or more app UUIDs to upload just those apps. The CLI posts each app's `src/` tree and returns immediately — the destination rebuilds the app in its sandbox and publishes a new version. The app shows a `building` status in the UI until the build finishes. Uploading to the same project appends a new version and applies any edits to the manifest's `name` or `description`; uploading to a different project prompts for confirmation (in non-interactive shells the app is skipped with an error unless you also pass `--create-new`) and creates a new app in the target. After any create, the CLI prints the new app's URL and offers to retarget the local `lightdash-app.yml` (updating `appUuid`, `projectUuid`, and `version`) so future uploads update the new app.
 - `--create-new`
   - (default: false)
   - always create a new data app from the uploaded source instead of appending a new version to the app referenced by `lightdash-app.yml`. Combine with `--apps` and `--project` when copying an app to a different project or instance in a non-interactive shell.
+- `--organization`
+  - (default: false)
+  - switch to organization mode and upload organization-scoped content (currently [custom roles](/guides/developer/dashboards-as-code#custom-roles-as-code)) instead of project content. Reads YAML files from `lightdash/custom-roles/` and upserts each role by name — creating, updating, or reporting no change per file. Requires organization admin permissions. Cannot be combined with project-content flags such as `--charts`, `--dashboards`, `--project`, or `--force`. Uploads never delete roles.
 
 **Examples:**
 
@@ -859,6 +891,18 @@ Upload all charts and dashboards and validate them after upload to check for err
 lightdash upload --validate
 ```
 
+Upload a specific virtual view.
+
+```bash
+lightdash upload --virtual-views orders_enriched
+```
+
+Apply a destructive virtual view change (removing a column or changing its type) — the CLI blocks this unless `--force` is passed.
+
+```bash
+lightdash upload --virtual-views orders_enriched --force
+```
+
 Upload all charts, dashboards, and data app folders under `lightdash/apps/`.
 
 ```bash
@@ -875,6 +919,12 @@ Copy a data app to a different project as a brand-new app (non-interactive).
 
 ```bash
 lightdash upload --apps --project 21eef0b9-5bae-40f3-851e-9554588e71a6 --create-new
+```
+
+Upload every custom role in `lightdash/custom-roles/` back to the organization (requires org admin).
+
+```bash
+lightdash upload --organization
 ```
 
 

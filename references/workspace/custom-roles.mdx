@@ -144,13 +144,15 @@ Custom roles are assigned at the project level to provide granular access contro
 
 ### Content-as-code scopes
 
-Three scopes control access to [content as code](/guides/developer/dashboards-as-code), the CLI workflow for managing charts and dashboards as YAML files. They form a read → write → narrow-write ladder.
+Four scopes control access to [content as code](/guides/developer/dashboards-as-code), the CLI workflow for managing charts and dashboards as YAML files. They form a read → narrow-write → write → manage ladder.
 
 **Download content as code** (`view:ContentAsCode`) lets a user pull existing charts and dashboards as YAML via `lightdash download`. It does not allow pushing changes back. This is the common "let people pull templates" grant.
 
 **Upload content as code to own previews** (`manage:ContentAsCode@self`) is a narrow upload right: users can run `lightdash upload` only against preview projects they created themselves. This is the intended day-to-day scope for non-Developer users in CI/CD-style workflows where they need to validate their own preview but shouldn't push to shared projects. Pair it with `view:ContentAsCode` so they can still pull from shared projects.
 
-**Download and upload content as code** (`manage:ContentAsCode`) grants both download and upload across any project the role applies to. Users with this scope can run `lightdash upload` to overwrite charts and dashboards in the project. This implies `view:ContentAsCode` and the `@self` upload right.
+**Upload content as code** (`create:ContentAsCode`) grants chart, dashboard, and SQL-chart uploads across any project the role applies to, without the broader scheduled-delivery, alert, and Google Sheets upload rights that `manage:ContentAsCode` includes. This is the scope built-in **Editors** hold — it unlocks `lightdash upload` for charts and dashboards (and the AI agent / MCP content tools that create or edit the same content) while still enforcing the same space-level access checks that the UI applies. Writing SQL charts still requires `manage:CustomSql`; adding or changing custom SQL dimensions still requires `manage:CustomFields`; adding or changing custom SQL table calculations still requires `manage:CustomSqlTableCalculations`. Custom SQL is diffed against the persisted chart, so re-uploading a chart whose SQL hasn't changed passes without those extra scopes.
+
+**Download and upload content as code** (`manage:ContentAsCode`) grants everything in `create:ContentAsCode` plus the ability to upload scheduled deliveries, alerts, Google Sheets uploads, and space/permission mutations via content as code. This is the scope built-in **Developers** and **Admins** hold. It implies `view:ContentAsCode`, `create:ContentAsCode`, and the `@self` upload right.
 
 Use **download-only** to let a user pull production YAML for local development, diffing, or inspection without giving them the ability to overwrite production content. Combine with a controlled promotion path (e.g., CI/CD running with a service account that holds the manage scope) so writes only land via the pipeline.
 
@@ -232,6 +234,57 @@ Three scopes control different SQL-authoring features. They are independent — 
 <Tip>
   If you want a user to query tables that include custom SQL dimensions created by others, they don't need any of these scopes. Any user with access to the Explore view can **use** existing custom SQL dimensions in their queries — these scopes only control who can **author** them.
 </Tip>
+
+## Managing custom roles as code
+
+Custom roles can be downloaded from and uploaded to a Lightdash instance as YAML files via the CLI, alongside charts, dashboards, and other content as code. This is useful for version-controlling your organization's roles, reviewing changes in pull requests, or copying a role between instances.
+
+Unlike most content as code (which is project-scoped), custom roles are **organization-scoped**. Downloads and uploads use the `--organization` mode of the CLI and require **organization admin** permissions.
+
+### Download roles
+
+Run the download in organization mode from your working directory:
+
+```bash
+lightdash download --organization
+```
+
+This writes every user-defined role in your organization to `lightdash/custom-roles/*.yml`. System roles are not included.
+
+### Upload roles
+
+Edit or add YAML files under `lightdash/custom-roles/`, then run:
+
+```bash
+lightdash upload --organization
+```
+
+Each file is upserted by role name — the backend creates a new role if the name is unused, updates the role's description and scopes if they've drifted, or reports no change if the file already matches the server. Uploads never delete roles; remove unwanted roles in the UI.
+
+### YAML format
+
+```yaml
+version: 1
+name: analytics-viewer
+description: Read-only access to analytics content
+level: organization
+scopes:
+  - view:Dashboard
+  - view:SavedChart
+  - view:Space
+```
+
+| Field | Description |
+| --- | --- |
+| `version` | Format version. Currently always `1`. |
+| `name` | The role's display name. Used as the portable identity — a role is matched to an existing role by exact name. |
+| `description` | Optional description. Set to `null` to clear an existing description. |
+| `level` | Either `organization` or `project`. Determines which scopes are allowed and is immutable after the role is created. |
+| `scopes` | List of scope grants. See the [scope reference](#scope-reference) above for available scopes and note that organization-only scopes cannot appear on a `level: project` role. |
+
+Malformed files, unknown scopes, and scopes that aren't allowed at the role's level are rejected per file with the file path and error message; other files continue to process. The CLI exits with a non-zero status if any file fails validation.
+
+For the full workflow, including examples and CI/CD integration alongside charts and dashboards, see [Custom roles as code](/guides/developer/dashboards-as-code#custom-roles-as-code).
 
 ## Troubleshooting
 

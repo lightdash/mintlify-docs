@@ -439,6 +439,122 @@ During `lightdash upload`, the CLI scans for all `.space.yml` files and builds a
   `.space.yml` files currently store name metadata only (`spaceName` and `slug`). Access control properties (`isPrivate`, group access) are not yet supported in these files.
 </Note>
 
+## Virtual views
+
+You can manage [virtual views](/guides/developer/virtual-views) as code alongside your charts and dashboards. This is useful when you want to review virtual-view changes in a pull request, promote the same SQL across projects (for example from a staging to a production Lightdash instance), or template a set of virtual views for reuse.
+
+Virtual views are **opt-in** — a bare `lightdash download` does not pull them, and a bare `lightdash upload` does not push them. You have to ask for them explicitly with `--include-virtual-views` or `--virtual-views <slug>`.
+
+### Download virtual views
+
+Use `--include-virtual-views` to download every virtual view in the project, or `--virtual-views <slug>` to download specific ones:
+
+```bash
+# All virtual views in the project
+lightdash download --include-virtual-views
+
+# Only the virtual views you name
+lightdash download --virtual-views orders_enriched customers_enriched
+```
+
+Each virtual view is written to `lightdash/virtual-views/<slug>.yml`. To skip virtual views when a filter is otherwise selecting them, add `--skip-virtual-views`.
+
+### Virtual view YAML
+
+Virtual views serialize to a portable YAML contract keyed by a project-scoped `slug` (the immutable explore name used by any charts, dashboards, or joined models that reference the view). The `name` is the mutable display label shown in the UI.
+
+```yml Virtual view YAML example
+contentType: virtual_view
+version: 1
+slug: orders_enriched
+name: "Orders enriched"
+sql: |-
+  select
+    o.order_id,
+    o.customer_id,
+    o.status,
+    o.created_at,
+    o.total_amount,
+    c.country
+  from ecom.orders o
+  left join ecom.customers c on c.customer_id = o.customer_id
+columns:
+  - reference: country
+    type: string
+  - reference: created_at
+    type: timestamp
+  - reference: customer_id
+    type: string
+  - reference: order_id
+    type: string
+  - reference: status
+    type: string
+  - reference: total_amount
+    type: number
+parameters: null
+```
+
+| Field | Description |
+| --- | --- |
+| `contentType` | Always `virtual_view`. |
+| `version` | Schema version. Currently `1`. |
+| `slug` | Immutable project-scoped identifier. Must be canonical `snake_case` — this is the explore name that downstream charts and dashboards reference. |
+| `name` | Display label for the UI. Safe to rename. |
+| `sql` | Raw SELECT for the virtual view. Referenced parameters must have matching keys in `parameters`. |
+| `columns` | The list of columns exposed as dimensions. Each entry needs a unique `reference` and a valid dimension `type`. Columns are sorted by reference on download. |
+| `parameters` | Saved parameter values used by the view's SQL, or `null` if the view takes no parameters. |
+
+### Upload virtual views
+
+Use `--virtual-views <slug>` on `lightdash upload` to target specific views, or run a bare upload (without any content filters) to include every virtual view in `lightdash/virtual-views/`.
+
+```bash
+# Upload one virtual view
+lightdash upload --virtual-views orders_enriched
+
+# Upload everything, including any virtual views on disk
+lightdash upload
+```
+
+The CLI compares each file against the current cached version of the view and reports one of:
+
+- **created** — no view with this slug existed yet.
+- **updated** — the view existed and one or more fields changed.
+- **skipped** — the file is byte-equivalent to the current view, so nothing is sent.
+
+If the same slug already exists as a **non-virtual** explore (for example, a dbt model), the upload is rejected — Lightdash won't adopt a dbt-managed explore into virtual-view storage.
+
+### Validation errors
+
+Uploads fail fast with a `ParameterError` when the YAML isn't a valid virtual view. Common causes:
+
+- `slug` is empty, contains slashes, or isn't canonical `snake_case`.
+- `name` or `sql` is empty.
+- `columns` is empty, contains duplicate or blank `reference` values, or uses an unknown `type`.
+- `parameters` includes keys that the `sql` never references.
+- `contentType` isn't `virtual_view` or `version` isn't the supported version.
+
+Fix the YAML locally and re-run `lightdash upload`.
+
+### Destructive changes and `--force`
+
+Removing a column or changing its type is a **destructive** change — any charts or dashboards that reference the removed or retyped column will break. To protect against accidental breakage, the CLI rejects destructive column changes by default and lists the offending columns in the error.
+
+Re-run the upload with `--force` when the change is intentional:
+
+```bash
+lightdash upload --virtual-views orders_enriched --force
+```
+
+`--force` also allows replacing a virtual view whose cached state can no longer be represented as YAML (for example, a legacy view with non-subquery SQL).
+
+### Permissions
+
+Virtual view download and upload reuse the same content-as-code scopes as charts and dashboards:
+
+- `view:ContentAsCode` is required to download virtual views.
+- `manage:ContentAsCode` is required to upload virtual views. Uploads also check the virtual-view edit permissions the UI enforces, so the CLI, API, and app stay in lockstep.
+
 ## Dashboard as code yml reference
 
 The yml configuration for dashboards as code is extensive. It covers both dashboards and individual charts. The best way to start is often to create your content in the Lightdash UI, download it, and in most cases the structure will be fairly intuitive. Below are outlines of the structures you will find for both types of content to provide some additional context.
@@ -782,6 +898,79 @@ And the matching tile entry on a dashboard:
     chartSlug: orders-by-status
   tileSlug: orders-by-status
 ```
+
+## Custom roles as code
+
+[Custom roles](/references/workspace/custom-roles) are also managed as code. Unlike charts and dashboards, custom roles are **organization-scoped** rather than project-scoped, so downloading and uploading them uses the `--organization` mode of `lightdash download` and `lightdash upload` and requires an organization admin.
+
+### When to use it
+
+- Version-control your organization's custom roles alongside charts and dashboards.
+- Copy a role from one Lightdash instance (for example, staging) to another (production) without recreating it by hand in the UI.
+- Review role changes in a pull request before they hit the org.
+
+### YAML contract
+
+Each custom role serializes to a single file under `lightdash/custom-roles/<role-slug>.yml`:
+
+```yaml
+version: 1
+name: analytics-viewer
+description: Read-only access to analytics content
+level: organization
+scopes:
+  - view:Dashboard
+  - view:SavedChart
+  - view:Space
+```
+
+| Field | Description |
+| --- | --- |
+| `version` | Format version. Currently always `1`. |
+| `name` | The role's display name. This is the portable identity — a role is matched to an existing role by exact name within the organization. |
+| `description` | Optional human-readable description. Set to `null` to clear an existing description. |
+| `level` | Either `organization` or `project`. Determines which scopes are allowed. Immutable — once a role is created, its level cannot be changed via upload. |
+| `scopes` | The list of scope grants for the role. See the [scope reference](/references/workspace/custom-roles#scope-reference) for available scopes. |
+
+The filename is derived from the role name; the CLI creates safe filenames and disambiguates collisions automatically.
+
+### Download
+
+Run the download in `--organization` mode from your working directory:
+
+```bash
+lightdash download --organization
+```
+
+This writes every user-defined custom role in your organization to `lightdash/custom-roles/*.yml`. System roles are not included. The `--organization` flag switches the command into organization-content mode and cannot be combined with project-content flags such as `--charts`, `--dashboards`, or `--project`.
+
+### Upload
+
+Run the upload in `--organization` mode from the same working directory:
+
+```bash
+lightdash upload --organization
+```
+
+For each file in `lightdash/custom-roles/`, the backend resolves the role by `name` and returns one of three outcomes:
+
+- **Created** — no role with that name exists yet, so a new one is created.
+- **Updated** — the role exists and either the description or the set of scopes has changed.
+- **Unchanged** — the role exists and already matches the file. No write is performed.
+
+Uploads are per-file. A malformed or invalid file is reported with its file path and the error message from the backend, and the remaining files continue to process. If any file fails validation, the CLI exits with a non-zero status.
+
+<Note>
+  Uploads never delete roles. Removing a `.yml` file from `lightdash/custom-roles/` and re-uploading does not delete the role in Lightdash — delete unwanted roles in the UI.
+</Note>
+
+### Permissions and validation
+
+- The user running `lightdash download --organization` and `lightdash upload --organization` must be an **organization admin**.
+- The backend validates the role's version, name, description, level, and scopes on every upload. It rejects unknown fields, unsupported versions, unknown scopes, and scopes that aren't allowed at the role's level.
+- The role level is immutable — you cannot change an existing organization role into a project role (or vice versa) by editing the YAML and uploading. Create a new role instead.
+
+For backwards compatibility, an existing role may retain a legacy scope that is no longer assignable at its level; downloading and re-uploading such a role is a no-op. Scope-level validation is applied only to newly added scopes.
 
 ## Editing with AI agents
 
