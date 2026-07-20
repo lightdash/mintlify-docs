@@ -953,17 +953,39 @@ And the matching tile entry on a dashboard:
   tileSlug: orders-by-status
 ```
 
-## Custom roles as code
+## Organization content as code
 
-[Custom roles](/references/workspace/custom-roles) are also managed as code. Unlike charts and dashboards, custom roles are **organization-scoped** rather than project-scoped, so downloading and uploading them uses the `--organization` mode of `lightdash download` and `lightdash upload` and requires an organization admin.
+Three organization-scoped resources — **custom roles**, **users**, and **groups** — can also be downloaded and uploaded as YAML using the `--organization` mode of `lightdash download` and `lightdash upload`. This is a separate workflow from project content (charts, dashboards, virtual views, and data apps) and requires an **organization admin**.
 
-### When to use it
+A single `lightdash download --organization` writes every organization resource to a top-level folder in your working directory:
+
+```
+lightdash/
+  custom-roles/
+    <role-slug>.yml
+  users/
+    <email-slug>.yml
+  groups/
+    <group-slug>.yml
+```
+
+A single `lightdash upload --organization` reads all three folders and applies them **sequentially in dependency order**: custom roles first, then users, then groups. A failed phase prevents the dependent phases from running, so a user file can safely reference a custom role added in the same commit, and a group file can safely list a user added in the same commit.
+
+<Note>
+  Organization mode cannot be combined with project-content flags such as `--charts`, `--dashboards`, `--project`, `--nested`, or `--force`. Uploads never delete resources in Lightdash — remove unwanted roles, users, or groups in the UI.
+</Note>
+
+### Custom roles as code
+
+[Custom roles](/references/workspace/custom-roles) are managed as code. Unlike charts and dashboards, custom roles are **organization-scoped** rather than project-scoped, so downloading and uploading them uses the `--organization` mode of `lightdash download` and `lightdash upload` and requires an organization admin.
+
+#### When to use it
 
 - Version-control your organization's custom roles alongside charts and dashboards.
 - Copy a role from one Lightdash instance (for example, staging) to another (production) without recreating it by hand in the UI.
 - Review role changes in a pull request before they hit the org.
 
-### YAML contract
+#### YAML contract
 
 Each custom role serializes to a single file under `lightdash/custom-roles/<role-slug>.yml`:
 
@@ -986,25 +1008,16 @@ scopes:
 | `level` | Either `organization` or `project`. Determines which scopes are allowed. Immutable — once a role is created, its level cannot be changed via upload. |
 | `scopes` | The list of scope grants for the role. See the [scope reference](/references/workspace/custom-roles#scope-reference) for available scopes. |
 
-The filename is derived from the role name; the CLI creates safe filenames and disambiguates collisions automatically.
+The filename is derived from the role name; the CLI creates safe filenames and disambiguates collisions automatically. A missing or empty `custom-roles/` directory is a no-op.
 
-### Download
-
-Run the download in `--organization` mode from your working directory:
+#### Download and upload
 
 ```bash
 lightdash download --organization
-```
-
-This writes every user-defined custom role in your organization to `lightdash/custom-roles/*.yml`. System roles are not included. The `--organization` flag switches the command into organization-content mode and cannot be combined with project-content flags such as `--charts`, `--dashboards`, or `--project`.
-
-### Upload
-
-Run the upload in `--organization` mode from the same working directory:
-
-```bash
 lightdash upload --organization
 ```
+
+Download writes every user-defined custom role in your organization to `lightdash/custom-roles/*.yml`. System roles are not included.
 
 For each file in `lightdash/custom-roles/`, the backend resolves the role by `name` and returns one of three outcomes:
 
@@ -1018,13 +1031,147 @@ Uploads are per-file. A malformed or invalid file is reported with its file path
   Uploads never delete roles. Removing a `.yml` file from `lightdash/custom-roles/` and re-uploading does not delete the role in Lightdash — delete unwanted roles in the UI.
 </Note>
 
-### Permissions and validation
+#### Permissions and validation
 
 - The user running `lightdash download --organization` and `lightdash upload --organization` must be an **organization admin**.
 - The backend validates the role's version, name, description, level, and scopes on every upload. It rejects unknown fields, unsupported versions, unknown scopes, and scopes that aren't allowed at the role's level.
 - The role level is immutable — you cannot change an existing organization role into a project role (or vice versa) by editing the YAML and uploading. Create a new role instead.
 
 For backwards compatibility, an existing role may retain a legacy scope that is no longer assignable at its level; downloading and re-uploading such a role is a no-op. Scope-level validation is applied only to newly added scopes.
+
+### Users as code
+
+Organization users can be downloaded and uploaded as portable YAML records. Use this to version-control who has access to your organization, review membership changes in pull requests, or replicate a set of users from staging to production. Users as code sits alongside custom roles under the `--organization` workflow and requires an organization admin.
+
+Credentials are **never** portable. Users as code does not carry passwords, SSO tokens, or session state — users continue to authenticate through your instance's existing password, SSO, or invitation flows. Uploading a user record only reconciles their organization role and active/disabled state; it never adds or removes an authentication method.
+
+#### When to use it
+
+- Version-control organization membership and role assignments.
+- Promote a curated user list from a staging instance to production.
+- Review role changes (for example, promoting someone to admin) in a pull request before applying them.
+
+#### YAML contract
+
+Each user serializes to a single file under `lightdash/users/<email-slug>.yml`, keyed by their normalized (lowercased) primary email:
+
+```yaml
+version: 1
+email: alex@ecom-store.com
+disabled: false
+role:
+  type: system
+  name: editor
+```
+
+To assign a custom role, reference it by its exact organization-level name:
+
+```yaml
+version: 1
+email: taylor@ecom-store.com
+disabled: false
+role:
+  type: custom
+  name: analytics-viewer
+```
+
+| Field | Description |
+| --- | --- |
+| `version` | Format version. Currently always `1`. |
+| `email` | The user's primary email address. Normalized to lowercase and used as the portable identity — a user is matched to an existing member by exact email within the organization. |
+| `disabled` | `true` to deactivate the member, `false` to keep them active. Uploads never disable the last enabled authenticated admin. |
+| `role.type` | Either `system` or `custom`. `system` uses one of the built-in roles (`member`, `viewer`, `interactive_viewer`, `editor`, `developer`, `admin`); `custom` references a user-defined role. |
+| `role.name` | For `system`, the built-in role name. For `custom`, the exact organization-level custom role name — the referenced role must exist (or be created in the same upload's custom-roles phase). |
+
+Lifecycle status (whether a user has authenticated yet, whether they have a valid invitation) is **derived from the destination user during upload** and is not declared in YAML. Legacy fields such as `pending` are rejected.
+
+#### Download and upload
+
+```bash
+lightdash download --organization
+lightdash upload --organization
+```
+
+Download writes every organization member to `lightdash/users/*.yml`. Uploads reconcile each file:
+
+- **Created** — no member with that email exists, so the member is added and staged as awaiting authentication.
+- **Updated** — the member exists and their role or `disabled` state has changed.
+- **Unchanged** — the member exists and already matches the file.
+
+Omitting a user file does not remove the member from your organization — deactivate or delete users in the UI. Custom-role references are resolved during the users phase after custom roles have been applied, so a user file can safely reference a role added in the same commit.
+
+#### Sending invitations
+
+Invitations are a separate, opt-in side effect. Users authenticate through your instance's existing domain, SSO, or manually triggered invitation flows by default. To send an invitation email as part of an upload, add `--send-invites`:
+
+```bash
+lightdash upload --organization --send-invites
+```
+
+`--send-invites` only sends invitations to eligible staged users. Authenticated users, disabled users, and users with a still-valid invitation are skipped.
+
+#### Permissions and safety
+
+- The user running organization download and upload must be an **organization admin**.
+- Uploads enforce the **organization boundary** — a user file cannot move a member into a different organization.
+- Uploads preserve the **admin invariant**. Promotions to admin are processed before demotions and disables, and the backend rejects any individual operation that would leave the organization without an enabled authenticated admin.
+
+### Groups as code
+
+Organization groups can be downloaded and uploaded as portable YAML records keyed by the exact, case-sensitive group name. Use this to version-control group membership and copy groups between instances. Groups as code sits alongside custom roles and users under the `--organization` workflow and requires an organization admin.
+
+#### When to use it
+
+- Version-control group membership alongside custom roles and users.
+- Promote a group configuration from staging to production.
+- Review membership changes in a pull request before they are applied.
+
+#### YAML contract
+
+Each group serializes to a single file under `lightdash/groups/<group-slug>.yml`:
+
+```yaml
+version: 1
+name: Ecom Finance
+members:
+  - alex@ecom-store.com
+  - taylor@ecom-store.com
+```
+
+An empty group is represented explicitly as `members: []`.
+
+| Field | Description |
+| --- | --- |
+| `version` | Format version. Currently always `1`. |
+| `name` | The group's exact display name. This is the portable identity — a group is matched to an existing group by exact, case-sensitive name. Renaming a group in YAML creates a new group; the original group is left intact. |
+| `members` | List of primary email addresses. Every email must resolve to an existing, non-internal user in the destination organization before any mutation begins. |
+
+Group files intentionally exclude UUIDs, project roles, space access, AI-agent access, user attributes, and ownership metadata — those continue to be managed in the UI.
+
+#### Download and upload
+
+```bash
+lightdash download --organization
+lightdash upload --organization
+```
+
+Download writes every group and its membership to `lightdash/groups/*.yml`. Uploads reconcile each file:
+
+- **Created** — no group with that name exists, so a new group is created with the listed members.
+- **Updated** — the group exists and its membership set differs; the complete membership is replaced atomically.
+- **Unchanged** — the group exists and its membership already matches the file.
+
+If any listed email cannot be resolved to a user in the destination organization, the group's mutation is rejected atomically — membership is never partially applied. Missing files do not delete groups; remove unwanted groups in the UI.
+
+Because groups run after the users phase, a group file can safely list a user added in the same commit.
+
+<Note>
+  **Groups feature disabled.** If the groups feature is turned off on the destination instance, `lightdash download --organization` skips the groups folder. Run with `--verbose` to see an explanation.
+</Note>
+
+<Note>
+  **SCIM-managed groups.** Groups do not yet record management provenance, so content as code and SCIM should not manage the same group. If a group is provisioned by SCIM, keep managing it through SCIM and don't add a matching file under `lightdash/groups/`.
+</Note>
 
 ## Editing with AI agents
 
