@@ -397,46 +397,100 @@ lightdash upload -c my-chart-slug
 
 ### `.space.yml` files
 
-When you run `lightdash download`, the CLI automatically generates a `.space.yml` file for each space in your project. These files preserve the original human-readable name of each space so it survives a full download → edit → upload round-trip.
+When you run `lightdash download`, the CLI generates a `.space.yml` file for each space in your project. These files preserve the space's human-readable name **and** its direct access policy (per-user and per-group grants) so both survive a full download → edit → upload round-trip.
 
 #### File format
 
 ```yaml
 contentType: space
-spaceName: "Data Team 🚀"
-slug: data-team
+version: 1
+spaceName: "Orders analytics 🚀"
+slug: orders-analytics
+access:
+  inheritParentPermissions: false
+  projectMemberAccessRole: viewer
+  users:
+    - email: alex@ecom-store.com
+      role: admin
+    - email: sam@ecom-store.com
+      role: editor
+  groups:
+    - name: Ecom analysts
+      role: editor
 ```
 
 | Field | Description |
 | --- | --- |
 | `contentType` | Always `space` |
+| `version` | Schema version. `1` opts a file into the access-aware contract described below. Legacy files without `version` and `access` remain valid metadata-only files. |
 | `spaceName` | The original display name of the space (emoji, casing, and special characters preserved) |
-| `slug` | The hyphenated slug — this matches the value used in `spaceSlug` paths |
+| `slug` | The full portable hierarchy path (e.g. `management/revenue`). Matches the value used in `spaceSlug` on charts and dashboards. |
+| `access` | Optional direct access policy. Omit to leave the current permissions untouched. |
+| `access.inheritParentPermissions` | Whether the space inherits access from its parent space. For root spaces this is always `false`. |
+| `access.projectMemberAccessRole` | Role granted to every project member (`viewer`, `editor`, `admin`), or `null` to grant no default project-wide access. |
+| `access.users` | Direct grants to human organization members, keyed by primary `email`. Each entry needs a `role` (`viewer`, `editor`, `admin`). Use `users: []` to explicitly clear direct user grants. |
+| `access.groups` | Direct grants to organization groups, keyed by exact, case-sensitive `name`. Each entry needs a `role`. Use `groups: []` to explicitly clear direct group grants. |
+
+#### How access is applied on upload
+
+When `access` is present, the CLI replaces the space's **complete direct policy** — inheritance, the all-project-members role, direct users, and direct groups. Empty arrays explicitly remove grants; effective inherited access and expanded group members are never serialized.
+
+- **Legacy files without `access`** never mutate permissions. They still update `spaceName` and other metadata, so the round-trip is safe on projects that haven't adopted the access contract yet.
+- **Non-portable identities** — users or groups that can't be safely resolved on the destination (missing primary email, deleted user, ambiguous group name, SCIM-owned identity that doesn't match) — cause the space to download as a legacy metadata-only file with a destructive-change warning rather than silently revoking access on the next upload. Re-uploading that file leaves the space's access unchanged.
+- **Ambiguous or deleted identities** in an uploaded file produce explicit destructive warnings and cause the CLI to exit with a non-zero status rather than a silent no-op.
+- **Personal spaces** that Lightdash generates automatically are excluded from download and upload. **SCIM-owned users and groups** stay SCIM-owned; you cannot toggle their SCIM ownership through `.space.yml`.
+
+#### Authorization
+
+Replacing a space's `access` requires actual `manage:Space` on the resolved space. A broad `manage:ContentAsCode` scope on its own does not bypass restricted-space authorization. The CLI also rejects uploads that would lock the uploader out of a space they still need to manage, and serializes access changes transactionally so concurrent permission revocations can't corrupt the space's ACL.
 
 #### File naming and location
 
-The filename is derived from the space name: `{name-as-slug}.space.yml` (e.g. a space named "Data Team 🚀" produces `data-team.space.yml`).
+The filename is derived from the space name: `{name-as-slug}.space.yml` (for example, `orders-analytics.space.yml`).
 
-In **flat mode** (default), all `.space.yml` files are written to the root `lightdash/` directory alongside your charts and dashboards. In **nested mode** (`--nested`), each file goes into the root of its space's folder.
+There are three supported on-disk layouts, and `lightdash upload` discovers all of them recursively:
+
+- **Flat, under `spaces/`** — the default for new flat downloads. Every `.space.yml` file is written to `lightdash/spaces/`.
+- **Flat, at the root** — the legacy layout. Enable it on new downloads with `--root-spaces`.
+- **Nested** — with `--nested`, each `.space.yml` file lives inside its own space folder alongside that space's `charts/` and `dashboards/` directories.
+
+Existing files are always updated in their current location, so re-running `lightdash download` never duplicates or automatically moves root-level, `spaces/`, or nested files.
 
 Example flat layout after `lightdash download`:
 
 ```text
 lightdash/
-├── data-team.space.yml
-├── marketing.space.yml
+├── spaces/
+│   ├── orders-analytics.space.yml
+│   └── marketing.space.yml
 ├── charts/
 │   └── monthly-revenue.yml
 └── dashboards/
     └── executive-summary.yml
 ```
 
-#### How upload uses `.space.yml` files
+#### Upload ordering
 
-During `lightdash upload`, the CLI scans for all `.space.yml` files and builds a `slug → spaceName` mapping. This is passed to the backend so that when spaces are auto-created, they use the original `spaceName` rather than deriving a name from the slug. If no `.space.yml` is found for a slug, the CLI falls back to generating a friendly name from the slug.
+`lightdash upload` processes `.space.yml` files **before** dependent content (charts, dashboards, scheduled deliveries, and so on) so that a chart's target space always exists and has its final ACL before the chart is written. Parents in a nested hierarchy are processed before their descendants; missing spaces are created unless you pass `--skip-space-create`.
+
+If you deploy organization-scoped content alongside project content, keep this order:
+
+1. `lightdash upload --organization`
+2. `lightdash upload --spaces-only` (or a full upload) to reconcile spaces
+3. Project content (bare `lightdash upload`, or one filtered by `--charts` / `--dashboards`)
+
+#### Controlling what runs
+
+Full project downloads and uploads include spaces by default. Use:
+
+- `--skip-spaces` — skip spaces entirely on the current run. Useful when you only want to reconcile charts and dashboards.
+- `--spaces-only` — download or upload only `.space.yml` files. Handy for permission-only PRs and organization promotions.
+- `--root-spaces` — write new flat downloads at the `lightdash/` root instead of `lightdash/spaces/` (download-only; not combinable with `--nested`).
+
+Filtered chart and dashboard operations (`-c`, `-d`) never reconcile unrelated space access. They still maintain metadata-only `.space.yml` files for the referenced spaces so names stay portable; an existing versioned `access` block is preserved rather than replaced by embedded metadata.
 
 <Note>
-  `.space.yml` files currently store name metadata only (`spaceName` and `slug`). Access control properties (`isPrivate`, group access) are not yet supported in these files.
+  If the access-aware space endpoint is unavailable on the destination, a bare `lightdash download` falls back to legacy metadata-only `.space.yml` files embedded in chart and dashboard responses. `--spaces-only` remains strict — it has no content response to fall back on and will surface the error.
 </Note>
 
 ## Virtual views
