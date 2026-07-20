@@ -44,17 +44,22 @@ If AI copilot isn't enabled, the flow still completes but the day-0 chat compose
     A full-page setup screen collects the organization name, appearance, and a short "tell us about yourself" section. When the signup email uses a company domain, Lightdash pulls the brand (logo, colors) from that domain via Brandfetch as a starting point. You can override anything before continuing.
   </Step>
   <Step title="Data-source picker (`/onboarding/data-source`)">
-    Pick a warehouse from the catalog. Every supported warehouse type is enabled — Snowflake, BigQuery, Postgres, Redshift, Databricks, Trino, ClickHouse, DuckDB, and Athena. Non-warehouse sources (MCP, dbt, CSV) are shown but disabled in this flow.
+    Pick a warehouse from a two-tier picker:
+
+    - **Most popular** — a hero row featuring **BigQuery** and **Snowflake** with SSO-oriented subtitles.
+    - **All warehouses** — a compact grid with Postgres, Redshift, Databricks, Trino, ClickHouse, DuckDB, and Athena.
 
     Two warehouses have smart defaults tuned for the onboarding path:
 
     - **Snowflake** — **Connect via CLI (SSO)** is pre-selected as the authentication method, with an account-identifier placeholder to guide you (for example `xy12345.us-east-1`).
-    - **BigQuery** — in SSO mode, the dataset field becomes an autocomplete backed by the datasets your account can access, and picking a dataset auto-fills the location field (still editable).
+    - **BigQuery** — when the **Sign in with Google** (user-account SSO) auth method is selected, the project, location, dataset, and advanced fields stay hidden until you sign in. Once the SSO check resolves, the project and dataset become autocompletes backed by the resources your account can access, and picking a dataset auto-fills the location (still editable). Keyfile auth keeps the manual inputs.
 
-    Other warehouses use the standard connect form, minus the dbt project step.
+    Not the person who owns the warehouse credentials? Use **Invite a teammate to connect the warehouse** — see [Handing warehouse connect to a teammate](#handing-warehouse-connect-to-a-teammate) below.
   </Step>
   <Step title="Warehouse-only project creation">
-    The connect form is the standard warehouse settings form without the dbt project step. Submitting **Test & save** creates a warehouse-only project in your organization. No dbt models are required. The per-warehouse schema or dataset field renders inside the warehouse card so BigQuery has a dataset input and Postgres has a schema input, even in this dbt-less flow.
+    The connect form is the standard warehouse settings form without the dbt project step and without the general settings section — you can rename the project later. Submitting **Test & save** creates a warehouse-only project in your organization. No dbt models are required. The per-warehouse schema or dataset field renders inside the warehouse card so BigQuery has a dataset input and Postgres has a schema input, even in this dbt-less flow.
+
+    **Test & save** stays disabled until every required field for the selected warehouse and auth variant is filled in — for example Snowflake password vs. key-pair, Databricks PAT vs. OAuth, Athena access keys, or MotherDuck credentials. Editing an existing project keeps its previous behavior of accepting blank secrets as "keep existing".
   </Step>
   <Step title="Project ready checklist (`/onboarding/project-ready/:projectUuid`)">
     A staged checklist runs against the real warehouse catalog:
@@ -83,6 +88,22 @@ If AI copilot isn't enabled, the flow still completes but the day-0 chat compose
   recommended-actions checklist. This replaces the old redirect to
   `/createProject`.
 </Note>
+
+## Handing warehouse connect to a teammate
+
+If you're the founder or business owner setting up Lightdash but don't have your warehouse credentials, you can hand the warehouse-connect step to a teammate without leaving the flow. The onboarding footer opens an **Invite a teammate** modal that sends a task-framed **setup invite**:
+
+- The invite is a new type of invite link with `purpose: setup` and always carries the **admin** role, which is required to create a project. Setup invites can't be silently downgraded.
+- If you don't have a name on your profile yet (email-only signup), the modal asks for your first and last name so the invite email can attribute you personally; those values are saved back to your account.
+- The email is sent from the current template system and explains what Lightdash is, why the invitee is being asked, and that accepting leads straight to connecting the warehouse.
+
+When your teammate clicks the emailed link:
+
+- Under the `new-onboarding` flag they see a single **Continue as `teammate@ecom-store.com`** card — no password, name, or SSO form. Clicking it hits a passwordless activation endpoint that provisions the pending user, marks the email verified (opening the emailed single-use link proves mailbox ownership), consumes the invite, and logs the session in.
+- They land on the warehouse connect screen. If they haven't completed the "About you" interstitial, it carries a redirect param so they return to onboarding rather than the app root.
+- Activation is a click-triggered POST so mail scanners that prefetch the link can't consume the invite.
+
+Instances with password authentication disabled, and any environment with the flag off, keep the legacy invite-accept flow with the full form.
 
 ## Aurora auto-provisioning
 
@@ -130,6 +151,7 @@ Prompt-chip suggestions above the composer are also grounded in the warehouse:
 
 - On projects with explores or verified content, chips are drawn from those signals.
 - On a fresh, dbt-less project with zero explores, chips are grounded in the real, fully-qualified warehouse tables (`database.schema.table`) so Aurora can answer via `runSql` against tables that actually exist — instead of showing generic "set up your data" prompts.
+- In that zero-explores mode, chips are **SQL-only**. Aurora won't offer prompts that ask for charts, visualizations, dashboards, or dashboard tiles, because the visualization tools require semantic-layer explores that don't exist yet. Every chip is a plain data question answerable with a SQL result.
 
 ## SQL mode on day zero
 
