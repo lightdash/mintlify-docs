@@ -428,7 +428,13 @@ These tools reuse the same permissions, validation, and project context as the [
 </Info>
 
 <Info>
-  **Per-user permission gate.** `create_content` and `edit_content` are also gated on the caller's role having the `create:ContentAsCode` scope. The check runs when tools are registered, so users whose role doesn't grant that scope simply won't see these tools in `tools/list`. Built-in **Editors**, **Developers**, and **Admins** hold this scope by default; **Interactive Viewers** and **Viewers** do not. Custom roles need `create:ContentAsCode` added explicitly — see [custom roles](/references/workspace/custom-roles). Project, space, and content-level checks continue to be enforced at invocation time on top of registration gating.
+  **Per-user permission gate.** `createContent` and `editContent` are also gated on the caller's role holding the `create:ContentAsCode` scope. The check runs at tool registration, so users without the scope don't see these tools in `tools/list`.
+
+  - **Roles that get the scope by default:** Editors, Developers, Admins.
+  - **Roles that don't:** Interactive Viewers, Viewers.
+  - **Custom roles:** must add `create:ContentAsCode` explicitly — see [custom roles](/references/workspace/custom-roles).
+
+  Project, space, and content-level checks still run at invocation time on top of the registration gate.
 </Info>
 
 <Info>
@@ -445,18 +451,28 @@ The assistant will call `read_content` to fetch the source chart, modify the JSO
 
 #### Scheduled deliveries
 
-- **Create scheduled delivery** (`create_scheduled_delivery`) - Schedule an existing chart or dashboard to be delivered on a cron schedule to Slack, email, or another supported destination. Point the tool at the content by slug and pass the schedule and recipients — the delivery is created against the active project using the caller's permissions.
+- **Create scheduled delivery** (`createScheduledDelivery`) - Schedule an existing chart or dashboard to Slack, email, or another supported destination on a cron schedule. Point the tool at the content by slug and pass the schedule and recipients — the delivery is created against the active project using the caller's permissions.
 
-`create_scheduled_delivery` is registered independently from the content-write tools, so an organization can enable scheduled delivery MCP without enabling broader chart/dashboard writes for the same user (or vice versa). Two conditions must both be true for the tool to appear:
+<Info>
+  **Registered independently from content writes.** An organization can enable scheduled delivery over MCP without enabling broader chart/dashboard writes (or vice versa). `createScheduledDelivery` only appears in `tools/list` when both of these are true:
 
-1. The **Allow content changes via MCP** organization setting is on (**Settings → Ask AI → General**). This is the same kill-switch that controls `create_content` and `edit_content`.
-2. The caller's role grants the `create:ScheduledDeliveries` scope. Built-in **Interactive Viewers**, **Editors**, **Developers**, and **Admins** hold this scope by default; **Viewers** do not. Custom roles need `create:ScheduledDeliveries` added explicitly.
+  1. **Allow content changes via MCP** is on (**Settings → Ask AI → General**) — same kill-switch as `createContent` and `editContent`.
+  2. The caller's role holds the `create:ScheduledDeliveries` scope.
+</Info>
 
-Registration is gated on both checks — a user without the scope won't see `create_scheduled_delivery` in `tools/list` at all. When the tool is invoked, project-level authorization still applies on top.
+<Info>
+  **Per-user permission gate.**
+
+  - **Roles that get `create:ScheduledDeliveries` by default:** Interactive Viewers, Editors, Developers, Admins.
+  - **Roles that don't:** Viewers.
+  - **Custom roles:** must add `create:ScheduledDeliveries` explicitly.
+
+  Project-level authorization still runs at invocation time on top of the registration gate.
+</Info>
 
 **Example prompt:** _"Set up a scheduled delivery of the `weekly-ecom-orders` chart to #analytics-updates in Slack every Monday at 9am."_
 
-The assistant will call `create_scheduled_delivery` with the chart's slug, the cron schedule, and the Slack destination — mirroring the behavior of the [AI agent](/guides/ai-agents) `createScheduledDelivery` tool but exposed to any MCP client.
+The assistant will call `createScheduledDelivery` with the chart's slug, the cron schedule, and the Slack destination — mirroring the [AI agent](/guides/ai-agents) `createScheduledDelivery` tool but exposed to any MCP client.
 
 #### Agent context
 
