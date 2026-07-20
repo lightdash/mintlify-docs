@@ -1,0 +1,209 @@
+---
+title: "Deep Research"
+sidebarTitle: "Deep Research"
+description: "Kick off long-running, background AI investigations against a project's semantic layer via the Deep Research API."
+---
+
+<Info>
+  **Availability:** Deep Research is an **Enterprise** feature and is currently behind a feature flag. [Contact us](mailto:support@lightdash.com) to enable it for your workspace.
+</Info>
+
+Deep Research runs a durable, background AI investigation against a Lightdash project and produces a structured report when it's done. Unlike an interactive AI agent chat, a Deep Research run is asynchronous — you start it with an API call, poll for its status, optionally stream progress events, and read the final report once the run reaches a terminal state.
+
+Deep Research is exposed as a public API today. A future release will surface the same capability inside the Lightdash UI.
+
+## What it does
+
+Deep Research uses a managed Claude agent that has read-only access to the target project. Each run:
+
+- Selects the project you scoped it to and discovers explores and fields through the same MCP tools an interactive agent uses.
+- Runs bounded warehouse queries against your semantic layer to gather evidence.
+- Synthesises a **markdown report** — an intro that answers the question, one section per finding with a confidence tag and at most one embedded chart, an optional caveats section, and a conclusion. Sources are listed at the bottom when the agent uses `[n]` citations.
+- Attaches **chart snapshots** to the report so evidence renders instantly. Each chart is either a warehouse chart (a verified query from the run) or an inline chart (agent-computed data from derived analysis, capped at 100 columns × 10 rows). Warehouse charts can be refreshed on demand to fetch live data.
+
+The Deep Research agent is **read-only**. It has no content-write or writeback tools — it cannot create, edit, or delete charts, dashboards, or any other Lightdash content.
+
+**Best for:** questions that need broader exploration than a single agent turn — e.g. "Investigate why paid-search-driven revenue dropped last month across our top five product categories."
+
+## When to use it
+
+| Use Deep Research when… | Use an interactive AI agent when… |
+|---|---|
+| The question needs multiple queries, cross-checks, and a written report | The question is a single ask you want an answer to right now |
+| You want a reusable, structured artefact (findings, evidence, caveats) | You want a conversational back-and-forth |
+| You're driving it from an external system, script, or scheduled job | You're a business user in the Lightdash UI or Slack |
+
+## Effort tiers
+
+Each run has a server-owned budget determined by an **effort** tier. The budget caps runtime, model tokens, tool calls, warehouse queries, and result rows.
+
+| Effort | Max runtime | Max tokens | Max tool calls | Max warehouse queries | Max result rows |
+|---|---|---|---|---|---|
+| `low` | 15 min | 500,000 | 50 | 10 | 5,000 |
+| `medium` *(default)* | 30 min | 1,000,000 | 125 | 25 | 10,000 |
+| `high` | 45 min | 2,000,000 | 250 | 50 | 25,000 |
+| `xhigh` | 55 min | 4,000,000 | 500 | 100 | 50,000 |
+
+Pick the smallest effort that reliably answers the kinds of questions you're sending. The `xhigh` runtime is capped below the 60-minute worker limit to leave the agent time to clean up gracefully.
+
+A run reaches a terminal state as soon as it completes, fails, is cancelled, or hits any budget cap. Terminal statuses include `completed`, `partially_completed`, `failed`, and `cancelled`.
+
+## Permissions
+
+Starting a Deep Research run requires the `create:AiDeepResearch` project scope. This scope is:
+
+- Part of the **AI** scope group and is **Enterprise-only**.
+- Included in the **Developer** system role and inherited by **Admin**.
+- **Not** granted to Editor, Interactive Viewer, or Viewer roles — those users cannot start a run even if they can otherwise view the project.
+- Not automatically added to custom roles — grant the scope explicitly on any custom role that should be able to start runs.
+
+Creating a run also preflights the caller's ability to create and delete personal access tokens (used for the run's temporary credential) and requires `view:Project`. Reading a run, listing its events, and cancelling it are creator-owned and only require `view:Project`.
+
+Demo mode cannot create Deep Research runs.
+
+## Credential lifecycle
+
+Every run mints its own short-lived personal access token immediately before execution. That PAT is stored only in the managed-agent's credential vault and is deleted on any terminal state — including failure, cancellation, timeout, and budget exhaustion. **You don't create or manage this PAT** and it doesn't appear in your account's PAT list for long.
+
+## API reference
+
+All endpoints are rooted at `/api/v1/ee/projects/{projectUuid}/ai-deep-research`. Authenticate with either a session or a personal access token, the same way you'd call any other Lightdash API.
+
+For request and response shapes, see the auto-generated [API reference](/api-reference/v1/introduction) and search for `AiDeepResearch`.
+
+### Start a run
+
+```http
+POST /api/v1/ee/projects/{projectUuid}/ai-deep-research
+```
+
+Body:
+
+```json
+{
+  "prompt": "Investigate why revenue from our summer sandals collection slowed down in the last 4 weeks. Break it down by acquisition channel and country.",
+  "effort": "medium"
+}
+```
+
+- `prompt` *(required)* — the question or investigation brief.
+- `effort` *(optional)* — one of `low`, `medium`, `high`, `xhigh`. Defaults to `medium`.
+- `threadUuid` *(optional)* — link the run to an existing AI agent thread in the same project. The thread must exist, be in the same project, and be owned by the caller.
+- `promptUuid` *(optional)* — link the run to a specific prompt inside that thread. Requires `threadUuid`.
+
+Returns `202 Accepted` with the newly created run, including `aiDeepResearchRunUuid` and the resolved `budget` snapshot. The run then executes in the background.
+
+### Read a run
+
+```http
+GET /api/v1/ee/projects/{projectUuid}/ai-deep-research/{aiDeepResearchRunUuid}
+```
+
+Returns the durable run — its `status`, the resolved `budget`, timestamps, `prompt`, any linked `aiThreadUuid`/`promptUuid`, and the `resultMarkdown` report once the run is in a terminal state. Poll this endpoint to know when to fetch the final report.
+
+### List runs for a thread
+
+```http
+GET /api/v1/ee/projects/{projectUuid}/ai-deep-research?threadUuid=<uuid>
+```
+
+Returns the caller's Deep Research runs linked to the given AI agent thread, scoped by organisation, project, and creator. Useful for rendering run history against a chat thread from your own UI.
+
+### List progress events
+
+```http
+GET /api/v1/ee/projects/{projectUuid}/ai-deep-research/{aiDeepResearchRunUuid}/events?cursor=<cursor>
+```
+
+Returns persisted progress events in chronological order, plus a `nextCursor`. Events include status transitions, cancellation requests, and phase/activity progress (`planning`, `investigating`, `validating`, `synthesizing`).
+
+Pass the returned `nextCursor` back unchanged on the next call to fetch only newer events. Cursors round-trip PostgreSQL microsecond precision, so re-polling the tail after the run has already ended doesn't replay the final event.
+
+### Cancel a run
+
+```http
+POST /api/v1/ee/projects/{projectUuid}/ai-deep-research/{aiDeepResearchRunUuid}/cancel
+```
+
+Requests cancellation of an in-flight run. The run transitions to `cancelled` on the next safe checkpoint and its temporary PAT is deleted as part of the terminal cleanup.
+
+### Refresh a warehouse chart
+
+```http
+POST /api/v1/ee/projects/{projectUuid}/ai-deep-research/{aiDeepResearchRunUuid}/charts/{chartKey}/refresh
+```
+
+Re-executes the stored query for a warehouse chart in the report and returns fresh results. Use this to view live data instead of the snapshot the agent captured at publish time. Inline (agent-computed) charts have no underlying query and return a `400`.
+
+## Report shape
+
+The final report is a single markdown document plus a map of chart snapshots. The markdown always follows this outline:
+
+```markdown
+Intro prose that answers the question and states overall confidence.
+
+## First finding
+<confidence level="high">Optional caveat</confidence>
+
+Setup prose that frames the finding.
+
+[Revenue by channel, last 4 weeks](#chart-channel_revenue_4w)
+
+Interpretation of the chart above.
+
+## Second finding
+…
+
+## Caveats
+
+Optional list of caveats that apply to the whole report.
+
+## Conclusion
+
+- Bullet takeaway 1
+- Bullet takeaway 2
+
+## Sources
+
+Only present when the report uses `[n]` citations.
+```
+
+Each `[Title](#chart-<key>)` link is a placeholder for a chart snapshot. When rendering the report yourself, look up `<key>` in the run's chart-data map to get the snapshot rows and chart config, then render inline. Warehouse charts also expose a live-refresh endpoint (see above).
+
+## Example: start, poll, and read the report
+
+The snippet below starts a run and polls for its status until it's terminal, then prints the markdown report. Replace `LIGHTDASH_HOST`, `LIGHTDASH_PAT`, and `PROJECT_UUID` with your own values.
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE="$LIGHTDASH_HOST/api/v1/ee/projects/$PROJECT_UUID/ai-deep-research"
+AUTH="Authorization: ApiKey $LIGHTDASH_PAT"
+
+# 1. Start the run
+RUN_UUID=$(curl -sS -X POST "$BASE" \
+  -H "$AUTH" -H 'Content-Type: application/json' \
+  -d '{
+    "prompt": "Investigate why revenue from our summer sandals collection slowed down in the last 4 weeks. Break it down by acquisition channel and country.",
+    "effort": "medium"
+  }' | jq -r '.results.aiDeepResearchRunUuid')
+
+echo "Started run $RUN_UUID"
+
+# 2. Poll until the run reaches a terminal state
+while :; do
+  RUN=$(curl -sS "$BASE/$RUN_UUID" -H "$AUTH")
+  STATUS=$(echo "$RUN" | jq -r '.results.status')
+  echo "status=$STATUS"
+  case "$STATUS" in
+    completed|partially_completed|failed|cancelled) break ;;
+  esac
+  sleep 10
+done
+
+# 3. Print the markdown report (null on failed/cancelled runs)
+echo "$RUN" | jq -r '.results.resultMarkdown'
+```
+
+To follow progress in real time instead of only polling the run, call `.../events?cursor=<cursor>` in a loop and keep passing the latest `nextCursor` back in.
