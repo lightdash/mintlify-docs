@@ -67,6 +67,70 @@ Admins can choose the default model (and reasoning behavior) used for new AI age
 
 The org default applies to every new chat unless an agent overrides it or the user changes the model in the chat. Existing threads keep the model they were started with.
 
+### Bring your own AI providers and models
+
+Instead of using the instance-wide Anthropic and OpenAI keys configured by your Lightdash administrator, org admins can store their organization's own provider API keys and control which models are exposed to users. When a key is set, Ask AI routes that provider's model calls through your org's account — including agent chats, thread-title generation, the Slack agent path, agent readiness checks, doc summarization, the [AI router](/guides/ai-agents/ai-router), ambient AI, [data-app](/guides/data-apps) clarification and sandbox generation, and other agent utility calls.
+
+Both the API keys and the per-provider model availability controls live in one card: **AI providers & models** on the Ask AI → General settings page.
+
+<Note>
+This card is only visible when the `org-ai-provider-api-keys` feature flag is enabled for your organization. If you don't see it under **Ask AI → Settings → General**, contact [Lightdash support](mailto:support@lightdash.com) to have it turned on.
+</Note>
+
+#### How to set a provider key
+
+1. Go to **Organization settings → Ask AI → General**.
+2. In the **AI providers & models** card, find the block for **Anthropic** or **OpenAI**.
+3. Paste your provider API key into the input and click **Set key**. The key is sent once and encrypted at rest — it is never returned by the API again.
+4. Once saved, the block shows an **Active** badge (with a key icon) and the input placeholder switches to a partially-redacted hint (e.g. `sk-ant-api03-R2D...igAA` for Anthropic, `sk-...j3kl` for OpenAI), similar to Anthropic's and OpenAI's own dashboards.
+5. To rotate a key, paste a new value and click **Update**. To remove a key, click **Remove** — the provider falls back to the instance-wide key (if configured).
+
+The card also confirms where AI agent traffic is being sent:
+
+- When every user-selectable provider is running on an org key, a success callout appears: **"All AI interactions use your organization's API key(s)"**.
+- When a provider is available to users but doesn't have an org key set, its block shows guidance that those models still run on Lightdash's instance default key — add a key for that provider to route it through your own account.
+
+#### Behavior
+
+- Setting a key routes that provider's model calls through the org key. Removing the key falls back to the instance-wide configuration.
+- Providers that are **not** keyed at the org level continue to use the instance configuration, so you can BYO one provider without touching the other.
+- The **Default AI model** dropdown includes models for any provider your org has keyed, even when the instance itself has no key configured for that provider. For example, an org that stores its own OpenAI key sees OpenAI models in the dropdown even on an Anthropic-only instance.
+- Provider availability at the org level is validated against each provider's public models API on save (with a short timeout). If the check fails, the provider fails closed — models that require the check remain hidden until it succeeds.
+
+#### Control which models users can pick
+
+Once at least one BYO provider key is set, each provider block gains two controls:
+
+- **Available to users** — toggle a provider off to hide all of its models from the model picker across your org. Existing agents that already reference a hidden model keep working; new selections are blocked.
+- **Allowed models** — a multi-select that restricts which of the provider's models users can pick when creating or editing an agent. Leaving it empty allows every model the provider exposes.
+
+At least one model must remain available across your org, so the settings API rejects updates that would leave zero selectable models.
+
+<Note>
+When an org stores only an Anthropic key (no OpenAI key), OpenAI is automatically hidden — Lightdash will not silently fall back to the instance's OpenAI key. Store an OpenAI key too if you want OpenAI models available.
+</Note>
+
+#### Key-gated models
+
+Some models are hidden by default and only become selectable once your BYO key can access them. Currently this applies to **Claude Opus 4.8** — after you save an Anthropic key, Lightdash verifies access against Anthropic's models API and unlocks the preset automatically.
+
+#### Security
+
+- Keys are encrypted at rest using the instance's `LIGHTDASH_SECRET`.
+- The settings API never returns the raw key after it's been set. Reads only expose a `providerApiKeysSet` boolean per provider and the partially-redacted `providerApiKeyHint`.
+- Sending `null` for a provider removes its key.
+- Provider keys and model visibility must be updated in separate requests — the "at least one model available" check would otherwise read a stale key.
+
+#### Scope (v1)
+
+The org key is used for chat and agent utility calls only. The following continue to use the instance-wide keys:
+
+- Embeddings
+- The [evaluation](/guides/ai-agents/evaluations) judge
+- [AI writeback](/guides/ai-agents/ai-writeback) (configured separately via `AI_WRITEBACK_ANTHROPIC_API_KEY`)
+
+[Agent reviews](/guides/ai-agents/reviews) are automatically paused while an org has any BYO provider key set, so review turns never route agent data through the instance provider. Remove all BYO keys to re-enable reviews.
+
 ---
 
 ## Creating your first AI agent
