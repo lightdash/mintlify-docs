@@ -8,7 +8,7 @@ You can serialize a project's AI agents to YAML with the Lightdash CLI, keep the
 
 Use agents as code when you want to:
 
-- Review agent instructions, tags, and model settings in pull requests before they reach production
+- Review agent instructions, tags, model settings, and [evaluation suites](/guides/ai-agents/evaluations) in pull requests before they reach production
 - Copy a working agent from one project to another (for example, from a preview into production) without recreating it in the UI
 - Roll agent config back to a known-good version using Git history
 - Bootstrap new projects with the same set of agents you use elsewhere
@@ -109,6 +109,13 @@ modelConfig:
   modelName: gpt-4o
   modelProvider: openai
   reasoning: false
+evaluations:
+  - title: Orders regression suite
+    prompts:
+      - prompt: How many orders were refunded last month?
+        expectedResponse: Uses the refunds metric and filters to last month.
+      - prompt: Which orders are currently delayed?
+        expectedResponse: null
 ```
 
 ### Field reference
@@ -129,12 +136,40 @@ modelConfig:
 | `enableContentTools` | boolean | Whether the agent can create and edit charts and dashboards. See [creating & editing content](/guides/ai-agents/content-tools). |
 | `enableUserContext` | boolean | Whether the agent receives the asking user's identity for [personalized answers](/guides/ai-agents/data-access#personalizing-answers-to-who-is-asking). |
 | `modelConfig` | object \| null | Default model settings: `modelName`, `modelProvider`, and optional `reasoning` flag. When `null`, the agent inherits the [organization default](/guides/ai-agents/getting-started#set-an-organization-default-ai-model). |
+| `evaluations` | object[] (optional) | Evaluation suite definitions to create or update by title. Downloads include this field even when the agent has no suites (`evaluations: []`). |
+
+### Evaluation suites
+
+Use the optional `evaluations` field to keep an agent's [evaluation suites](/guides/ai-agents/evaluations) and prompts in Git with the rest of its configuration. Each suite has this shape:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `title` | string | The suite name and stable identifier used to find an existing suite on upload. Titles must be non-empty and unique within the agent file. |
+| `prompts` | object[] | Questions to run against the agent. Each prompt object contains `prompt` and `expectedResponse`. |
+| `prompts[].prompt` | string | A non-empty question to send to the agent. |
+| `prompts[].expectedResponse` | string \| null | A description of a correct answer for the LLM-as-judge scorer. Use `null` when you want to review the response manually. |
+
+Downloads are deterministic: suites are sorted by title, and prompts are sorted by their prompt and expected response. This avoids noisy Git diffs when the same definitions were created in a different order in the UI.
+
+On upload, Lightdash matches each declared suite by its exact title:
+
+- A new title creates a suite.
+- An existing title updates that suite's prompts when they have changed.
+- Suites that are not declared in YAML remain unchanged in the target project.
+- Omitting `evaluations` preserves all existing suites. Setting `evaluations: []` also does not delete them.
+
+<Warning>
+Evaluation suite syncing does not delete undeclared suites. Removing a suite from YAML, or changing its title, leaves the old suite in Lightdash; a changed title creates a new suite. Delete the old suite in the UI if you no longer need it.
+</Warning>
+
+Uploads fail with a non-zero exit code before changing the agent if a file contains duplicate suite titles, an empty title, or an empty prompt. An upload also fails when the target agent has multiple existing suites that match a declared title, because Lightdash cannot choose which suite to update.
 
 ## What is not versioned
 
 Some pieces of an agent are runtime state and are deliberately kept out of the YAML file — they stay in the target environment and are preserved across create/update/no-op uploads:
 
 - **Conversations and threads.** Chat history is runtime state and never written to YAML. Uploading a change to an agent does not touch existing threads.
+- **Evaluation run history.** Suite definitions and prompts can be versioned in `evaluations`, but previous runs and their results remain in the target environment and are never downloaded.
 - **User and group access lists.** Access control is project-specific and stays managed in the target environment. See [user and group access](/guides/ai-agents/getting-started#user-and-group-access-optional).
 - **Slack integrations.** Slack channel bindings are per-environment and are not serialized.
 - **MCP server references.** [MCP server](/guides/ai-agents/mcp-servers) references stay in the target project.
