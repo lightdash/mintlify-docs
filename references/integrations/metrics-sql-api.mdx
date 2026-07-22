@@ -30,12 +30,8 @@ You can find copy-paste connection details in your project settings under **Sema
 As a connection URI:
 
 ```bash
-psql "postgresql://<your_email>:<token>@pg.<your_instance_name>.lightdash.cloud:5432/<project_uuid>?sslmode=disable"
+psql "postgresql://<your_email>:<token>@pg.<your_instance_name>.lightdash.cloud:5432/<project_uuid>?sslmode=require"
 ```
-
-<Warning>
-  TLS is not supported yet, so clients need `sslmode=disable` to connect. TLS support is coming before general availability — don't send tokens over networks you don't trust in the meantime.
-</Warning>
 
 Queries run with the permissions of the token, so you can only query explores and fields that the token's account has access to.
 
@@ -115,7 +111,7 @@ conn = psycopg2.connect(
     dbname="<project_uuid>",
     user="<your_email>",
     password="<token>",
-    sslmode="disable",
+    sslmode="require",
 )
 
 df = pd.read_sql(
@@ -130,11 +126,16 @@ df = pd.read_sql(
 
 ## Self-hosting
 
-If you self-host Lightdash, the Metrics SQL API server is disabled until you set the `PGWIRE_PORT` [environment variable](/self-host/customize-deployment/environment-variables#metrics-sql-api):
+If you self-host Lightdash, the Metrics SQL API server is disabled until you set the `PGWIRE_PORT` [environment variable](/self-host/customize-deployment/environment-variables#metrics-sql-api). TLS is required by default, so you also need to provide a certificate and key (PEM format) for the hostname clients connect to:
 
 ```bash
 PGWIRE_PORT=5432
+PGWIRE_SSL_CERT_PATH=/path/to/tls.crt   # server certificate (leaf first, then chain)
+PGWIRE_SSL_KEY_PATH=/path/to/tls.key    # private key
 ```
+
+- If your certificate is from a public CA (e.g. Let's Encrypt), clients can use `sslmode=require` or `verify-full`.
+- If you use a private CA or a self-signed certificate, clients either pass the CA with `sslrootcert=/path/to/ca.pem` for verification, or use `sslmode=require` (encrypted, but the server identity isn't verified).
 
 The server starts a separate TCP listener on that port, so you'll also need to expose it through your load balancer or network configuration alongside the main Lightdash port. It requires a valid `LIGHTDASH_LICENSE_KEY` — see [Enterprise License Keys](/self-host/customize-deployment/enterprise-license-keys).
 
@@ -145,6 +146,16 @@ The server starts a separate TCP listener on that port, so you'll also need to e
 - **No custom metrics or period-over-period comparisons.**
 - **Simple query protocol only.** Prepared statements and bind parameters (the extended query protocol) aren't supported. `psql` and drivers sending plain-text queries work; some GUI tools won't.
 - **No `pg_catalog` emulation.** Schema browsers in GUI clients (e.g. DBeaver) won't populate their sidebar — query `information_schema.tables` and `information_schema.columns` instead.
+
+<Accordion title="Using sslmode=verify-full">
+  `sslmode=require` encrypts the connection; `verify-full` additionally verifies the server's certificate and hostname, protecting against impersonation. On Lightdash Cloud the certificate is publicly trusted (Let's Encrypt), but some Postgres clients don't check the system trust store by default:
+
+  - **psql / psycopg (libpq 16+)**: add `sslrootcert=system` to use the OS trust store. On older libpq, point `sslrootcert` at your system CA bundle (e.g. `/etc/ssl/certs/ca-certificates.crt`).
+  - **JDBC (DBeaver, DataGrip)**: add `sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory` to use Java's built-in trust store.
+  - **node-postgres, Go, Rust, .NET**: use the runtime's trust store natively — no extra configuration.
+
+  Validate via the CA chain as above — don't pin the certificate itself, as it's rotated automatically every ~60 days.
+</Accordion>
 
 <Tip>
   If you're working in Python, the [Lightdash Python SDK](/sdk/python-sdk) offers a typed, dataframe-native way to query the semantic layer without writing SQL.
