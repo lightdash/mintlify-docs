@@ -43,10 +43,9 @@ the provider with the `SANDBOX_PROVIDER` environment variable.
 | **Local Docker** | `docker` | Local development only | container |
 
 **E2B**, **AWS Lambda MicroVMs**, and **Azure Container Apps Sandboxes** are all supported
-production backends. E2B is the managed default; the AWS, Azure, and Google Cloud providers
-are for teams who want sandboxes to run inside their own cloud account. The Google Cloud
-provider builds on Cloud Run Sandboxes, which is a Google Cloud **public preview** feature.
-More providers (Kubernetes, ECS) are planned.
+production backends. E2B is the managed default; the AWS and Azure providers are for teams
+who want sandboxes to run inside their own cloud account. More providers (Kubernetes, ECS)
+are planned.
 
 <Warning>
 The **local Docker provider is for development only**. It launches plain Docker containers
@@ -223,124 +222,121 @@ to non-allowlisted hosts are rejected, and all other ports are blocked.
 
 ## Google Cloud Run Sandboxes (self-hosted, preview)
 
-[Cloud Run Sandboxes](https://docs.cloud.google.com/run/docs/code-execution) run each
-sandbox as a gVisor-isolated execution environment **inside a Cloud Run service in your
-own Google Cloud project**, so untrusted agent code never leaves your infrastructure.
-Sandboxes start in milliseconds and cost nothing extra — they share the CPU and memory
-already allocated to the Cloud Run service that hosts them.
-
-The architecture differs from the AWS and Azure providers: sandboxes are spawned *inside*
-a Cloud Run service deployed with `--sandbox-launcher`. You deploy one small **gateway
-service** whose container image bundles the data-app toolchain plus a thin HTTP gateway;
-each sandbox sees that image's filesystem read-only with a writable overlay, and your
-Lightdash backend drives sandboxes remotely through the gateway's HTTP API.
+Use the `gcp-cloud-run` provider to run data app sandboxes in a
+[Cloud Run service](https://docs.cloud.google.com/run/docs/code-execution). Lightdash
+connects to the service through an HTTP gateway included in the sandbox image.
 
 <Note>
-Cloud Run Sandboxes is a Google Cloud **public preview** feature, and this provider
-currently supports **data app generation only** — AI writeback is not yet available on
-`gcp-cloud-run` (it needs a second gateway with the writeback toolchain). Selecting this
-provider with writeback enabled fails with a clear configuration error at use time.
+Cloud Run Sandboxes is in public preview and currently supports data app generation only.
+AI writeback is not supported.
 </Note>
 
 ### Prerequisites
 
-- A Google Cloud project with billing, and the `gcloud` CLI (recent enough to have
-  `gcloud beta run deploy --sandbox-launcher` — update with `gcloud components update`).
-- The **Cloud Run** and **Cloud Build** APIs enabled:
-  `gcloud services enable run.googleapis.com cloudbuild.googleapis.com`
-- **S3-compatible object storage** configured for Lightdash. Like the Docker provider,
-  `gcp-cloud-run` persists suspended-sandbox snapshots as tarballs in object storage so a
-  conversation survives the sandbox being destroyed — see
-  [external object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage).
-- An Anthropic API key (`ANTHROPIC_API_KEY`) for the agent.
+- A Google Cloud project with billing enabled.
+- A recent version of the `gcloud` CLI that supports
+  `gcloud beta run deploy --sandbox-launcher`.
+- A checkout of the Lightdash repository.
+- [External object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage)
+  configured for Lightdash.
+- An Anthropic API key.
 
-### Deploy the gateway service
+### 1. Enable the Google Cloud APIs
 
-1. Build the gateway image with Cloud Build. It's the Lightdash data-app sandbox image
-   with the [ComputeSDK Cloud Run gateway](https://github.com/computesdk/computesdk/tree/main/packages/cloud-run)
-   server on top. From a checkout of the Lightdash repo:
+```bash
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
+  --project <your-project>
+```
 
-   ```bash
-   cd sandboxes/data-apps
+### 2. Build the gateway image
 
-   # Stage a build context: toolchain Dockerfile + the gateway server
-   STAGE=$(mktemp -d)
-   cp -R template lightdash-query-sdk.tgz "$STAGE/"
-   npm pack @computesdk/cloud-run --pack-destination "$STAGE" >/dev/null
-   tar -xzf "$STAGE"/computesdk-cloud-run-*.tgz -C "$STAGE" package/dist/gateway.mjs
-   mv "$STAGE/package/dist/gateway.mjs" "$STAGE/gateway.mjs"
+From the root of the Lightdash repository, run:
 
-   sed 's|^RUN chown -R user:user /app|RUN useradd -m -s /bin/bash user 2>/dev/null \|\| true|' \
-       e2b.Dockerfile > "$STAGE/Dockerfile"
-   cat >> "$STAGE/Dockerfile" <<'EOF'
+```bash
+cd sandboxes/data-apps
 
-   # ComputeSDK Cloud Run sandbox gateway. /app stays root-owned: sandboxes exec as
-   # root under gVisor, where non-root-owned files are inaccessible even to root.
-   COPY gateway.mjs /gateway/gateway.mjs
-   ENV NODE_ENV=production
-   CMD ["node", "/gateway/gateway.mjs"]
-   EOF
+STAGE=$(mktemp -d)
+cp -R template lightdash-query-sdk.tgz "$STAGE/"
+npm pack @computesdk/cloud-run --pack-destination "$STAGE" >/dev/null
+tar -xzf "$STAGE"/computesdk-cloud-run-*.tgz \
+  -C "$STAGE" package/dist/gateway.mjs
+mv "$STAGE/package/dist/gateway.mjs" "$STAGE/gateway.mjs"
 
-   gcloud builds submit "$STAGE" \
-     --tag gcr.io/<your-project>/lightdash-sandbox-gateway:latest \
-     --project <your-project>
-   ```
+sed 's|^RUN chown -R user:user /app|RUN useradd -m -s /bin/bash user 2>/dev/null \|\| true|' \
+  e2b.Dockerfile > "$STAGE/Dockerfile"
 
-2. Deploy it as a Cloud Run service with the sandbox launcher enabled:
+cat >> "$STAGE/Dockerfile" <<'EOF'
 
-   ```bash
-   SANDBOX_SECRET=$(openssl rand -hex 32)
+COPY gateway.mjs /gateway/gateway.mjs
+ENV NODE_ENV=production
+CMD ["node", "/gateway/gateway.mjs"]
+EOF
 
-   gcloud beta run deploy lightdash-sandbox-gateway \
-     --image gcr.io/<your-project>/lightdash-sandbox-gateway:latest \
-     --region <region> --project <your-project> \
-     --sandbox-launcher --no-cpu-throttling --session-affinity \
-     --cpu 4 --memory 16Gi --concurrency 20 \
-     --min-instances 1 --max-instances 1 \
-     --timeout 3600 \
-     --allow-unauthenticated \
-     --set-env-vars "SANDBOX_SECRET=$SANDBOX_SECRET"
-   ```
+gcloud builds submit "$STAGE" \
+  --tag gcr.io/<your-project>/lightdash-sandbox-gateway:latest \
+  --project <your-project>
+```
 
-   The service is reachable publicly but every sandbox operation requires the shared
-   secret, which only your Lightdash backend holds. If your organization policy forbids
-   `--allow-unauthenticated`, grant your backend's service account `roles/run.invoker`
-   instead and front the call with an identity token.
+### 3. Deploy the gateway
 
-<Warning>
-Keep **`--min-instances 1 --max-instances 1`**. Sandboxes live inside a specific gateway
-instance while a generation is running, so instance churn mid-run kills the active
-sandbox. Suspended snapshots live in your object storage (not on the instance), so
-completed conversations survive redeploys — but budget for one always-on instance while
-the provider is in use. Because sandboxes share the gateway's resources, size the
-instance generously (4 CPU / 16 GiB works well).
-</Warning>
+Generate a shared secret and deploy the image:
 
-Updating the sandbox toolchain means rebuilding the image and redeploying the service —
-the image is fixed per deployment, so per-sandbox image selection is not available on
-this provider.
+```bash
+SANDBOX_SECRET=$(openssl rand -hex 32)
 
-### Configure the provider
+gcloud beta run deploy lightdash-sandbox-gateway \
+  --image gcr.io/<your-project>/lightdash-sandbox-gateway:latest \
+  --region <region> \
+  --project <your-project> \
+  --sandbox-launcher \
+  --no-cpu-throttling \
+  --session-affinity \
+  --cpu 4 \
+  --memory 16Gi \
+  --concurrency 20 \
+  --min-instances 1 \
+  --max-instances 1 \
+  --timeout 3600 \
+  --allow-unauthenticated \
+  --set-env-vars "SANDBOX_SECRET=$SANDBOX_SECRET"
+```
+
+Save `SANDBOX_SECRET` securely. You need the same value when configuring Lightdash.
+Although the Cloud Run service allows unauthenticated requests, the gateway requires this
+secret for every sandbox operation.
+
+Keep the service at one instance. Active sandboxes run inside that instance and are lost
+if Cloud Run replaces it during a generation.
+
+### 4. Configure Lightdash
+
+Get the gateway URL:
+
+```bash
+gcloud run services describe lightdash-sandbox-gateway \
+  --region <region> \
+  --project <your-project> \
+  --format='value(status.url)'
+```
+
+Set these environment variables on both the Lightdash backend and scheduler:
 
 ```bash
 SANDBOX_PROVIDER=gcp-cloud-run
-ANTHROPIC_API_KEY=sk-ant-...   # the agent (Claude Code) runs inside the sandbox
-
-# The gateway service URL and the SANDBOX_SECRET you deployed it with. Required.
-GCP_CLOUD_RUN_SANDBOX_URL=https://lightdash-sandbox-gateway-<project-number>.<region>.run.app
+ANTHROPIC_API_KEY=sk-ant-...
+GCP_CLOUD_RUN_SANDBOX_URL=<gateway-url>
 GCP_CLOUD_RUN_SANDBOX_SECRET=<sandbox-secret>
 ```
 
-Restart the backend and the scheduler so both pick up the new environment.
+Restart the backend and scheduler to apply the configuration.
 
 <Warning>
-**Egress is all-or-nothing on this provider.** Cloud Run sandboxes support only a binary
-egress switch per sandbox (deny everything, or allow everything), so when a feature needs
-any outbound access (the Anthropic API), the sandbox launches with full egress and a
-warning is logged. There is no per-host allowlist like the Azure provider enforces —
-consider this when evaluating the provider for your threat model while the feature is in
-preview.
+Cloud Run sandboxes use unrestricted outbound network access when data app generation
+requires internet access. Per-host egress rules are not supported.
 </Warning>
+
+To update the sandbox toolchain, rebuild the gateway image and redeploy the Cloud Run
+service.
 
 ## Local Docker provider (development)
 
