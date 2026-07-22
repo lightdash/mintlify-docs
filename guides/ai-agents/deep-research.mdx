@@ -1,0 +1,118 @@
+---
+title: "Deep research"
+sidebarTitle: "Deep research"
+description: "Ask an AI agent a high-stakes question and get back an evidence-backed report — an authored narrative with confidence-tagged findings, callouts, and live charts inline."
+---
+
+<Info>
+  **Availability:** Deep research is a **Beta** feature available on **Enterprise** plans. It is gated by the `ai-deep-research` feature flag (the same flag used by the Deep Research API). Contact Lightdash to enable it for your organization.
+</Info>
+
+Deep research is a mode of the AI agent composer for questions that need more than a single-turn answer. Instead of returning one chart or a short summary, the agent plans an investigation, gathers evidence from multiple sources, and writes a report as a single markdown document — an authored narrative with confidence-tagged findings, callouts, and charts interleaved in the order the agent chose to present them.
+
+Deep research is the in-product counterpart to the Deep Research API — the same effort tiers and evidence model, exposed as a UI you can drive from an agent thread.
+
+## When to use it
+
+Reach for deep research when the question is worth a report, not a reply:
+
+- *"Which product categories are trending down this quarter, and why?"*
+- *"What's driving the drop in returning-customer revenue over the last 90 days?"*
+- *"Compare paid-vs-organic acquisition quality across our top three regions."*
+
+For a quick lookup or a single chart, stay in the default **Ask** mode — deep research is optimized for multi-step investigations, not for one-off queries.
+
+## Turning it on in the composer
+
+The agent composer has an inline **Deep research** switch next to the message input. **Ask** is the default and behaves exactly as documented in [Using AI agents](/guides/ai-agents/using-ai-agents) — turning deep research on does not change normal Ask behavior.
+
+Deep research is available only on **new** agent conversations. To start one, open the agent and click **New thread**, then toggle **Deep research** before you send your first message.
+
+## Preflight and depth tiers
+
+When deep research is on, a preflight panel appears above the composer. It lets you pick the **research depth** and shows which evidence sources the agent will search.
+
+Depths map to the same effort budgets used by the Deep Research API:
+
+| Depth       | API effort | Duration          | Warehouse queries | When to use |
+| ----------- | ---------- | ----------------- | ----------------- | ----------- |
+| **Low**         | `low`      | Up to 15 minutes  | Up to 10          | A focused check of the strongest available evidence. |
+| **Medium**      | `medium`   | Up to 30 minutes  | Up to 25          | A balanced investigation with validation and alternatives. |
+| **High**        | `high`     | Up to 45 minutes  | Up to 50          | A broad investigation with more competing explanations. |
+| **Extra High**  | `xhigh`    | Up to 55 minutes  | Up to 100         | The widest evidence review for high-stakes questions. |
+
+Duration and query counts are ceilings — many runs finish sooner. Warehouse-query allowances count executed queries against your project's semantic layer or SQL, so heavier tiers do more validation and consider more alternative explanations.
+
+The preflight also lists the **evidence sources** the current service supports (for example, project data and the public web). Sources that aren't wired up for your deployment are hidden, so you always see the actual research surface for your workspace.
+
+## The run card
+
+Submitting a deep research question registers a durable **run card** in the thread immediately. Your question is never lost, even if the network hiccups or you close the tab.
+
+The card walks through these states:
+
+- **Queued** — the run has been accepted and is waiting to start.
+- **Running** — the agent is planning, gathering evidence, and validating findings. The card shows the current phase (planning, gathering context, testing explanations, reviewing evidence, writing the report) and the last few progress events.
+- **Complete** — the report is ready. The card expands into the [report view](#report-view).
+- **Partially complete** — the run hit a limit or a soft failure but produced a usable report from the evidence it did gather.
+- **Cancelled** — you (or someone else on your team) stopped the run. The card shows sanitized recovery copy so you can retry with a new question.
+- **Failed** — the run couldn't finish. The card explains what to try next without leaking internal errors.
+
+Each run is persisted server-side and linked to the thread and the prompt that started it, so the run card is available to you on any browser or device — not just the one you started the run from. Reopening the thread restores whatever state the run has reached, and closing the tab while a run is in progress is safe: runs execute on the server, and the card updates by polling.
+
+### Cancelling a run
+
+While a run is queued or running, the card exposes a **Cancel** action. Cancellation is best-effort and asynchronous — the card moves to a "cancellation requested" state, then to **Cancelled** once the backend confirms.
+
+## Report view
+
+A completed (or partially complete) run expands into a single linear report inside the agent workspace. The agent authors the report as one markdown document, so prose, findings, callouts, and charts appear together in the order the agent chose — rather than being split into fixed panels.
+
+A typical report includes:
+
+- An **intro** framing the question and the scope of the investigation.
+- One or more **finding sections**, each with a heading and a confidence badge (`low` / `medium` / `high`) that may carry a short inline caveat.
+- **Callouts** for important context — notes, tips, information, and warnings — inline with the prose that references them.
+- A **conclusion** with the headline answer and bullet-pointed next steps or unresolved questions.
+
+The report's overall confidence is the lowest confidence across its findings, so a single low-confidence finding pulls the overall badge down to `low`.
+
+### Charts inline with the narrative
+
+Findings that need a chart embed it directly in the report where the prose calls it out — at most one chart per finding, so the surrounding text is always the narrative that explains it.
+
+Each chart is a **snapshot** taken when the report was published, so opening the report months later shows exactly the numbers the agent saw. The chart tile is labelled with the snapshot date, and every chart has a **View live data** toggle that re-executes the underlying query against your warehouse for a fresh view.
+
+- **Warehouse charts** come from a semantic-layer query the agent ran during the investigation. They show read-only applied-filter pills so you can see how the data was scoped, and support the live-data refresh.
+- **Agent-computed charts** carry an **Agent-computed** badge. Their values are derived from analysis the agent performed during the run (for example, aggregations over data pulled from documents or the web) rather than from a single warehouse query, so the live-data refresh does not apply.
+
+If a chart in an older report can't be resolved — for example, because the underlying query is no longer available — the report leaves an inline note in place of the tile and the rest of the narrative renders normally.
+
+## Follow-up actions
+
+From a completed run card, you can:
+
+- **Challenge** — push the agent to reconsider a finding you think is wrong.
+- **Rerun deeper** — resubmit the same question at a higher depth tier.
+- **Share** — send a link to the thread so a teammate can read the report.
+- **View activity** — inspect the ordered timeline of what the agent did during the run.
+- **Cancel** — available while a run is still in progress.
+
+Actions that don't have a backend-supported operation for the current run are hidden, so what you see on a card is what you can actually do with it.
+
+## Frequently asked questions
+
+**Can I use deep research on an existing thread?**
+No. Deep research runs must be started from a new thread. This keeps the composer mode, the depth, and the run history tied to a single conversation.
+
+**Does deep research use my project's data access settings?**
+Yes. Deep research honors the same [data access](/guides/ai-agents/data-access) rules as normal Ask mode, including dbt-tag scoping and any organization-level restrictions.
+
+**Do I have to keep the tab open?**
+No. Runs execute server-side and are linked to the thread, so the run card and report are available from any browser or device you're signed in on, not just the one you started the run from.
+
+**Why do the charts in an older report show a snapshot instead of live data?**
+Every chart in a report is snapshotted at publish time so the report is stable — reopening it later shows exactly the numbers the finding was based on. Use **View live data** on any warehouse chart to re-run the underlying query and see the current values. Agent-computed charts are marked with a badge and do not have a live view.
+
+**How does deep research relate to the Deep Research API?**
+They share the same backend, effort tiers, and evidence model. Use the API when you want to trigger runs programmatically or fetch reports from another system; use the composer when a human is doing the investigation from within Lightdash.
