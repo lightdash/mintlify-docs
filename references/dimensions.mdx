@@ -173,6 +173,7 @@ The table below shows all the dimension properties you can customize:
 | [filter_autocomplete](#filter-autocomplete) | No | Object | Configure the filter autocomplete suggestions for this dimension. Provide a static list of `values` (with optional display `label`s), point at a `label_dimension` in the same table to label warehouse-fetched values, and/or disable warehouse-based autocomplete by setting `fetch_from_warehouse: false`. |
 | [tags](#tags) | No | string[] | An array of string tags for categorizing and filtering dimensions programmatically. Tags can be used by AI agents, API filters, and other backend workflows. |
 | [convert_timezone](#convert-timezone) | No | boolean | **[Experimental]** If set to `false`, the dimension opts out of the project query timezone for display, grouping, and extracts - the raw warehouse value is rendered instead. Defaults to `true`. Has no effect unless a project query timezone is set. |
+| [timestamp_domain](#timestamp-domain) | No | `aware` or `naive` | Declares whether a `timestamp` column stores an instant (`aware`) or a bare wall clock with no zone (`naive`). Overrides what Lightdash detects from the warehouse catalog. |
 
 
 ## Type
@@ -1531,6 +1532,46 @@ Filters still use the project query timezone regardless of this setting, so ever
 </Tabs>
 
 See [Per-dimension timezone opt-out](/guides/developer/timezones#per-dimension-timezone-opt-out) in the Timezones guide for how this interacts with other timezone settings and filter behavior.
+
+## Timestamp domain
+
+Lightdash reads whether a `timestamp` column stores an instant (`aware`) or a bare wall clock with no zone (`naive`) from your warehouse catalog, so you usually don't need to declare it. Set `timestamp_domain` on a column when the catalog type doesn't match the data — for example a `TIMESTAMP_NTZ` column that already holds UTC instants, or a view whose column comes back untyped.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: created_at
+        meta:
+          dimension:
+            type: timestamp
+            timestamp_domain: aware
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    columns:
+      - name: created_at
+        config:
+          meta:
+            dimension:
+              type: timestamp
+              timestamp_domain: aware
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: created_at
+        type: timestamp
+        timestamp_domain: aware
+    ```
+  </Tab>
+</Tabs>
+
+The YAML value wins over the catalog. It only applies when the dimension resolves to a real column: if you provide custom `sql`, or on additional dimensions, the override is dropped because the expression may change the domain. Interval children (`_day`, `_month`, ...) inherit the domain from their base.
+
+See [Override a column's timestamp domain](/guides/developer/timezones#override-a-columns-timestamp-domain) in the Timezones guide for how naive columns interact with the data timezone.
 
 ## Color
 

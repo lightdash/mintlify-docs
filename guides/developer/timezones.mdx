@@ -128,6 +128,48 @@ Use cases: audit logs, system timestamps, pre-converted values. The column rende
 
 `DATE` columns need no annotation. If you declare a column as `type: date`, Lightdash treats it as a calendar value with no timezone applied, and renders it as-is.
 
+## Override a column's timestamp domain
+
+Lightdash reads whether a timestamp column is timezone-aware or naive directly from your warehouse catalog, so you normally don't need to declare it. Override it on a column when the warehouse type doesn't match how the data is actually stored — for example, a `TIMESTAMP_NTZ` column that already holds UTC instants, or a view whose column comes back untyped.
+
+Set `timestamp_domain` to `aware` (an instant in time) or `naive` (a bare wall clock, no zone attached) in your column's meta:
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: created_at
+        meta:
+          dimension:
+            type: timestamp
+            timestamp_domain: aware
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    columns:
+      - name: created_at
+        config:
+          meta:
+            dimension:
+              type: timestamp
+              timestamp_domain: aware
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: created_at
+        type: timestamp
+        timestamp_domain: aware
+    ```
+  </Tab>
+</Tabs>
+
+The YAML declaration wins over the warehouse catalog. It only applies when the dimension resolves to a real column: if you provide custom `sql`, or on additional dimensions, the domain is dropped because the expression may change it. Interval children (`_day`, `_month`, ...) inherit the domain from their base.
+
+Naive columns still follow the [data timezone](#configure-your-connection) you set on the connection when Lightdash needs to interpret them as an instant.
+
 ## Naming conventions
 
 Lightdash doesn't enforce naming, but consistent suffixes make a model easier to read:
