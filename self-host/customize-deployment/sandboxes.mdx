@@ -39,6 +39,7 @@ the provider with the `SANDBOX_PROVIDER` environment variable.
 | **E2B** (default) | `e2b` | Production / managed | microVM |
 | **AWS Lambda MicroVMs** | `lambda-microvm` | Production on AWS (self-hosted) | microVM |
 | **Azure Container Apps Sandboxes** | `azure-sandboxes` | Production on Azure (self-hosted) | microVM |
+| **Google Cloud Run Sandboxes** | `gcp-cloud-run` | GCP (self-hosted, preview) | gVisor |
 | **Local Docker** | `docker` | Local development only | container |
 
 **E2B**, **AWS Lambda MicroVMs**, and **Azure Container Apps Sandboxes** are all supported
@@ -219,6 +220,124 @@ with **full traffic inspection** so the platform enforces the deny on all traffi
 non-HTTP egress. Untrusted agent code can't reach any other destination — outbound requests
 to non-allowlisted hosts are rejected, and all other ports are blocked.
 
+## Google Cloud Run Sandboxes (self-hosted, preview)
+
+Use the `gcp-cloud-run` provider to run data app sandboxes in a
+[Cloud Run service](https://docs.cloud.google.com/run/docs/code-execution). Lightdash
+connects to the service through an HTTP gateway included in the sandbox image.
+
+<Note>
+Cloud Run Sandboxes is in public preview and currently supports data app generation only.
+AI writeback is not supported.
+</Note>
+
+### Prerequisites
+
+- A Google Cloud project with billing enabled.
+- A recent version of the `gcloud` CLI that supports
+  `gcloud beta run deploy --sandbox-launcher`.
+- A checkout of the Lightdash repository.
+- [External object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage)
+  configured for Lightdash.
+- An Anthropic API key.
+
+### 1. Enable the Google Cloud APIs
+
+```bash
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
+  --project <your-project>
+```
+
+### 2. Build the gateway image
+
+From the root of the Lightdash repository, run:
+
+```bash
+cd sandboxes/data-apps
+
+STAGE=$(mktemp -d)
+cp -R template lightdash-query-sdk.tgz "$STAGE/"
+npm pack @computesdk/cloud-run --pack-destination "$STAGE" >/dev/null
+tar -xzf "$STAGE"/computesdk-cloud-run-*.tgz \
+  -C "$STAGE" package/dist/gateway.mjs
+mv "$STAGE/package/dist/gateway.mjs" "$STAGE/gateway.mjs"
+
+sed 's|^RUN chown -R user:user /app|RUN useradd -m -s /bin/bash user 2>/dev/null \|\| true|' \
+  e2b.Dockerfile > "$STAGE/Dockerfile"
+
+cat >> "$STAGE/Dockerfile" <<'EOF'
+
+COPY gateway.mjs /gateway/gateway.mjs
+ENV NODE_ENV=production
+CMD ["node", "/gateway/gateway.mjs"]
+EOF
+
+gcloud builds submit "$STAGE" \
+  --tag gcr.io/<your-project>/lightdash-sandbox-gateway:latest \
+  --project <your-project>
+```
+
+### 3. Deploy the gateway
+
+Generate a shared secret and deploy the image:
+
+```bash
+SANDBOX_SECRET=$(openssl rand -hex 32)
+
+gcloud beta run deploy lightdash-sandbox-gateway \
+  --image gcr.io/<your-project>/lightdash-sandbox-gateway:latest \
+  --region <region> \
+  --project <your-project> \
+  --sandbox-launcher \
+  --no-cpu-throttling \
+  --session-affinity \
+  --cpu 4 \
+  --memory 16Gi \
+  --concurrency 20 \
+  --min-instances 1 \
+  --max-instances 1 \
+  --timeout 3600 \
+  --allow-unauthenticated \
+  --set-env-vars "SANDBOX_SECRET=$SANDBOX_SECRET"
+```
+
+Save `SANDBOX_SECRET` securely. You need the same value when configuring Lightdash.
+Although the Cloud Run service allows unauthenticated requests, the gateway requires this
+secret for every sandbox operation.
+
+Keep the service at one instance. Active sandboxes run inside that instance and are lost
+if Cloud Run replaces it during a generation.
+
+### 4. Configure Lightdash
+
+Get the gateway URL:
+
+```bash
+gcloud run services describe lightdash-sandbox-gateway \
+  --region <region> \
+  --project <your-project> \
+  --format='value(status.url)'
+```
+
+Set these environment variables on both the Lightdash backend and scheduler:
+
+```bash
+SANDBOX_PROVIDER=gcp-cloud-run
+ANTHROPIC_API_KEY=sk-ant-...
+GCP_CLOUD_RUN_SANDBOX_URL=<gateway-url>
+GCP_CLOUD_RUN_SANDBOX_SECRET=<sandbox-secret>
+```
+
+Restart the backend and scheduler to apply the configuration.
+
+<Warning>
+Cloud Run sandboxes use unrestricted outbound network access when data app generation
+requires internet access. Per-host egress rules are not supported.
+</Warning>
+
+To update the sandbox toolchain, rebuild the gateway image and redeploy the Cloud Run
+service.
+
 ## Local Docker provider (development)
 
 For local development you can run sandboxes as plain Docker containers on your own machine
@@ -282,13 +401,15 @@ SANDBOX_SNAPSHOT_RETENTION_MS=604800000 # auto-terminate a suspended microVM (de
 **Azure Sandboxes** providers (for Azure it sets each sandbox's Memory-mode auto-suspend
 interval). `SANDBOX_SNAPSHOT_RETENTION_MS` is read only by Lambda MicroVMs — on Azure,
 suspended-sandbox retention is governed by the sandbox group's own auto-delete policy.
-**E2B** manages idle sandboxes itself, and the **Docker** dev provider has no idle handling.
+**E2B** manages idle sandboxes itself, and the **Docker** and **Cloud Run** providers have
+no cloud-side idle handling — both persist suspend-time snapshots to object storage and
+destroy the sandbox, so nothing idles in the first place.
 
 ## Environment variable reference
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `SANDBOX_PROVIDER` | `e2b` | Sandbox backend: `e2b`, `lambda-microvm`, `azure-sandboxes`, or `docker`. |
+| `SANDBOX_PROVIDER` | `e2b` | Sandbox backend: `e2b`, `lambda-microvm`, `azure-sandboxes`, `gcp-cloud-run`, or `docker`. |
 | `ANTHROPIC_API_KEY` | — | API key for the Claude Code agent running inside the sandbox. |
 | `E2B_API_KEY` | — | E2B API key (required when `SANDBOX_PROVIDER=e2b`). |
 | `E2B_TEMPLATE_NAME` | `lightdash/lightdash-data-app` | E2B template for data app sandboxes. |
@@ -311,6 +432,8 @@ suspended-sandbox retention is governed by the sandbox group's own auto-delete p
 | `AZURE_SANDBOXES_RESOURCE_TIER` | `M` | Sandbox size: `XS`, `S`, `M`, or `L`. |
 | `AZURE_SANDBOXES_API_VERSION` | `2026-02-01-preview` | Azure Sandboxes data-plane API version. |
 | `AZURE_SANDBOXES_TOKEN_SCOPE` | `https://management.azuredevcompute.io/.default` | Entra token scope for the data plane. |
+| `GCP_CLOUD_RUN_SANDBOX_URL` | — | URL of the sandbox gateway Cloud Run service (required when `SANDBOX_PROVIDER=gcp-cloud-run`). |
+| `GCP_CLOUD_RUN_SANDBOX_SECRET` | — | Shared secret the gateway was deployed with (required when `gcp-cloud-run`). |
 | `SANDBOX_DOCKER_IMAGE` | `lightdash-sandbox:local` | Local image for data app sandboxes (`docker` provider). |
 | `SANDBOX_AI_WRITEBACK_DOCKER_IMAGE` | `lightdash-ai-writeback:local` | Local image for writeback sandboxes (`docker` provider). |
 | `SANDBOX_IDLE_TIMEOUT_MS` | `1800000` (30 min) | Auto-suspend a running-but-idle sandbox (`lambda-microvm` and `azure-sandboxes`). Ignored by `e2b`/`docker`. |
