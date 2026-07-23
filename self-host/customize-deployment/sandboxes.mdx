@@ -331,9 +331,59 @@ GCP_CLOUD_RUN_SANDBOX_SECRET=<sandbox-secret>
 Restart the backend and scheduler to apply the configuration.
 
 <Warning>
-Cloud Run sandboxes use unrestricted outbound network access when data app generation
-requires internet access. Per-host egress rules are not supported.
+Cloud Run sandboxes block all outbound traffic by default, but sandboxes that need
+internet access (data app generation does) are launched with egress fully open — the
+sandbox layer is on/off only, with no per-host rules. To constrain what sandboxes can
+reach, route the service through your VPC and filter there (next step).
 </Warning>
+
+### 5. Restrict sandbox egress (recommended)
+
+Sandbox traffic exits through the gateway instance's network path, so it follows the
+service's [VPC egress setting](https://docs.cloud.google.com/run/docs/configuring/vpc-direct-vpc)
+and can be filtered with standard VPC networking. None of this is provisioned by
+Lightdash — you configure it yourself:
+
+1. **A subnet on the VPC network you'll filter**, in the same region as the gateway
+   service.
+
+2. **A Cloud Router and Cloud NAT on that network.** Once the service routes all traffic
+   through the VPC, outbound internet access only works via NAT — without it, sandboxes
+   *and the gateway itself* lose all egress. Reserve a static IP for the NAT if you want
+   a stable egress IP to allowlist on your side (for example, on your git host):
+
+   ```bash
+   gcloud compute routers create sandbox-egress-router \
+     --network <network> --region <region> --project <your-project>
+
+   gcloud compute routers nats create sandbox-egress-nat \
+     --router sandbox-egress-router --region <region> --project <your-project> \
+     --auto-allocate-nat-external-ips --nat-all-subnet-ip-ranges
+   ```
+
+3. **Direct VPC egress on the gateway service.** This deploys a new revision, so any
+   active sandboxes are lost — do it while no generation is running:
+
+   ```bash
+   gcloud beta run services update lightdash-sandbox-gateway \
+     --region <region> --project <your-project> \
+     --network <network> --subnet <subnet> --vpc-egress all-traffic
+   ```
+
+   All sandbox traffic now leaves through your VPC: its public egress IP is the NAT IP,
+   and VPC firewall **egress rules apply to it** — a deny rule for a destination range
+   blocks matching sandbox traffic while the rest keeps flowing.
+
+4. **Filter what sandboxes can reach.** VPC firewall rules give you IP/CIDR-level
+   control. For a domain-level allowlist, add
+   [Secure Web Proxy](https://cloud.google.com/secure-web-proxy/docs/overview): create a
+   deny-all-egress firewall rule that only allows traffic to the proxy, and allowlist the
+   domains the sandboxes and the gateway need — at minimum `api.anthropic.com`,
+   `registry.npmjs.org`, and your object storage endpoint. Secure Web Proxy is an
+   explicit proxy: clients must be configured to use it (bake proxy settings into the
+   gateway image — sandboxes share its root filesystem), and the deny-all firewall drops
+   anything that bypasses it.
+
 
 To update the sandbox toolchain, rebuild the gateway image and redeploy the Cloud Run
 service.
