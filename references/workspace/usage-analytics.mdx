@@ -54,15 +54,34 @@ Query tags are metadata which is added to your data warehouse queries and gives 
 
 The following query tags are sent:
 
-| Query Tag         | Detail                                                                                                                                                                                                         |
-| :---------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| organization_uuid | Lightdash organization unique identifier.                                                                                                                                                                      |
-| project_uuid      | Lightdash project unique identifier.                                                                                                                                                                           |
-| user_uuid         | User unique identifier.                                                                                                                                                                                        |
-| dashboard_uuid    | Dashboard unique identifier.                                                                                                                                                                                   |
-| chart_uuid        | Chart unique identifier.                                                                                                                                                                                       |
-| explore_name      | Name of the explore.                                                                                                                                                                                           |
-| query_context     | Which context the query was executed in. <br /><br />For queries in: <br />- dashboards use `dashboardView` <br />- explore use `exploreView`<br />- chart use `chartView`<br />- sql chart use `sqlChartView` |
+| Query Tag                | Detail                                                                                                                                                                                                         |
+| :----------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| organization_uuid        | Lightdash organization unique identifier.                                                                                                                                                                      |
+| project_uuid             | Lightdash project unique identifier.                                                                                                                                                                           |
+| user_uuid                | User unique identifier.                                                                                                                                                                                        |
+| dashboard_uuid           | Dashboard unique identifier.                                                                                                                                                                                   |
+| chart_uuid               | Chart unique identifier.                                                                                                                                                                                       |
+| explore_name             | Name of the explore.                                                                                                                                                                                           |
+| query_context            | Which context the query was executed in. <br /><br />For queries in: <br />- dashboards use `dashboardView` <br />- explore use `exploreView`<br />- chart use `chartView`<br />- sql chart use `sqlChartView` |
+| user_attribute_`<name>`  | One tag per [user attribute](/references/workspace/user-attributes) value assigned to the querying user. Applies to both regular users and embed viewers, and requires no configuration.                       |
+
+### User attribute tags
+
+For every query, Lightdash emits an extra `user_attribute_<name>` tag for each user attribute value assigned to the user running the query. This makes it possible to attribute warehouse cost, audit access, or debug row-level-security by user attribute directly from your warehouse's query history.
+
+- Tags are emitted alongside the standard query tags for both signed-in users and embed viewers (using the attributes passed on the embed token).
+- Values are carried through async query execution end-to-end, so they appear on the actual warehouse job (for example, as labels on a BigQuery job).
+- Keys and values are sanitized to match warehouse tag constraints — lower-cased, restricted to `a-z 0-9 _ -`, and truncated if too long. Invalid or oversized metadata is sanitized rather than blocking the query.
+- No configuration is required — user attribute tags are emitted automatically wherever query tags are already supported.
+
+For example, a user with the `region` attribute set to `emea` and `customer_tier` set to `enterprise` will produce these additional tags on every warehouse query they trigger:
+
+```text
+user_attribute_region=emea
+user_attribute_customer_tier=enterprise
+```
+
+You can then filter your warehouse's query or job history by these tags (for example, `labels.user_attribute_region = "emea"` in BigQuery) to break down usage or cost by user attribute.
 
 Query tags are stored differently in each data warehouse:
 
