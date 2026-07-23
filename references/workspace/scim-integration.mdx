@@ -247,6 +247,43 @@ SCIM_ENABLED=true
       For example, if a user is provisioned as inactive or is deactivated in Azure, that user will still exist in Lightdash marked as inactive, meaning they will be unable to use the platform.
     </Info>
   </Accordion>
+  <Accordion title="Google Workspace">
+    <Warning>
+      Google Workspace's [automated user provisioning](https://knowledge.workspace.google.com/admin/users/advanced/about-automated-user-provisioning) only works for applications in Google's own app catalog. Unlike Okta or Microsoft Entra ID, Google does not currently support registering a custom SCIM 2.0 application, so there is no native Google → Lightdash provisioning connector. Google's inbound SCIM support (2026) is the reverse direction — provisioning users *into* Google Workspace — and does not change this.
+    </Warning>
+
+    You can still automate user provisioning from Google Workspace in two ways:
+
+    ### Option 1 - Provision through an intermediary IdP
+
+    Keep Google Workspace as your identity source and connect it to an identity provider that supports custom SCIM applications, such as Okta or Microsoft Entra ID. Then follow the [Okta](#integration-guides) or [Azure](#integration-guides) guide above to connect that IdP to Lightdash.
+
+    ### Option 2 - Call the Lightdash SCIM API directly
+
+    Lightdash exposes a standard SCIM 2.0 API, so any SCIM-compatible client can manage users and groups — including a sync job of your own that reads from the [Google Directory API](https://developers.google.com/workspace/admin/directory) and pushes changes to Lightdash.
+
+    Use the SCIM base URL and access token from [SCIM Setup within Lightdash](#scim-setup-within-lightdash). For example, to create a user with an organization role and a project role:
+
+    ```bash
+    curl -X POST "https://YOUR_APP_URL/api/v1/scim/v2/Users" \
+      -H "Authorization: Bearer YOUR_SCIM_TOKEN" \
+      -H "Content-Type: application/scim+json" \
+      -d '{
+        "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+        "userName": "jane@example.com",
+        "name": { "givenName": "Jane", "familyName": "Doe" },
+        "active": true,
+        "roles": [
+          { "value": "editor" },
+          { "value": "3675b69e-8324-4110-bdca-059031aa8da3:viewer" }
+        ]
+      }'
+    ```
+
+    Role `value`s follow the format described in [User Role Provisioning](#user-role-provisioning): an organization role name (e.g. `editor`), or `<project_uuid>:<role>` for project roles. Only the `value` field is required.
+
+    See the [SCIM API reference](https://docs.lightdash.com/api-reference/scim/list-users) for all endpoints and payloads.
+  </Accordion>
 </AccordionGroup>
 
 ## API docs
@@ -354,7 +391,7 @@ The SCIM roles model is currently an [IETF draft](https://datatracker.ietf.org/d
 
 - Okta: Does not natively auto-populate role picklists by consuming a SCIM `/Roles` endpoint. You can still provision `roles` [manually](https://help.okta.com/en-us/content/topics/users-groups-profiles/usgp-add-custom-user-attributes.htm) or implement custom sync using [Okta Workflows](https://help.okta.com/wf/en-us/content/topics/workflows/workflows-main.htm) or a [custom app](https://help.okta.com/en-us/content/topics/apps/apps_app_integration_wizard.htm).
 - Microsoft Entra ID (Azure AD): Does not currently auto-discover roles from `/Roles`. Use [manual configuration](https://learn.microsoft.com/azure/active-directory/app-provisioning/customize-application-attributes) of allowed roles.
-- Google Cloud Identity / Workspace: No native auto-consumption of `/Roles`. Use [manual configuration](https://knowledge.workspace.google.com/admin/users/advanced/about-automated-user-provisioning) of allowed roles.
+- Google Cloud Identity / Workspace: Custom SCIM applications are not supported, so there is no role configuration to do in Google itself. See the [Google Workspace integration guide](#integration-guides) above for the available approaches.
 - SailPoint (IdentityNow/IdentityIQ): Supports SCIM roles harvesting; with the right connector configuration, it can ingest roles from custom endpoints like `/Roles`.
 - Other IGA/IM tools (e.g., OneLogin): Some support importing roles from SCIM apps; use depends on the specific connector.
 
