@@ -1,0 +1,207 @@
+---
+title: "AI agents as code"
+sidebarTitle: "Agents as code"
+description: "Download AI agents to YAML, review them in Git, and promote them between projects using the same content-as-code workflow as charts and dashboards."
+---
+
+You can serialize a project's AI agents to YAML with the Lightdash CLI, keep them under version control, and promote them between environments — preview, staging, production — using the standard `lightdash download` / `lightdash upload` flow.
+
+Use agents as code when you want to:
+
+- Review agent instructions, tags, model settings, and [evaluation suites](/guides/ai-agents/evaluations) in pull requests before they reach production
+- Copy a working agent from one project to another (for example, from a preview into production) without recreating it in the UI
+- Roll agent config back to a known-good version using Git history
+- Bootstrap new projects with the same set of agents you use elsewhere
+
+Agent config as code is **opt-in**. A bare `lightdash download` does not include agents — you have to ask for them with `--include-agents` or `--agents`.
+
+<Note>
+This is part of the same content-as-code system as [dashboards as code](/guides/developer/dashboards-as-code). The same disposable-vs-Git-managed tradeoff and CI patterns apply.
+</Note>
+
+## On-disk layout
+
+Agent files live under `lightdash/ai-agents/` next to your `charts/` and `dashboards/` folders. Each agent is a single `.yml` file named after its slug:
+
+```text
+lightdash/
+├── ai-agents/
+│   ├── orders-support-agent.yml
+│   └── revenue-analyst.yml
+├── charts/
+└── dashboards/
+```
+
+`lightdash upload` automatically picks up every `.yml` (or `.yaml`) file in `lightdash/ai-agents/` and syncs it to the [selected project](/references/lightdash-cli#lightdash-config-set-project).
+
+## Downloading agents
+
+Use one of the two flags below to include agents in a download. Neither is set by default.
+
+Download every AI agent in the project (paginated automatically by the CLI):
+
+```bash
+lightdash download --include-agents
+```
+
+Download only specific agents by slug or UUID:
+
+```bash
+lightdash download --agents orders-support-agent revenue-analyst
+```
+
+You can combine agent flags with the usual `--charts`, `--dashboards`, `--project`, and `-p / --path` flags on [`lightdash download`](/references/lightdash-cli#lightdash-download).
+
+## Uploading agents
+
+`lightdash upload` uploads every agent file in `lightdash/ai-agents/` by default. Uploads are **idempotent**: the server creates missing agents, updates existing agents by slug, and leaves unchanged agents alone.
+
+Upload every agent along with charts and dashboards:
+
+```bash
+lightdash upload
+```
+
+Upload only specific agents by slug:
+
+```bash
+lightdash upload --agents orders-support-agent
+```
+
+Skip agent uploads entirely, even when files exist under `lightdash/ai-agents/`:
+
+```bash
+lightdash upload --skip-agents
+```
+
+<Note>
+Unlike charts and dashboards, you do **not** need `--force` to create a new agent. Uploading a file whose `slug` does not exist in the target project creates the agent; changing the `slug` in an existing file creates a new agent under the new slug (the old one is not deleted).
+</Note>
+
+### Exit codes and validation
+
+The CLI validates each agent file before uploading. Invalid YAML, missing required fields, wrong `contentType`, or duplicate slugs across files cause `lightdash upload` to exit with a non-zero status, which is what you want in CI so bad config fails the build.
+
+## YAML schema
+
+Every agent file uses the following top-level shape. The schema is versioned independently from the runtime engine — `version` describes the as-code file format, and `agentVersion` records which runtime version the agent uses.
+
+```yaml lightdash/ai-agents/orders-support-agent.yml
+contentType: ai_agent
+version: 1
+agentVersion: 2
+slug: orders-support-agent
+name: Orders Support Agent
+description: Answers questions about orders, fulfillment, and refunds.
+imageUrl: null
+instruction: |
+  You are a support analyst for the ecommerce team. Use the orders and
+  shipments explores to answer questions about order status, refunds, and
+  fulfillment SLAs. Always report totals in GBP.
+tags:
+  - ai
+  - orders
+enableDataAccess: true
+enableSelfImprovement: true
+enableContentTools: false
+enableUserContext: true
+modelConfig:
+  modelName: gpt-4o
+  modelProvider: openai
+  reasoning: false
+evaluations:
+  - title: Orders regression suite
+    prompts:
+      - prompt: How many orders were refunded last month?
+        expectedResponse: Uses the refunds metric and filters to last month.
+      - prompt: Which orders are currently delayed?
+        expectedResponse: null
+```
+
+### Field reference
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `contentType` | string | Always `ai_agent`. The CLI refuses to upload files with any other value. |
+| `version` | number | Schema version of the file itself. Currently `1`. |
+| `agentVersion` | `1` \| `2` | Runtime version of the agent. Both v1 and v2 round-trip through download and upload. |
+| `slug` | string | Stable identifier used to match against agents in the target project. Changing the slug creates a new agent on upload. |
+| `name` | string | Human-readable name shown in the UI. |
+| `description` | string \| null | Short description. |
+| `imageUrl` | string \| null | URL for the agent's avatar. Uploaded-avatar provenance is preserved across environments. |
+| `instruction` | string \| null | The agent's system prompt / instructions. See [getting started](/guides/ai-agents/getting-started#instructions) for guidance on what to include. |
+| `tags` | string[] \| null | Semantic tags used for [data access control](/guides/ai-agents/data-access#limiting-access-to-specific-explores-and-fields). |
+| `enableDataAccess` | boolean | Whether the agent can execute queries and read actual data. See [data access](/guides/ai-agents/data-access). |
+| `enableSelfImprovement` | boolean | Whether the agent captures corrections into [agent memory](/guides/ai-agents/agent-memory). |
+| `enableContentTools` | boolean | Whether the agent can create and edit charts and dashboards. See [creating & editing content](/guides/ai-agents/content-tools). |
+| `enableUserContext` | boolean | Whether the agent receives the asking user's identity for [personalized answers](/guides/ai-agents/data-access#personalizing-answers-to-who-is-asking). |
+| `modelConfig` | object \| null | Default model settings: `modelName`, `modelProvider`, and optional `reasoning` flag. When `null`, the agent inherits the [organization default](/guides/ai-agents/getting-started#set-an-organization-default-ai-model). |
+| `evaluations` | object[] (optional) | Evaluation suite definitions to create or update by title. Downloads include this field even when the agent has no suites (`evaluations: []`). |
+
+### Evaluation suites
+
+Use the optional `evaluations` field to keep an agent's [evaluation suites](/guides/ai-agents/evaluations) and prompts in Git with the rest of its configuration. Each suite has this shape:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `title` | string | The suite name and stable identifier used to find an existing suite on upload. Titles must be non-empty and unique within the agent file. |
+| `prompts` | object[] | Questions to run against the agent. Each prompt object contains `prompt` and `expectedResponse`. |
+| `prompts[].prompt` | string | A non-empty question to send to the agent. |
+| `prompts[].expectedResponse` | string \| null | A description of a correct answer for the LLM-as-judge scorer. Use `null` when you want to review the response manually. |
+
+Downloads are deterministic: suites are sorted by title, and prompts are sorted by their prompt and expected response. This avoids noisy Git diffs when the same definitions were created in a different order in the UI.
+
+On upload, Lightdash matches each declared suite by its exact title:
+
+- A new title creates a suite.
+- An existing title updates that suite's prompts when they have changed.
+- Suites that are not declared in YAML remain unchanged in the target project.
+- Omitting `evaluations` preserves all existing suites. Setting `evaluations: []` also does not delete them.
+
+<Warning>
+Evaluation suite syncing does not delete undeclared suites. Removing a suite from YAML, or changing its title, leaves the old suite in Lightdash; a changed title creates a new suite. Delete the old suite in the UI if you no longer need it.
+</Warning>
+
+Uploads fail with a non-zero exit code before changing the agent if a file contains duplicate suite titles, an empty title, or an empty prompt. An upload also fails when the target agent has multiple existing suites that match a declared title, because Lightdash cannot choose which suite to update.
+
+## What is not versioned
+
+Some pieces of an agent are runtime state and are deliberately kept out of the YAML file — they stay in the target environment and are preserved across create/update/no-op uploads:
+
+- **Conversations and threads.** Chat history is runtime state and never written to YAML. Uploading a change to an agent does not touch existing threads.
+- **Evaluation run history.** Suite definitions and prompts can be versioned in `evaluations`, but previous runs and their results remain in the target environment and are never downloaded.
+- **User and group access lists.** Access control is project-specific and stays managed in the target environment. See [user and group access](/guides/ai-agents/getting-started#user-and-group-access-optional).
+- **Slack integrations.** Slack channel bindings are per-environment and are not serialized.
+- **MCP server references.** [MCP server](/guides/ai-agents/mcp-servers) references stay in the target project.
+- **Uploaded knowledge documents.** Uploaded [documents](/guides/ai-agents/getting-started#knowledge-documents-optional) are preserved across upload but are not written into the YAML file itself.
+
+This split lets you promote agent behavior (instructions, tags, model config, capability flags) through Git while still letting each environment own the things that don't make sense to copy — production Slack channels, per-project MCP servers, per-environment access lists.
+
+## Lifecycle examples
+
+Assuming a file at `lightdash/ai-agents/orders-support-agent.yml`:
+
+- **Create.** The target project has no agent with slug `orders-support-agent`. `lightdash upload` creates it.
+- **Update.** The target project already has `orders-support-agent`. Editing `instruction` or `tags` in the file and running `lightdash upload` updates the existing agent in place.
+- **No-op.** Nothing has changed since the last upload. The CLI reports the agent as skipped and makes no API call.
+- **Rename by slug.** Changing `slug: orders-support-agent` to `slug: orders-support-agent-v2` and uploading creates a new agent under the new slug. The original agent is untouched.
+- **Per-project isolation.** Uploading with `--project <another-uuid>` only affects that project — the same slug in different projects refers to different agents.
+
+## API
+
+The CLI is a thin wrapper around two permission-gated project endpoints:
+
+- **`GET /api/v1/projects/{projectUuid}/aiAgents/code`** — paginated download of agents as code. Accepts repeated `ids` query params (slug or UUID) to filter, and an `offset` for pagination.
+- **`POST /api/v1/projects/{projectUuid}/aiAgents/code`** — idempotent create-or-update by slug for one or more agents. Accepts a `force` query flag. Returns a summary of `created`, `updated`, `unchanged`, and `deleted` slugs.
+
+Both endpoints require project-level permission to manage AI agents. See the [API reference](/api-reference/v1/introduction) for the full request and response schema.
+
+## CI/CD
+
+Because upload is idempotent and returns a non-zero exit code on invalid files, agents as code fits the same CI patterns as [Git-managed dashboards](/guides/developer/dashboards-as-code#git-managed-dashboards):
+
+1. Store `lightdash/ai-agents/` in Git.
+2. On PR, run `lightdash upload --skip-charts --skip-dashboards --agents <slug>` against a [preview project](/guides/developer/preview-projects) to sanity-check the change.
+3. On merge to `main`, run `lightdash upload` against production.
+
+Lock down agent editing in the UI (via role permissions) if you want the YAML files to be the definitive source of truth for agent config.

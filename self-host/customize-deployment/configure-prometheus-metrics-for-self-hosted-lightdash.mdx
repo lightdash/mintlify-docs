@@ -1,6 +1,7 @@
 ---
 title: "Configure Prometheus metrics for self-hosted Lightdash"
 sidebarTitle: Prometheus metrics
+boost: 0.001
 ---
 
 <Note>
@@ -31,6 +32,7 @@ You can customize the Prometheus metrics endpoint using the following environmen
 | `LIGHTDASH_EVENT_LOOP_MONITORING_PRECISION` | Precision for event loop monitoring in milliseconds. Must be greater than zero. |           |            `10`             |
 | `LIGHTDASH_PROMETHEUS_LABELS`               | Labels to add to all metrics. Must be valid JSON                                |           |                             |
 | `LIGHTDASH_CUSTOM_METRICS_CONFIG_PATH`      | Path to a JSON config file for custom event-driven counter metrics              |           |                             |
+| `LIGHTDASH_PROMETHEUS_HTTP_METRICS_ENABLED` | Enables the OpenTelemetry `http.server.request.duration` histogram with semconv labels and route templates |           |           `false`           |
 
 ## Available metrics
 
@@ -149,12 +151,25 @@ These metrics track the performance of the AI agent:
 | `ai_agent_stream_response_duration_ms` | histogram | AI agent stream response time in milliseconds | |
 | `ai_agent_stream_first_chunk_ms` | histogram | AI agent time to first chunk (any type) | |
 | `ai_agent_ttft_ms` | histogram | AI agent time to first token (TTFT) | `model`, `mode` |
+| `ai_repofs_github_tree_duration_ms` | histogram | Duration of the repoShell GitHub Git Trees fetch (repo listing, once per run) in milliseconds | |
+| `ai_repofs_github_file_duration_ms` | histogram | Duration of a per-file GitHub Contents read in milliseconds | `outcome` (`found`, `missing`, `error`) |
+| `ai_writeback_sandbox_create_duration_ms` | histogram | Duration of AI writeback E2B sandbox create/resume in milliseconds | |
+| `ai_writeback_compile_duration_ms` | histogram | Duration of in-sandbox `lightdash compile` during AI writeback in milliseconds | `status` |
+| `ai_writeback_run_duration_ms` | histogram | End-to-end AI writeback run duration in milliseconds | `status` |
 
 ### S3 metrics
 
 | Metric | Type | Description | Labels |
 | :----- | :--- | :---------- | :----- |
 | `lightdash_s3_results_upload_duration_seconds` | histogram | S3 results upload duration | `source` |
+
+### HTTP server metrics
+
+When `LIGHTDASH_PROMETHEUS_HTTP_METRICS_ENABLED` is set to `true`, Lightdash exposes a standardized [OpenTelemetry HTTP server semantic convention](https://opentelemetry.io/docs/specs/semconv/http/http-metrics/) histogram. Buckets are in seconds and labels use route templates (not raw URLs) to keep cardinality bounded.
+
+| Metric | Type | Description | Labels |
+| :----- | :--- | :---------- | :----- |
+| `http_server_request_duration_seconds` | histogram | Duration of inbound HTTP requests in seconds | `http_request_method`, `http_response_status_code`, `http_route`, `url_scheme`, `network_protocol_version` |
 
 ### Custom event metrics
 

@@ -8,14 +8,14 @@ description: "Configure your self-hosted Lightdash instance to run Data apps."
   Data apps are an **enterprise** feature. You'll need a valid `LIGHTDASH_LICENSE_KEY` set on your instance before any of the configuration below takes effect.
 </Info>
 
-Data apps are AI-generated React code, produced inside an isolated [E2B](https://e2b.dev/) sandbox, built with Vite, and stored in an S3-compatible bucket. To enable the feature on a self-hosted Lightdash instance you need to bring your own E2B and Anthropic API keys, and point Lightdash at a bucket it can write to.
+Data apps are AI-generated React code, produced inside an isolated [E2B](https://e2b.dev/) sandbox, built with Vite, and stored in an S3-compatible bucket. To enable the feature on a self-hosted Lightdash instance you need to bring your own E2B and Claude credentials (via Anthropic or AWS Bedrock), and point Lightdash at a bucket it can write to.
 
 ## Prerequisites
 
 - **Enterprise license** - `LIGHTDASH_LICENSE_KEY` must be set on your instance.
 - **S3-compatible storage** - a bucket Lightdash can write to for app source and built artifacts. If your instance isn't already using S3, [set that up first](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage).
 - **An E2B account** - sign up at [e2b.dev](https://e2b.dev/) and create an API key. E2B is the sandbox provider we use to build the apps.
-- **An Anthropic API key** - sign up at [console.anthropic.com](https://console.anthropic.com/) and create an API key. Claude is the model that writes the React code inside the sandbox.
+- **A Claude provider** - either an [Anthropic](https://console.anthropic.com/) API key or an [AWS Bedrock](https://aws.amazon.com/bedrock/) account with Claude Sonnet access enabled. Claude is the model that writes the React code inside the sandbox.
 
 ## Configuration
 
@@ -27,7 +27,29 @@ Add the following environment variables to your Lightdash deployment:
 | `APPS_S3_BUCKET` | `lightdash-apps` | Bucket Lightdash will write app source and built artifacts to. Falls back to `S3_BUCKET` if unset - set this if you want a dedicated bucket. |
 | `E2B_API_KEY` | `<your-e2b-api-key>` | Your [E2B](https://e2b.dev/) API key. E2B is the sandbox provider where we generate and build the apps. |
 | `E2B_TEMPLATE_NAME` | `lightdash/lightdash-data-app` | Lightdash's public E2B template - pulls our prebuilt sandbox image so you don't have to build one yourself. |
-| `ANTHROPIC_API_KEY` | `<your-anthropic-api-key>` | Your [Anthropic](https://console.anthropic.com/) API key. Claude is the model that writes the React code inside the sandbox. |
+
+You also need to configure a Claude provider. Pick one of the two options below.
+
+### Option A: Anthropic (default)
+
+| Variable | Example | Purpose |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | `<your-anthropic-api-key>` | Your [Anthropic](https://console.anthropic.com/) API key. Used when `AI_DEFAULT_PROVIDER` is unset or set to anything other than `bedrock`. |
+
+### Option B: AWS Bedrock
+
+Set `AI_DEFAULT_PROVIDER=bedrock` to route data app generation through AWS Bedrock instead of the Anthropic API. Use a region where Claude Sonnet access is enabled on your AWS account.
+
+| Variable | Example | Purpose |
+| --- | --- | --- |
+| `AI_DEFAULT_PROVIDER` | `bedrock` | Switches both AI Analyst and data apps to Bedrock. |
+| `BEDROCK_REGION` | `us-east-1` | **(Required)** AWS region with Claude Sonnet access enabled. |
+| `BEDROCK_API_KEY` | `<your-bedrock-api-key>` | Bedrock API key (bearer token). Simplest option - use this *or* the IAM keys below, not both. |
+| `BEDROCK_ACCESS_KEY_ID` | `<aws-access-key-id>` | AWS access key ID. Use with `BEDROCK_SECRET_ACCESS_KEY` as an alternative to `BEDROCK_API_KEY`. |
+| `BEDROCK_SECRET_ACCESS_KEY` | `<aws-secret-access-key>` | AWS secret access key paired with `BEDROCK_ACCESS_KEY_ID`. |
+| `BEDROCK_SESSION_TOKEN` | `<aws-session-token>` | Optional. AWS session token for temporary IAM credentials. |
+
+The Bedrock credentials are the same ones used by AI Analyst - see [AWS Bedrock configuration](/self-host/customize-deployment/environment-variables#aws-bedrock-configuration) for the full reference. The sandbox firewall is automatically updated to allow outbound traffic to the Bedrock runtime hosts for your region.
 
 Restart the backend. The "Data apps" entry will appear in the **New** menu for users with the appropriate permission scope.
 
@@ -39,10 +61,10 @@ Restart the backend. The "Data apps" entry will appear in the **New** menu for u
 
 ## Costs
 
-Self-hosting Data apps means you pay E2B and Anthropic directly:
+Self-hosting Data apps means you pay E2B and your Claude provider directly:
 
 - **E2B** bills per sandbox-second. A typical build runs for 1–15 minutes; sandboxes are paused between iterations and resumed on follow-up prompts.
-- **Anthropic** bills per token. Each generation sends the project's dbt catalog and the user's prompt to Claude, plus any attached charts, dashboards, or images.
+- **Anthropic or AWS Bedrock** bills per token. Each generation sends the project's dbt catalog and the user's prompt to Claude, plus any attached charts, dashboards, or images.
 
 Both providers expose usage dashboards. We recommend setting spend limits on both before rolling the feature out to your users.
 
@@ -60,3 +82,6 @@ Verify `E2B_API_KEY` is valid and that your E2B account has access to the `light
 
 **Builds fail mid-generation with an Anthropic error.**
 Check your Anthropic account usage limits and confirm `ANTHROPIC_API_KEY` is valid. Long-running generations can hit rate limits on lower-tier Anthropic plans.
+
+**Builds fail mid-generation with a Bedrock error.**
+Confirm `BEDROCK_REGION` is set to a region where Claude Sonnet access is enabled, and that either `BEDROCK_API_KEY` or the `BEDROCK_ACCESS_KEY_ID` / `BEDROCK_SECRET_ACCESS_KEY` pair is valid. If you use IAM credentials, the principal must have permission to invoke Claude models on Bedrock.

@@ -31,7 +31,7 @@ Embedded Lightdash content is available to view by anyone (not just folks with a
 
 ## Known limitations
 
-- Embedding only works for dashboards and charts directly. To embed explores, use the `canExplore` flag in a dashboard.
+- Embedding works for dashboards, charts, [AI agents](/guides/embedding/ai-agents), the [metrics catalog](/guides/embedding/metrics-catalog), and [data apps](/guides/data-apps). To embed explores, use the `canExplore` flag in a dashboard or metrics catalog token.
 - The **Filter dashboard to** option when clicking on individual chart segments will not work on embedded dashboards.
 
 If you're interested in embedding and one or more of these items are blockers, please reach out.
@@ -62,7 +62,7 @@ All tokens share these fields:
 {
   content: {
     // Content configuration (required)
-    type: 'dashboard' | 'chart',
+    type: 'dashboard' | 'chart' | 'aiAgent' | 'metricsCatalog' | 'dataApp' | 'apiAccess',
     projectUuid?: string,
     // ... type-specific fields
   },
@@ -106,6 +106,7 @@ All configuration options (`dashboardFiltersInteractivity`, `canExportCsv`, `can
       enabled: 'all' | 'some' | 'none',  // Required
       allowedFilters?: string[],          // Required if enabled: 'some'
       hidden?: boolean,                   // Optional: hide filter UI
+      canAddFilters?: boolean,            // Optional: let viewers add temporary filters
     },
 
     // Parameter interactivity
@@ -239,6 +240,257 @@ const token = jwt.sign({
 }, SECRET, { expiresIn: '24h' });
 ```
 
+### AI agent token
+
+For embedding a Lightdash [AI agent](/guides/ai-agents) so users can chat with their data from inside your app. See [Embedding AI agents](/guides/embedding/ai-agents) for the full walkthrough.
+
+```typescript
+{
+  content: {
+    type: 'aiAgent',
+
+    // Agent the embed is allowed to use (required)
+    agentUuid: string,
+
+    // Project identifier (optional)
+    projectUuid?: string,
+  },
+
+  // Required: AI agent embeds must include writeActions
+  writeActions: {
+    spaceUuid: string,                  // Space the agent reads/writes content from
+    serviceAccountUserUuid?: string,    // Use a service account as the actor
+    userUuid?: string,                  // Or use an existing Lightdash user as the actor
+  },
+
+  // Optional: row-level filtering for the embedded viewer
+  userAttributes?: {
+    [attributeName: string]: string,
+  },
+
+  // Optional: user information surfaced in audit/analytics
+  user?: {
+    externalId?: string,
+    email?: string,
+  },
+}
+```
+
+<Info>
+AI agent tokens are scoped to a single agent. A token issued for one `agentUuid` cannot be used to access another agent, and dashboard or chart tokens are rejected on AI agent routes. The agent can only read dashboards and saved charts from `writeActions.spaceUuid`, and saves new charts back into that same space.
+</Info>
+
+**Example:**
+
+```javascript
+import jwt from 'jsonwebtoken';
+
+const token = jwt.sign({
+  content: {
+    type: 'aiAgent',
+    projectUuid: 'your-project-uuid',
+    agentUuid: 'your-agent-uuid',
+  },
+  writeActions: {
+    serviceAccountUserUuid: 'service-account-user-uuid',
+    spaceUuid: 'destination-space-uuid',
+  },
+  userAttributes: {
+    tenant_id: 'tenant-abc',
+  },
+  user: {
+    email: 'customer@example.com',
+  },
+}, SECRET, { expiresIn: '1h' });
+```
+
+### Metrics catalog token
+
+For embedding the project [metrics catalog](/get-started/develop-in-lightdash/how-to-create-metrics) so embedded users can browse metrics and, optionally, continue into Explore. See [Embedding the metrics catalog](/guides/embedding/metrics-catalog) for the full walkthrough.
+
+```typescript
+{
+  content: {
+    type: 'metricsCatalog',
+
+    // Project identifier (required — pins the catalog to a single project)
+    projectUuid: string,
+
+    // Allow embedded users to open Explore from a metric (optional)
+    canExplore?: boolean,
+  },
+
+  // Optional: enable saving charts from the embedded Explore. Required only
+  // when canExplore is true and you want embedded users to save results.
+  writeActions?: {
+    spaceUuid: string,
+    serviceAccountUserUuid?: string,
+    userUuid?: string,
+  },
+
+  // Optional: row- and column-level filtering for the embedded viewer
+  userAttributes?: {
+    [attributeName: string]: string,
+  },
+
+  // Optional: user information surfaced in audit/analytics
+  user?: {
+    externalId?: string,
+    email?: string,
+  },
+}
+```
+
+<Info>
+Metrics catalog tokens only authorize the metrics catalog surface (and, when `canExplore` is `true`, the embedded Explore launched from a metric). Dashboard, chart, AI agent, and data app tokens are rejected by the metrics catalog routes, and metrics catalog tokens are rejected on other embed routes.
+</Info>
+
+**Example:**
+
+```javascript
+import jwt from 'jsonwebtoken';
+
+const token = jwt.sign({
+  content: {
+    type: 'metricsCatalog',
+    projectUuid: 'your-project-uuid',
+    canExplore: true,
+  },
+  writeActions: {
+    serviceAccountUserUuid: 'service-account-user-uuid',
+    spaceUuid: 'destination-space-uuid',
+  },
+  userAttributes: {
+    tenant_id: 'tenant-abc',
+  },
+  user: {
+    email: 'customer@example.com',
+  },
+}, SECRET, { expiresIn: '1h' });
+```
+
+### Data app token
+
+For embedding a [data app](/guides/data-apps) as standalone content in an iframe (no dashboard). See [How to embed data apps](/guides/embedding/data-apps) for the full guide.
+
+```typescript
+{
+  content: {
+    type: 'dataApp',
+
+    // Data app identifier (required)
+    appUuid: string,
+
+    // Project identifier (optional)
+    projectUuid?: string,
+
+    // Preview mode (optional)
+    isPreview?: boolean,
+  },
+
+  // Optional: User information for query tracking
+  user?: {
+    externalId?: string,
+    email?: string,
+  },
+
+  // Optional: User attributes for row-level filtering
+  userAttributes?: {
+    [attributeName: string]: string,
+  },
+}
+```
+
+<Info>
+A `dataApp` token authorizes only the named app. It cannot render any other data app, chart, or dashboard, even if that content is on the embed allowlist. Interactivity options like `canExportCsv`, `canExplore`, and `dashboardFiltersInteractivity` do not apply to `dataApp` tokens.
+</Info>
+
+<Warning>
+A data app can run arbitrary metric queries across the project. Minting a `dataApp` token means accepting project-wide column access for the app's queries. Row-level access via [user attributes](/references/workspace/user-attributes) is unchanged.
+</Warning>
+
+**Example:**
+
+```javascript
+import jwt from 'jsonwebtoken';
+
+const token = jwt.sign({
+  content: {
+    type: 'dataApp',
+    projectUuid: 'your-project-uuid',
+    appUuid: 'your-app-uuid',
+  },
+  user: {
+    externalId: 'user-789',
+    email: 'user@example.com',
+  },
+  userAttributes: {
+    tenant_id: 'tenant-abc',
+  },
+}, SECRET, { expiresIn: '1h' });
+```
+
+### API access token
+
+Use an API access token when your host app needs to call Lightdash APIs through the React SDK, for example to list spaces, dashboards, and charts with [`Lightdash.useLightdashContent`](/references/react-sdk#lightdashuselightdashcontent).
+
+```typescript
+{
+  content: {
+    type: 'apiAccess',
+
+    // Project identifier (required)
+    projectUuid: string,
+
+    // Service account used for permission checks (required)
+    serviceAccountUserUuid: string,
+  },
+
+  // Optional: row-level filtering for APIs that evaluate user attributes
+  userAttributes?: {
+    [attributeName: string]: string,
+  },
+
+  // Optional: user information surfaced in audit/analytics
+  user?: {
+    externalId?: string,
+    email?: string,
+  },
+}
+```
+
+<Info>
+API access tokens do not embed a specific dashboard or chart. They let the React SDK call supported Lightdash API endpoints with the permissions of `serviceAccountUserUuid`.
+</Info>
+
+**Example:**
+
+```javascript
+import jwt from 'jsonwebtoken';
+
+const token = jwt.sign({
+  content: {
+    type: 'apiAccess',
+    projectUuid: 'your-project-uuid',
+    serviceAccountUserUuid: 'service-account-user-uuid',
+  },
+  userAttributes: {
+    tenant_id: 'tenant-abc',
+  },
+  user: {
+    externalId: 'customer-user-123',
+    email: 'customer@example.com',
+  },
+}, SECRET, { expiresIn: '1h' });
+```
+
+**Rules:**
+
+- API access tokens must be generated server-side with your embed secret.
+- API access is authorized through the service account. The token can only list or read content that the service account can access.
+- A space UUID passed to an API hook is a filter, not a permission grant.
+- API access tokens cannot perform embed write actions. Use an embed token that supports `writeActions` when embedded users need to save charts or dashboards.
+
 ## Interactivity options reference
 
 ### Dashboard filters interactivity
@@ -250,6 +502,7 @@ dashboardFiltersInteractivity?: {
   enabled: 'all' | 'some' | 'none',
   allowedFilters?: string[],  // Filter UUIDs, required if enabled: 'some'
   hidden?: boolean,           // Hide filter UI but keep filters active
+  canAddFilters?: boolean,    // Let viewers add temporary session-only filters
 }
 ```
 
@@ -259,6 +512,7 @@ dashboardFiltersInteractivity?: {
 - `enabled: 'some'` - Only filters listed in `allowedFilters` are interactive
 - `enabled: 'none'` - Filters are applied but not visible or editable
 - `hidden: true` - Filters are configurable at runtime, but UI is hidden (works with 'all' or 'some')
+- `canAddFilters: true` - Render an **Add filter** button so viewers can add temporary filters over any filterable field in the dashboard's explores. Only effective when filter interactivity is enabled (`enabled: 'all'`, or `enabled: 'some'` with a non-empty `allowedFilters`). Viewer-added filters live in session state and the temp-filter deep-link parameter — a fresh embed URL starts clean. JWTs without this field behave exactly as before (button hidden). Metric filters in the picker still require the `metric-dashboard-filters` feature flag on the org.
 
 #### All filters available as interactive:
 
@@ -311,6 +565,19 @@ dashboardFiltersInteractivity: {
 <Frame>
   ![](/images/references/embedding-preview-no-filters-ced58145c215a0b17d86b50634a09057.png)
 </Frame>
+
+#### Let viewers add their own filters:
+
+Set `canAddFilters: true` to render an **Add filter** button in the embedded filter bar. Viewers can add temporary filters against any filterable field in the dashboard's explores. These filters live only in session state and the temp-filter deep-link parameter — reopening the embed URL clears them, and they are never saved back to the dashboard.
+
+```javascript
+dashboardFiltersInteractivity: {
+  enabled: 'all',
+  canAddFilters: true,
+}
+```
+
+The Add filter button only renders when filter interactivity is enabled (`enabled: 'all'`, or `enabled: 'some'` with a non-empty `allowedFilters`). Omitting `canAddFilters` preserves the existing behavior (button hidden).
 
 
 ### Parameter interactivity
@@ -368,7 +635,7 @@ Allows users to zoom into time-series data by changing granularity.
 canDateZoom?: boolean
 ```
 
-When enabled, users can change the date granularity of charts on the dashboard. See the [Date zoom guide](/guides/date-zoom) for complete documentation on this feature.
+When enabled, the embed renders the dashboard's configured date zoom controls (the Default zoom plus any named controls), letting users change the date granularity of charts on the dashboard. See the [Date zoom guide](/guides/date-zoom) for complete documentation on this feature.
 
 ### Explore from here
 
@@ -423,9 +690,15 @@ When this option is off (the default), data app tiles on the dashboard render as
 
 ## Write actions
 
-Write actions let embedded users save new charts from the embedded Explore view. When the JWT includes a `writeActions` claim, Lightdash uses a configured actor (a service account or a regular user) to perform the write on behalf of the embedded viewer, and forces created content into a specific destination space.
+Write actions let embedded users save changes back to Lightdash. When the JWT includes a `writeActions` claim, Lightdash uses a configured actor (a service account or a regular user) to perform the write on behalf of the embedded viewer, and forces created or edited content into a specific destination space.
 
-This is useful when you want to let your customers explore a chart, change it, and save the result back to Lightdash — without giving them a Lightdash login.
+With `writeActions`, embedded users can:
+
+- Save a new chart from the embedded Explore view.
+- Edit an existing embedded dashboard with the React SDK — rename it, add saved charts from the allowed space, and move or resize tiles. See [`Lightdash.Dashboard` edit mode](/references/react-sdk#with-edit-mode).
+- Create a brand-new dashboard with the React SDK using [`Lightdash.DashboardBuilder`](/references/react-sdk#lightdashdashboardbuilder).
+
+This is useful when you want to let your customers explore data, change charts and dashboards, and save the result back to Lightdash — without giving them a Lightdash login.
 
 ```typescript
 writeActions?: {
@@ -441,7 +714,10 @@ writeActions?: {
 - You must provide exactly one of `serviceAccountUserUuid` or `userUuid`.
 - The actor must belong to the same organization as the project and (for `userUuid`) be active.
 - The actor's permissions and space access still apply — the embed inherits whatever the actor can do in that space.
+- When editing or building a dashboard, add-tile content is filtered to `spaceUuid`, so embedded users can only pick saved charts from the allowed space.
+- Dashboards and charts created or edited through write actions are normal Lightdash objects — they can be viewed and edited from Lightdash and vice versa.
 - Newly saved charts are **not** added to the embed allowlist automatically. They behave like normal private content and won't be re-embeddable unless you add them explicitly.
+- API access tokens do not support write actions. They are for supported API reads, such as listing content through the React SDK.
 
 ### Configure write actions
 

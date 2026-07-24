@@ -33,6 +33,32 @@ The options available in here will depend on the data in your chart. But, in her
 - Show value labels or group totals on data points
 - Hide a series from your chart
 
+### Custom colors (conditional formatting)
+
+On bar charts, toggle **Apply custom colors** in the Series tab to recolor bars based on rules you define. Each rule targets a specific metric via the **Target metric** picker and only recolors that metric's bars — other metrics keep their default colors, even where their values match the same condition.
+
+For example, on a chart with `revenue` and `orders` bars grouped by product category, you can add one rule that turns `revenue` bars red when revenue is below `1000`, and a second rule that turns `orders` bars orange when orders are below `50`. Categories where only revenue is below the threshold keep the default color on their `orders` bar, and vice versa.
+
+**When to use it**
+
+- **Conditional formatting** — highlight bars whose value matches a rule (e.g. below target, above threshold). Available on bar charts with one or more metrics, including stacked and 100% stacked bar charts when the stack is built from multiple metrics. Every series on the chart must be a bar; mixed bar/line charts are not supported.
+- **Color by category** — assign a fixed color to each x-axis category. Only available on single-metric, non-stacked bar charts. When both modes are available, use the Category / Conditional formatting toggle at the top of the section to switch between them.
+
+**Stacked and 100% stacked bar charts**
+
+On stacked and 100% stacked bar charts, all rules share a single **Target metric** — changing the target on any rule retargets every rule together, and new rules follow the existing target. Matching segments get a fill override on the chart, while the legend swatch keeps the base series color so the series remains identifiable.
+
+On 100% stacked bar charts, rules evaluate the raw metric value, not the normalized percentage. Two segments with near-identical rendered heights can therefore color differently if their raw values straddle the threshold — for example, a rule `revenue is less than 1000` colors a `$900` segment even when it renders at the same height as an `$1,100` segment in a different category.
+
+Not yet supported: pivoted (grouped) stacks, and color by category on any stacked layout.
+
+**Configuring a rule**
+
+1. In the Series tab, toggle **Apply custom colors** on. A new rule opens expanded so its inputs are immediately visible.
+2. Pick the **Target metric** the rule applies to. On stacked and 100% stacked charts this target is shared across all rules.
+3. Add one or more conditions (for example, `revenue is less than 1000`) and choose a color. A rule with no condition filled in shows **No condition set** until you add one.
+4. Add more rules for other metrics or other thresholds as needed.
+
 ## Axes
 
 In this section you have options to:
@@ -49,6 +75,12 @@ In this section you have options to:
 <Frame>
   ![](/images/guides/configure-charts/chart-config-axes.png)
 </Frame>
+
+### Referencing the active granularity in axis and series labels
+
+Axis names and series names support a `${table_field.granularity}` placeholder that resolves to the active date granularity (for example `day`, `week`, `month`) — including the granularity selected via [date zoom](/guides/date-zoom). This lets a label like `Orders per ${orders_order_date.granularity}` render as `Orders per week` when viewers zoom to a weekly granularity.
+
+See [Referencing the granularity in chart labels](/guides/date-zoom#referencing-the-granularity-in-chart-labels) for the full syntax and the complete list of supported labels.
 
 ### Scrollable chart
 
@@ -101,15 +133,41 @@ If you select a field plotted on your x-axis, then your line will be vertical. I
 You can add and adjust the legend in your chart to help people understand what data's been plotted.
 
 - Show or hide the legend
-- Adjust the position of the legend on your chart
-  - The values in `position` are the coordinates of the legend on your chart. They can either be numbers or percent. We suggest using %.
+- Choose a **Placement** for the legend:
+  - **Chart area** overlays the legend on top of the plot. You can fine-tune its `position`, scroll behavior, and orientation (see below).
+  - **Outside right** or **Outside left** renders the legend beside the plot and reserves space in the chart grid so the legend never overlaps your data. When you pick an outside placement, set the **Legend area width** (in `%` or `px`) to control how much horizontal space is reserved for the legend.
+- When **Placement** is set to **Chart area**:
+  - Adjust the position of the legend on your chart. The values in `position` are the coordinates of the legend on your chart. They can either be numbers or percent. We suggest using %.
   - If you want the position to be in the bottom right, you would set: Right = 0%, Bottom = 0%. For the legend to be in the middle of the chart, you'd set: Top = 50%, Left = 50%.
-- Set your legend to scroll (if you have so many groups that they overlap your chart)
-- Orient the values in your legened to form a list vertically, or horizontally
+  - Set your legend to scroll (if you have so many groups that they overlap your chart).
+  - Orient the values in your legend to form a list vertically, or horizontally.
 
 <Frame>
   ![](/images/guides/configure-charts/chart-config-legend.png)
 </Frame>
+
+#### Saving the default legend selection
+
+On cartesian charts (bar, line, area, scatter, mixed), the legend entries you toggle off in the chart editor are saved with the chart. When someone opens the chart again — in the explore view, a saved chart, or a dashboard — the same series start greyed out. Disabled series stay listed in the legend so viewers can still click them back on for their session; those ephemeral toggles are not written back to the saved chart.
+
+To change the default:
+
+1. Open the chart in the editor.
+2. Click legend entries to disable or re-enable series. For example, on a chart pivoted by `product_category`, click **Apparel** and **Home Goods** in the legend to focus on **Electronics**.
+3. Click **Save**. The next time anyone opens the chart, only **Electronics** is plotted, with **Apparel** and **Home Goods** greyed out in the legend.
+
+Pie and funnel charts do not persist legend selection — toggling their legend entries stays ephemeral.
+
+**In chart-as-code YAML**, the saved selection lives on `echartsConfig.legend.selected`. It's an optional map from legend entry name to boolean, and only entries set to `false` are stored — series that don't appear in the map default to visible, so new series (for example a new quarter added to a pivoted chart) show up automatically. Re-enabling every series in the editor and saving removes the `selected` field entirely.
+
+```yaml
+echartsConfig:
+  legend:
+    show: true
+    selected:
+      Apparel: false
+      Home Goods: false
+```
 
 ## Data
 

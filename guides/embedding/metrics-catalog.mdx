@@ -1,0 +1,146 @@
+---
+title: "How to embed the metrics catalog"
+sidebarTitle: "Metrics catalog"
+description: "Embed the Lightdash metrics catalog so your users can browse the metrics and dimensions in a project without a Lightdash login."
+---
+
+import EmbedAvailability from '/snippets/embedding-availability.mdx';
+
+<EmbedAvailability />
+
+## Overview
+
+Metrics catalog embedding lets you drop the Lightdash metrics catalog directly into your application. Embedded users can browse the metrics defined in a project, search by name or category, preview a metric on a small chart, and — if you allow it — jump into Explore to slice the metric by any dimension in the model.
+
+Metrics catalog embeds use the same JWT-based security model as other embed types, with a dedicated `content.type: "metricsCatalog"` token. Dashboard, chart, and AI agent tokens cannot access the metrics catalog, and a metrics catalog token cannot render other embed surfaces.
+
+### When to use metrics catalog embedding
+
+- Give customers a self-serve "what can I measure?" view of your semantic layer inside your product.
+- Surface a metric browser next to your own charts so users can discover related metrics.
+- Let embedded users start a new exploration from any metric without exposing your full Lightdash workspace.
+
+### Available features
+
+Embedded metrics catalog supports:
+
+- Browsing all metrics in the project the JWT is scoped to
+- Searching and filtering by category
+- Previewing a metric with its default time-series chart
+- Continuing into an embedded Explore from any metric when `content.canExplore` is `true`
+- Saving Explore results into a fixed destination space via [write actions](/references/embedding#write-actions)
+- Row- and column-level filtering via [user attributes](/references/workspace/user-attributes)
+
+## Prerequisites
+
+Before you embed the metrics catalog, you need:
+
+- An embed secret for the project. See [Embedding quickstart](/guides/embedding/how-to-embed-content).
+- At least one metric defined in the project's semantic layer. See [How to create metrics](/get-started/develop-in-lightdash/how-to-create-metrics).
+- A React or Next.js host application — metrics catalog embedding is only available through the React SDK.
+- If you want embedded users to save charts from Explore, a destination space and a write actor. See [Write actions](/references/embedding#write-actions).
+
+## Embed the metrics catalog with the React SDK
+
+The React SDK ships a `Lightdash.MetricsCatalog` component that renders the catalog inside an iframe. When the embedded viewer clicks **Explore from here** on a metric, the same component swaps in an embedded Explore view — the host page never has to change route.
+
+```tsx
+import Lightdash from '@lightdash/sdk';
+
+function MyMetricsCatalog() {
+  return (
+    <Lightdash.MetricsCatalog
+      instanceUrl="https://app.lightdash.cloud"
+      token={generateMetricsCatalogToken()} // Server-side function
+    />
+  );
+}
+```
+
+See [`Lightdash.MetricsCatalog`](/references/react-sdk#lightdashmetricscatalog) for the full prop list and styling options.
+
+## Generate a metrics catalog embed token
+
+Metrics catalog embeds require a JWT with `content.type: "metricsCatalog"`. Generate it server-side using your embed secret.
+
+```javascript
+import jwt from 'jsonwebtoken';
+
+const token = jwt.sign({
+  content: {
+    type: 'metricsCatalog',
+    projectUuid: 'your-project-uuid',
+    canExplore: true,
+  },
+  writeActions: {
+    serviceAccountUserUuid: 'service-account-user-uuid',
+    spaceUuid: 'destination-space-uuid',
+  },
+  userAttributes: {
+    tenant_id: 'tenant-abc', // Row-level filtering for the embedded viewer
+  },
+  user: {
+    email: 'customer@example.com',
+  },
+}, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
+```
+
+**Required fields:**
+
+- `content.type` — must be `"metricsCatalog"`.
+- `content.projectUuid` — pins the embed to a specific project. The catalog only lists metrics from this project.
+
+**Optional fields:**
+
+- `content.canExplore` — when `true`, embedded users can click **Explore from here** on any metric to open the embedded Explore view. Omit or set to `false` to keep the embed read-only.
+- `writeActions` — needed only when `canExplore` is `true` and you want embedded users to save charts they build from Explore. See [Write actions](/references/embedding#write-actions).
+- `userAttributes` — applies row- and column-level filters to catalog previews and Explore queries, identical to other embed types.
+- `user.email` / `user.externalId` — surfaced in audit and analytics for the embedded viewer.
+
+## Controlling access
+
+Metrics catalog embeds honor the same access controls as other embed surfaces:
+
+- The catalog only shows metrics from the project named in `content.projectUuid`.
+- [User attributes](/references/workspace/user-attributes) applied to the JWT hide metrics and dimensions whose `required_attributes` rules the embedded viewer does not satisfy, both in the catalog listing and in any Explore session launched from it.
+- Metric previews and Explore queries run with the write actor's permissions (when `writeActions` is set) plus any `userAttributes` filters, so embedded viewers only see rows and columns they are entitled to.
+- When `canExplore` is not set to `true`, the catalog is read-only — the **Explore from here** action is hidden and Explore routes reject the token.
+- Metrics catalog tokens are rejected by dashboard, chart, AI agent, and data app routes, and vice versa.
+
+## Example: read-only metrics catalog
+
+To publish a browse-only catalog without Explore or chart saving, mint a token with just `type` and `projectUuid`:
+
+```javascript
+const token = jwt.sign({
+  content: {
+    type: 'metricsCatalog',
+    projectUuid: 'your-project-uuid',
+  },
+  userAttributes: {
+    tenant_id: 'tenant-abc',
+  },
+}, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
+```
+
+Embedded users can search and preview metrics, but the **Explore from here** action is hidden and Explore routes reject the token.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="React SDK reference" icon="react" href="/references/react-sdk#lightdashmetricscatalog">
+    Full prop reference for the Lightdash.MetricsCatalog component
+  </Card>
+
+  <Card title="Embedding reference" icon="book" href="/references/embedding#metrics-catalog-token">
+    Complete JWT structure for metrics catalog embed tokens
+  </Card>
+
+  <Card title="Write actions" icon="pen-to-square" href="/references/embedding#write-actions">
+    Configure the actor and destination space for embedded writes
+  </Card>
+
+  <Card title="User attributes" icon="shield-check" href="/references/workspace/user-attributes">
+    Implement row- and column-level security in embedded content
+  </Card>
+</CardGroup>

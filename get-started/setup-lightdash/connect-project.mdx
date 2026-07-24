@@ -35,6 +35,8 @@ We currently support:
 
   <Card title="Postgres" icon="elephant" href="#postgres" />
 
+  <Card title="Supabase" icon="bolt" href="#supabase" />
+
   <Card title="Redshift" icon="aws" href="#redshift" />
 
   <Card title="Snowflake" icon="snowflake" href="#snowflake" />
@@ -192,6 +194,10 @@ Here you can specify an execution project to bill for query execution, instead o
 
 You can see more details in [dbt documentation](https://docs.getdbt.com/reference/warehouse-profiles/postgres-profile).
 
+<Tip>
+  **Using Supabase?** Supabase runs on Postgres, so pick **Postgres** as your warehouse and use your Supabase connection details. See the [Supabase setup guide below](#supabase) for step-by-step instructions, including a quickstart repo that wires up the CLI and AI-generated models for you.
+</Tip>
+
 ##### Host
 
 This is the host where the database is running.
@@ -273,6 +279,113 @@ Enable to input your **SSH Remote Host**, **SSH Remote Port**, **SSH Username**,
 ***
 
 
+### Supabase
+
+[Supabase](https://supabase.com) is a managed Postgres database, so Lightdash connects to it using the **Postgres** warehouse type — there's no separate Supabase connector to pick. The fields below are the same Postgres fields documented above; this section just maps them to the values Supabase exposes.
+
+<Tip>
+  Prefer a hands-on walkthrough? The [`lightdash/lightdash-supabase-quickstart`](https://github.com/lightdash/lightdash-supabase-quickstart) repo gets you from zero to charts on your Supabase data in about 15 minutes, with no dbt project required. It includes setup scripts for macOS/Linux and Windows, a preconfigured [Supabase MCP](https://supabase.com/docs/guides/getting-started/mcp) so your AI agent (Cursor or Claude Code) can generate Lightdash models from your schema, and a `set-warehouse` script that wires up your warehouse credentials via the API.
+</Tip>
+
+#### Get your Supabase connection details
+
+In the Supabase dashboard, open your project and go to **Connect → Session Pooler → View parameters**. Use the **Session pooler** (not the direct connection or transaction pooler) — it accepts long-running queries and is the right fit for Lightdash.
+
+Map the Supabase parameters to the Lightdash Postgres connection form:
+
+| Lightdash field | Supabase value |
+| :--- | :--- |
+| **Host** | Pooler host (e.g. `aws-0-<region>.pooler.supabase.com`) |
+| **Port** | `5432` (session pooler) |
+| **User** | `postgres.<your-project-ref>` |
+| **Password** | Your database password (set when you created the project; you can reset it under **Database → Settings**) |
+| **DB name** | `postgres` |
+| **Schema** | The schema your models live in — typically `public` |
+| **SSL mode** | `require` |
+
+Lightdash Cloud connects from a [static IP](#adding-lightdashs-static-ip-addresses-to-your-allow-list). Supabase accepts traffic from anywhere by default; if you've enabled **Network Restrictions** under **Project Settings → Database**, add the Lightdash IP for your region to the allow-list.
+
+#### Setup options
+
+<Tabs>
+  <Tab title="Quickstart repo (recommended)">
+    The [Supabase quickstart repo](https://github.com/lightdash/lightdash-supabase-quickstart) automates everything below — clone it and follow the README.
+
+    1. **Clone the repo and install the Lightdash CLI:**
+
+       ```bash
+       git clone git@github.com:lightdash/lightdash-supabase-quickstart.git
+       cd lightdash-supabase-quickstart
+       npm install -g @lightdash/cli
+       lightdash login https://app.lightdash.cloud --token <your-token>
+       ```
+
+    2. **Install Lightdash skills for your AI agent** — this loads the Lightdash YAML schema into your editor session so the agent can generate and validate models correctly:
+
+       ```bash
+       # Claude Code (default)
+       lightdash install-skills
+
+       # Cursor
+       lightdash install-skills --agent cursor
+
+       # Codex
+       lightdash install-skills --agent codex
+       ```
+
+    3. **Connect the Supabase MCP** — the repo ships with `.cursor/mcp.json` and `.claude/mcp.json` already configured. Open the project in Cursor or Claude Code, authenticate via the browser popup, and verify the `supabase` MCP shows a green status in your editor's MCP settings.
+
+    4. **Connect your database** — run the setup script and paste in your Supabase pooler credentials when prompted:
+
+       ```bash
+       # macOS / Linux
+       bash setup.sh
+
+       # Windows (PowerShell)
+       powershell -ExecutionPolicy Bypass -File ./setup.ps1
+       ```
+
+    5. **Generate models from your schema** — in Cursor or Claude Code, ask the agent:
+
+       > Look at my Supabase tables and generate Lightdash models
+
+       The agent reads your schema through the Supabase MCP and writes YAML files into `lightdash/models/` with sensible metrics and dimensions wired up.
+
+    6. **Deploy your project and attach the warehouse:**
+
+       ```bash
+       lightdash lint
+       lightdash deploy --create --no-warehouse-credentials
+       # Then push your warehouse credentials via the API:
+       bash set-warehouse.sh
+       # Windows: powershell -ExecutionPolicy Bypass -File ./set-warehouse.ps1
+       ```
+
+    After any model changes, run `lightdash lint && lightdash deploy --no-warehouse-credentials`. After chart or dashboard changes, run `lightdash upload --include-charts`.
+  </Tab>
+
+  <Tab title="Manual setup in the UI">
+    1. In Lightdash, go to **Organization settings → All projects → Create new** (or **Project settings** for an existing project).
+    2. Pick **Postgres** as the warehouse type.
+    3. Fill in the connection form using the [Supabase parameters mapped above](#get-your-supabase-connection-details).
+    4. Set **SSL mode** to `require`.
+    5. Click **Test & save**.
+    6. Continue to [step 2: import a dbt project](#2-import-a-dbt-project), or use the CLI to deploy a project without dbt — see the [quickstart repo](https://github.com/lightdash/lightdash-supabase-quickstart) for an AI-assisted workflow.
+  </Tab>
+</Tabs>
+
+#### Troubleshooting
+
+| Problem | Fix |
+| :--- | :--- |
+| `password authentication failed for user "postgres"` | Make sure the user is `postgres.<your-project-ref>` (with the project ref suffix) when using the session pooler, not just `postgres`. |
+| Connection times out | Confirm you're using the **session pooler** host and port `5432`, not the direct database host. If you've enabled Network Restrictions in Supabase, add the [Lightdash static IP](#adding-lightdashs-static-ip-addresses-to-your-allow-list) for your region. |
+| `SSL connection required` | Set **SSL mode** to `require`. |
+| MCP keeps disconnecting (quickstart repo) | Restart your editor. On Windows, also check that your firewall isn't blocking outbound HTTPS. |
+
+***
+
+
 ### Redshift
 
 You can see more details in [dbt documentation](https://docs.getdbt.com/reference/warehouse-profiles/redshift-profile).
@@ -346,6 +459,175 @@ This controls what day is the start of the week in Lightdash. `Auto` sets it to 
 ##### Use SSH tunnel
 
 Enable to input your **SSH Remote Host**, **SSH Remote Port**, **SSH Username**, and to generate a public SSH key.
+
+##### Authentication type
+
+By default Lightdash connects to Redshift with a database **username and password**. You can instead authenticate with **AWS IAM**: Lightdash mints short-lived Redshift database credentials from AWS at connection time, then connects over the standard Postgres protocol. No long-lived database password is stored. This is useful when your security policy disallows static or hashed passwords, or when your cluster fronts Lake Formation.
+
+Lightdash supports three Redshift authentication methods:
+
+- **Username & password**: store a shared Redshift database user and password on the project connection.
+- **AWS IAM (CLI credentials)**: users paste temporary AWS credentials, or admins configure an IAM role/access-key identity, and Lightdash uses those AWS credentials to mint temporary Redshift database credentials.
+- **User Account (Sign in with AWS)**: users sign in through AWS IAM Identity Center in the browser. The project stores the AWS access portal and account/role metadata; each user signs in with AWS and Lightdash stores short-lived per-user AWS credentials.
+
+<Note>If you don't see the AWS IAM authentication options, they aren't enabled for your organization yet — contact Lightdash support.</Note>
+
+When **Authentication type** is set to **AWS IAM (CLI credentials)** or **User Account (Sign in with AWS)**, the following fields replace the password. Your **Host**, **DB name**, **Schema**, SSL, and SSH tunnel settings still apply.
+
+##### AWS region
+
+The AWS region where your Redshift cluster or serverless workgroup is located, for example `us-east-1`.
+
+##### Redshift Serverless
+
+Enable if you're connecting to a Redshift Serverless workgroup rather than a provisioned cluster.
+
+##### Cluster identifier
+
+(Provisioned clusters) The identifier of your Redshift cluster.
+
+##### Workgroup name
+
+(Serverless) The name of your Redshift Serverless workgroup.
+
+##### Database user
+
+(Provisioned clusters) The Redshift database user to request temporary credentials for. Serverless derives the user automatically.
+
+When using **User Account (Sign in with AWS)**, users can optionally set their own database user when they sign in. If they leave it blank, Redshift derives the user from their IAM Identity Center role.
+
+##### Assume role ARN
+
+Optional. An IAM role to assume — within your own AWS account — before minting credentials, instead of using the access-key identity directly. Self-hosted instances running on AWS can leave this and the access keys blank to use the host's IAM role.
+
+##### Assume role external ID
+
+The external ID required by the role's trust policy, if you configured one.
+
+##### Advanced: AWS access key ID & secret access key
+
+The access key for the IAM user Lightdash uses to mint temporary Redshift credentials. On Lightdash Cloud, this is how you provide the AWS identity.
+
+##### Advanced: Auto-create database user
+
+(Provisioned clusters) Create the database user automatically if it does not already exist.
+
+##### AWS access portal URL
+
+Required for **User Account (Sign in with AWS)**. The IAM Identity Center access portal URL users open to sign in, for example `https://d-xxxxxxxxxx.awsapps.com/start`.
+
+##### IAM Identity Center region
+
+Required for **User Account (Sign in with AWS)**. The AWS region where IAM Identity Center is enabled.
+
+##### AWS account ID
+
+Required for **User Account (Sign in with AWS)**. The AWS account users should access through IAM Identity Center.
+
+##### AWS role name
+
+Required for **User Account (Sign in with AWS)**. The IAM Identity Center permission set role name users select when signing in. This is usually the permission set name shown in the AWS access portal, for example `LightdashRedshiftReadOnly`.
+
+<Accordion title="Setting up AWS IAM CLI credentials for Redshift">
+
+<Note>
+  IAM changes how Lightdash **authenticates**, not how it **reaches** your warehouse. Lightdash still opens a network connection to your cluster, so its [static IP addresses](#adding-lightdashs-static-ip-addresses-to-your-allow-list) must be allow-listed in your Redshift security group or VPC firewall (or use an SSH tunnel), exactly as with password authentication. Minting credentials happens over public AWS API endpoints and needs no extra allow-listing.
+</Note>
+
+**1. Create an IAM policy** that allows minting credentials. Use the variant for your warehouse type.
+
+Provisioned cluster:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Sid": "LightdashRedshiftCredentials",
+    "Effect": "Allow",
+    "Action": "redshift:GetClusterCredentials",
+    "Resource": [
+      "arn:aws:redshift:<region>:<account-id>:dbuser:<cluster-identifier>/<db-user>",
+      "arn:aws:redshift:<region>:<account-id>:dbname:<cluster-identifier>/<db-name>"
+    ]
+  }]
+}
+```
+
+If you enable **Auto-create database user**, also allow `redshift:CreateClusterUser` on the `dbuser:` resource. If you use database groups, add `redshift:JoinGroup` on the relevant `dbgroup:` resources.
+
+Serverless workgroup:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Sid": "LightdashRedshiftServerlessCredentials",
+    "Effect": "Allow",
+    "Action": "redshift-serverless:GetCredentials",
+    "Resource": "arn:aws:redshift-serverless:<region>:<account-id>:workgroup/<workgroup-id>"
+  }]
+}
+```
+
+**2. Create an identity to call that API.**
+
+- **Access keys (Lightdash Cloud).** Create an IAM user, attach the policy above, generate an access key and secret, and enter them under **Advanced** on the connection form. Lightdash Cloud has no AWS identity of its own, so this is how you grant access. Keep the policy minimal and rotate the key periodically.
+
+- **Assume role (optional).** If you'd rather not grant the IAM user the Redshift permissions directly, attach the policy to a separate IAM role and let the user assume it: add a trust policy on the role allowing that user to assume it, then enter the role ARN (and external ID, if set) on the form. The role is assumed **within your own AWS account**.
+
+- **Host role (self-hosted on AWS only).** If you run Lightdash yourself on AWS, attach the policy to the instance or task role (EC2 instance profile, ECS task role, or IRSA) and leave the access-key and role fields blank.
+
+**3. Configure the connection in Lightdash.** Open your project's connection settings — [**Project settings** via the gear icon in the top-right navigation](#open-up-your-lightdash-instance-to-get-started) for an existing project, or **Organization settings → All projects → Create new** for a new one. In the Redshift form, switch **Authentication type** to **AWS IAM (CLI credentials)** (this reveals the AWS fields), then fill in the **AWS region**, **cluster identifier** (or serverless **workgroup name**), **database user**, and your access keys under **Advanced**, and click **Test & save**.
+
+</Accordion>
+
+<Accordion title="Setting up AWS IAM Identity Center for Redshift">
+
+Use **User Account (Sign in with AWS)** when each Lightdash user should authenticate with their own AWS identity in the browser. This is the best fit for shared Lightdash instances because the AWS access portal, account ID, and role name are stored on the project connection, while each user's AWS session is stored as personal warehouse credentials.
+
+<Note>
+  Do not configure this with Lightdash environment variables. IAM Identity Center settings are project-specific: different Redshift projects can use different AWS accounts, access portals, regions, and permission sets.
+</Note>
+
+**Requirements**
+
+- An AWS Organizations-backed IAM Identity Center instance. Account instances of IAM Identity Center do not support permission sets or AWS account access.
+- A user or group assigned to the AWS account through an IAM Identity Center permission set.
+- A permission set or IAM policy that can mint Redshift database credentials:
+  - Provisioned Redshift: `redshift:GetClusterCredentials` and, if needed, `redshift:CreateClusterUser` / `redshift:JoinGroup`.
+  - Redshift Serverless: `redshift-serverless:GetCredentials`.
+- The Redshift database user created by IAM must have database permissions such as `USAGE` on the schema and `SELECT` on the tables Lightdash queries.
+- Network access from Lightdash to Redshift, exactly as with password authentication.
+
+**1. Enable IAM Identity Center.** In AWS, enable IAM Identity Center as an organization instance and choose the region users will sign in through.
+
+**2. Create a permission set.** Attach a policy that can mint Redshift credentials for your cluster or serverless workgroup. For production, keep this policy scoped to the cluster/workgroup and database your Lightdash project uses.
+
+**3. Assign users or groups to the AWS account.** Assign the permission set to the AWS account your Redshift warehouse lives in. Users should be able to open the AWS access portal and see that account and role.
+
+**4. Grant Redshift database permissions.** IAM authentication creates or uses a Redshift database user derived from the AWS role. Grant that database user access to the schemas and tables Lightdash should query.
+
+Example for a Redshift Serverless IAM role-derived user:
+
+```sql
+GRANT USAGE ON SCHEMA analytics TO "IAMR:AWSReservedSSO_LightdashRedshiftReadOnly_xxxxxxxxxxxxxxxx";
+GRANT SELECT ON ALL TABLES IN SCHEMA analytics TO "IAMR:AWSReservedSSO_LightdashRedshiftReadOnly_xxxxxxxxxxxxxxxx";
+ALTER DEFAULT PRIVILEGES IN SCHEMA analytics
+  GRANT SELECT ON TABLES TO "IAMR:AWSReservedSSO_LightdashRedshiftReadOnly_xxxxxxxxxxxxxxxx";
+```
+
+**5. Configure the connection in Lightdash.** In the Redshift form, switch **Authentication type** to **User Account (Sign in with AWS)**, then fill in:
+
+- **AWS region**: Redshift cluster/workgroup region.
+- **Cluster identifier** or **Workgroup name**.
+- **AWS access portal URL**: the IAM Identity Center start URL.
+- **IAM Identity Center region**.
+- **AWS account ID**.
+- **AWS role name**: the permission set/role users select in the AWS access portal.
+
+After saving, users who open the project will see **Sign in with AWS**. They complete the AWS browser login and Lightdash stores their personal short-lived AWS credentials for queries.
+
+</Accordion>
 
 ***
 
@@ -1241,7 +1523,7 @@ This means a number of features are **not** available, including:
 
 ##### Service Token
 
-To connect Lightdash to your dbt Cloud project, you'll need to create a [dbt Cloud service token](https://docs.getdbt.com/docs/dbt-cloud-apis/service-tokens) with the 'Metadata Only' permission.
+To connect Lightdash to your dbt Cloud project, you'll need to create a [dbt Cloud service token](https://docs.getdbt.com/docs/dbt-cloud-apis/service-tokens) with the 'Metadata Only' and 'Job Viewer' permissions.
 
 ##### Environment ID
 
@@ -1249,7 +1531,17 @@ This is the identifier for your dbt Cloud environment. You can find this in the 
 
 ##### Webhook for dbt
 
-This webhook is an optional extra for those using the dbt Cloud CI steps. If you set up a webhook that triggers when your dbt Cloud CI job completed, you can paste the webhook address and Lightdash will automatically spin up a preview for the given CI environment.
+This webhook is an optional extra for those using the dbt Cloud CI steps. If you set up a webhook in dbt Cloud that triggers when a job completes, paste the webhook address into dbt Cloud and Lightdash will automatically spin up a preview for the given CI environment.
+
+Follow the [dbt Cloud webhooks guide](https://docs.getdbt.com/docs/deploy/webhooks) to create a webhook that fires on job completion, and set the endpoint URL to the value shown in this field.
+
+##### Webhook secret
+
+Optional, but recommended if you configure the webhook above. When you create the webhook in dbt Cloud, dbt Cloud generates a signing secret — paste that secret here so Lightdash can verify the HMAC signature on each incoming webhook and confirm the request genuinely came from dbt Cloud.
+
+- The secret is stored encrypted and is stripped from API responses, so it never appears in project payloads returned by the Lightdash API.
+- Leaving this field blank preserves the previous behaviour: webhook requests are accepted without signature verification (backwards compatible).
+- If you edit the project without re-entering the secret, the existing value is preserved.
 
 ##### Discovery API Endpoint
 

@@ -232,7 +232,7 @@ If you're building your own agents or automated workflows, you can integrate dir
 - **Authentication**: For interactive setups use OAuth 2.0. For headless agents and automated workflows, you can authenticate with a Personal Access Token by passing `Authorization: ApiKey <token>` instead. Create the token under **Settings → Personal access tokens** for the user whose permissions and attributes you want the integration to use. Service account tokens are also supported on plans that include them.
 - **Documentation**: See the [MCP specification](https://modelcontextprotocol.io/docs) for implementation details
 - **Pin a project (optional)**: pass `X-Lightdash-Project: <project-uuid>` to scope the MCP session to a specific project, skipping the `set_project` step. See [details below](#pin-a-project-with-the-x-lightdash-project-header).
-- **Override user attributes per request (optional)**: pass `X-Lightdash-User-Attributes: <json>` to override the authenticated user's attributes for that request (useful for row-level security when an agent acts on behalf of different end-users).
+- **Override user attributes per request (optional)**: pass `X-Lightdash-User-Attributes: <json>` to override the authenticated user's attributes for that request (useful for row-level security when an agent acts on behalf of different end-users). See [details below](#override-user-attributes).
 
 ##### Pin a project with the `X-Lightdash-Project` header
 
@@ -273,6 +273,52 @@ curl https://<your_instance_name>.lightdash.cloud/api/v1/mcp \
 
 <Info>
   If the header value isn't a valid UUID, it's ignored and the request falls back to the user's stored project context. Permissions are always checked against the resolved project, so a header for a project the caller can't view will return a "no access" error.
+</Info>
+
+<a id="override-user-attributes" />
+
+##### Override user attributes with the `X-Lightdash-User-Attributes` header
+
+The `X-Lightdash-User-Attributes` header overrides the authenticated user's Lightdash user attributes for that specific MCP request. This is designed for agents that act on behalf of multiple end-users with row-level security: one PAT (or service account) user handles all requests, and per-request RLS scoping is applied via the header.
+
+<Info>
+  The PAT or service account user must have the **org admin** role to use this header. Non-admins will receive a `ForbiddenError`.
+</Info>
+
+The header value must be a JSON object where each value is either a string or an array of strings. For example:
+
+- `{"user_id": "abc123"}`
+- `{"user_id": ["abc123", "def456"]}`
+
+<Info>
+  If the agent user already has a value set for an attribute, the header can only **narrow** that value (set a subset of the pre-configured values), not expand access. If no value is pre-configured for the attribute on the agent user, any value can be set via the header.
+</Info>
+
+<CodeGroup>
+```bash curl
+curl https://<your_instance_name>.lightdash.cloud/api/v1/mcp \
+  -H 'Authorization: ApiKey <your_token>' \
+  -H 'X-Lightdash-User-Attributes: {"user_id": "abc123"}' \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+```json Cursor (.cursor/mcp.json)
+{
+  "mcpServers": {
+    "lightdash-agent": {
+      "url": "https://<your_instance_name>.lightdash.cloud/api/v1/mcp",
+      "headers": {
+        "X-Lightdash-User-Attributes": "{"user_id": "abc123"}"
+      }
+    }
+  }
+}
+```
+</CodeGroup>
+
+<Info>
+  Setting the header statically in an MCP client config is suitable for development and testing. For production, where the attribute needs to change per end-user, the calling application must set the `X-Lightdash-User-Attributes` header programmatically on each request.
 </Info>
 
 {/*<Accordion title="Example: Inspecting the MCP endpoint">
@@ -378,6 +424,20 @@ MCP can read, create, and edit Lightdash charts and dashboards using the same [c
 These tools reuse the same permissions, validation, and project context as the [Lightdash CLI](/guides/cli/how-to-install-the-lightdash-cli) `download` and `upload` commands, so the user driving the MCP session needs the same access required to manage that content in Lightdash.
 
 <Info>
+  **Admin kill-switch.** Organization admins can disable content writes across all MCP clients from **Settings → Ask AI → General** by turning off **Allow content changes via MCP**. When this is off, `create_content` and `edit_content` are not registered for any MCP client in the organization — reading content over MCP is unaffected, and per-user permissions still apply when it's on. The toggle is **on by default**.
+</Info>
+
+<Info>
+  **Per-user permission gate.** `create_content` and `edit_content` are also gated on the caller's role holding the `create:ContentAsCode` scope. The check runs at tool registration, so users without the scope don't see these tools in the tools list.
+
+  - **Roles that get the scope by default:** Editors, Developers, Admins.
+  - **Roles that don't:** Interactive Viewers, Viewers.
+  - **Custom roles:** must add `create:ContentAsCode` explicitly — see [custom roles](/references/workspace/custom-roles).
+
+  Project, space, and content-level checks still run at invocation time on top of the registration gate.
+</Info>
+
+<Info>
   When prompting an agent to build content, ask it to use [verified content](#data-exploration) as a reference. The agent can call `find_content` and `read_content` on a verified chart, then use that JSON as the template for `create_content` — giving you new content that follows the patterns your team has already approved.
 </Info>
 
@@ -389,10 +449,28 @@ The assistant will call `read_content` to fetch the source chart, modify the JSO
   For bulk edits across many dashboards or as part of a CI/CD pipeline, the [download-edit-upload workflow](/guides/developer/editing-dashboards-with-agents) using the Lightdash CLI is still the recommended approach. MCP content tools are best for interactive edits inside an AI assistant.
 </Tip>
 
+#### Scheduled deliveries
+
+- **Create scheduled delivery** (`create_scheduled_delivery`) - Schedule an existing chart or dashboard to Slack, email, or another supported destination on a cron schedule. Point the tool at the content by slug and pass the schedule and recipients — the delivery is created against the active project using the caller's permissions.
+
+<Info>
+  **What enables this tool.** `create_scheduled_delivery` only appears in the tools list when both of these are true:
+
+  1. **Allow content changes via MCP** is on (**Settings → Ask AI → General**).
+  2. The caller's role holds the `create:ScheduledDeliveries` scope.
+
+  **Roles that get `create:ScheduledDeliveries` by default:** Interactive Viewers, Editors, Developers, Admins. **Viewers** do not. Custom roles must add the scope explicitly.
+</Info>
+
+**Example prompt:** _"Set up a scheduled delivery of the `weekly-ecom-orders` chart to #analytics-updates in Slack every Monday at 9am."_
+
+The assistant will call `create_scheduled_delivery` with the chart's slug, the cron schedule, and the Slack destination — mirroring the [AI agent](/guides/ai-agents) `createScheduledDelivery` tool but exposed to any MCP client.
+
 #### Agent context
 
+- **Route agent** - Automatically select and activate the best agent for a user prompt within the active project. This is the preferred way to pick an agent — it mirrors the [AI Router](/guides/ai-agents/ai-router) experience in the Lightdash app, so MCP sessions get the same automatic agent selection.
 - **List agents** - Discover available AI agents and their areas of expertise
-- **Set agent** - Activate an agent to scope your session to its explores, instructions, and verified answers
+- **Set agent** - Manually activate an agent to scope your session to its explores, instructions, and verified answers. Use this when you want to override automatic routing.
 - **Get current agent** - Check which agent is active and view its full context
 - **Clear agent** - Remove agent scoping and return to the full project context
 
@@ -523,9 +601,12 @@ When you activate an agent in your MCP session, your AI assistant receives:
 ### Example workflow
 
 1. **Set your project** with `set_project`
-2. **Browse available agents** with `list_agents` (e.g., "Sales Analyst", "Marketing Metrics")
-3. **Activate an agent** with `set_agent` to load its context
-4. **Ask your questions** — the agent's context automatically guides queries
+2. **Let the router pick an agent** with `route_agent` — pass the user's prompt and Lightdash activates the best-fit agent automatically. Use `list_agents` + `set_agent` only when you want to inspect candidates or override the choice manually.
+3. **Ask your questions** — the agent's context automatically guides queries
+
+<Tip>
+  `route_agent` chooses between agents the user can already access — it never widens permissions. If only one agent is accessible, it activates that agent directly; if none are accessible, it returns an error so the assistant can fall back to the unscoped project context.
+</Tip>
 
 **Prompt:** _"What AI agents are available?"_
 
@@ -665,7 +746,7 @@ A: Yes, each team member can set up their own MCP connection with their individu
 
 **Q: Can MCP modify my data or dashboards?**
 
-A: MCP can create and edit Lightdash charts and dashboards via the [content-as-code tools](#editing-content) when your user account has the required permissions. MCP cannot modify your underlying warehouse data — query execution is read-only (metric queries and SQL `SELECT` only). All write operations respect your existing Lightdash permissions and project access controls.
+A: MCP can create and edit Lightdash charts and dashboards via the [content-as-code tools](#editing-content), and can create [scheduled deliveries](#scheduled-deliveries), when your user account has the required permissions. MCP cannot modify your underlying warehouse data — query execution is read-only (metric queries and SQL `SELECT` only). All write operations respect your existing Lightdash permissions and project access controls, and each write tool is only registered for users whose role grants the corresponding scope.
 
 **Q: Claude returns data as text but no visual chart is displayed. What's wrong?**
 

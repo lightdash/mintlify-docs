@@ -170,8 +170,10 @@ The table below shows all the dimension properties you can customize:
 | [colors](#color)  | No       | Object with `value`, `color`  | Color for the values in the chart |
 | [image](#image-display)  | No       | Object with `url`  | **[WIP]** Display images in table cells using URL templates. Supports LiquidJS templating for dynamic URLs. |
 | [case_sensitive](#case-sensitive) | No | boolean | If set to `false`, string filters on this dimension will be case insensitive. Defaults to `true`. Overrides explore-level setting. |
+| [filter_autocomplete](#filter-autocomplete) | No | Object | Configure the filter autocomplete suggestions for this dimension. Provide a static list of `values` (with optional display `label`s), point at a `label_dimension` in the same table to label warehouse-fetched values, and/or disable warehouse-based autocomplete by setting `fetch_from_warehouse: false`. |
 | [tags](#tags) | No | string[] | An array of string tags for categorizing and filtering dimensions programmatically. Tags can be used by AI agents, API filters, and other backend workflows. |
 | [convert_timezone](#convert-timezone) | No | boolean | **[Experimental]** If set to `false`, the dimension opts out of the project query timezone for display, grouping, and extracts - the raw warehouse value is rendered instead. Defaults to `true`. Has no effect unless a project query timezone is set. |
+| [timestamp_domain](#timestamp-domain) | No | `aware` or `naive` | Declares whether a `timestamp` column stores an instant (`aware`) or a bare wall clock with no zone (`naive`). Overrides what Lightdash detects from the warehouse catalog. |
 
 
 ## Type
@@ -1531,6 +1533,46 @@ Filters still use the project query timezone regardless of this setting, so ever
 
 See [Per-dimension timezone opt-out](/guides/developer/timezones#per-dimension-timezone-opt-out) in the Timezones guide for how this interacts with other timezone settings and filter behavior.
 
+## Timestamp domain
+
+Lightdash reads whether a `timestamp` column stores an instant (`aware`) or a bare wall clock (`naive`) from your warehouse catalog, so you don't usually need to set this. Override it when the catalog type doesn't match the data, for example a `TIMESTAMP_NTZ` column that already holds UTC instants.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: created_at
+        meta:
+          dimension:
+            type: timestamp
+            timestamp_domain: aware
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    columns:
+      - name: created_at
+        config:
+          meta:
+            dimension:
+              type: timestamp
+              timestamp_domain: aware
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: created_at
+        type: timestamp
+        timestamp_domain: aware
+    ```
+  </Tab>
+</Tabs>
+
+The YAML value wins over the catalog. It's ignored on dimensions with custom `sql` and on additional dimensions. Interval children (`_day`, `_month`, ...) inherit from their base.
+
+See [Override a column timestamp domain](/guides/developer/timezones#override-a-column-timestamp-domain) in the Timezones guide.
+
 ## Color
 
 You can predefine colors for your string type dimensions, these colors will be used instead of your default organization colors for the right value when you use a grouped bar chart or a pie chart.
@@ -1665,6 +1707,160 @@ So with `case_sensitive: false`, filtering for `john` would match `John`, `JOHN`
   Dimension-level `case_sensitive` settings override explore-level and project-level settings. See [Tables reference](/references/tables#case-sensitive) for explore-level configuration and [lightdash.config.yml reference](/references/lightdash-config-yml#defaults-configuration) for project-level defaults.
 </Info>
 
+
+## Filter autocomplete
+
+You can customize the suggestions users see when filtering on a dimension. This is useful when you want to:
+
+- Provide a curated, static list of suggested values (with optional human-friendly labels) instead of relying solely on values from your warehouse.
+- Label warehouse-fetched values with a human-readable name from another dimension in the same table (for example, showing customer names next to customer IDs).
+- Disable the live warehouse lookup for autocomplete to reduce warehouse queries on dimensions with very high cardinality or sensitive values.
+
+Regardless of which option you use, filter autocomplete always returns `{ value, label }` pairs. The `value` is what gets used in the filter, and the `label` is what's displayed in the dropdown. Parameters that source their options from the same dimension via [`options_from_dimension`](/references/tables#parameter-configuration) automatically pick up these labels too.
+
+### Properties
+
+| Property | Required | Value | Description |
+| :------- | :------- | :---- | :---------- |
+| values | No | Array of `value`, `label` | A static, hard-coded list of suggested filter values. `value` is the raw value used in the filter; `label` is the optional display name shown in the autocomplete dropdown. Duplicate `value`s are ignored (the first occurrence wins). Use this when the set of values is small and known ahead of time. |
+| label_dimension | No | string | Name of another dimension in the same table whose value is used as the display label for each warehouse-fetched value. Unlike static `values` (which only supports hard-coded labels), `label_dimension` labels every value that comes back from the warehouse, and search and sort both run against the label rather than the underlying value. |
+| fetch_from_warehouse | No | boolean | If set to `false`, Lightdash won't query the warehouse for autocomplete suggestions on this dimension. Defaults to `true`. |
+
+### Static suggested values with labels
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: status
+        description: 'Subscription status'
+        meta:
+          dimension:
+            filter_autocomplete:
+              values:
+                - value: 'active'
+                  label: 'Active customer'
+                - value: 'trial'
+                  label: 'Trial'
+                - value: 'churned'
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    columns:
+      - name: status
+        description: 'Subscription status'
+        config:
+          meta:
+            dimension:
+              filter_autocomplete:
+                values:
+                  - value: 'active'
+                    label: 'Active customer'
+                  - value: 'trial'
+                    label: 'Trial'
+                  - value: 'churned'
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: status
+        description: 'Subscription status'
+        filter_autocomplete:
+          values:
+            - value: 'active'
+              label: 'Active customer'
+            - value: 'trial'
+              label: 'Trial'
+            - value: 'churned'
+    ```
+  </Tab>
+</Tabs>
+
+### Disabling warehouse autocomplete
+
+Set `fetch_from_warehouse: false` to stop Lightdash from querying your warehouse for autocomplete suggestions on this dimension. Users can still type values manually; if you also provide `values`, those will be shown as suggestions.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: customer_email
+        meta:
+          dimension:
+            filter_autocomplete:
+              fetch_from_warehouse: false
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    columns:
+      - name: customer_email
+        config:
+          meta:
+            dimension:
+              filter_autocomplete:
+                fetch_from_warehouse: false
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: customer_email
+        filter_autocomplete:
+          fetch_from_warehouse: false
+    ```
+  </Tab>
+</Tabs>
+
+### Labelling warehouse-fetched values with another dimension
+
+Set `label_dimension` to the name of another dimension in the same table to show a human-readable label alongside each warehouse-fetched value. The filter still applies to the underlying value, but the dropdown displays the label. Search and sort in the autocomplete dropdown also run against the label rather than the underlying value.
+
+For example, an `orders` model exposes a `customer_id` dimension that users want to filter on, but the ids are opaque. Adding `label_dimension: customer_name` makes the autocomplete show customer names in the dropdown while still filtering by `customer_id`:
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: customer_id
+        meta:
+          dimension:
+            filter_autocomplete:
+              label_dimension: customer_name
+      - name: customer_name
+        meta:
+          dimension: {}
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    columns:
+      - name: customer_id
+        config:
+          meta:
+            dimension:
+              filter_autocomplete:
+                label_dimension: customer_name
+      - name: customer_name
+        config:
+          meta:
+            dimension: {}
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: customer_id
+        filter_autocomplete:
+          label_dimension: customer_name
+      - name: customer_name
+    ```
+  </Tab>
+</Tabs>
+
+The referenced dimension must live in the same table. Any [parameter](/references/tables#parameter-configuration) that sources its options from `customer_id` via `options_from_dimension` also picks up the customer name labels automatically.
 
 ## Image Display
 

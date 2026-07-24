@@ -44,7 +44,27 @@ The more context you give the agent, the better the result. You can attach sever
 - **Charts** - pick existing saved charts to give the agent a working metric query it can reuse. The agent gets the structure of the query (the dimensions, metrics, filters, and table) so it knows exactly which fields to use.
 - **Dashboards** - attach a dashboard to pull in every query on it at once.
 - **Images** - upload screenshots, mockups, or design references. Images are one of the fastest ways to nail the visual style you want.
+- **Screenshots of the running app** - the preview panel has a **Screenshot** button that captures the current state of the running app and attaches it as context to your next prompt. Use it when you want the agent to react to what you're looking at right now ("make this header smaller", "the spacing here is off") instead of describing it from scratch.
 - **Sample data** - each chart and dashboard chip has an **Include sample data** toggle. When you turn it on, Lightdash runs the query and passes the first 10 rows to the agent so it can make better decisions about formatting, content, and copy. Sample data is opt-in per resource because rows can be sensitive - the agent will see whatever you send it.
+- **Live-linked charts** - each chart chip also has a **Link** toggle next to Include sample data. When Link is off (the default), the agent embeds a frozen copy of the chart's metric query into the app - later edits to the chart in Lightdash won't flow through. When Link is on, the app runs the chart live by its UUID on every load, so changes made to the saved chart in Lightdash (metric swaps, filter tweaks, additional dimensions) show up in the app on the next refresh. Linked charts still respect the viewer's permissions and appear in the Queries tab of the inspector like any other query. Link is not yet supported for embedded apps that authenticate via JWT.
+
+  Dashboard filters propagate to linked charts inside a data app tile the same way they propagate to any other chart on the dashboard: filters that reference a field on the linked chart's explore narrow the chart, and filters that reference fields outside that explore are silently ignored for that tile. This propagation is handled by the dashboard itself, so **existing data apps pick it up without regeneration**.
+
+  Interactive filter controls, downloads, and drill-downs on linked charts work end-to-end. When a user changes a filter control the app is wiring into a linked chart, the chart re-runs against Lightdash with those filters ANDed onto the chart's own filters - the query can only narrow, never widen or replace what the saved chart defines. Filters on a linked chart apply to dimension fields only (metric-threshold filters need to live in the saved chart itself). Downloading a linked chart's results and drilling into an underlying row both work the same way they do on any other Lightdash chart, and drill-downs from a filtered linked chart inherit the active filters so you drill into the rows you're actually seeing.
+
+  <Info>
+    Interactive controls, downloads, and drill-downs for linked charts ship to **newly generated** data apps. Existing apps aren't retroactively upgraded — regenerate or ask the agent to rebuild the affected section to pick up the new behavior.
+  </Info>
+
+### Choosing a model
+
+Next to the send button, a model picker lets you choose which Claude model runs the generation:
+
+- **Sonnet** (default) - balanced quality and speed; the right choice for most apps.
+- **Opus** - highest quality, best for complex apps or when you want the agent to make more nuanced design decisions. Slower.
+- **Haiku** - fastest, useful for small tweaks where you don't need the full reasoning of the larger models.
+
+You can change the model on every prompt - including mid-iteration. The agent keeps its memory of what it already built, so switching models doesn't reset the app.
 
 ### Iterating on your app
 
@@ -94,13 +114,32 @@ The following is **not** carried over:
 
 To duplicate, you need **view** access on the source app and **create** permission for data apps on the project.
 
-### Query inspector
+### Network inspector
 
-When an app runs a query, it will appear in the query inspector. Open it to see every query the running app is making - the underlying metric query, the fields it's pulling, and the results it gets back. Use it to verify the app is asking for the right data, debug unexpected numbers, or sanity-check performance.
+The inspector is a tabbed network panel that captures everything the running app talks to. Open it from **View network** in the preview header.
+
+- **Queries** - every metric query the app runs against your semantic layer, including the underlying query definition, the fields it's pulling, and the rows it gets back. Live-linked charts show up here too. Use it to verify the app is asking for the right data, debug unexpected numbers, or sanity-check performance.
+- **Requests** - every external fetch the app makes at runtime through a linked external connection, with the method, path, status, response, and round-trip duration. Use it to confirm the app is calling the right endpoint and that the response shape matches what the UI expects. The inspector only ever sees the connection alias and path - credentials are injected server-side, so they're never displayed here.
+
+Both tabs are always visible so you can see at a glance whether the app has run any queries or external requests yet. Entries are held in-memory and cleared when you refresh the preview or load a new version unless you turn on the **Persist** toggle in the panel.
+
+Each Query row has two actions:
+
+- **Open in Explore** - opens the query in a full explore view so you can pivot on it, tweak filters, or dig into a single number.
+- **Save to Lightdash** - creates a governed table chart from the exact query the app ran. You pick a chart name and a target space; the chart is created via the same flow as saving from an explore, so your normal chart-create permission on the space applies. Save to Lightdash is available on inline app queries; linked charts already live in Lightdash, so the action is hidden there.
 
 <Frame>
   ![Clean Shot 2026 04 29 At 18 38 42@2x](/images/CleanShot-2026-04-29-at-18.38.42@2x.png)
 </Frame>
+
+#### Inspect data
+
+The Queries tab has an **Inspect data** toggle (the database-search icon in the panel's title bar) that turns on a two-way link between the inspector and what's rendered in the app:
+
+- **Hover a query row** to highlight every data point in the preview that was rendered from that query - individual bars, table rows, KPI values, chart segments, and cells all light up together, so you can see exactly where a query's results end up in the UI.
+- **Click** a data point or a query row to pin the selection so you can scroll or interact with both sides without losing the highlight; click again (or press `Esc`) to cancel.
+
+Inspect data relies on lineage metadata that the agent emits during the build. If the toggle is disabled with a tooltip that says *"Inspect data is not available in this app version"*, the app was generated before lineage was introduced - regenerate the app (send any follow-up prompt, or ask the agent to rebuild) to enable it.
 
 ### Refreshing the preview
 
@@ -130,11 +169,23 @@ PDF exports are **image-based**: the app rasterizes the rendered pages in the br
 
 For text-heavy reports where you need selectable text, use the browser's built-in **Print → Save as PDF** option instead.
 
+## External connections
+
+A data app can also fetch from third-party HTTP APIs — for example, your own product API, a payments provider, or a Google API like BigQuery's REST endpoint. A project admin registers each API as an **external connection** (base URL, allowed methods, auth), and app builders link the connections they need. At runtime, requests go through a Lightdash-mediated proxy that injects credentials server-side, so secrets are never exposed to the app code or the browser.
+
+See [External connections](/guides/data-apps/external-connections) for details.
+
 ## Themes
 
 You can create shared themes to give your data apps consistent styles and instructions across your organization. A theme bundles CSS rules, fonts, images, and a `skill.md` instructions file that the agent uses when building the app. When creating a new app, you can choose which theme to apply, and you can set a default theme for the org.
 
 See [Themes](/guides/data-apps/themes) for details.
+
+## Visualizations
+
+Data apps can also power reusable custom chart types. A data app visualization is a single-tile chart renderer you generate from a prompt - a calendar heatmap, a hexbin map, a custom KPI layout - that declares the typed fields it needs (dimensions, metrics, series). Once saved, anyone in the project can pick it as a chart type in the Explorer, map their query's fields to it, and save the result like any other chart.
+
+See [Data app visualizations](/guides/data-apps/visualizations) for details.
 
 ## Sharing an app
 
@@ -192,9 +243,113 @@ To promote, you need:
 - **Create** permission for data apps in the upstream project.
 - The preview project must have an upstream project configured under **Settings → Data ops**.
 
+<Info>
+  **Data apps in new previews.** When a preview project is created from an upstream production project, every data app in production is duplicated into the preview - so you can open, iterate on, and promote those apps from inside the preview. Iterating on a duplicated app and promoting it updates the original production app rather than creating a new one.
+</Info>
+
 ### Promoting a dashboard with data app tiles
 
 If you embed a data app in a [dashboard](/guides/how-to-promote-content#promote-dashboards) and promote the dashboard, every referenced app is promoted alongside it. Each app is created or updated in the upstream project using the same rules as standalone app promotion, and the tile is remapped to point at the upstream app so the production dashboard renders the production copy.
+
+## Data apps as code
+
+Data apps join charts and dashboards in the [as-code workflow](/references/lightdash-cli#lightdash-download). You can download a data app's source, check it into git, edit it locally, and re-upload it — the destination Lightdash instance rebuilds the app in its sandbox and publishes a new version. This lets you version app source, review changes in pull requests, and move apps between projects or instances.
+
+Data apps as code is opt-in: it only runs when you pass the `--apps` or `--include-apps` flag to `lightdash download`, or `--apps` to `lightdash upload`, and requires data apps to be enabled on the destination instance.
+
+### Downloading an app
+
+Use `lightdash download --apps <appUuids...>` to fetch specific apps by UUID, or `--include-apps` to grab the project's apps (capped at the first 10; only apps that have been added to a space are listed):
+
+```bash
+# Download specific apps by UUID (works for apps not in a space)
+lightdash download --apps 8f2b1c4d-1111-2222-3333-444455556666
+
+# Download the project's data apps (up to 10; only apps that are in a space)
+lightdash download --include-apps
+```
+
+To reach apps that are not in a space, or to download more than 10 in one go, list them explicitly with `--apps`.
+
+For an app-only checkout — no charts, dashboards, or space files — add `--apps-only` (it implies `--skip-charts --skip-dashboards --skip-spaces`, which also work individually). This is the recommended way to work on apps: it keeps the folder clean and avoids accidentally re-uploading unrelated project content later.
+
+```bash
+lightdash download --apps-only --apps 8f2b1c4d-1111-2222-3333-444455556666
+```
+
+Each app is written to `lightdash/apps/<slug>/`, where `<slug>` is derived from the app's name. Every folder is a locally buildable project:
+
+- `lightdash-app.yml` — the manifest, including the `appUuid` that identifies the app when you re-upload it, plus editable `name` and `description` fields. For [data app visualizations](/guides/data-apps/visualizations), the manifest also carries a `vizSchema` field describing the declared fields (dimensions, metrics, series) the viz needs — the schema is stored in the database, not the source tree, so the CLI persists it here to round-trip a viz through download and upload.
+- `src/` — the app's source tree (React components, styles, etc.). **This is the only directory you should edit.**
+- `package.json`, `README.md`, `.gitignore`, `AGENTS.md`, and `.claude/skills/` — a template that lets you install dependencies and run `pnpm build` locally to sanity-check that the source compiles. Editing these files has no effect on the deployed app — the server rebuilds against its own trusted template.
+- `.lightdash/context/` — a read-only, point-in-time snapshot of the source project so you (or an AI agent) have the context needed to edit the app: `semantic-layer.yml` (tables, dimensions, metrics you can query), `parameters.yml`, `prompt-history.md`, and `theme/` styling assets. Re-download to refresh.
+
+The built output is intentionally excluded — the server rebuilds the app from source on upload, so you never have to ship compiled artifacts.
+
+### Local edit → build → upload loop
+
+Once an app is on disk you can iterate on it locally:
+
+1. Edit files under `src/`.
+2. Optionally run `pnpm install && pnpm build` inside the app folder to check that the source compiles. This is a **local pre-check only** — if `pnpm install` fails in your environment (registry policies, no network), skip this step rather than fighting it; the server does its own build on upload and any build errors appear on the app's page.
+3. Run `lightdash upload --apps` to send the source back. The server rebuilds and publishes a new version.
+
+The bundled `.claude/skills/` and `AGENTS.md` files describe the SDK surface and this workflow so coding agents (Claude Code and similar) can help you edit apps locally without extra prompting.
+
+Data app visualizations follow the same loop: the download writes the viz's declared field schema into `lightdash-app.yml`, and the upload sends it back so the viz shows up in the viz picker on the destination. If you edit the manifest's `vizSchema` directly, the upload validates it and rejects malformed schemas. Bundles downloaded before viz schemas round-tripped have no `vizSchema` field — re-download from the source project to pick it up before uploading elsewhere.
+
+### Uploading an app
+
+Use `lightdash upload --apps` to send your local changes back:
+
+```bash
+# Upload every app folder under lightdash/apps/
+lightdash upload --apps
+
+# Upload only specific apps by UUID
+lightdash upload --apps 8f2b1c4d-1111-2222-3333-444455556666
+```
+
+Uploads are fire-and-forget: the CLI posts the source and returns immediately. The destination rebuilds the app in its sandbox and publishes a new version once the build succeeds. Until then, the app shows a `building` status in the UI. If the build fails, the error appears in the app's version history in the UI — the CLI does not wait for the build to finish. Only the `src/` tree and manifest are sent; the scaffolding files and context snapshot stay on disk.
+
+The manifest's `appUuid` is the source of truth for identity — the `<slug>` folder name is only a hint derived from the app's name. Renaming the folder locally does not create a new app. Editing the manifest's `name` or `description` and re-uploading to the same project renames the app in the UI.
+
+### Moving an app between projects or instances
+
+Because identity lives in the manifest, the same download-then-upload flow lets you copy apps between projects or between Lightdash instances.
+
+**Between projects on the same instance** — pass `--project` to target a different project. Because the manifest's `projectUuid` doesn't match the target, the CLI asks you to confirm creating a new app there:
+
+```bash
+lightdash upload --apps --project <target-project-uuid>
+```
+
+In non-interactive shells (CI, scripts) the CLI reports an error for that app and skips it instead of prompting. Pass `--create-new` to opt in explicitly:
+
+```bash
+lightdash upload --apps --project <target-project-uuid> --create-new
+```
+
+The destination project creates a new app (with a new UUID on the server) and builds it in its own sandbox. After creating, the CLI prints the new app's URL and offers to retarget your local `lightdash-app.yml` at it (updating `appUuid`, `projectUuid`, and `version` together) so future uploads update the new app. Accept if you're moving the app; decline if you're copying it and want to keep working against the original — the CLI tells you which manifest fields to edit later if you change your mind. Pass `--create-new` any time you want to fork an app into a new record, even inside the same project.
+
+**Between Lightdash instances** — point the CLI at the destination first, then upload:
+
+```bash
+lightdash login <destination-url>
+lightdash upload --apps --project <target-project-uuid> --create-new
+```
+
+You can also set `LIGHTDASH_URL` and `LIGHTDASH_API_KEY` instead of running `lightdash login`. The destination instance rebuilds the source in its own sandbox — no built artifacts are ever transferred between instances.
+
+### Constraints
+
+Before you rely on data apps as code in a workflow, keep the following in mind:
+
+- **Enterprise only.** Both the source and destination instances must have data apps enabled, including the build sandbox. See [Self-hosting Data apps](/guides/data-apps/self-hosting) for the configuration required on self-hosted instances.
+- **Fixed dependency set.** The sandbox rebuilds against a pre-installed library set. You can edit any source file, but you can't add libraries that the sandbox doesn't already provide, and edits to root config files (`package.json`, `vite.config.js`, `tsconfig.json`, etc.) have no effect on the deployed app.
+- **Semantic layer coupling.** A moved app's queries run against the target project's fields **by name**. If a field the app references is missing in the target project, the upload still succeeds and the build still finishes — but the app surfaces query errors at runtime when a user opens it. Check the app in the destination after uploading.
+- **Concurrent build rate limit.** Each project has a cap on how many app builds can run at once. If you upload a large batch and exceed the cap, the server returns HTTP 429 and the CLI reports the error for that app. Re-run the upload for the failed apps once earlier builds complete.
+- **Bulk download cap.** `--include-apps` returns at most the first 10 apps in a space. Use `--apps <uuids>` to fetch more or to reach apps that aren't in a space.
 
 ## Data context and the app model
 
@@ -212,7 +367,7 @@ This means:
 - **Use images to lock in style.** A screenshot of a dashboard, a brand guideline, or even a hand-drawn mockup goes a long way toward getting the layout, typography, and colors right on the first try.
 - **Attach sample data when content matters.** If the app is making decisions based on what's actually in your data - picking a chart type, writing copy, or formatting values - turn on sample data for the relevant charts. Just remember the agent will see the rows you share.
 - **Reference existing charts and dashboards.** Pointing the agent at a working metric query is faster and more reliable than describing the query in prose.
-- **Use the query inspector early.** If something looks off, check the queries the app is running before tweaking the prompt.
+- **Use the network inspector early.** If something looks off, check the queries and external requests the app is running before tweaking the prompt.
 
 ## Troubleshooting
 

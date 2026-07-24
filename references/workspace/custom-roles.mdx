@@ -19,10 +19,30 @@ description: "Custom roles allow you to create granular permission sets tailored
 
 Lightdash provides two types of roles:
 
-- **System roles**: Pre-defined roles (like Admin, Developer, Viewer) with a standard set of scopes. For more information about what these roles can do, check our [default system roles permission matrix](https://docs.lightdash.com/references/roles#roles-and-permissions).
-- **Custom roles**: User-defined roles where you can select specific scopes to match your exact requirements
+- **System roles**: Pre-defined roles (like Admin, Developer, and Viewer) that come with a standard set of scopes. For more on what each one can do, check our [default system roles permission matrix](/references/workspace/roles#roles-in-your-lightdash-instance).
+- **Custom roles**: Roles you define yourself by picking the exact scopes you need.
 
-Custom roles are created at the organization level but are assigned to users or groups at the project level, allowing you to control access on a per-project basis.
+One important thing about system roles: they behave differently depending on where they're assigned.
+
+Take the **Admin** role as an example. Assigned at the **organization level**, it lets you administer the entire Lightdash instance — org settings plus every project inside it. Assigned at the **project level**, it gives you admin permissions for that one project only, limited to what can be managed at the project level. Org-wide settings stay in the hands of org admins.
+
+The **Developer** role works the same way. At the org level, you're a developer across all projects. At the project level, you're a developer for just that project.
+
+For a fuller breakdown of how organization and project roles differ, see [Organization vs. project roles](/references/workspace/roles#organization-vs-project-roles).
+
+Every custom role is applied either at the **Lightdash organization level** or at a **Lightdash project level** — not both. When creating a new custom role, you choose where it will be assigned, and that choice determines which scopes (individual permissions) you can add to the role:
+
+* **Organization-level custom roles** can include both organization-only scopes and project scopes, so an org-level custom role can mirror the built-in system org roles and apply project permissions across every project in the organization.
+* **Project-level custom roles** can only include project scopes — organization-only scopes cannot be added to a role that is applied to a project.
+
+```
+Project-level custom role      -> project scopes only
+Organization-level custom role -> organization-only scopes + project scopes
+```
+
+<Warning>
+  Once a custom role type (organization or project) has been selected, you cannot change it. If you need a role that applies at a different level, you will have to create a new role.
+</Warning>
 
 <Warning>
   **Custom roles can only add permissions, not remove them.** Lightdash uses an additive permission model. If a user already has a permission granted through their organization-level role, a custom project role cannot take it away. Toggling off a scope in a custom role has no effect for users who already have that scope from their org role.
@@ -60,13 +80,31 @@ This approach gives you precise control over what users can do in each project w
 1. Click **Create New Role**
 2. Enter a **Role Name** (e.g., "Marketing Analyst", "Finance Viewer")
 3. Add an optional **Description** to explain the role's purpose
-4. Select the specific **scopes** (permissions) you want to include:
+4. Select the **role type** — **Organization** or **Project**. This determines whether the role will be applied to a user or user group at the organization level or the project level. If you select **Organization**, both organization-only scopes and project scopes will be available. If you select **Project**, only project scopes will be available — organization-only scopes cannot be added to a project role. Once a role type has been selected, it cannot be changed — you'll need to create a new role if you want a different type.
+5. Select the specific **scopes** (permissions) you want to include:
    - **View permissions**: Allow users to see content (dashboards, charts, spaces)
    - **Create permissions**: Allow users to create new content
    - **Manage permissions**: Allow users to edit, delete, or administer content
-5. Click **Save** to create the role
+6. Click **Save** to create the role
 
 ![create-new-role.png](/images/references/workspace/create-new-role.png)
+
+### Scope dependencies
+
+Many scopes depend on other scopes to work correctly — for example, most project scopes require `view:Project`. When building or editing a role, the role builder shows each scope's dependency status:
+
+- **Green check mark** — all dependencies are met.
+- **Orange triangle** — some dependencies are met. The scope will still function, but certain aspects of the permission will not work.
+- **Red circle** — none of the dependencies are met.
+
+A summary in the bottom-left of the role builder shows how many selected scopes have all, some, or none of their dependencies met.
+
+![scope-dependencies.png](/images/references/workspace/scope-dependencies.png)
+
+A couple of things worth knowing:
+
+- Selecting a scope automatically selects its required dependencies.
+- _Deselecting_ a scope does **not** auto-deselect its dependencies. Many scopes (like `view:Project`) are required by lots of other scopes, so Lightdash leaves them in place to avoid silently breaking other selected scopes.
 
 ### Duplicate an Existing Role
 
@@ -75,9 +113,10 @@ If you want to create a role similar to an existing one:
 1. Find the role you want to duplicate (system role or custom role)
 2. Click the **⋯** menu next to the role
 3. Select **Duplicate Role**
-4. Enter a new name for the duplicated role
-5. Modify the scopes as needed
-6. Click **Save**
+4. Select the **role type** — **Organization** or **Project**. This determines whether the duplicated role will be applied at the organization level or the project level, and which scopes are available. Once selected, the role type cannot be changed.
+5. Enter a new name for the duplicated role
+6. Modify the scopes as needed
+7. Click **Save**
 
 This is particularly useful when you want to create a role similar to a system role but with some modifications.
 
@@ -105,13 +144,15 @@ Custom roles are assigned at the project level to provide granular access contro
 
 ### Content-as-code scopes
 
-Three scopes control access to [content as code](/guides/developer/dashboards-as-code), the CLI workflow for managing charts and dashboards as YAML files. They form a read → write → narrow-write ladder.
+Four scopes control access to [content as code](/guides/developer/dashboards-as-code), the CLI workflow for managing charts and dashboards as YAML files. They form a read → narrow-write → write → manage ladder.
 
 **Download content as code** (`view:ContentAsCode`) lets a user pull existing charts and dashboards as YAML via `lightdash download`. It does not allow pushing changes back. This is the common "let people pull templates" grant.
 
 **Upload content as code to own previews** (`manage:ContentAsCode@self`) is a narrow upload right: users can run `lightdash upload` only against preview projects they created themselves. This is the intended day-to-day scope for non-Developer users in CI/CD-style workflows where they need to validate their own preview but shouldn't push to shared projects. Pair it with `view:ContentAsCode` so they can still pull from shared projects.
 
-**Download and upload content as code** (`manage:ContentAsCode`) grants both download and upload across any project the role applies to. Users with this scope can run `lightdash upload` to overwrite charts and dashboards in the project. This implies `view:ContentAsCode` and the `@self` upload right.
+**Upload content as code** (`create:ContentAsCode`) grants chart, dashboard, and SQL-chart uploads across any project the role applies to, without the broader scheduled-delivery, alert, and Google Sheets upload rights that `manage:ContentAsCode` includes. This is the scope built-in **Editors** hold — it unlocks `lightdash upload` for charts and dashboards (and the AI agent / MCP content tools that create or edit the same content) while still enforcing the same space-level access checks that the UI applies. Writing SQL charts still requires `manage:CustomSql`; adding or changing custom SQL dimensions still requires `manage:CustomFields`; adding or changing custom SQL table calculations still requires `manage:CustomSqlTableCalculations`. Custom SQL is diffed against the persisted chart, so re-uploading a chart whose SQL hasn't changed passes without those extra scopes.
+
+**Download and upload content as code** (`manage:ContentAsCode`) grants everything in `create:ContentAsCode` plus the ability to upload scheduled deliveries, alerts, Google Sheets uploads, and space/permission mutations via content as code. This is the scope built-in **Developers** and **Admins** hold. It implies `view:ContentAsCode`, `create:ContentAsCode`, and the `@self` upload right.
 
 Use **download-only** to let a user pull production YAML for local development, diffing, or inspection without giving them the ability to overwrite production content. Combine with a controlled promotion path (e.g., CI/CD running with a service account that holds the manage scope) so writes only land via the pipeline.
 
@@ -193,6 +234,57 @@ Three scopes control different SQL-authoring features. They are independent — 
 <Tip>
   If you want a user to query tables that include custom SQL dimensions created by others, they don't need any of these scopes. Any user with access to the Explore view can **use** existing custom SQL dimensions in their queries — these scopes only control who can **author** them.
 </Tip>
+
+## Managing custom roles as code
+
+Custom roles can be downloaded from and uploaded to a Lightdash instance as YAML files via the CLI, alongside charts, dashboards, and other content as code. This is useful for version-controlling your organization's roles, reviewing changes in pull requests, or copying a role between instances.
+
+Unlike most content as code (which is project-scoped), custom roles are **organization-scoped**. Downloads and uploads use the `--organization` mode of the CLI and require **organization admin** permissions.
+
+### Download roles
+
+Run the download in organization mode from your working directory:
+
+```bash
+lightdash download --organization
+```
+
+This writes every user-defined role in your organization to `lightdash/custom-roles/*.yml`. System roles are not included.
+
+### Upload roles
+
+Edit or add YAML files under `lightdash/custom-roles/`, then run:
+
+```bash
+lightdash upload --organization
+```
+
+Each file is upserted by role name — the backend creates a new role if the name is unused, updates the role's description and scopes if they've drifted, or reports no change if the file already matches the server. Uploads never delete roles; remove unwanted roles in the UI.
+
+### YAML format
+
+```yaml
+version: 1
+name: analytics-viewer
+description: Read-only access to analytics content
+level: organization
+scopes:
+  - view:Dashboard
+  - view:SavedChart
+  - view:Space
+```
+
+| Field | Description |
+| --- | --- |
+| `version` | Format version. Currently always `1`. |
+| `name` | The role's display name. Used as the portable identity — a role is matched to an existing role by exact name. |
+| `description` | Optional description. Set to `null` to clear an existing description. |
+| `level` | Either `organization` or `project`. Determines which scopes are allowed and is immutable after the role is created. |
+| `scopes` | List of scope grants. See the [scope reference](#scope-reference) above for available scopes and note that organization-only scopes cannot appear on a `level: project` role. |
+
+Malformed files, unknown scopes, and scopes that aren't allowed at the role's level are rejected per file with the file path and error message; other files continue to process. The CLI exits with a non-zero status if any file fails validation.
+
+For the full workflow, including examples and CI/CD integration alongside charts and dashboards, see [Custom roles as code](/guides/developer/dashboards-as-code#custom-roles-as-code).
 
 ## Troubleshooting
 
