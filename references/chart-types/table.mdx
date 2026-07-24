@@ -212,21 +212,21 @@ You can add column totals or row totals (in pivot tables) to your tables by sele
 
 In pivot tables, both column totals and row totals are computed by running extra aggregation queries against your warehouse, so each total reflects the true value for that column or row rather than a sum of the cells shown. This means totals are accurate for `count`, `sum`, `count_distinct`, `average`, `min`, `max`, and ratio metrics in pivot tables, in both the metrics-as-columns and metrics-as-rows layouts. If the warehouse cannot return a value for a given total (for example, when a metric is not defined for that row), the cell is left blank rather than showing an incorrect sum.
 
+When you apply metric or table calculation filters, Lightdash calculates totals for the dimension groups that pass those filters, then re-aggregates the underlying warehouse data. This preserves the metric's native aggregation, so non-additive metrics such as `count_distinct`, averages, percentiles, and ratios remain accurate.
+
 ### Totals for table calculations
 
-Lightdash computes grand, column, row, and subtotal values for a table calculation by re-applying it to the aggregated totals row (e.g. `100 * sum(profit) / sum(revenue)`) rather than summing the cells shown in the table.
+Use the **Totals** setting in the table calculation modal to choose how Lightdash calculates grand, column, row, and subtotal values for each table calculation:
 
-A total is only produced when **all** of these are true:
+- **Formula** (default): Re-applies the calculation to the aggregated totals row. For example, `100 * sum(profit) / sum(revenue)` calculates the ratio from the aggregated profit and revenue values. Use this for ratios, percentages, and other calculations that should be evaluated at the total grain.
+- **Sum of rows**: Calculates the table calculation for each row, then sums those values at the requested total grain. Use this for row-level transformations such as `${metric} + 2`, as well as window or template calculations that cannot be re-applied to one aggregated totals row.
+- **None**: Leaves the total cell blank for that table calculation.
 
-- The calculation references only aggregated metrics — no dimensions, custom dimensions, period-over-period metrics, or other table calculations.
-- It contains no window logic: no SQL `OVER (...)` clause, no built-in row/pivot/total helper functions, and no formula aggregate or window functions.
-- The calculation is a SQL or formula table calculation — template table calculations are always excluded.
+You can mix totals modes in the same table. For example, a ratio calculation can use **Formula** while an additive row-level calculation uses **Sum of rows**.
 
-If any of these conditions fails, the total cell stays blank rather than showing a misleading value. Common examples that stay blank: running totals, `LAG` / `LEAD` / `ROW_NUMBER`, percent-of-total helpers, and any calc that references a dimension or another table calculation.
-
-**Filters disable totals entirely**
-
-When the query has metric filters or table calculation filters, the totals row is omitted for the whole table — table calculation filters are applied after the calculations run, so the resulting totals would be inconsistent with the visible rows.
+<Note>
+  In **Formula** mode, Lightdash can only produce a total when it can evaluate the calculation at the aggregated total grain. Calculations that reference dimensions, other table calculations, or window logic may remain blank in this mode; use **Sum of rows** when you want to total their row-level results.
+</Note>
 
 ### Incorrect totals
 
@@ -246,10 +246,7 @@ Lightdash uses a SQL query to calculate the distinct number of devices across al
 
 **Why are my totals higher?**
 
-There are two reasons why this could be happening:
-
-1. You've set a row limit in your query that's truncating the results. If the number of possible results from your query is larger than the row limit you've set, Lightdash will calculate the totals using all of the results (including the rows that have been removed from your table because of the limit).
-2. You're using metric or table calculation filters. When you use metric or table calculation filters, the totals are calculated before the filters are applied.
+If you've set a row limit that's truncating your query results, Lightdash still calculates totals using all matching rows, including rows that are not shown because of the limit. The resulting total can therefore be higher than the sum of the visible rows.
 
 **How do I calculate totals based on what's shown in my table?**
 
@@ -273,7 +270,7 @@ You can add subtotals to your tables by selecting `Show subtotals` in the chart 
   ![](/images/references/chart-types/subtotals-69de33b7bb4a868d33b713d61002a782.png)
 </Frame>
 
-To use subtotals, you need to have at least 2 or more dimensions in your table visualization.
+To use subtotals, you need at least two dimensions in your table visualization.
 
 ### Expand subtotals by default
 
@@ -283,8 +280,6 @@ When `Show subtotals` is enabled, you can also enable `Expand subtotals by defau
 - **On**: subtotal groups load expanded, showing every row beneath each subtotal.
 
 This setting is saved with the chart, so anyone viewing the saved chart or dashboard tile sees the state you chose. Viewers can still expand or collapse individual groups while exploring.
-
-The option is unavailable when subtotals are off or when `Show metrics as rows` is enabled on a pivot table.
 
 ## Group repeated row values
 
