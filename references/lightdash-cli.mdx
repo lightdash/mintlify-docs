@@ -273,6 +273,30 @@ Compile Lightdash resources using your local project and database credentials. d
 
 All standard [dbt options](#dbt-options) work with `lightdash compile`.
 
+#### Partial compilation
+
+Lightdash uses partial compilation by default. If an individual field, join, or set-validation failure can be isolated, Lightdash records a warning, keeps the rest of the explore available, and prints the explore as `PARTIAL_SUCCESS`. Failures that cannot be isolated can still produce `ERROR`.
+
+Use `--no-partial-compilation` when failures normally handled by partial compilation must be reported as errors instead. The flag does not promote unrelated, non-blocking warnings to errors. The strict compilation summary omits those remaining generic warnings, although deploy and preview commands can print them in the post-upload warning report. Warehouse-column errors remain blocking in both modes.
+
+The flag is available on `lightdash compile`, `lightdash validate`, `lightdash deploy`, `lightdash preview`, and `lightdash start-preview`. `--ignore-errors` still allows deploy and preview commands to continue after strict compilation errors.
+
+<Note>
+  The `PARTIAL_COMPILATION_ENABLED` environment variable is no longer supported and no longer controls server or CLI behavior. Project create, update, and refresh paths use partial compilation, and CLI compilation uses it by default. Use `--no-partial-compilation` on a supported CLI command when you need strict field and join compilation for that run.
+</Note>
+
+#### Validate physical warehouse columns
+
+Semantic compilation can verify Lightdash field references, but it does not normally execute physical `${TABLE}.column` references against your warehouse. Add `--validate-warehouse-columns` to run `SELECT … WHERE 1 = 0` probes that return no rows. Whether a warehouse scans or bills for data is warehouse-dependent.
+
+The scanner examines dimension and metric SQL in successfully compiled explores. It recognizes unquoted references containing letters, numbers, or underscores, such as `${TABLE}.order_id`. Quoted references such as `${TABLE}."order id"` are not checked, and tables whose relation contains a `${...}` template are skipped.
+
+A column rejected by the warehouse is reported as an error in both partial and strict compilation modes. After a batched probe fails, the CLI runs a zero-row relation-control probe. If a control probe fails for any reason, the CLI reports no column error because it cannot isolate a column-specific failure. An individual failed column probe is reported only when its follow-up control probe succeeds.
+
+This validation requires a warehouse client and the warehouse catalog. `--skip-warehouse-catalog` disables it. The check is also skipped when no tables are selected, when compilation uses dbt Cloud CLI or a Lightdash YAML-only project, or when `lightdash deploy` automatically skips the warehouse catalog for a Spark target.
+
+The flag is available on the same five compilation commands. `lightdash validate` includes tables by default, so the check runs without `--only`. If you customize `--only`, keep `tables` in the list to run the warehouse check.
+
 **Options:**
 
 - `--skip-dbt-compile`
@@ -284,6 +308,11 @@ All standard [dbt options](#dbt-options) work with `lightdash compile`.
 - `--no-warehouse-credentials`
   - (default: false)
   - Compile without any warehouse credentials. Skips dbt compile + warehouse catalog
+- `--validate-warehouse-columns`
+  - (default: false)
+  - Validate supported physical `${TABLE}.column` references against the warehouse
+- `--no-partial-compilation`
+  - Report failures normally handled by partial compilation as errors
 - `--disable-timestamp-conversion [true|false]`
   - (default: false)
   - Snowflake only. Disable converting timestamps to UTC during compilation. Only use this if your timestamp values are already in UTC.
@@ -333,6 +362,11 @@ All standard [dbt options](#dbt-options) work with `lightdash preview`.
 - `--use-dbt-list [true/false]`
   - (default: true)
   - Use `dbt list` instead of `dbt compile` to generate dbt manifest.json
+- `--validate-warehouse-columns`
+  - (default: false)
+  - Validate supported physical `${TABLE}.column` references against the warehouse
+- `--no-partial-compilation`
+  - Report failures normally handled by partial compilation as errors
 - `--ignore-errors`
   - (default: false)
   - Allows deploy with errors on compile
@@ -399,6 +433,11 @@ All standard [dbt options](#dbt-options) work with `lightdash start-preview`.
 - `--use-dbt-list [true/false]`
   - (default: true)
   - Use `dbt list` instead of `dbt compile` to generate dbt manifest.json
+- `--validate-warehouse-columns`
+  - (default: false)
+  - Validate supported physical `${TABLE}.column` references against the warehouse
+- `--no-partial-compilation`
+  - Report failures normally handled by partial compilation as errors
 - `--ignore-errors`
   - (default: false)
   - Allows deploy with errors on compile
@@ -490,6 +529,11 @@ All standard [dbt options](#dbt-options) work with `lightdash deploy`.
   - Use `dbt list` instead of `dbt compile` to generate dbt manifest.json
 - `--combine-manifest <path-or-url>`
   - Path or http(s) URL to an additional dbt `manifest.json`. Models present in this file but missing from the deploy-generated manifest are merged in so the deploy reflects the full project even when dbt was only run on a subset of models. The deploy-generated manifest always wins on conflicts. URLs (for example, a presigned S3 URL) are fetched at runtime so the manifest does not need to be downloaded first.
+- `--validate-warehouse-columns`
+  - (default: false)
+  - Validate supported physical `${TABLE}.column` references against the warehouse
+- `--no-partial-compilation`
+  - Report failures normally handled by partial compilation as errors
 - `--use-batched-deploy`
   - (default: false)
   - Deploy explores in batches instead of a single request. Useful for large projects that exceed payload size limits
@@ -572,6 +616,11 @@ All standard [dbt options](#dbt-options) work with `lightdash validate`.
 - `--only [elems...]`
   - (default: ["charts","dashboards","tables"])
   - Specify project elements to validate
+- `--validate-warehouse-columns`
+  - (default: false)
+  - Validate supported physical `${TABLE}.column` references. Tables are included in validation by default; when using `--only`, the list must include `tables`
+- `--no-partial-compilation`
+  - Report failures normally handled by partial compilation as errors
 - `--include-spaces <spaceSlugs...>`
   - Only report chart and dashboard validation errors from these spaces. Matching cascades recursively into sub-spaces via parent space relationships, so passing a parent space slug also includes everything under it. Use the same `spaceSlug` identifiers that appear in `lightdash download` output. Space slugs aren't unique — if the same slug exists in multiple spaces, all of them (and their sub-spaces) are matched. Mutually exclusive with `--exclude-spaces`.
 - `--exclude-spaces <spaceSlugs...>`
@@ -1398,6 +1447,10 @@ You can set the number of threads for dbt in Lightdash commands that support dbt
 ## Environment Variables
 
 The Lightdash CLI supports various environment variables that can be used to configure its behavior. These are especially useful in CI/CD environments where you want to avoid interactive prompts or need to set credentials programmatically.
+
+<Warning>
+  `PARTIAL_COMPILATION_ENABLED` is no longer supported. Remove it from CLI and self-hosted deployment configuration. It no longer controls server or CLI behavior. Project create, update, and refresh paths use partial compilation, and CLI compilation uses it by default. Use [`--no-partial-compilation`](#partial-compilation) on a supported CLI command to report failures normally handled by partial compilation as errors for that run.
+</Warning>
 
 ### Core Lightdash Configuration
 
