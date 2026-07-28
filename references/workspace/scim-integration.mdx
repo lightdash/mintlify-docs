@@ -183,6 +183,8 @@ SCIM_ENABLED=true
 
     Replace `3675b69e-8324-4110-bdca-059031aa8da3` with your actual project UUID and adjust group names to match your Okta groups.
 
+    To assign a custom role, use the bare custom-role UUID for an organization-level custom role. For a project-level custom role, keep the project UUID prefix and use `<project_uuid>:<custom_role_uuid>`.
+
     <Frame>
       ![](/images/references/workspace/scim-okta-role-mapping.png)
     </Frame>
@@ -262,7 +264,7 @@ SCIM_ENABLED=true
 
     Lightdash exposes a standard SCIM 2.0 API, so any SCIM-compatible client can manage users and groups — including a sync job of your own that reads from the [Google Directory API](https://developers.google.com/workspace/admin/directory) and pushes changes to Lightdash.
 
-    Use the SCIM base URL and access token from [SCIM Setup within Lightdash](#scim-setup-within-lightdash). For example, to create a user with an organization role and a project role:
+    Use the SCIM base URL and access token from [SCIM Setup within Lightdash](#scim-setup-within-lightdash). For example, to create a user with an organization-level custom role and a project-level custom role:
 
     ```bash
     curl -X POST "https://YOUR_APP_URL/api/v1/scim/v2/Users" \
@@ -274,13 +276,13 @@ SCIM_ENABLED=true
         "name": { "givenName": "Jane", "familyName": "Doe" },
         "active": true,
         "roles": [
-          { "value": "editor" },
-          { "value": "3675b69e-8324-4110-bdca-059031aa8da3:viewer" }
+          { "value": "b02daf62-03e8-4fe9-bf7f-16d59a93d5d1" },
+          { "value": "3675b69e-8324-4110-bdca-059031aa8da3:da116e0f-2b96-4af4-93b7-b2636a26853d" }
         ]
       }'
     ```
 
-    Role `value`s follow the format described in [User Role Provisioning](#user-role-provisioning): an organization role name (e.g. `editor`), or `<project_uuid>:<role>` for project roles. Only the `value` field is required.
+    Role `value`s follow the format described in [User Role Provisioning](#user-role-provisioning). An organization-level custom role uses its bare custom-role UUID, while a project-level custom role uses `<project_uuid>:<custom_role_uuid>`. Only the `value` field is required.
 
     See the [SCIM API reference](https://docs.lightdash.com/api-reference/scim/list-users) for all endpoints and payloads.
   </Accordion>
@@ -347,21 +349,34 @@ We support the standard SCIM 2.0 `roles` attribute as defined in [RFC 7643](http
 
 ### Role types
 
-Lightdash defines two role scopes: Organization and Project. Organization roles can be set to member, viewer, interactive viewer, editor, developer, or admin. Project roles can be viewer, interactive viewer, editor, developer, admin, or a [custom role](/references/workspace/custom-roles).
+Lightdash defines two role scopes: Organization and Project. Both scopes support system roles and [custom roles](/references/workspace/custom-roles).
+
+| Scope | System role `value` | Custom role `value` |
+| --- | --- | --- |
+| Organization | The role name, such as `member`, `viewer`, `interactive_viewer`, `editor`, `developer`, or `admin` | The bare custom-role UUID: `<custom_role_uuid>` |
+| Project | `<project_uuid>:<role>`, where `role` is `viewer`, `interactive_viewer`, `editor`, `developer`, or `admin` | `<project_uuid>:<custom_role_uuid>` |
 
 <Info>
-  The project role values are a combination of the project id and the role identifier.
+  Do not prefix an organization-level custom role with the organization UUID. Its `value` is only the custom-role UUID. Project role values always combine the project UUID and role identifier.
 </Info>
 
 Examples:
 
 ```
 [
-   {
+    {
         schemas: [ScimSchemaType.ROLE],
         id: 'member',
         value: 'member',
         display: 'Member',
+        type: 'Organization',
+        supported: true,
+    },
+    {
+        schemas: [ScimSchemaType.ROLE],
+        id: 'b02daf62-03e8-4fe9-bf7f-16d59a93d5d1',
+        value: 'b02daf62-03e8-4fe9-bf7f-16d59a93d5d1',
+        display: 'Data consumer',
         type: 'Organization',
         supported: true,
     },
@@ -389,6 +404,8 @@ Examples:
 
 The SCIM roles model is currently an [IETF draft](https://datatracker.ietf.org/doc/draft-ietf-scim-roles-entitlements), so native support to auto-discover roles via a `/Roles` endpoint varies by provider and connector.
 
+Lightdash's `/Roles` endpoint returns system and custom roles. Organization-level custom roles use their bare custom-role UUID as `id` and `value`, with `type` set to `Organization`. Project-level custom roles use `<project_uuid>:<custom_role_uuid>`, with `type` set to `Project - <project_name>`.
+
 - Okta: Does not natively auto-populate role picklists by consuming a SCIM `/Roles` endpoint. You can still provision `roles` [manually](https://help.okta.com/en-us/content/topics/users-groups-profiles/usgp-add-custom-user-attributes.htm) or implement custom sync using [Okta Workflows](https://help.okta.com/wf/en-us/content/topics/workflows/workflows-main.htm) or a [custom app](https://help.okta.com/en-us/content/topics/apps/apps_app_integration_wizard.htm).
 - Microsoft Entra ID (Azure AD): Does not currently auto-discover roles from `/Roles`. Use [manual configuration](https://learn.microsoft.com/azure/active-directory/app-provisioning/customize-application-attributes) of allowed roles.
 - Google Cloud Identity / Workspace: Custom SCIM applications are not supported, so there is no role configuration to do in Google itself. See the [Google Workspace integration guide](#integration-guides) above for the available approaches.
@@ -401,7 +418,7 @@ How to tell if your IdP supports it:
 - Inspect provisioning or discovery logs: if the IdP issues `GET /Roles` during discovery, it likely supports it.
 - If the connector supports custom discovery endpoints or schema extensions, you may be able to add `/Roles` even if it’s not built-in.
 
-If your IdP doesn’t support `/Roles`, use the manual configuration documented in your IdP. Remember: only the `value` is required by Lightdash.
+If your IdP doesn’t support `/Roles`, use the manual configuration documented in your IdP. Configure organization-level custom roles as bare custom-role UUIDs and project-level custom roles as `<project_uuid>:<custom_role_uuid>`. Only the `value` is required by Lightdash.
 
 ### Lightdash Extension Schema (deprecated)
 
