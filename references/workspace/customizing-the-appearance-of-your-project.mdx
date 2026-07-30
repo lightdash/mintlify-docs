@@ -55,3 +55,80 @@ Open the dashboard settings modal to pick a palette for a dashboard. Tiles in th
 ### Setting a chart-level palette
 
 In the chart editor, the palette picker is at the top of the **Series** tab (cartesian and pie charts) and the **Steps** tab (funnel charts). The preview reflects the staged palette before you save; the override only persists when you click **Save changes**.
+
+## Brand appearance
+
+Under `Organization settings` --> `Appearance`, organization admins can also configure a **Brand appearance** for the org. This stores your brand's domain, logos, fonts, and colors alongside the color palettes above, and drives branded UI surfaces in Lightdash.
+
+<Note>
+    Brand appearance relies on a [Brandfetch](https://brandfetch.com/) integration to detect a brand from its domain. On Lightdash Cloud this is configured for you. On self-hosted or OSS deployments the section is hidden until the integration is configured on the instance and a brand has been fetched. The `hasBrandfetch` flag on `GET /health` indicates whether the current instance can detect new brands.
+</Note>
+
+### Editing your brand
+
+Open `Organization settings` --> `Appearance` --> **Brand appearance**. You'll see a form containing:
+
+- **Domain** — your brand's domain (for example, `ecom-store.com`). Used as the identifier when fetching brand information.
+- **Colors** — the palette detected for your brand. Each color has a hex value and a classification: `brand`, `accent`, `dark`, `light`, or `other`. You can add new colors, remove existing ones, edit a hex value, or re-classify a color.
+- **Fonts** — the title and body font families associated with your brand. These are shown as read-only for now; a font picker is not yet available.
+- **Logos** — the light and dark logos for your brand. Logos are populated by the Brandfetch integration only — direct logo upload is not exposed in the UI.
+
+### Refreshing from Brandfetch
+
+Next to the domain field is a refresh icon. Clicking it calls Brandfetch for the current domain and replaces the form with the freshly detected brand **without persisting** anything — you can review the change and either keep it (by saving) or discard it (by reverting).
+
+- The refresh icon is grey when the domain has not been edited and blue when it differs from the saved brand.
+- The fetch is fully revertible up until you click **Save changes**.
+
+### Saving and reverting
+
+Any edit — including a Brandfetch refresh — opens an **Unsaved changes** footer with **Revert** and **Save changes** buttons. Nothing is persisted to your organization until you click **Save changes**. **Revert** restores the last saved brand.
+
+### Live preview
+
+Alongside the form, a minimal app-window mock previews how your brand will look in Lightdash:
+
+- The nav bar renders in your primary brand color with your current logo.
+- A sample dashboard title and description use your configured title and body fonts.
+- Sample charts are drawn with your brand colors.
+
+The preview updates live as you edit, so you can see the impact of a color re-classification or a Brandfetch refresh before saving.
+
+### Brand API endpoints
+
+The brand appearance settings are backed by three endpoints under the organization API:
+
+| Method | Path                | Purpose                                                                                             |
+| ------ | ------------------- | --------------------------------------------------------------------------------------------------- |
+| `GET`  | `/org/brand`        | Return the organization's currently saved brand, or `null` if none is stored.                       |
+| `POST` | `/org/brand/fetch`  | Fetch a brand from Brandfetch for a given domain without persisting it. Used to power the preview. |
+| `PUT`  | `/org/brand`        | Persist the edited brand payload (domain, colors, fonts, logos) exactly as provided.                |
+
+Example — fetch a brand for a domain without saving:
+
+```bash
+curl -X POST 'https://<your-lightdash-host>/api/v1/org/brand/fetch' \
+  -H 'Content-Type: application/json' \
+  -d '{ "domain": "ecom-store.com" }'
+```
+
+Example — save the edited brand payload:
+
+```bash
+curl -X PUT 'https://<your-lightdash-host>/api/v1/org/brand' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "domain": "ecom-store.com",
+    "name": "Ecom Store",
+    "description": "Sample brand for illustration",
+    "logos": [],
+    "colors": [
+      { "hex": "#1f6feb", "type": "brand" },
+      { "hex": "#f5a524", "type": "accent" }
+    ],
+    "fonts": [
+      { "name": "Inter", "type": "title" },
+      { "name": "Inter", "type": "body" }
+    ]
+  }'
+```
