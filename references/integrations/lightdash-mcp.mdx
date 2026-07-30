@@ -423,6 +423,93 @@ MCP can read, create, and edit Lightdash charts and dashboards using the same [c
 
 These tools reuse the same permissions, validation, and project context as the [Lightdash CLI](/guides/cli/how-to-install-the-lightdash-cli) `download` and `upload` commands, so the user driving the MCP session needs the same access required to manage that content in Lightdash.
 
+#### Editing the dbt project
+
+MCP can edit the dbt project that backs the active Lightdash project and open a pull request with the change — the same [AI writeback](/guides/ai-agents/ai-writeback) capability exposed to the in-product chat, available in any MCP client. Ask the assistant to rename a metric, add a dimension, edit a model's SQL, or fix a YAML description; the assistant calls the tools below and hands back a pull request URL when the run finishes.
+
+- **Run AI writeback** (`run_ai_writeback`) - Start a writeback run against the active project's dbt repository from a natural-language prompt. The target GitHub or GitLab repository and dbt sub-folder are resolved server-side from the project's dbt connection — you don't specify them. Returns immediately with an `aiWritebackRunUuid`.
+- **Get AI writeback status** (`get_ai_writeback_status`) - Poll a writeback run by id. Returns the current pipeline stage while the run is in flight, and the pull request URL (or an error message) once it reaches a terminal state.
+
+<Info>
+  These tools require the **AI writeback** feature flag to be enabled for your organization. The MCP server only registers them for orgs where the flag is on — everything else in [AI writeback prerequisites](/guides/ai-agents/ai-writeback#prerequisites) (supported git host, Lightdash GitHub/GitLab App installed, project Developer permission on the caller) applies here too.
+</Info>
+
+##### How the async flow works
+
+A writeback run clones the repository into a fresh sandbox, executes the prompt with the coding agent, validates the result with `lightdash compile`, and — if the agent changed any files — pushes a branch and opens a pull request. That pipeline typically takes a few minutes, longer than most MCP transports will hold a connection open, so `run_ai_writeback` enqueues the run to a background worker and returns immediately with a run id. The caller then polls `get_ai_writeback_status` for the outcome.
+
+Polling has no session affinity — you can call `get_ai_writeback_status` from a different MCP session or a different API token, as long as the caller has view access to the project the run belongs to. This makes the pair usable from short-lived automations and shell scripts, not just interactive chat clients.
+
+<Info>
+  The in-product AI writeback chat card is unaffected by this split: the chat continues to auto-update once the background run finishes, without you polling anything.
+</Info>
+
+##### `run_ai_writeback` — start a run
+
+**Parameters**
+
+- `prompt` _(string, required)_ — A clear, self-contained description of the change to make to the dbt project (for example, _"Add a `total_revenue` metric to the orders model as the sum of amount"_). When the project has more than one dbt source, name the intended source in the prompt itself (for example, _"In the marketing dbt project, ..."_) — the run reports the available sources back through `get_ai_writeback_status` if it can't tell which one you meant.
+
+**Response** (`structuredContent`)
+
+```json
+{
+  "aiWritebackRunUuid": "b3f4e0e2-8a2b-4d5f-9a1f-1c2d3e4f5a6b"
+}
+```
+
+<Warning>
+  **Breaking change (July 2026).** `run_ai_writeback` used to block until the pipeline finished and return `{ output, exitCode, prUrl }` inline. It now returns `{ aiWritebackRunUuid }` and callers must poll `get_ai_writeback_status` for the pull request URL. External MCP clients hardcoded against the old synchronous shape need to update; the in-product chat is unaffected. This change decouples the run from the MCP transport (so transport idle timeouts can no longer drop a completed run) and removes the naive-retry duplicate-PR risk that came with a synchronous return.
+</Warning>
+
+##### `get_ai_writeback_status` — poll for the result
+
+**Parameters**
+
+- `aiWritebackRunUuid` _(UUID, required)_ — The id returned by `run_ai_writeback`.
+
+**Response** (`structuredContent`)
+
+```json
+{
+  "status": "ready",
+  "prUrl": "https://github.com/acme-analytics/jaffle-shop/pull/482",
+  "errorMessage": null
+}
+```
+
+- `status` is either `"pending"` (not yet picked up by a worker), an in-progress pipeline stage (for example, `"sandbox"`, `"agent"`, or `"pull_request"`), or a terminal value: `"ready"` (finished — check `prUrl`) or `"error"` (finished — check `errorMessage`).
+- `prUrl` is set once `status` is `"ready"` and the agent changed at least one file. If the agent decided no change was needed, `status` is still `"ready"` but `prUrl` is `null`.
+- `errorMessage` is set once `status` is `"error"`. This also covers the "more than one dbt source" case — the message lists the available sources so the caller can re-run `run_ai_writeback` naming the intended one in the prompt.
+
+Poll every 10-15 seconds rather than tight-looping — a run typically takes a few minutes to finish, and the status row updates in stages rather than continuously.
+
+**Example poll loop**
+
+```ts
+const { aiWritebackRunUuid } = (
+  await callMcpTool('run_ai_writeback', {
+    prompt: 'Add a total_revenue metric to the orders model as the sum of amount.',
+  })
+).structuredContent;
+
+while (true) {
+  const { status, prUrl, errorMessage } = (
+    await callMcpTool('get_ai_writeback_status', { aiWritebackRunUuid })
+  ).structuredContent;
+
+  if (status === 'ready') {
+    console.log(prUrl ? `PR opened: ${prUrl}` : 'No file changes were needed.');
+    break;
+  }
+  if (status === 'error') {
+    throw new Error(errorMessage ?? 'Writeback failed');
+  }
+
+  await new Promise((r) => setTimeout(r, 10_000));
+}
+```
+
 <Info>
   **Admin kill-switch.** Organization admins can disable content writes across all MCP clients from **Settings → Ask AI → General** by turning off **Allow content changes via MCP**. When this is off, `create_content` and `edit_content` are not registered for any MCP client in the organization — reading content over MCP is unaffected, and per-user permissions still apply when it's on. The toggle is **on by default**.
 </Info>
