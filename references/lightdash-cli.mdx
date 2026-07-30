@@ -11,6 +11,7 @@ keywords:
   - lightdash preview
   - lightdash validate
   - lightdash dbt run
+  - lightdash warehouse-catalog
   - CLI commands
 ---
 
@@ -117,6 +118,7 @@ For examples and command-specific options, click through the command in the tabl
 |[`lightdash login`](/references/lightdash-cli#lightdash-login)                           | Log in to a Lightdash instance using email/password or a token                     |
 |[`lightdash config set-project`](/references/lightdash-cli#lightdash-config-set-project) | Choose or set the Lightdash project you are working on                             |
 |[`lightdash config get-project`](/references/lightdash-cli#lightdash-config-get-project) | Get the current active project                                                     |
+|[`lightdash config rename-project`](/references/lightdash-cli#lightdash-config-rename-project) | Rename the currently selected project                                        |
 |[`lightdash config list-projects`](/references/lightdash-cli#lightdash-config-list-projects) | List all non-preview projects in your organization                             |
 |[`lightdash compile`](/references/lightdash-cli#lightdash-compile)                       | Compile lightdash resources using your local project files                         |
 |[`lightdash preview`](/references/lightdash-cli#lightdash-preview)                       | Create a temporary preview project, then wait for a keypress to stop               |
@@ -133,6 +135,7 @@ For examples and command-specific options, click through the command in the tabl
 |[`lightdash rename`](/references/lightdash-cli#lightdash-rename)                         | Rename model or field names across all your Lightdash content                      |
 |[`lightdash diagnostics`](/references/lightdash-cli#lightdash-diagnostics)               | Show diagnostic information about the CLI environment                              |
 |[`lightdash sql`](/references/lightdash-cli#lightdash-sql)                               | Run raw SQL query against the warehouse using project credentials                  |
+|[`lightdash warehouse-catalog`](/references/lightdash-cli#lightdash-warehouse-catalog)   | Explore the project's warehouse databases, schemas, tables, and fields             |
 |[`lightdash lint`](/references/lightdash-cli#lightdash-lint)                             | Validate Lightdash Code files against JSON schemas                                 |
 |[`lightdash pre-aggregate-audit`](/references/lightdash-cli#lightdash-pre-aggregate-audit) | Audit pre-aggregate hit/miss coverage for one or every dashboard                |
 ---
@@ -222,6 +225,38 @@ lightdash config get-project
 
 This command displays the project that is currently set for CLI operations. Use this to verify which project will be affected by commands like `lightdash validate`, `lightdash preview`, and `lightdash deploy`.
 
+### `lightdash config rename-project`
+
+Rename the currently selected project. This updates the project name in Lightdash and also refreshes your local CLI context so subsequent commands use the new name.
+
+```bash
+lightdash config rename-project --name "<new name>"
+```
+
+Use this after selecting a project with [`lightdash config set-project`](#lightdash-config-set-project) when you want to change the display name without leaving the CLI. Check the current selection first with [`lightdash config get-project`](#lightdash-config-get-project).
+
+This command only changes the project name. It does not modify warehouse connection settings or dbt configuration, and it does not trigger a recompile.
+
+**Options:**
+
+- `--name <name>` (required)
+  - The new name for the selected project
+
+**Requirements:**
+
+- A project must already be selected via `lightdash config set-project`.
+- Your user must have a role with permission to update project details.
+
+**Example:**
+
+Rename the currently selected project to "Analytics":
+
+```bash
+lightdash config rename-project --name "Analytics"
+```
+
+On success, the CLI prints a confirmation with the new project name.
+
 ### `lightdash config list-projects`
 
 List all non-preview projects in your organization.
@@ -238,6 +273,30 @@ Compile Lightdash resources using your local project and database credentials. d
 
 All standard [dbt options](#dbt-options) work with `lightdash compile`.
 
+#### Partial compilation
+
+Lightdash uses partial compilation by default. If an individual field, join, or set-validation failure can be isolated, Lightdash records a warning, keeps the rest of the explore available, and prints the explore as `PARTIAL_SUCCESS`. Failures that cannot be isolated can still produce `ERROR`.
+
+Use `--no-partial-compilation` when failures normally handled by partial compilation must be reported as errors instead. The flag does not promote unrelated, non-blocking warnings to errors. The strict compilation summary omits those remaining generic warnings, although deploy and preview commands can print them in the post-upload warning report. Warehouse-column errors remain blocking in both modes.
+
+The flag is available on `lightdash compile`, `lightdash validate`, `lightdash deploy`, `lightdash preview`, and `lightdash start-preview`. `--ignore-errors` still allows deploy and preview commands to continue after strict compilation errors.
+
+<Note>
+  The `PARTIAL_COMPILATION_ENABLED` environment variable is no longer supported and no longer controls server or CLI behavior. Project create, update, and refresh paths use partial compilation, and CLI compilation uses it by default. Use `--no-partial-compilation` on a supported CLI command when you need strict field and join compilation for that run.
+</Note>
+
+#### Validate physical warehouse columns
+
+Semantic compilation can verify Lightdash field references, but it does not normally execute physical `${TABLE}.column` references against your warehouse. Add `--validate-warehouse-columns` to run `SELECT … WHERE 1 = 0` probes that return no rows. Whether a warehouse scans or bills for data is warehouse-dependent.
+
+The scanner examines dimension and metric SQL in successfully compiled explores. It recognizes unquoted references containing letters, numbers, or underscores, such as `${TABLE}.order_id`. Quoted references such as `${TABLE}."order id"` are not checked, and tables whose relation contains a `${...}` template are skipped.
+
+A column rejected by the warehouse is reported as an error in both partial and strict compilation modes. After a batched probe fails, the CLI runs a zero-row relation-control probe. If a control probe fails for any reason, the CLI reports no column error because it cannot isolate a column-specific failure. An individual failed column probe is reported only when its follow-up control probe succeeds.
+
+This validation requires a warehouse client and the warehouse catalog. `--skip-warehouse-catalog` disables it. The check is also skipped when no tables are selected, when compilation uses dbt Cloud CLI or a Lightdash YAML-only project, or when `lightdash deploy` automatically skips the warehouse catalog for a Spark target.
+
+The flag is available on the same five compilation commands. `lightdash validate` includes tables by default, so the check runs without `--only`. If you customize `--only`, keep `tables` in the list to run the warehouse check.
+
 **Options:**
 
 - `--skip-dbt-compile`
@@ -249,6 +308,11 @@ All standard [dbt options](#dbt-options) work with `lightdash compile`.
 - `--no-warehouse-credentials`
   - (default: false)
   - Compile without any warehouse credentials. Skips dbt compile + warehouse catalog
+- `--validate-warehouse-columns`
+  - (default: false)
+  - Validate supported physical `${TABLE}.column` references against the warehouse
+- `--no-partial-compilation`
+  - Report failures normally handled by partial compilation as errors
 - `--disable-timestamp-conversion [true|false]`
   - (default: false)
   - Snowflake only. Disable converting timestamps to UTC during compilation. Only use this if your timestamp values are already in UTC.
@@ -298,6 +362,11 @@ All standard [dbt options](#dbt-options) work with `lightdash preview`.
 - `--use-dbt-list [true/false]`
   - (default: true)
   - Use `dbt list` instead of `dbt compile` to generate dbt manifest.json
+- `--validate-warehouse-columns`
+  - (default: false)
+  - Validate supported physical `${TABLE}.column` references against the warehouse
+- `--no-partial-compilation`
+  - Report failures normally handled by partial compilation as errors
 - `--ignore-errors`
   - (default: false)
   - Allows deploy with errors on compile
@@ -364,6 +433,11 @@ All standard [dbt options](#dbt-options) work with `lightdash start-preview`.
 - `--use-dbt-list [true/false]`
   - (default: true)
   - Use `dbt list` instead of `dbt compile` to generate dbt manifest.json
+- `--validate-warehouse-columns`
+  - (default: false)
+  - Validate supported physical `${TABLE}.column` references against the warehouse
+- `--no-partial-compilation`
+  - Report failures normally handled by partial compilation as errors
 - `--ignore-errors`
   - (default: false)
   - Allows deploy with errors on compile
@@ -455,6 +529,11 @@ All standard [dbt options](#dbt-options) work with `lightdash deploy`.
   - Use `dbt list` instead of `dbt compile` to generate dbt manifest.json
 - `--combine-manifest <path-or-url>`
   - Path or http(s) URL to an additional dbt `manifest.json`. Models present in this file but missing from the deploy-generated manifest are merged in so the deploy reflects the full project even when dbt was only run on a subset of models. The deploy-generated manifest always wins on conflicts. URLs (for example, a presigned S3 URL) are fetched at runtime so the manifest does not need to be downloaded first.
+- `--validate-warehouse-columns`
+  - (default: false)
+  - Validate supported physical `${TABLE}.column` references against the warehouse
+- `--no-partial-compilation`
+  - Report failures normally handled by partial compilation as errors
 - `--use-batched-deploy`
   - (default: false)
   - Deploy explores in batches instead of a single request. Useful for large projects that exceed payload size limits
@@ -537,6 +616,11 @@ All standard [dbt options](#dbt-options) work with `lightdash validate`.
 - `--only [elems...]`
   - (default: ["charts","dashboards","tables"])
   - Specify project elements to validate
+- `--validate-warehouse-columns`
+  - (default: false)
+  - Validate supported physical `${TABLE}.column` references. Tables are included in validation by default; when using `--only`, the list must include `tables`
+- `--no-partial-compilation`
+  - Report failures normally handled by partial compilation as errors
 - `--include-spaces <spaceSlugs...>`
   - Only report chart and dashboard validation errors from these spaces. Matching cascades recursively into sub-spaces via parent space relationships, so passing a parent space slug also includes everything under it. Use the same `spaceSlug` identifiers that appear in `lightdash download` output. Space slugs aren't unique — if the same slug exists in multiple spaces, all of them (and their sub-spaces) are matched. Mutually exclusive with `--exclude-spaces`.
 - `--exclude-spaces <spaceSlugs...>`
@@ -687,6 +771,15 @@ You can make changes to the code and upload these changes back to your Lightdash
 - `--nested`
   - (default: false)
   - split downloaded content into sub-folders matching the spaces in your project
+- `--skip-spaces`
+  - (default: false)
+  - skip downloading [`.space.yml` files](/guides/developer/dashboards-as-code#space-yml-files) (space metadata and access policies). Use this when you only want to reconcile charts and dashboards.
+- `--spaces-only`
+  - (default: false)
+  - download only [`.space.yml` files](/guides/developer/dashboards-as-code#space-yml-files) — no charts or dashboards. Useful for permission-only PRs and cross-instance access promotions. Strict: has no chart/dashboard fallback if the access-aware space endpoint is unavailable.
+- `--root-spaces`
+  - (default: false)
+  - write new flat `.space.yml` downloads at the `lightdash/` root instead of `lightdash/spaces/` (legacy layout). Existing files are always updated in place regardless of this flag. Cannot be combined with `--nested`.
 - `--strip-pivot-series`
   - (default: false)
   - strip per-value pivot series config from chart YAML so it's portable across projects. Cartesian chart series that are tied to specific pivot field values are rewritten to reference only the underlying x/y fields, and duplicates collapsed into a single entry. Use this when the source project's pivot values don't exist in the target project (for example, when reusing chart YAML as a template), so the upload doesn't fail or render with the original project's hardcoded series. Only applies to regular charts; SQL charts and dashboards are unaffected.
@@ -696,7 +789,7 @@ You can make changes to the code and upload these changes back to your Lightdash
   - (default: false)
   - opt-in flag to download every [virtual view](/guides/developer/dashboards-as-code#virtual-views) in the project as code. Use `--virtual-views <slugs...>` instead when you only want specific views.
 - `--apps <appUuids...>`
-  - opt-in flag to also download specific [data apps](/guides/data-apps#data-apps-as-code) as code (enterprise only). Pass one or more app UUIDs to download just those apps — this is the only way to download apps that haven't been added to a space. Each app is written to `lightdash/apps/<slug>/` as a locally buildable project: `lightdash-app.yml` manifest, the app's `src/` tree, `package.json`, a read-only `.lightdash/context/` snapshot of the project's semantic layer, and agent skill files. The built output is not included — the server rebuilds it on upload.
+  - opt-in flag to also download specific [data apps](/guides/data-apps#data-apps-as-code) as code (enterprise only). Pass one or more app UUIDs to download just those apps — this is the only way to download apps that haven't been added to a space. Each app is written to `lightdash/apps/<slug>/` as a locally buildable project: `lightdash-app.yml` manifest, the app's `src/` tree, `package.json`, a read-only `.lightdash/context/` snapshot of the project's semantic layer, and agent skill files. For [data app visualizations](/guides/data-apps/visualizations), the manifest also carries a `vizSchema` field with the viz's declared fields so the viz round-trips to the destination on upload. The built output is not included — the server rebuilds it on upload.
 - `--include-apps`
   - (default: false)
   - opt-in flag to download every [data app](/guides/data-apps#data-apps-as-code) in the project that has been added to a space (enterprise only), capped at the first 10. Use `--apps <appUuids...>` to reach apps that aren't in a space, or to download more than 10.
@@ -709,6 +802,11 @@ You can make changes to the code and upload these changes back to your Lightdash
 - `--skip-dashboards`
   - (default: false)
   - skip downloading dashboards
+- `--agents <slugs...>`
+  - opt-in flag to also download specific AI agents as code. Pass one or more agent slugs or UUIDs. Files are written to `lightdash/ai-agents/<slug>.yml` and include evaluation suite definitions and prompts, but never evaluation run history. See [AI agents as code](/guides/ai-agents/agents-as-code) for the YAML schema and lifecycle rules.
+- `--include-agents`
+  - (default: false)
+  - opt-in flag to download every AI agent in the project as code. The endpoint is paginated, so the CLI walks all pages automatically. Agent files are written to `lightdash/ai-agents/`. Bare `lightdash download` does not include agents.
 - `--organization`
   - (default: false)
   - switch to organization mode and download [organization-scoped content](/guides/developer/dashboards-as-code#organization-content-as-code) — [custom roles](/guides/developer/dashboards-as-code#custom-roles-as-code), [users](/guides/developer/dashboards-as-code#users-as-code), and [groups](/guides/developer/dashboards-as-code#groups-as-code) — instead of project content. Files are written to `lightdash/custom-roles/<role-slug>.yml`, `lightdash/users/<email-slug>.yml`, and `lightdash/groups/<group-slug>.yml`. Requires organization admin permissions. If the groups feature is disabled on the instance, the groups folder is skipped (run with `--verbose` for the explanation). Cannot be combined with project-content flags such as `--charts`, `--dashboards`, `--project`, or `--nested`.
@@ -777,6 +875,16 @@ Download just one data app and nothing else.
 lightdash download --apps-only --apps 8f2b1c4d-1111-2222-3333-444455556666
 ```
 
+Download every AI agent in the project alongside charts and dashboards.
+
+```bash
+lightdash download --include-agents
+```
+
+Download only a specific AI agent by slug (or UUID).
+
+```bash
+lightdash download --agents orders-support-agent
 Download all charts and dashboards, plus every virtual view in the project.
 
 ```bash
@@ -819,6 +927,12 @@ If there have been changes made to a chart or dashboard in the application that 
 - `--skip-space-create`
   - (default: false)
   - Skip space creation if it does not exist
+- `--skip-spaces`
+  - (default: false)
+  - skip uploading [`.space.yml` files](/guides/developer/dashboards-as-code#space-yml-files). Charts and dashboards still upload as normal, and existing space permissions are left untouched.
+- `--spaces-only`
+  - (default: false)
+  - upload only [`.space.yml` files](/guides/developer/dashboards-as-code#space-yml-files) — no charts or dashboards. Spaces are always uploaded before dependent content, so this is the right flag for a permissions-only promotion between environments. Replacing a space's `access` policy requires actual `manage:Space` on the resolved space; broad `manage:ContentAsCode` alone doesn't bypass restricted-space authorization.
 - `--include-charts`
   - (default: false)
   - Include charts updates when uploading dashboards
@@ -837,10 +951,15 @@ If there have been changes made to a chart or dashboard in the application that 
   - (default: false)
   - skip uploading virtual views, even when `lightdash/virtual-views/` contains files
 - `--apps [appUuids...]`
-  - opt-in flag to also upload [data apps](/guides/data-apps#data-apps-as-code) as code (enterprise only). Bare `--apps` uploads every app folder under `lightdash/apps/`. Pass one or more app UUIDs to upload just those apps. The CLI posts each app's `src/` tree and returns immediately — the destination rebuilds the app in its sandbox and publishes a new version. The app shows a `building` status in the UI until the build finishes. Uploading to the same project appends a new version and applies any edits to the manifest's `name` or `description`; uploading to a different project prompts for confirmation (in non-interactive shells the app is skipped with an error unless you also pass `--create-new`) and creates a new app in the target. After any create, the CLI prints the new app's URL and offers to retarget the local `lightdash-app.yml` (updating `appUuid`, `projectUuid`, and `version`) so future uploads update the new app.
+  - opt-in flag to also upload [data apps](/guides/data-apps#data-apps-as-code) as code (enterprise only). Bare `--apps` uploads every app folder under `lightdash/apps/`. Pass one or more app UUIDs to upload just those apps. The CLI posts each app's `src/` tree and returns immediately — the destination rebuilds the app in its sandbox and publishes a new version. The app shows a `building` status in the UI until the build finishes. Uploading to the same project appends a new version and applies any edits to the manifest's `name` or `description`; uploading to a different project prompts for confirmation (in non-interactive shells the app is skipped with an error unless you also pass `--create-new`) and creates a new app in the target. After any create, the CLI prints the new app's URL and offers to retarget the local `lightdash-app.yml` (updating `appUuid`, `projectUuid`, and `version`) so future uploads update the new app. For [data app visualizations](/guides/data-apps/visualizations), the manifest's `vizSchema` is sent alongside the source and persisted on the new version — so a downloaded viz appears in the destination project's viz picker after upload without needing to be regenerated. Uploading requires the [`create:DataApp` scope](/references/workspace/roles), which is granted to Editor, Developer, and Admin roles.
 - `--create-new`
   - (default: false)
   - always create a new data app from the uploaded source instead of appending a new version to the app referenced by `lightdash-app.yml`. Combine with `--apps` and `--project` when copying an app to a different project or instance in a non-interactive shell.
+- `--agents <slugs...>`
+  - upload only the AI agent files matching these slugs from `lightdash/ai-agents/`. Omit to upload every agent file in that folder. Upload is idempotent — the server creates missing agents, updates existing agents by slug, and leaves unchanged agents alone. Evaluation suites declared in a file are upserted by title, while undeclared suites remain unchanged. See [AI agents as code](/guides/ai-agents/agents-as-code).
+- `--skip-agents`
+  - (default: false)
+  - skip uploading AI agents even when `lightdash/ai-agents/` contains files. Use this to keep an agents folder in your repo without pushing changes on every `lightdash upload`.
 - `--organization`
   - (default: false)
   - switch to organization mode and upload [organization-scoped content](/guides/developer/dashboards-as-code#organization-content-as-code) — [custom roles](/guides/developer/dashboards-as-code#custom-roles-as-code), [users](/guides/developer/dashboards-as-code#users-as-code), and [groups](/guides/developer/dashboards-as-code#groups-as-code) — instead of project content. Reads YAML files from `lightdash/custom-roles/`, `lightdash/users/`, and `lightdash/groups/` and applies them sequentially in that order (custom roles → users → groups), so a user file can reference a custom role and a group file can reference a user from the same upload. Each resource is upserted by its portable identity (role name, primary email, group name) — creating, updating, or reporting no change per file. Requires organization admin permissions. Cannot be combined with project-content flags such as `--charts`, `--dashboards`, `--project`, or `--force`. Uploads never delete roles, users, or groups.
@@ -925,6 +1044,18 @@ lightdash upload --apps --project 21eef0b9-5bae-40f3-851e-9554588e71a6 --create-
 ```
 
 Upload every [organization-scoped resource](/guides/developer/dashboards-as-code#organization-content-as-code) — custom roles, users, and groups — back to the organization (requires org admin).
+
+Upload every AI agent file under `lightdash/ai-agents/` (creates missing agents, updates existing ones by slug).
+
+```bash
+lightdash upload
+```
+
+Upload only a specific AI agent by slug.
+
+```bash
+lightdash upload --agents orders-support-agent
+Upload every custom role in `lightdash/custom-roles/` back to the organization (requires org admin).
 
 ```bash
 lightdash upload --organization
@@ -1081,6 +1212,93 @@ Run a query with verbose output to see detailed progress:
 
 ```bash
 lightdash sql "SELECT customer_id, SUM(amount) FROM orders GROUP BY 1" -o revenue.csv --verbose
+```
+
+### `lightdash warehouse-catalog`
+
+Discover the databases, schemas, tables, and fields available in the warehouse connected to your [currently selected project](#lightdash-config-get-project). The command calls Lightdash using the project's server-side warehouse credentials, so you don't need a local warehouse connection or a `profiles.yml` — just a valid Lightdash login and a selected project.
+
+Use it to explore your warehouse before writing dbt models or Lightdash explores, to look up the Lightdash-inferred type of a column, or to pipe a deterministic list of tables and fields into scripts and AI agents via `--json`.
+
+```console
+lightdash warehouse-catalog [options]
+```
+
+By default, the command prints a human-readable table of every `database.schema.table` in the project's cached warehouse catalog. Use the filter flags to narrow the list, `--include-fields` to also list the columns of a single fully qualified table, and `--json` for machine-readable output.
+
+**Options:**
+
+- `--database <name>`
+  - Filter by exact database name
+- `--schema <name>`
+  - Filter by exact schema name
+- `--table <name>`
+  - Filter by exact table name
+- `--include-fields`
+  - (default: false)
+  - Also list each field's name and Lightdash-inferred type (`number`, `string`, `boolean`, `date`, `timestamp`, …). Requires `--database`, `--schema`, and `--table` so exactly one table is targeted.
+- `--refresh`
+  - (default: false)
+  - Refetch warehouse metadata and refresh the server-side catalog cache before listing. Use this when tables have been added or removed since the catalog was last cached.
+- `--json`
+  - (default: false)
+  - Emit deterministic JSON instead of a terminal table. Handy for piping into `jq` or feeding to a script.
+- `--verbose`
+  - (default: false)
+  - Show detailed API request output
+
+<Info>
+  This command requires an active project. Set one with [`lightdash config set-project`](#lightdash-config-set-project) or the `LIGHTDASH_PROJECT` environment variable. It never returns warehouse credentials or secret connection metadata.
+</Info>
+
+**Examples:**
+
+List every database, schema, and table in the project's warehouse catalog:
+
+```bash
+lightdash warehouse-catalog
+```
+
+Narrow to a single schema:
+
+```bash
+lightdash warehouse-catalog --database jaffle --schema analytics
+```
+
+List the fields and Lightdash types on a fully qualified table:
+
+```bash
+lightdash warehouse-catalog --database jaffle --schema analytics --table orders --include-fields
+```
+
+Refresh the server-side catalog cache before listing (useful right after adding new warehouse tables):
+
+```bash
+lightdash warehouse-catalog --refresh
+```
+
+Emit JSON and extract distinct database names with `jq`:
+
+```bash
+lightdash warehouse-catalog --json | jq -r '.tables | map(.database) | unique | .[]'
+```
+
+Emit JSON and extract every schema under a specific database:
+
+```bash
+lightdash warehouse-catalog --database jaffle --json | jq -r '.tables | map(.schema) | unique | .[]'
+```
+
+Emit JSON and extract every table under a specific schema:
+
+```bash
+lightdash warehouse-catalog --database jaffle --schema analytics --json | jq -r '.tables[].table'
+```
+
+Emit JSON for a single table's fields (handy for scripts and agents):
+
+```bash
+lightdash warehouse-catalog --database jaffle --schema analytics --table orders --include-fields --json
 ```
 
 ### `lightdash lint`
@@ -1240,6 +1458,10 @@ You can set the number of threads for dbt in Lightdash commands that support dbt
 ## Environment Variables
 
 The Lightdash CLI supports various environment variables that can be used to configure its behavior. These are especially useful in CI/CD environments where you want to avoid interactive prompts or need to set credentials programmatically.
+
+<Warning>
+  `PARTIAL_COMPILATION_ENABLED` is no longer supported. Remove it from CLI and self-hosted deployment configuration. It no longer controls server or CLI behavior. Project create, update, and refresh paths use partial compilation, and CLI compilation uses it by default. Use [`--no-partial-compilation`](#partial-compilation) on a supported CLI command to report failures normally handled by partial compilation as errors for that run.
+</Warning>
 
 ### Core Lightdash Configuration
 

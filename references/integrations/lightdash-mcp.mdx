@@ -229,7 +229,7 @@ If you're building your own agents or automated workflows, you can integrate dir
 
 - **Transport**: Lightdash MCP exposes a StreamableHTTP transport endpoint at `https://<your_instance_name>.lightdash.cloud/api/v1/mcp`
 - **Debugging**: Use `@modelcontextprotocol/inspector` to inspect and debug the MCP connection
-- **Authentication**: For interactive setups use OAuth 2.0. For headless agents and automated workflows, you can authenticate with a Personal Access Token by passing `Authorization: ApiKey <token>` instead. Create the token under **Settings → Personal access tokens** for the user whose permissions and attributes you want the integration to use. Service account tokens are also supported on plans that include them.
+- **Authentication**: For interactive setups use OAuth 2.0. For headless agents and automated workflows, you can authenticate with a Personal Access Token by passing it in the `Authorization` header — both `Authorization: ApiKey ldpat_<redacted>` and `Authorization: Bearer ldpat_<redacted>` are accepted on the MCP endpoint and resolve to the same PAT authentication path (the `Bearer` alias is MCP-only; no other Lightdash API endpoint changes auth behavior). Use `Bearer` when your MCP host only supports static `Bearer` tokens (e.g. Claude managed agents and other third-party MCP hosts that don't let you choose a custom auth scheme); use `ApiKey` for direct HTTP clients where you can set the scheme yourself, since it makes it explicit that the token is a Lightdash PAT. Create the token under **Settings → Personal access tokens** for the user whose permissions and attributes you want the integration to use — no changes to how PATs are generated, scoped, or expired, an existing token works. Service account tokens are also supported on plans that include them.
 - **Documentation**: See the [MCP specification](https://modelcontextprotocol.io/docs) for implementation details
 - **Pin a project (optional)**: pass `X-Lightdash-Project: <project-uuid>` to scope the MCP session to a specific project, skipping the `set_project` step. See [details below](#pin-a-project-with-the-x-lightdash-project-header).
 - **Override user attributes per request (optional)**: pass `X-Lightdash-User-Attributes: <json>` to override the authenticated user's attributes for that request (useful for row-level security when an agent acts on behalf of different end-users). See [details below](#override-user-attributes).
@@ -428,6 +428,16 @@ These tools reuse the same permissions, validation, and project context as the [
 </Info>
 
 <Info>
+  **Per-user permission gate.** `create_content` and `edit_content` are also gated on the caller's role holding the `create:ContentAsCode` scope. The check runs at tool registration, so users without the scope don't see these tools in the tools list.
+
+  - **Roles that get the scope by default:** Editors, Developers, Admins.
+  - **Roles that don't:** Interactive Viewers, Viewers.
+  - **Custom roles:** must add `create:ContentAsCode` explicitly — see [custom roles](/references/workspace/custom-roles).
+
+  Project, space, and content-level checks still run at invocation time on top of the registration gate.
+</Info>
+
+<Info>
   When prompting an agent to build content, ask it to use [verified content](#data-exploration) as a reference. The agent can call `find_content` and `read_content` on a verified chart, then use that JSON as the template for `create_content` — giving you new content that follows the patterns your team has already approved.
 </Info>
 
@@ -438,6 +448,23 @@ The assistant will call `read_content` to fetch the source chart, modify the JSO
 <Tip>
   For bulk edits across many dashboards or as part of a CI/CD pipeline, the [download-edit-upload workflow](/guides/developer/editing-dashboards-with-agents) using the Lightdash CLI is still the recommended approach. MCP content tools are best for interactive edits inside an AI assistant.
 </Tip>
+
+#### Scheduled deliveries
+
+- **Create scheduled delivery** (`create_scheduled_delivery`) - Schedule an existing chart or dashboard to Slack, email, or another supported destination on a cron schedule. Point the tool at the content by slug and pass the schedule and recipients — the delivery is created against the active project using the caller's permissions.
+
+<Info>
+  **What enables this tool.** `create_scheduled_delivery` only appears in the tools list when both of these are true:
+
+  1. **Allow content changes via MCP** is on (**Settings → Ask AI → General**).
+  2. The caller's role holds the `create:ScheduledDeliveries` scope.
+
+  **Roles that get `create:ScheduledDeliveries` by default:** Interactive Viewers, Editors, Developers, Admins. **Viewers** do not. Custom roles must add the scope explicitly.
+</Info>
+
+**Example prompt:** _"Set up a scheduled delivery of the `weekly-ecom-orders` chart to #analytics-updates in Slack every Monday at 9am."_
+
+The assistant will call `create_scheduled_delivery` with the chart's slug, the cron schedule, and the Slack destination — mirroring the [AI agent](/guides/ai-agents) `createScheduledDelivery` tool but exposed to any MCP client.
 
 #### Agent context
 
@@ -719,7 +746,7 @@ A: Yes, each team member can set up their own MCP connection with their individu
 
 **Q: Can MCP modify my data or dashboards?**
 
-A: MCP can create and edit Lightdash charts and dashboards via the [content-as-code tools](#editing-content) when your user account has the required permissions. MCP cannot modify your underlying warehouse data — query execution is read-only (metric queries and SQL `SELECT` only). All write operations respect your existing Lightdash permissions and project access controls.
+A: MCP can create and edit Lightdash charts and dashboards via the [content-as-code tools](#editing-content), and can create [scheduled deliveries](#scheduled-deliveries), when your user account has the required permissions. MCP cannot modify your underlying warehouse data — query execution is read-only (metric queries and SQL `SELECT` only). All write operations respect your existing Lightdash permissions and project access controls, and each write tool is only registered for users whose role grants the corresponding scope.
 
 **Q: Claude returns data as text but no visual chart is displayed. What's wrong?**
 
