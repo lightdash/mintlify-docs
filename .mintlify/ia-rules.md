@@ -1,6 +1,6 @@
 # Docs information-architecture rules
 
-Rules for maintaining the Lightdash docs site. The principles bind every change; the two profiles apply them at different scales. This file, the audit-exceptions log, and the audit script live in `.mintlify/` and are linked from `AGENTS.md`, so every agent — ours or Mintlify's — works from the same system.
+Rules for maintaining the Lightdash docs site. The principles bind every change; the two profiles apply them at different scales. This file and the audit-exceptions log live in `.mintlify/`, linked from `AGENTS.md`, so every agent — ours or Mintlify's — works from the same rules. A manager agent enforces them with the `docs-ia-audit` tool (in the Claude Managed Agents repo), which reads both files against a checked-out docs tree.
 
 ## Doc types
 
@@ -36,12 +36,19 @@ The `tag` slot is also how lifecycle badges render (`Experimental`, `Beta` — G
 
 ## Audit exceptions log
 
-`.mintlify/audit-exceptions.md` records deliberate rule departures so reviews don't re-litigate them. Resolving an audit flag means fixing it **or** adding a row:
+`.mintlify/audit-exceptions.toml` records deliberate rule departures so reviews don't re-litigate them. Resolving an audit flag means fixing it **or** adding an `[[exceptions]]` block:
 
-| path | check | snapshot | date | rationale |
-| --- | --- | --- | --- | --- |
+```toml
+[[exceptions]]
+path = "get-started/quickstart/connect-project"
+check = "size"        # size | children | type | duplicate | stub
+metric = "words"      # words | children — what `snapshot` counts; omit for non-numeric checks
+snapshot = 8965       # the metric's value when granted
+date = 2026-07-28
+rationale = "Canonical per-warehouse connection reference; split tracked in Phase 3."
+```
 
-`snapshot` is the metric at review time (word count, child count). The audit re-flags an entry only on material growth past its snapshot — ten-plus percent more words, or any additional child — so a standing decision stays standing until the thing it covered actually changes. Outdated exceptions are reported for re-review, not silently dropped.
+A page may hold more than one block. The audit re-flags an entry only on material growth past its `snapshot` — ten-plus percent more words, or any additional child — so a standing decision stays standing until the thing it covered actually changes. Outdated exceptions are reported for re-review, not silently dropped.
 
 ## Patch profile — any agent making a docs change
 
@@ -51,11 +58,11 @@ The `tag` slot is also how lifecycle badges render (`Experimental`, `Beta` — G
 - **Write in current state.** The page describes how the product works now — no "new", "recently", "previously", or changelog narration.
 - **Restating a fact from another page?** Replace it with a link or snippet before finishing (principles 1, 5).
 - **Moving, renaming, or merging anything?** Full principle-7 checklist: redirect + re-point + rewrite inbound links (`rg` the old slug).
-- **Before done:** frontmatter has `title` and `description`; the page is reachable from nav; `mint broken-links` (or the audit script) passes.
+- **Before done:** frontmatter has `title` and `description`; the page is reachable from nav; `mint broken-links` passes.
 
 ## Cleanup profile — periodic review agents
 
-Run the audit script first; it reports orphans, nav duplicates, links routed through redirects, stubs, size triggers, type-declaration inconsistencies, and identical code blocks. Then sweep, in priority order:
+Run the `docs-ia-audit` tool first; it reports orphans, nav duplicates, links routed through redirects, stubs, size triggers, type-declaration inconsistencies, and identical code blocks. Then sweep, in priority order:
 
 1. **Fact drift:** versioned facts (image versions, sizing, env vars, limits) stated in more than one place — reconcile to one canonical home; if the copies *disagree*, escalate to a human with both sources cited rather than guessing which is current.
 2. **Duplicated content:** identical blocks → snippet; near-duplicate prose (the `qmd` similarity sweep catches paraphrase drift the hash check can't) → trim the non-canonical copy to a link.
