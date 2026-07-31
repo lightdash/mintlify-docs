@@ -2,7 +2,7 @@
 
 You are editing the Lightdash documentation. Lightdash is a code-based BI and agentic analytics platform built on a dbt-defined semantic layer: users explore metrics and dimensions, build dashboards, run AI agents over their data, embed analytics, and self-host. Write for the product as it works now.
 
-These rules govern every change. The full system — doc-type contracts, cleanup profile, and the exceptions mechanism — is in [`ia-rules.md`](./ia-rules.md). A manager agent enforces the rules with a periodic IA audit; your job is to follow them on each change and leave `mint broken-links` clean.
+These rules govern every change. The full system — doc-type contracts and the patch and cleanup profiles — is in [`ia-rules.md`](./ia-rules.md). A manager agent enforces the rules with a periodic IA audit and owns any approved exceptions in Cloudy; your job is to follow the rules on each change and leave `mint broken-links` clean.
 
 ## Before you write
 

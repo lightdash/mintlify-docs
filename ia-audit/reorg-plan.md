@@ -15,10 +15,9 @@ The durable spec installed by this plan lives in `.mintlify/`, linked from `.min
 | File | Contents |
 | --- | --- |
 | `.mintlify/AGENTS.md` | Mintlify agent config (private; the agent appends it to its system prompt) — the patch rules, linking to `ia-rules.md` |
-| `.mintlify/ia-rules.md` | Durable IA rules — doc-type contracts, principles, patch and cleanup profiles, the exceptions mechanism |
-| `.mintlify/audit-exceptions.toml` | Seeded log of deliberate rule departures (array-of-tables schema) |
+| `.mintlify/ia-rules.md` | Durable IA rules — doc-type contracts, principles, and patch and cleanup profiles |
 
-Enforcement is a Mastra tool, `docs-ia-audit`, run by the manager agent in the Claude Managed Agents (Cloudy) repo — it reads `ia-rules.md` and `audit-exceptions.toml` against a checked-out docs tree and reports nav/link integrity, stubs, size and sectional reviews, doc-type checks, exception-log suppression, and duplicate code blocks. The TS port is staged for that repo's PR in `ia-audit/cloudy-audit-tool/`.
+Enforcement is a Mastra tool, `docs-ia-audit`, run by the manager agent in the Claude Managed Agents (Cloudy) repo. It reads `ia-rules.md` against a checked-out docs tree, applies exceptions from Cloudy's database, and reports nav/link integrity, stubs, size and sectional reviews, doc-type checks, and duplicate code blocks. The TS port is staged for that repo's PR in `ia-audit/cloudy-audit-tool/`.
 
 ## Why reorganize
 
@@ -135,7 +134,7 @@ Run as four phases; each is independently landable. **Phase 1 before Phase 2**: 
 
 ### Phase 0 — verify and prep (small)
 
-1. **Done.** `.mintlify/` holds `AGENTS.md` (the Mintlify agent config), `ia-rules.md`, and a seeded `audit-exceptions.toml`; the audit is ported to a TS `docs-ia-audit` tool for the Cloudy repo (staged in `ia-audit/cloudy-audit-tool/`). `.mintignore` excludes the `ia-audit/` workspace, `timezones-draft.mdx`, `scripts/`, and repo config (`.mcp.json`, `.markdownlint.yaml`, `flake.*`) from the published site — Mintlify already auto-ignores `.git`, `.github`, `.claude`, `README.md`, and never serves `.mintlify/`. `mint broken-links` passes against the corpus.
+1. **Done.** `.mintlify/` holds `AGENTS.md` (the Mintlify agent config) and `ia-rules.md`; the audit is ported to a TS `docs-ia-audit` tool for the Cloudy repo (staged in `ia-audit/cloudy-audit-tool/`). `.mintignore` excludes the `ia-audit/` workspace, `timezones-draft.mdx`, `scripts/`, and repo config (`.mcp.json`, `.markdownlint.yaml`, `flake.*`) from the published site — Mintlify already auto-ignores `.git`, `.github`, `.claude`, `README.md`, and never serves `.mintlify/`. `mint broken-links` passes against the corpus.
 2. Confirm the pending-engineering answers below with engineering (not blocking — plausibility picks are already applied).
 3. Test whether Mintlify honors `#anchor` fragments in redirect destinations (one entry in preview); merge-target redirects use anchors only if so.
 
@@ -203,12 +202,12 @@ Three layers, from tightest scope to broadest:
 
 1. **Mintlify agent — patch profile only.** Its pre-write search is Mintlify's own site search plus the rules; it is not the dedup backstop (volume already proved it can't be).
 2. **Local sessions — qmd over MCP.** [qmd](https://github.com/tobi/qmd) (MIT; Node ≥22; ~2GB local GGUF models on first run) gives hybrid BM25 + vector + reranked RRF search over the corpus with a built-in MCP server. Pre-write duplication checks become real queries, and its similarity search catches the paraphrase drift that hash-based checks miss — the class behind every fact-drift incident found in this audit.
-3. **Daily scheduled audit — Claude Managed Agents.** Runs the `docs-ia-audit` tool plus a qmd near-duplicate sweep on a daily schedule, files small per-cluster PRs per the cleanup profile, resolves or logs exceptions. This backstop is what lets layer 1 stay tight.
+3. **Daily scheduled audit — Claude Managed Agents.** Runs the `docs-ia-audit` tool plus a qmd near-duplicate sweep on a daily schedule, files small per-cluster PRs per the cleanup profile, and manages approved exceptions in Cloudy's database. This backstop is what lets layer 1 stay tight.
 
 ### Verifications (carry into the automation project)
 
 - `mint` CLI is on PATH locally; `mint broken-links` passes on the current corpus.
-- The `docs-ia-audit` tool runs clean end-to-end (exceptions parsing self-tested for suppression and outdated-detection).
+- The `docs-ia-audit` tool runs clean end-to-end with database-backed exception suppression and outdated-exception detection.
 - Redirect anchor behavior: untested — Phase 0 item.
 - Mintlify page-level `tag` frontmatter and group `root`/`directory` properties confirmed against current Mintlify docs.
 
