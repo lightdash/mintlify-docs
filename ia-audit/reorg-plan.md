@@ -1,14 +1,24 @@
 # Docs reorganization plan
 
-Prepared 2026-07-28 from a full-corpus audit (218 pages, every page read). Companion artifacts in this directory:
+Prepared 2026-07-28 from a full-corpus audit (218 pages, every page read).
+
+Planning artifacts in this directory (`ia-audit/`, excluded from the published site via `.mintignore`):
 
 | File | Contents |
 | --- | --- |
 | `tree-map.md` | Current-state tree: every page annotated with type, audience, gist, overlaps, flags |
 | `move-map.csv` | Per-page disposition: old slug → action (keep/move/merge/split/delete) → new slug, doc-type, redirect flag, notes |
 | `redirects-draft.json` | 188 new redirect entries + 62 existing redirects re-pointed to final URLs |
-| `ia-rules.md` | Durable IA rules — the system this plan installs; lands at `.mintlify/ia-rules.md`, linked from `AGENTS.md` |
-| `ia-audit.py` | Audit script: nav/link integrity, stubs, size and sectional reviews, doc-type checks, exception-log suppression, duplicate code blocks; lands at `.mintlify/ia-audit.py` |
+
+The durable spec installed by this plan lives in `.mintlify/`, linked from `.mintlify/AGENTS.md` so our agents and Mintlify's share one system:
+
+| File | Contents |
+| --- | --- |
+| `.mintlify/AGENTS.md` | Mintlify agent config (private; the agent appends it to its system prompt) — the patch rules, linking to `ia-rules.md` |
+| `.mintlify/ia-rules.md` | Durable IA rules — doc-type contracts, principles, patch and cleanup profiles, the exceptions mechanism |
+| `.mintlify/audit-exceptions.toml` | Seeded log of deliberate rule departures (array-of-tables schema) |
+
+Enforcement is a Mastra tool, `docs-ia-audit`, run by the manager agent in the Claude Managed Agents (Cloudy) repo — it reads `ia-rules.md` and `audit-exceptions.toml` against a checked-out docs tree and reports nav/link integrity, stubs, size and sectional reviews, doc-type checks, exception-log suppression, and duplicate code blocks. The TS port is staged for that repo's PR in `ia-audit/cloudy-audit-tool/`.
 
 ## Why reorganize
 
@@ -125,7 +135,7 @@ Run as four phases; each is independently landable. **Phase 1 before Phase 2**: 
 
 ### Phase 0 — verify and prep (small)
 
-1. Create `.mintlify/`: land `ia-rules.md` and `ia-audit.py` there; link both from `AGENTS.md` so our agents and Mintlify's agent share one system. Seed an empty `audit-exceptions.md`.
+1. **Done.** `.mintlify/` holds `AGENTS.md` (the Mintlify agent config), `ia-rules.md`, and a seeded `audit-exceptions.toml`; the audit is ported to a TS `docs-ia-audit` tool for the Cloudy repo (staged in `ia-audit/cloudy-audit-tool/`). `.mintignore` excludes the `ia-audit/` workspace, `timezones-draft.mdx`, `scripts/`, and repo config (`.mcp.json`, `.markdownlint.yaml`, `flake.*`) from the published site — Mintlify already auto-ignores `.git`, `.github`, `.claude`, `README.md`, and never serves `.mintlify/`. `mint broken-links` passes against the corpus.
 2. Confirm the pending-engineering answers below with engineering (not blocking — plausibility picks are already applied).
 3. Test whether Mintlify honors `#anchor` fragments in redirect destinations (one entry in preview); merge-target redirects use anchors only if so.
 
@@ -135,7 +145,7 @@ Run as four phases; each is independently landable. **Phase 1 before Phase 2**: 
 2. Apply doc-type frontmatter from the CSV's `doc_type` column: `doc-type` on every typed page, plus `tag: Tutorial` / `tag: Guide` pills (lifecycle badges like `Beta` keep the slot where present).
 3. Rewrite `docs.json`: new nav tree with `root` + `directory: "card"` per area, append the 188 new redirects, apply the 62 destination re-points from redirects-draft.json (Mintlify does not chain redirects — every source must point at a final URL).
 4. Rewrite all internal links to final URLs (script the substitution from move-map.csv).
-5. Verify: `ia-audit.py` reports zero orphans/broken links/nav dupes; `mint broken-links` passes; spot-check 10 redirects in preview.
+5. Verify: the `docs-ia-audit` tool reports zero orphans/broken links/nav dupes; `mint broken-links` passes; spot-check 10 redirects in preview.
 
 Merges and deletes also land here as pure page-level operations (move content wholesale into target, redirect) — content *rewriting* waits for Phase 2.
 
@@ -147,12 +157,44 @@ Execute the directives as eight independent workstreams, each a reviewable PR: (
 
 Expansions: introduction (define or drop "Context Layer"), explore/keyboard-shortcuts (documents 3 shortcuts today), personal-settings/create-personal-tokens (lifecycle/rotation/expiry), explore/filter-dashboard-by-url (text to match the Looms), migrate-to-fusion (CLI compatibility statement), secure-lightdash-with-https. Structural: split quickstart/connect-project (~9,000 words) into per-warehouse pages; split scim-integration into setup + reference; fold SQL templates into formula pages with tabs. Editorial: refresh The Lightdash Way as the model Guide under the new terminology.
 
+### Reconciliation and merge (runs once, right before landing)
+
+`main` keeps taking docs PRs while this branch diverges. Reconcile **once**, at the end — never pull `main` mid-reorg — so the re-homing happens against a stable target instead of repeatedly. This is the runbook for the agent that lands the branch.
+
+**1. Snapshot the divergence.**
+
+```text
+git fetch origin main
+BASE=$(git merge-base HEAD origin/main)
+git log --oneline $BASE..origin/main
+git diff --stat $BASE..origin/main -- '*.mdx' '*.md' docs.json snippets/ images/
+```
+
+Classify every changed path on `main`: (a) content edit to an existing page, (b) new page, (c) deletion/rename, (d) `docs.json` nav/redirect change, (e) snippet/image asset.
+
+**2. Re-home each change into the new IA.** The reorg moved files, so a `main` delta almost never applies at its original path.
+
+- Translate every touched old slug through `move-map.csv` to its new slug; apply the content delta there. If the page was merged or split, land the delta in the correct canonical section — consult the D-directive that governs it.
+- New pages from `main`: place by product area per `.mintlify/ia-rules.md`, declare the doc type, add the nav entry, and add a redirect if the interim URL differs.
+- Deletions/renames from `main`: apply if the target still exists under the new IA.
+
+**3. Reconcile `docs.json` by hand.** Never take `main`'s `docs.json` wholesale — it encodes the pre-reorg structure. Port only the *content* of its additions: new nav entries go into the new tree at the re-homed path; new redirects are added to the reorg's redirect set, each re-pointed to a final URL, with no chains.
+
+**4. Verify clean.**
+
+- The `docs-ia-audit` tool (Cloudy repo) → zero orphans, broken links, nav dupes, type drift.
+- `mint broken-links` passes.
+- `rg` every old slug from `move-map.csv` to confirm no inbound link still points at a pre-reorg URL.
+- Spot-check redirects (including any added from `main`) in a fresh preview.
+
+**5. Land it.** Rebase the reorg branch onto `origin/main` — the reorg commits replay on top; resolve the rename/content conflicts where `main` touched moved files by keeping the new-IA path and folding in the delta already computed in step 2. Never a merge commit; `--force-with-lease` the reorg branch only, never `main`. If the rebase conflict surface is genuinely unmanageable, fall back to landing the reorg fast-forward and applying `main`'s since-divergence deltas as follow-up commits — but prefer the rebase so history stays one story.
+
 ## Redirect and link-integrity strategy
 
 - `docs.json` `redirects` is the mechanism (65 already in production here).
 - Every changed URL in move-map.csv has a redirect entry in redirects-draft.json; merge targets redirect to the page (with `#anchor` only after the Phase 0 test passes).
 - Existing redirects are re-pointed, never chained; 3 remain untouched.
-- Internal links always point at final URLs. `ia-audit.py` flags links that resolve only via redirect.
+- Internal links always point at final URLs. The `docs-ia-audit` tool flags links that resolve only via redirect.
 - External breakage is bounded to deep links into anchors of merged pages; everything else lands via redirect.
 
 ## Maintenance systems (recommendations — implement as the fast-follow project)
@@ -161,12 +203,12 @@ Three layers, from tightest scope to broadest:
 
 1. **Mintlify agent — patch profile only.** Its pre-write search is Mintlify's own site search plus the rules; it is not the dedup backstop (volume already proved it can't be).
 2. **Local sessions — qmd over MCP.** [qmd](https://github.com/tobi/qmd) (MIT; Node ≥22; ~2GB local GGUF models on first run) gives hybrid BM25 + vector + reranked RRF search over the corpus with a built-in MCP server. Pre-write duplication checks become real queries, and its similarity search catches the paraphrase drift that hash-based checks miss — the class behind every fact-drift incident found in this audit.
-3. **Daily scheduled audit — Claude Managed Agents.** Runs `ia-audit.py` plus a qmd near-duplicate sweep on a daily schedule, files small per-cluster PRs per the cleanup profile, resolves or logs exceptions. This backstop is what lets layer 1 stay tight.
+3. **Daily scheduled audit — Claude Managed Agents.** Runs the `docs-ia-audit` tool plus a qmd near-duplicate sweep on a daily schedule, files small per-cluster PRs per the cleanup profile, resolves or logs exceptions. This backstop is what lets layer 1 stay tight.
 
 ### Verifications (carry into the automation project)
 
 - `mint` CLI is on PATH locally; `mint broken-links` passes on the current corpus.
-- `ia-audit.py` runs clean end-to-end (exceptions parsing self-tested for suppression and outdated-detection).
+- The `docs-ia-audit` tool runs clean end-to-end (exceptions parsing self-tested for suppression and outdated-detection).
 - Redirect anchor behavior: untested — Phase 0 item.
 - Mintlify page-level `tag` frontmatter and group `root`/`directory` properties confirmed against current Mintlify docs.
 
