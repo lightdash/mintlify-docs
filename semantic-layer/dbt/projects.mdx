@@ -2,6 +2,7 @@
 title: "dbt Projects"
 sidebarTitle: dbt
 description: "You can easily make changes in dbt and see them updated in your Lightdash project."
+doc-type: reference
 ---
 
 <Info>
@@ -151,7 +152,7 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
 
 - Local `lightdash deploy` (#1) for first-time setup, then graduate to one of the automated patterns above as soon as the project is stable.
 
-Not sure whether to use `lightdash deploy` or `lightdash refresh`? Read about the [differences between the two commands](/references/lightdash-cli#lightdash-deploy-vs-lightdash-refresh) in the CLI reference.
+Not sure whether to use `lightdash deploy` or `lightdash refresh`? Read about the [differences between the two commands](/workflow/cli/reference#lightdash-deploy-vs-lightdash-refresh) in the CLI reference.
 
 ### Things to know
 
@@ -182,7 +183,7 @@ Not sure whether to use `lightdash deploy` or `lightdash refresh`? Read about th
 The button can be found on the Query from tables page.
 
 <Frame>
-  ![screenshot-refresh-dbt](/images/references/integrations/dbt-projects/dbt-refresh.png)
+  ![screenshot-refresh-dbt](../../images/semantic-layer/dbt/projects/dbt-refresh.png)
 </Frame>
 
 _If you're using a git connection (like GitHub, GitLab, or Bitbucket), you'll need to push + merge your changes to the branch that your Lightdash project is connected to before you press `Refresh dbt`._
@@ -193,7 +194,7 @@ If you've made any changes to the underlying data (for example, adding a new col
 
 #### Push code from the CLI
 
-If you're using the [Lightdash CLI](/guides/cli/how-to-install-the-lightdash-cli), you can use `lightdash deploy` to deploy your changes to Lightdash. [Read more about how to use `lightdash deploy`](/guides/cli/how-to-use-lightdash-deploy).
+If you're using the [Lightdash CLI](/workflow/cli/install), you can use `lightdash deploy` to deploy your changes to Lightdash. [Read more about how to use `lightdash deploy`](/workflow/cli/deploy).
 
 <Warning>
   We don't recommend using `lightdash deploy` from your local environment as the primary way you update Lightdash since small mistakes can lead to production issues.
@@ -201,11 +202,11 @@ If you're using the [Lightdash CLI](/guides/cli/how-to-install-the-lightdash-cli
 
 #### Set up continuous deployment
 
-[Read how to do that and check out our example workflow files](/guides/cli/how-to-use-lightdash-deploy#automatically-deploy-your-changes-to-lightdash-using-a-github-action).
+[Read how to do that and check out our example workflow files](/workflow/cli/deploy#automatically-deploy-your-changes-to-lightdash-using-a-github-action).
 
 ## dbt project settings
 
-For more information about dbt connection types (Github, Gitlab, Bitbucket, etc.) and the fields required for each type, [read the dbt project section in our connection guide](/get-started/setup-lightdash/connect-project#2-import-a-dbt-project).
+For more information about dbt connection types (Github, Gitlab, Bitbucket, etc.) and the fields required for each type, [read the dbt project section in our connection guide](/get-started/quickstart/connect-project#2-import-a-dbt-project).
 
 Below are details about the universal fields for all connected dbt projects.
 
@@ -213,7 +214,7 @@ Below are details about the universal fields for all connected dbt projects.
 
 <Info>This setting is found under Advanced configuration options</Info>
 
-You can filter out models in your dbt project that you don't want to see in Lightdash. This is useful if you have a large dbt project and you want to speed up the sync process. Unlike [table selection](/get-started/develop-in-lightdash/adding-tables-to-lightdash#limiting-the-tables-in-lightdash-using-dbt-tags), this selector is applied to the dbt models, so it will skip the entire compilation process for the models that you don't want to see in Lightdash.
+You can filter out models in your dbt project that you don't want to see in Lightdash. This is useful if you have a large dbt project and you want to speed up the sync process. Unlike [table selection](/get-started/build-your-semantic-layer/add-tables-to-lightdash#limiting-the-tables-in-lightdash-using-dbt-tags), this selector is applied to the dbt models, so it will skip the entire compilation process for the models that you don't want to see in Lightdash.
 
 To do this, you can add a **dbt selector** to your project settings. This is a JSON object that contains the models you want to include in Lightdash.
 
@@ -455,3 +456,141 @@ You would set `DBT_ENV=production` as an environment variable in your Lightdash 
 <Tip>
 If you're experiencing unexpected behavior with how Lightdash compiles your dbt project, check that your target name in Lightdash matches what your dbt macros expect, and verify any environment variables your macros depend on are properly set.
 </Tip>
+
+## dbt packages
+
+When you run `dbt deps` in your dbt project, you might notice a new file appearing in your project directory: `package-lock.yml`. This file is automatically generated by dbt-core and plays a crucial role in ensuring your dbt project runs consistently across different environments and team members.
+
+### What is package-lock.yml?
+
+The `package-lock.yml` file is dbt's dependency lock file, automatically created when you run `dbt deps` to install your project dependencies. This file records the exact versions of all dbt packages that were installed in your project, creating a "snapshot" of your dependency tree at a specific point in time.
+
+Think of it as a detailed receipt for your dbt packages - it doesn't just list what you bought, but the exact version, where it came from, and when it was obtained.
+
+### Understanding Package Versioning
+
+Before diving deeper into lock files, it's helpful to understand how package versioning works in dbt.
+
+#### Semantic Versioning
+
+Most dbt packages follow semantic versioning (semver), which uses a three-part version number: `MAJOR.MINOR.PATCH` (e.g., `1.2.3`).
+
+- **MAJOR**: Incremented for breaking changes that aren't backward compatible
+- **MINOR**: Incremented for new features that are backward compatible  
+- **PATCH**: Incremented for backward-compatible bug fixes
+
+#### Version Ranges in packages.yml
+
+In your `packages.yml` file, you might specify dependencies using version ranges:
+
+```yaml
+packages:
+  - package: dbt-labs/dbt_utils
+    version: [">=1.0.0", "<2.0.0"]
+  - package: calogica/dbt_expectations
+    version: ">=0.8.0"
+```
+
+These ranges give dbt flexibility to install compatible versions, but this flexibility can lead to inconsistency.
+
+### Why Package Pinning Matters
+
+Package pinning means locking dependencies to specific, exact versions rather than version ranges. This is crucial for several reasons:
+
+#### Reproducible Builds
+
+Without pinned versions, running `dbt deps` on different machines or at different times might install different package versions, even with the same `packages.yml` file. This can lead to:
+
+- Models that work on one machine but fail on another
+- Unexpected behavior changes when a package updates
+- Difficult-to-debug issues in production environments
+
+#### Team Consistency
+
+When your entire team uses the same pinned versions, everyone works with identical package dependencies. This eliminates the "it works on my machine" problem that can plague data teams.
+
+#### Controlled Updates
+
+With pinned versions, package updates become intentional decisions rather than accidental side effects. You can test updates in development before they reach production.
+
+### How package-lock.yml Works
+
+When you run `dbt deps`, dbt:
+
+1. Reads your `packages.yml` file
+2. Resolves all dependencies and their version ranges
+3. Downloads and installs the packages
+4. Records the exact versions installed in `package-lock.yml`
+
+The lock file includes detailed information about each package:
+
+```yaml
+packages:
+- package: dbt-labs/dbt_utils
+  version: 1.1.1
+  name: dbt_utils
+- package: calogica/dbt_expectations  
+  version: 0.10.1
+  name: dbt_expectations
+sha1_hash: b980d166c84935d6d661192cf31db5144295c1af
+```
+
+#### Understanding the SHA1 Hash
+
+You'll notice the `sha1_hash` at the bottom of the lock file. This is a unique fingerprint that represents the exact state of all your dependencies combined. Think of it like a tamper-evident seal on a package - if anything changes about your dependencies (versions, packages added or removed), this hash will change too.
+
+The SHA1 hash serves as a quick way to verify that two environments have identical dependency setups. If two team members have the same hash, dbt can be confident they're working with exactly the same package versions without having to check each package individually.
+
+On subsequent runs of `dbt deps`, dbt will use the versions specified in the lock file rather than resolving ranges from `packages.yml`, ensuring consistency.
+
+### Should You Commit package-lock.yml to Version Control?
+
+**Yes, you should commit `package-lock.yml` to your version control system (Git).** Here's why:
+
+#### Benefits of Committing
+
+- **Team synchronization**: All team members get the same package versions
+- **Environment consistency**: Development, staging, and production use identical dependencies
+- **Deployment reliability**: CI/CD pipelines install predictable package versions
+- **Audit trail**: Track when and how package versions change over time
+
+#### Best Practices
+
+- Commit the lock file alongside changes to `packages.yml`
+- Include lock file updates in your code review process
+- Regenerate the lock file when intentionally updating packages
+
+### Managing Package Updates
+
+To update your packages while using a lock file:
+
+1. **Update packages.yml** with new version ranges if needed
+2. **Delete package-lock.yml** to force fresh resolution
+3. **Run dbt deps** to generate a new lock file with updated versions
+4. **Test thoroughly** to ensure compatibility
+5. **Commit both files** together
+
+
+### Troubleshooting Common Issues
+
+#### Lock File Conflicts
+
+If team members have different lock files:
+1. Delete the lock file
+2. Run `dbt deps` to generate a fresh one
+3. Commit the new lock file
+
+#### Package Version Conflicts
+
+If packages have conflicting dependencies:
+1. Review your `packages.yml` version ranges
+2. Consider updating to more recent package versions
+3. Check package documentation for compatibility information
+
+### Conclusion
+
+The `package-lock.yml` file is a powerful tool for maintaining consistent, reproducible dbt projects. By automatically pinning your package versions, it eliminates a major source of environment-related issues and makes your dbt projects more reliable.
+
+Remember to commit your lock file to version control, and be prepared for the format changes coming in dbt 1.10. With proper lock file management, you'll spend less time debugging package-related issues and more time building valuable data models.
+
+For more information about dbt package management and best practices, check out the [official dbt documentation](https://docs.getdbt.com/docs/build/packages).

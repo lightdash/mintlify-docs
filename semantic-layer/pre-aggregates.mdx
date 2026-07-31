@@ -5,14 +5,14 @@ description: "Speed up dashboards and reduce warehouse costs by serving queries 
 ---
 
 <Info>
-  **Availability:** Pre-aggregates are a [Beta](/references/workspace/feature-maturity-levels) feature available on **Enterprise plans** only.
+  **Availability:** Pre-aggregates are a [Beta](/help/feature-maturity-levels) feature available on **Enterprise plans** only.
 </Info>
 
 Pre-aggregates let you define materialized summaries of your data directly in your dbt YAML. When a user runs a query in Lightdash, the system checks if the query can be answered from a pre-aggregate instead of querying your warehouse. If it matches, the query is served from the pre-computed results, making it significantly faster and reducing warehouse load.
 
 This is especially useful for dashboards with high traffic or expensive aggregations that don't need real-time data.
 
-Any query that goes through the Lightdash semantic layer can hit a pre-aggregate — this includes the Lightdash app, the [API](/api-reference/v1/introduction), [MCP](/references/integrations/lightdash-mcp), [AI agents](/guides/ai-agents), the [Embed SDK](/references/embedding), and the [React SDK](/references/react-sdk).
+Any query that goes through the Lightdash semantic layer can hit a pre-aggregate — this includes the Lightdash app, the [API](/api-reference/v1/introduction), [MCP](/agents/lightdash-mcp), [AI agents](/agents), the [Embed SDK](/embed/reference), and the [React SDK](/embed/react-sdk).
 
 Watch this video walkthrough for an overview of how to get started with pre-aggregates:
 
@@ -21,13 +21,13 @@ Watch this video walkthrough for an overview of how to get started with pre-aggr
 </Frame>
 
 <CardGroup cols={2}>
-  <Card title="Getting started" icon="rocket" horizontal href="/references/pre-aggregates/getting-started">
+  <Card title="Getting started" icon="rocket" horizontal href="/semantic-layer/pre-aggregates/getting-started">
     Define pre-aggregates in your dbt project and configure scheduling.
   </Card>
-  <Card title="Monitoring and debugging" icon="chart-mixed" horizontal href="/references/pre-aggregates/monitoring">
+  <Card title="Monitoring and debugging" icon="chart-mixed" horizontal href="/semantic-layer/pre-aggregates/monitoring">
     Track materialization status, debug query matching, and view hit/miss stats.
   </Card>
-  <Card title="CLI audit" icon="terminal" horizontal href="/references/pre-aggregates/cli-audit">
+  <Card title="CLI audit" icon="terminal" horizontal href="/semantic-layer/pre-aggregates/audit-with-cli">
     Inspect dashboard coverage from the terminal and gate CI on hit rates.
   </Card>
 </CardGroup>
@@ -81,7 +81,7 @@ When a user runs a query, Lightdash checks whether a pre-aggregate can serve it 
 - **Fields are available** — every dimension, metric, and filter dimension in the query exists somewhere in the pre-aggregate.
 - **Grain is reachable** — if the query uses a time dimension, its granularity is **equal or coarser** than the pre-aggregate's, so the rows can be rolled up. Month is a coarser grain than day. Day is a coarser grain than hour.
 - **Scope is compatible** — if the pre-aggregate defines its own `filters`, the query includes an **equal or narrower** filter, so the subset can be filtered from the pre-aggregate base.
-- **Metrics re-aggregate cleanly** — all metrics are [supported types](#supported-metric-types). No non-additive metrics (like `count distinct`, `median`, etc. which require recalculation per grouping) and nothing resolved at runtime (raw SQL table calculations, [`sql_filter`](/references/tables#sql-filter-row-level-security) metrics, or SQL dependent on [Parameters](/references/lightdash-config-yml#parameters-configuration) and [user attributes](/references/workspace/user-attributes)). These can't be faithfully re-computed from stored rows.
+- **Metrics re-aggregate cleanly** — all metrics are [supported types](#supported-metric-types). No non-additive metrics (like `count distinct`, `median`, etc. which require recalculation per grouping) and nothing resolved at runtime (raw SQL table calculations, [`sql_filter`](/semantic-layer/tables#sql-filter-row-level-security) metrics, or SQL dependent on [Parameters](/semantic-layer/lightdash-config-yml#parameters-configuration) and [user attributes](/workspace-admin/user-attributes)). These can't be faithfully re-computed from stored rows.
 
 <Tip>
   A **day** pre-aggregate serves `day`, `week`, `month`, `quarter`, and `year` queries. A **month** pre-aggregate serves `month`, `quarter`, and `year` — but **not** `day` or `week`, since those need finer-grained data.
@@ -122,18 +122,18 @@ Pre-aggregates support a narrower subset of the Lightdash semantic layer than re
 
 Pre-aggregates do not support:
 
-- [Personal warehouse connections](/references/workspace/personal-warehouse-connections). Materialization always runs under a single user's credentials, so warehouse-level access rules are not applied per viewer. If you rely on personal warehouse connections to enforce data access, use [results caching](/guides/developer/caching) instead.
-- [Parameters](/references/lightdash-config-yml#parameters-configuration) — parameter values are picked at query time, so they cannot be resolved during materialization. Queries that use parameters fall back to the warehouse.
-- [User attributes](/references/workspace/user-attributes) when referenced from SQL. [`required_attributes`](/references/tables#required-attributes) and [`any_attributes`](/references/tables#any-attributes) are still supported through [`materialization_role`](/references/pre-aggregates/getting-started#materialization-role).
-- [Custom metrics](/guides/custom-fields#custom-metrics) created in the Explorer
-- [Custom SQL dimensions](/guides/custom-fields#custom-sql) created in the Explorer ([Custom bin dimensions](/guides/custom-fields#bin) are supported)
-- SQL table calculations ([Formula table calculations](/guides/formula-table-calculations#formula-table-calculations) are supported)
+- [Personal warehouse connections](/personal-settings/personal-warehouse-connections). Materialization always runs under a single user's credentials, so warehouse-level access rules are not applied per viewer. If you rely on personal warehouse connections to enforce data access, use [results caching](/semantic-layer/caching) instead.
+- [Parameters](/semantic-layer/lightdash-config-yml#parameters-configuration) — parameter values are picked at query time, so they cannot be resolved during materialization. Queries that use parameters fall back to the warehouse.
+- [User attributes](/workspace-admin/user-attributes) when referenced from SQL. [`required_attributes`](/semantic-layer/tables#required-attributes) and [`any_attributes`](/semantic-layer/tables#any-attributes) are still supported through [`materialization_role`](/semantic-layer/pre-aggregates/getting-started#materialization-role).
+- [Custom metrics](/explore/create-custom-fields#custom-metrics) created in the Explorer
+- [Custom SQL dimensions](/explore/create-custom-fields#custom-sql) created in the Explorer ([Custom bin dimensions](/explore/create-custom-fields#bin) are supported)
+- SQL table calculations ([Formula table calculations](/explore/table-calculations/formulas#formula-table-calculations) are supported)
 
 ### SQL compatibility
 
-[`sql_filter`](/references/tables#sql-filter-row-level-security) (and its alias `sql_where`) runs both at materialization time and at query time on top of the materialized data.
+[`sql_filter`](/semantic-layer/tables#sql-filter-row-level-security) (and its alias `sql_where`) runs both at materialization time and at query time on top of the materialized data.
 
-- **At materialization time**, the filter is evaluated against your warehouse. If the SQL references [Parameters](/references/lightdash-config-yml#parameters-configuration) or [user attributes](/references/workspace/user-attributes), the values injected come from the materialization context — you can pin this to a fixed identity or attribute set with [`materialization_role`](/references/pre-aggregates/getting-started#materialization-role) so the materialization captures the rows you need.
+- **At materialization time**, the filter is evaluated against your warehouse. If the SQL references [Parameters](/semantic-layer/lightdash-config-yml#parameters-configuration) or [user attributes](/workspace-admin/user-attributes), the values injected come from the materialization context — you can pin this to a fixed identity or attribute set with [`materialization_role`](/semantic-layer/pre-aggregates/getting-started#materialization-role) so the materialization captures the rows you need.
 - **At query time**, the same filter is re-applied against the materialized data, which is served by DuckDB. If the `sql_filter` SQL uses warehouse-specific syntax that DuckDB doesn't understand, the query will fail to run against the pre-aggregate and fall back to the warehouse.
 
 ### Metrics that can't be pre-aggregated
@@ -160,7 +160,7 @@ For similar reasons, the following metric types are also not supported:
 - Custom SQL / post-calculation metrics (including many `number` metrics) — [Follow this issue](https://github.com/lightdash/lightdash/issues/21537)
 - `number`, `string`, `date`, `timestamp`, `boolean`
 
-For metrics that can't be pre-aggregated, consider using [caching](/guides/developer/caching) instead.
+For metrics that can't be pre-aggregated, consider using [caching](/semantic-layer/caching) instead.
 
 ## Pre-aggregates vs results caching
 
@@ -172,7 +172,7 @@ Results caching stores the exact result of any query that runs through Lightdash
 
 Any change to the query — a different filter, column, limit, or user attribute — produces a new SQL hash, a new cache entry, and another warehouse query. Results caching covers every query shape, including custom metrics, table calculations, and SQL runner queries.
 
-See the [caching guide](/guides/developer/caching) for details.
+See the [caching guide](/semantic-layer/caching) for details.
 
 ### Pre-aggregates
 
@@ -205,7 +205,7 @@ A single pre-aggregate can serve many different queries. A daily pre-aggregate w
 **Use results caching when:**
 
 - Query patterns are ad-hoc or unpredictable
-- You need unsupported features listed above, such as `count_distinct`, [Parameters](/references/lightdash-config-yml#parameters-configuration), [`sql_filter`](/references/tables#sql-filter-row-level-security), or raw SQL table calculations
+- You need unsupported features listed above, such as `count_distinct`, [Parameters](/semantic-layer/lightdash-config-yml#parameters-configuration), [`sql_filter`](/semantic-layer/tables#sql-filter-row-level-security), or raw SQL table calculations
 - You're using the SQL runner
 - You don't want upfront configuration work
 
