@@ -1,7 +1,7 @@
 ---
-title: "Best practices for AI agents"
-sidebarTitle: "Best practices"
-description: "Learn how to configure and optimize your AI agents for the best results"
+title: "Effective analytics with agents"
+sidebarTitle: "Effective analytics"
+description: "How to configure, scope, and improve your AI agents so they give accurate, governed answers."
 doc-type: guide
 tag: "Guide"
 ---
@@ -25,175 +25,7 @@ Good documentation is crucial for AI to understand your data models and provide 
 
 Remember: If your colleague wouldn't understand your documentation, neither will the AI agent. The more context you provide, the better the AI can interpret and analyze your data.
 
-For a detailed guide on what makes a good description for models, dimensions, and metrics — with side-by-side examples — see [Writing useful descriptions in your semantic layer](/semantic-layer/writing-descriptions).
-
-## Using AI hints
-
-AI hints are specialized metadata fields that provide additional context specifically for AI agents. These hints help the AI better understand your data models, business logic, and how to interpret your metrics and dimensions.
-
-<Info>
-  AI hints are internal metadata used only by AI agents and are not displayed to users in the Lightdash interface. When both AI hints and descriptions are present, AI hints take precedence for AI agent prompts.
-</Info>
-
-AI hints support both string and array of strings formats. The array format allows you to organize multiple distinct pieces of information as separate hints, making them easier to read and maintain.
-
-You can add AI hints at four levels:
-
-### Model-level hints
-
-Provide context about the entire table:
-
-<CodeGroup>
-
-```yaml dbt 1.10+
-models:
-  - name: customers
-    config:
-      meta:
-        ai_hint:
-          - This is a customers table containing customer information and derived facts
-          - Use this for customer demographics, behavior analysis, and segmentation
-```
-
-
-```yaml dbt <=1.9
-models:
-  - name: customers
-    meta:
-      ai_hint:
-        - This is a customers table containing customer information and derived facts
-        - Use this for customer demographics, behavior analysis, and segmentation
-```
-
-</CodeGroup>
-
-String format:
-
-<CodeGroup>
-
-```yaml dbt 1.10+
-models:
-  - name: customers
-    config:
-      meta:
-        ai_hint: |
-          This is a customers table containing customer information and derived facts.
-          Use this for customer demographics, behavior analysis, and segmentation.
-```
-
-
-```yaml dbt <=1.9
-models:
-  - name: customers
-    meta:
-      ai_hint: |
-        This is a customers table containing customer information and derived facts.
-        Use this for customer demographics, behavior analysis, and segmentation.
-```
-
-</CodeGroup>
-
-### Group-level hints
-
-If you organize related dimensions and metrics into [groups](/semantic-layer/dimensions#adding-dimensions-to-groups) using `group_details`, you can attach a single AI hint to the group. The hint applies to every dimension and metric that references the group via its `groups` property, so you can share context across a set of related fields without repeating yourself on each one.
-
-Use this when several fields share the same guidance — for example, "prefer these dimensions when a user asks about individual orders."
-
-<CodeGroup>
-
-```yaml dbt 1.10+
-models:
-  - name: orders
-    config:
-      meta:
-        group_details:
-          order_details:
-            label: Order details
-            description: Fields describing individual orders
-            ai_hint:
-              - Prefer these dimensions when a user asks about individual orders
-              - Do not use these for aggregated revenue reporting
-```
-
-
-```yaml dbt <=1.9
-models:
-  - name: orders
-    meta:
-      group_details:
-        order_details:
-          label: Order details
-          description: Fields describing individual orders
-          ai_hint:
-            - Prefer these dimensions when a user asks about individual orders
-            - Do not use these for aggregated revenue reporting
-```
-
-</CodeGroup>
-
-### Dimension-level hints
-
-Explain individual columns:
-
-<CodeGroup>
-
-```yaml dbt 1.10+
-columns:
-  - name: last_name
-    config:
-      meta:
-        dimension:
-          ai_hint:
-            - Customer's last name
-            - Contains PII data - use for identification but be mindful of privacy
-```
-
-
-```yaml dbt <=1.9
-columns:
-  - name: last_name
-    meta:
-      dimension:
-        ai_hint:
-          - Customer's last name
-          - Contains PII data - use for identification but be mindful of privacy
-```
-
-</CodeGroup>
-
-### Metric-level hints
-
-Clarify what metrics measure:
-
-<CodeGroup>
-
-```yaml dbt 1.10+
-columns:
-  - name: customer_id
-    config:
-      meta:
-        metrics:
-          unique_customer_count:
-            type: count_distinct
-            ai_hint:
-              - Unique customer count for business reporting
-              - Use this for customer acquisition and retention analysis
-```
-
-
-```yaml dbt <=1.9
-columns:
-  - name: customer_id
-    meta:
-      metrics:
-        unique_customer_count:
-          type: count_distinct
-          ai_hint:
-            - Unique customer count for business reporting
-            - Use this for customer acquisition and retention analysis
-```
-
-</CodeGroup>
+Descriptions serve humans and agents alike; `ai_hint` metadata adds a layer only the agent sees — where you spell out which field is canonical, how users phrase questions, and the traps that lead to wrong answers. For what makes a good description, how to layer AI hints on top at the model, group, dimension, and metric level, and when to reach for a hint versus a better description, see [Writing useful descriptions in your semantic layer](/semantic-layer/writing-descriptions).
 
 ## Knowledge documents
 
@@ -252,7 +84,7 @@ Good candidates are anything a new analyst on your team would need to read befor
 
 ### What *not* to upload
 
-- **Anything that belongs in the semantic layer.** If it describes a specific field or model, prefer an [AI hint](#using-ai-hints) — those are tied to the field and survive refactors.
+- **Anything that belongs in the semantic layer.** If it describes a specific field or model, prefer an [AI hint](/semantic-layer/writing-descriptions#layer-ai-hints-on-top-of-descriptions) — those are tied to the field and survive refactors.
 - **Sensitive data.** Documents are visible to anyone using the agent. Don't paste API keys, customer PII, or anything you wouldn't share with the whole agent's audience.
 - **Raw data dumps.** Knowledge documents are for context and interpretation, not data. The agent has the semantic layer for that.
 - **Generic marketing copy or off-topic notes.** These will be rated `low` or `none` relevance and the agent will be told to ignore them.
@@ -266,9 +98,9 @@ Good candidates are anything a new analyst on your team would need to read befor
 - **Re-check after big changes.** When you add new explores or rename fields, revisit the relevance rating on existing documents — `relatedExploreNames` references exact explore names and can go stale.
 - **Test with a real question.** After uploading, ask the agent a question that *should* hit the document and confirm it gets called. The tool calls are visible in the conversation thread.
 
-## [Using verified answers](/agents/verified-answers)
+## Curating verified answers
 
-Mark generated charts and dashboards as verified answers to help your agent learn from the best examples and provide better responses to similar questions.
+[Verified answers](/agents/verified-answers) teach your agent from your best examples. To build a set that actually raises answer quality:
 
 -   **Verify diverse examples** - Mark answers covering different types of questions and use cases to give your agent a broad knowledge base
 
@@ -276,19 +108,13 @@ Mark generated charts and dashboards as verified answers to help your agent lear
 
 -   **Update regularly** - As your data and business needs evolve, review your verified answers and update them to reflect current best practices
 
-## [Using evaluations](/agents/create-evaluation-suites)
+## Making evaluations part of your workflow
 
 <Tip>
 Remember: your agent is only as clever as the context and instructions you've given it. For complex data models and diverse use cases, evaluations are essential for systematically testing and refining your agent's performance.
 </Tip>
 
--   **Encourage all users to provide feedback** - Have your team actively use the thumbs-up/thumbs-down feature when interacting with agents. This feedback is crucial for identifying where the agent needs improvement
-
--   **Admins: Review feedback regularly** - As an admin, set aside time to review thumbs-down responses, understand patterns, and give targeted feedback to your agent through evaluations
-
--   **Build from real interactions** - In the [Threads tab](/agents/visibility#thread-activity), filter for thumbs-down threads and add the failed prompts to an evaluation set. Refine the prompt with your expected repsonse until the eval status is `passed`. This helps test fixes and prevent regressions on real-world issues your team actually encounters
-
--   **Run evaluations consistently** - Make evaluations a regular practice. Test before deploying changes to agent instructions or your semantic layer, and run periodic checks to ensure your agent maintains quality as it learns and evolves
+Treat evaluations as an ongoing loop, not a one-off. Encourage your team to use thumbs-up and thumbs-down as they work, build [evaluation suites](/agents/create-evaluation-suites) from the real threads that went wrong, and run them before you ship changes to instructions or your semantic layer — so quality holds as the agent learns and evolves.
 
 ## Writing effective instructions
 
