@@ -1,7 +1,7 @@
 ---
 title: "Upgrading Lightdash"
 sidebarTitle: "Upgrading"
-description: "How Lightdash versioning works and how to upgrade a self-hosted deployment to the latest version."
+description: "How Lightdash versioning works and how to upgrade a self-hosted deployment safely, including the migration job and rollback."
 doc-type: reference
 ---
 
@@ -9,37 +9,65 @@ doc-type: reference
 🛠 This page is for engineering teams self-hosting their own Lightdash instance. If you're on Lightdash Cloud, upgrades are handled for you automatically.
 </Note>
 
-Lightdash uses semantic versioning in the form `major.minor.patch`. Each segment signals how significant the changes are and what level of care you should take when upgrading.
+Lightdash uses semantic versioning in the form `major.minor.patch`. Each segment signals how significant the changes are and how much care to take when upgrading.
 
 ## How Lightdash versioning works
 
-- **Patch versions** (`x.x.PATCH`) are small fixes. These are safe to pick up as part of routine upgrades.
-- **Minor versions** (`x.MINOR.x`) introduce new features or bigger changes that are backwards incompatible. Review the release notes before upgrading.
-- **Major versions** (`MAJOR.x.x`) introduce breaking changes. You **must** read the upgrade guides below before upgrading.
+- **Patch versions** (`x.x.PATCH`) are small fixes. Safe to pick up as part of routine upgrades.
+- **Minor versions** (`x.MINOR.x`) introduce new features or larger changes that can be backwards incompatible. Review the release notes before upgrading.
+- **Major versions** (`MAJOR.x.x`) introduce breaking changes to the API or the self-hosted architecture. Expect to make configuration, infrastructure, or integration changes, and read the release notes before upgrading.
 
-Major version bumps can happen because the API or the self-hosted architecture has changed substantially. Expect to make configuration, infrastructure, or integration changes when moving between major versions.
+Lightdash ships continuously and does **not** publish an LTS or "stable" tag. Pin `image.tag` to a specific [version](https://hub.docker.com/r/lightdash/lightdash/tags) in production and upgrade deliberately — pinning makes deployments repeatable and avoids unexpected changes. Using `latest` is fine for a local laptop instance.
 
-## Upgrade guides
+## Upgrade cadence
 
-### Upgrading from Version 0 to Version 1
+Upgrade at least **monthly**. Falling many minor versions behind makes the eventual migration jump riskier. Treat every upgrade as a controlled rollout: upgrade UAT / pre-production first, run your validation (SSO, warehouse connections, dbt refreshes, scheduled jobs, embeds, critical dashboards), then roll out to production.
 
-_Coming soon._
+Your UAT environment should mirror production closely enough that upgrade testing is meaningful:
 
-## Local deployments
+- **The same configuration and environment variables as production** — feature flags, SSO, SMTP, object storage, license key, scheduler and headless browser config. Differences here are the most common reason an upgrade passes pre-production but fails in production.
+- **A replica of the production Lightdash database** (including `pgvector`), not an empty or hand-seeded one. Real data volume, migrations, and project/role/embed state are what surface upgrade regressions. Refresh the replica from production before each round of testing.
 
-If you're running Lightdash on your own laptop using Docker, you just need to instruct Docker to pull the latest version of Lightdash:
+## Upgrade mechanics
+
+### Local Docker deployments
+
+If you're running Lightdash on your own laptop with Docker, pull the latest image and restart:
 
 ```bash
 docker pull lightdash/lightdash
 ```
 
-Now restart Lightdash and you'll be upgraded to the latest version.
+### Kubernetes / Helm deployments
 
-## Kubernetes/helm deployments
-
-If you install Lightdash into kubernetes using our [community helm charts](https://github.com/lightdash/helm-charts) you need to update your helm chart repository and upgrade your deployment.
+If you install Lightdash into Kubernetes with the [community Helm charts](https://github.com/lightdash/helm-charts), update the chart repository and upgrade your deployment:
 
 ```bash
 helm repo update lightdash
 helm upgrade -f values.yml lightdash lightdash/lightdash
 ```
+
+The upgrade path is: bump `image.tag` → `helm upgrade` → the migration job runs database migrations → the backend rolls out.
+
+## Database migrations
+
+Migrations run automatically when the Lightdash server or workers start, so a routine upgrade applies them for you.
+
+Once you run multiple backend replicas, enable the **migration job** so replicas don't race on the migration lock. It runs migrations as a Helm `pre-install,pre-upgrade` hook exactly once, and the backend then starts without migrating:
+
+```yaml
+migrationJob:
+  enabled: true
+```
+
+If a deploy is interrupted mid-migration, the lock lives in the `knex_migrations_lock` table in the [Lightdash Postgres database](/self-host/customize-deployment/configure-lightdash-to-use-an-external-database) — release it there before retrying.
+
+## Rollback
+
+Roll back the `image.tag` **only if the release notes say the migrations are backwards-compatible**. If they are not, a lower image running against an already-migrated database can fail — restore the database from backup instead.
+
+Rebuilding an instance from scratch needs three things, so keep all three recoverable:
+
+- the Postgres backup,
+- the `LIGHTDASH_SECRET` (it decrypts data at rest — losing it means losing access to encrypted data), and
+- your Helm values.

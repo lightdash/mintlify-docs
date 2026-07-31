@@ -5,6 +5,12 @@ boost: 0.001
 doc-type: reference
 ---
 
+import SmtpEnv from '/snippets/self-host/smtp-env.mdx';
+import LoggingEnv from '/snippets/self-host/logging-env.mdx';
+import PrometheusEnv from '/snippets/self-host/prometheus-env.mdx';
+import HeadlessBrowserEnv from '/snippets/self-host/headless-browser-env.mdx';
+import McpEnv from '/snippets/self-host/mcp-env.mdx';
+
 <Note>
 🛠 This page is for engineering teams self-hosting their own Lightdash instance. If you want to configure any of these settings, please speak to the Lightdash team or your Lightdash administrators.
 </Note>
@@ -90,14 +96,7 @@ Variables that control the scheduler worker and background cleanup jobs.
 
 Configure the headless browser used for screenshots and PDF exports.
 
-| Variable                                  | Description                                                                                                                                                                                                                                                             |
-| :---------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HEADLESS_BROWSER_HOST`                   | Hostname for the headless browser                                                                                                                                                                                                                                       |
-| `HEADLESS_BROWSER_PORT`                   | Port for the headless browser (default=3001)                                                                                                                                                                                                                            |
-| `HEADLESS_BROWSER_MAX_SCREENSHOT_RETRIES` | Maximum number of times the scheduler retries a failed screenshot before giving up. (default=5)                                                                                                                                                                         |
-| `HEADLESS_BROWSER_RETRY_BASE_DELAY_MS`    | Base delay in milliseconds for exponential-backoff retries on failed screenshots. (default=3000)                                                                                                                                                                        |
-| `HEADLESS_BROWSER_SCREENSHOT_TIMEOUT_MS`  | Maximum time in milliseconds Lightdash waits for a dashboard's tiles and charts to report ready before taking a screenshot. Also applies to per-element operations during capture. (default=180000). See note below if you raise this above the browser session limit.  |
-| `USE_SECURE_BROWSER`                      | Use secure WebSocket connections for headless browser (default=false)                                                                                                                                                                                                   |
+<HeadlessBrowserEnv />
 
 <Note>
   The headless-browser container has its own session timeout (for example, browserless v2's `TIMEOUT`, which defaults to 30 seconds). That value must be greater than or equal to `HEADLESS_BROWSER_SCREENSHOT_TIMEOUT_MS`, otherwise the browser will terminate the session before Lightdash's readiness wait expires and the screenshot will fail. If you raise `HEADLESS_BROWSER_SCREENSHOT_TIMEOUT_MS` for dashboards that legitimately take longer than three minutes to render, raise the browser container's session timeout to match.
@@ -193,21 +192,7 @@ Use these to force feature flags on or off across your deployment regardless of 
 
 This is a reference to all the SMTP environment variables that can be used to configure a Lightdash email client.
 
-| Variable                        | Description                                                                                |
-| :------------------------------ | :----------------------------------------------------------------------------------------- |
-| `EMAIL_SMTP_HOST`               | **(Required)** Hostname of email server                                                    |
-| `EMAIL_SMTP_PORT`               | Port of email server (default=587)                                                         |
-| `EMAIL_SMTP_SECURE`             | Secure connection (default=true)                                                           |
-| `EMAIL_SMTP_USER`               | **(Required)** Auth user                                                                   |
-| `EMAIL_SMTP_PASSWORD`           | Auth password [1]                                                                          |
-| `EMAIL_SMTP_ACCESS_TOKEN`       | Auth access token for Oauth2 authentication [1]                                            |
-| `EMAIL_SMTP_ALLOW_INVALID_CERT` | Allow connection to TLS server with self-signed or invalid TLS certificate (default=false) |
-| `EMAIL_SMTP_SENDER_EMAIL`       | **(Required)** The email address that sends emails                                         |
-| `EMAIL_SMTP_SENDER_NAME`        | The name of the email address that sends emails (default=Lightdash)                        |
-| `EMAIL_SMTP_IMAGE_INLINE_CID`  | Embed images directly into emails as CID attachments instead of referencing external URLs. Useful for deployments behind firewalls where email clients cannot reach internal image URLs (default=false) |
-| `EMAIL_SMTP_USE_AUTH`           | Whether to authenticate with the SMTP server. Set to `false` for open relays inside a trusted network. (default=true)                                                                                  |
-
-[1] `EMAIL_SMTP_PASSWORD` or `EMAIL_SMTP_ACCESS_TOKEN` needs to be provided
+<SmtpEnv />
 
 ## SSO
 
@@ -320,33 +305,11 @@ The variables below act as instance-wide defaults. Organization admins can overr
 
 ## Logging
 
-| Variable                       | Description                                                                                                                  |
-| :----------------------------- | :--------------------------------------------------------------------------------------------------------------------------- |
-| `LIGHTDASH_LOG_LEVEL`          | The minimum level of log messages to show. `DEBUG`, `AUDIT`, `HTTP`, `INFO`, `WARN` `ERROR` (default=INFO)                   |
-| `LIGHTDASH_LOG_FORMAT`         | The format of log messages. `PLAIN`, `PRETTY`, `JSON` (default=pretty)                                                       |
-| `LIGHTDASH_LOG_OUTPUTS`        | The outputs to send log messages to (default=console)                                                                        |
-| `LIGHTDASH_LOG_CONSOLE_LEVEL`  | The minimum level of log messages to display on the console (default=LIGHTDASH_LOG_LEVEL)                                    |
-| `LIGHTDASH_LOG_CONSOLE_FORMAT` | The format of log messages on the console (default=LIGHTDASH_LOG_FORMAT)                                                     |
-| `LIGHTDASH_LOG_FILE_LEVEL`     | The minimum level of log messages to write to the log file (default=LIGHTDASH_LOG_LEVEL)                                     |
-| `LIGHTDASH_LOG_FILE_FORMAT`    | The format of log messages in the log file (default=LIGHTDASH_LOG_FORMAT)                                                    |
-| `LIGHTDASH_LOG_FILE_PATH`      | The path to the log file. Requires `LIGHTDASH_LOG_OUTPUTS` to include `file` to enable file output. (default=./logs/all.log) |
-| `LIGHTDASH_LOG_AUDIT_ACTOR_AS_STRING` | When `true`, audit log events serialize the `actor` field to a JSON string instead of a nested object. Enable this if your log indexer (e.g. Elasticsearch) maps the `actor` field as text and would otherwise drop it. (default=false) |
+<LoggingEnv />
 
 ## Prometheus
 
-| Variable                                    | Description                                                                                  |
-| :------------------------------------------ | :------------------------------------------------------------------------------------------- |
-| `LIGHTDASH_PROMETHEUS_ENABLED`              | Enables/Disables Prometheus metrics endpoint (default=false)                                 |
-| `LIGHTDASH_PROMETHEUS_PORT`                 | Port for Prometheus metrics endpoint (default=9090)                                          |
-| `LIGHTDASH_PROMETHEUS_PATH`                 | Path for Prometheus metrics endpoint (default=/metrics)                                      |
-| `LIGHTDASH_PROMETHEUS_PREFIX`               | Prefix for metric names.                                                                     |
-| `LIGHTDASH_GC_DURATION_BUCKETS`             | Buckets for duration histogram in seconds. (default=0.001, 0.01, 0.1, 1, 2, 5)               |
-| `LIGHTDASH_EVENT_LOOP_MONITORING_PRECISION` | Precision for event loop monitoring in milliseconds. Must be greater than zero. (default=10) |
-| `LIGHTDASH_PROMETHEUS_LABELS`               | Labels to add to all metrics. Must be valid JSON                                             |
-| `LIGHTDASH_PROMETHEUS_EVENT_METRICS_ENABLED`     | Enables Prometheus counters for product events (e.g. chart views, downloads). (default=false) |
-| `LIGHTDASH_PROMETHEUS_EXTENDED_METRICS_ENABLED`  | Enables extended Prometheus metrics including warehouse query timings. (default=false)        |
-| `LIGHTDASH_PROMETHEUS_ALL_QUERY_METRICS_ENABLED` | Emits a Prometheus metric for every individual query (high cardinality). (default=false)      |
-| `LIGHTDASH_PROMETHEUS_HTTP_METRICS_ENABLED`      | Enables the OpenTelemetry `http.server.request.duration` histogram with semconv labels and route templates. (default=false) |
+<PrometheusEnv />
 
 ## Security
 
@@ -688,10 +651,9 @@ Enterprise-only. Configures the scheduled managed agent that runs skills on a cr
 
 ## MCP
 
-| Variable                  | Description                                                                                                                                                  |
-| :------------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MCP_ENABLED`             | Enables the Lightdash [Model Context Protocol](/self-host/customize-deployment/configure-mcp-for-lightdash) server. (default=false)                          |
-| `MCP_RUN_SQL_MAX_LIMIT`   | Maximum number of rows the MCP `run_sql` tool can return. Falls back to `AI_COPILOT_MAX_QUERY_LIMIT`, then `1000`.                                            |
+Configure the Lightdash [Model Context Protocol](/self-host/customize-deployment/configure-mcp-for-lightdash) server.
+
+<McpEnv />
 
 ## Metrics SQL API
 
@@ -706,13 +668,13 @@ Postgres wire protocol endpoint for the semantic layer. See [Metrics SQL API](/i
 
 ## NATS worker
 
-Optional NATS-backed scheduler worker. When enabled, Lightdash publishes scheduler jobs to NATS instead of polling Postgres.
+Optional NATS-backed query workers. When enabled, Lightdash routes query execution to dedicated [NATS worker pods](/self-host/nats-workers) instead of running queries on the main API server. Enable at least one warehouse worker to process the routed queries.
 
-| Variable           | Description                                                                                            |
-| :----------------- | :----------------------------------------------------------------------------------------------------- |
-| `NATS_ENABLED`     | Enables the NATS-based scheduler worker. (default=false)                                                |
-| `NATS_URL`         | NATS server connection URL. **Required when `NATS_ENABLED=true`.**                                      |
-| `NATS_WORKER_PORT` | Port the NATS worker process listens on for healthchecks.                                              |
+| Variable           | Description                                                                                                                                        |
+| :----------------- | :------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NATS_ENABLED`     | Routes query execution through NATS worker pods. Requires at least one [warehouse worker](/self-host/nats-workers/warehouse-workers) to process the queries. (default=false) |
+| `NATS_URL`         | NATS server connection URL. **Required when `NATS_ENABLED=true`.**                                                                                 |
+| `NATS_WORKER_PORT` | Port the NATS worker process listens on for healthchecks.                                                                                          |
 
 ## Initialize instance
 

@@ -1,6 +1,6 @@
 ---
-title: "Configure a standalone scheduler worker for self-hosted Lightdash"
-sidebarTitle: Standalone scheduler worker
+title: "Run a dedicated scheduler worker"
+sidebarTitle: Scheduler worker
 boost: 0.001
 doc-type: reference
 ---
@@ -9,9 +9,31 @@ doc-type: reference
 🛠 This page is for engineering teams self-hosting their own Lightdash instance. If you want to set up scheduled deliveries, go to the [Scheduled deliveries](/explore/create-scheduled-deliveries) guide.
 </Note>
 
-By default, the Lightdash server runs a scheduler worker. For more advanced infrastructure, we can run the scheduler worker separately from the main server.
+By default, the Lightdash backend runs scheduled jobs in-process. In production, run a **dedicated scheduler worker** so a heavy dashboard export can't starve the API. Run one through the Helm chart's built-in worker, or as a standalone process you start yourself.
 
-### 1. Disable scheduler worker in the main server
+## Helm chart
+
+Set `scheduler.enabled: true` and the chart deploys a dedicated scheduler worker:
+
+```yaml
+scheduler:
+  enabled: true
+  replicas: 1            # scale up if deliveries queue at peak times
+  concurrency: 3         # jobs per replica (sets SCHEDULER_CONCURRENCY)
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1425Mi
+      ephemeral-storage: 1Gi
+```
+
+When `scheduler.enabled: true`, the chart automatically sets `SCHEDULER_ENABLED: "false"` on the backend — don't set it yourself. Tune delivery throughput with `SCHEDULER_JOB_TIMEOUT`, `SCHEDULER_SCREENSHOT_TIMEOUT`, and `scheduler.tasks.include` / `scheduler.tasks.exclude` to shard task types across worker groups. See the [scheduler environment variables](/self-host/customize-deployment/environment-variables#scheduler) for the full reference.
+
+## Standalone worker
+
+For infrastructure that doesn't use the Helm chart, run the scheduler worker as a separate process.
+
+### 1. Disable the scheduler worker in the main server
 
 Set the following environment variable value:
 
@@ -19,7 +41,7 @@ Set the following environment variable value:
 SCHEDULER_ENABLED=false
 ```
 
-### 2. Run standalone schedule worker
+### 2. Run the standalone scheduler worker
 
 Command to start scheduler worker:
 
