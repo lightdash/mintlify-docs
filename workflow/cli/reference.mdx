@@ -53,22 +53,7 @@ Ignores the preceding command and shows the installed CLI version. Usually it's 
 lightdash --version
 ```
 
-If you need to upgrade your version of the Lightdash CLI, run one of the following in your terminal depending on how you installed it:
-
-<Tabs>
-  <Tab title="npm">
-    ```bash
-    npm install -g @lightdash/cli
-    lightdash --version
-    ```
-  </Tab>
-  <Tab title="Homebrew">
-    ```bash
-    brew update && brew upgrade lightdash
-    lightdash --version
-    ```
-  </Tab>
-</Tabs>
+To upgrade, see [Updating the Lightdash CLI](/workflow/cli/install#updating-the-lightdash-cli).
 
 ### Help
 
@@ -495,13 +480,7 @@ lightdash stop-preview "neon unicorn"
 Compiles and deploys the current project to your [selected Lightdash Cloud project](#lightdash-config-set-project).
 
 <Warning>
-  **`lightdash deploy` pushes directly to your production project.**
-
-  Running this command from a local branch will overwrite your production semantic layer with whatever is compiled locally, including any dev or staging targets from your `profiles.yml`. This can break dashboards for all users.
-
-  **Use [`lightdash preview`](#lightdash-preview) for local development and testing.** Preview creates a temporary, isolated project that won't affect production.
-
-  For production deploys, we recommend using [CI/CD with GitHub Actions](/workflow/cli/deploy#automatically-deploy-your-changes-to-lightdash-using-a-github-action).
+  `lightdash deploy` pushes directly to your production project. Use [`lightdash preview`](#lightdash-preview) for local development and [CI/CD](/workflow/set-up-ci-cd#deploy-changes-to-lightdash) for production deploys. See [Deploy changes to production](/workflow/cli/deploy) for the full safe-deploy guidance.
 </Warning>
 
 All standard [dbt options](#dbt-options) work with `lightdash deploy`.
@@ -785,10 +764,10 @@ You can make changes to the code and upload these changes back to your Lightdash
   - (default: false)
   - strip per-value pivot series config from chart YAML so it's portable across projects. Cartesian chart series that are tied to specific pivot field values are rewritten to reference only the underlying x/y fields, and duplicates collapsed into a single entry. Use this when the source project's pivot values don't exist in the target project (for example, when reusing chart YAML as a template), so the upload doesn't fail or render with the original project's hardcoded series. Only applies to regular charts; SQL charts and dashboards are unaffected.
 - `--virtual-views <slugs...>`
-  - opt-in flag to download specific [virtual views](/workflow/content-as-code#virtual-views) as code. Pass one or more virtual-view slugs. Each view is written to `lightdash/virtual-views/<slug>.yml`. Virtual views are not included in a bare `lightdash download` — use this flag or `--include-virtual-views` to opt in.
+  - opt-in flag to download specific [virtual views](/semantic-layer/virtual-views) as code. Pass one or more virtual-view slugs. Each view is written to `lightdash/virtual-views/<slug>.yml`. Virtual views are not included in a bare `lightdash download` — use this flag or `--include-virtual-views` to opt in.
 - `--include-virtual-views`
   - (default: false)
-  - opt-in flag to download every [virtual view](/workflow/content-as-code#virtual-views) in the project as code. Use `--virtual-views <slugs...>` instead when you only want specific views.
+  - opt-in flag to download every [virtual view](/semantic-layer/virtual-views) in the project as code. Use `--virtual-views <slugs...>` instead when you only want specific views.
 - `--apps <appUuids...>`
   - opt-in flag to also download specific [data apps](/data-apps#data-apps-as-code) as code (enterprise only). Pass one or more app UUIDs to download just those apps — this is the only way to download apps that haven't been added to a space. Each app is written to `lightdash/apps/<slug>/` as a locally buildable project: `lightdash-app.yml` manifest, the app's `src/` tree, `package.json`, a read-only `.lightdash/context/` snapshot of the project's semantic layer, and agent skill files. For [data app visualizations](/data-apps/create-visualizations), the manifest also carries a `vizSchema` field with the viz's declared fields so the viz round-trips to the destination on upload. The built output is not included — the server rebuilds it on upload.
 - `--include-apps`
@@ -886,6 +865,8 @@ Download only a specific AI agent by slug (or UUID).
 
 ```bash
 lightdash download --agents orders-support-agent
+```
+
 Download all charts and dashboards, plus every virtual view in the project.
 
 ```bash
@@ -896,6 +877,8 @@ Download only specific virtual views by slug.
 
 ```bash
 lightdash download --virtual-views orders_enriched customers_enriched
+```
+
 Download every organization-scoped custom role as code (requires org admin).
 
 ```bash
@@ -916,7 +899,7 @@ If there have been changes made to a chart or dashboard in the application that 
 **Options:**
 
 - `--force`
-  - required to create new content as code that doesn't exist in your Lightdash project yet — without it, `lightdash upload` only updates existing content. Also required to apply destructive [virtual view](/workflow/content-as-code#virtual-views) column changes (removing a column or changing its type).
+  - required to create new content as code that doesn't exist in your Lightdash project yet — without it, `lightdash upload` only updates existing content. Also required to apply destructive [virtual view](/semantic-layer/virtual-views) column changes (removing a column or changing its type).
 - `--charts` or `-c`
   - select specific charts as code to upload back to your project. Use the chart SLUG to specify the chart
 - `--dashboards` or `-d`
@@ -947,7 +930,7 @@ If there have been changes made to a chart or dashboard in the application that 
   - (default: false)
   - expect content to be organized in sub-folders matching the spaces in your project (use this if content was downloaded with `--nested`)
 - `--virtual-views <slugs...>`
-  - specify [virtual view](/workflow/content-as-code#virtual-views) slugs to upload from `lightdash/virtual-views/`. Combine with `--force` to apply destructive column changes.
+  - specify [virtual view](/semantic-layer/virtual-views) slugs to upload from `lightdash/virtual-views/`. Combine with `--force` to apply destructive column changes.
 - `--skip-virtual-views`
   - (default: false)
   - skip uploading virtual views, even when `lightdash/virtual-views/` contains files
@@ -1051,6 +1034,8 @@ Upload only a specific AI agent by slug.
 
 ```bash
 lightdash upload --agents orders-support-agent
+```
+
 Upload every custom role in `lightdash/custom-roles/` back to the organization (requires org admin).
 
 ```bash
@@ -1504,37 +1489,6 @@ These environment variables are passed through to dbt and can be used to configu
   - Default: `~/.dbt`
   - Can also be set using `--profiles-dir` flag
 
-### Example: Using Environment Variables in CI/CD
+### Environment variables in CI/CD
 
-Here's an example of how to use environment variables in a GitHub Actions workflow:
-
-```yaml
-name: Deploy to Lightdash
-on:
-  push:
-    branches:
-      - main
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install Lightdash CLI
-        run: npm install -g @lightdash/cli
-
-      - name: Deploy to Lightdash
-        env:
-          LIGHTDASH_API_KEY: ${{ secrets.LIGHTDASH_API_KEY }}
-          LIGHTDASH_URL: https://app.lightdash.cloud
-          LIGHTDASH_PROJECT: ${{ secrets.LIGHTDASH_PROJECT_UUID }}
-          CI: true
-        run: lightdash deploy
-```
-
-In this example:
-- `LIGHTDASH_API_KEY` is stored as a GitHub secret and passed to the CLI
-- `LIGHTDASH_URL` specifies which Lightdash instance to connect to
-- `LIGHTDASH_PROJECT` specifies which project to deploy to
-- `CI=true` ensures the CLI runs in non-interactive mode
+For a full GitHub Actions workflow that passes these variables as repository secrets, see [Automate with CI/CD](/workflow/set-up-ci-cd#deploy-changes-to-lightdash).
