@@ -253,17 +253,25 @@ Each additional source has:
 
 On refresh, Lightdash compiles every source and merges the resulting manifests into a single set of Explores.
 
-**Precedence.** Sources are ordered by precedence. The primary source is always `0` (highest priority). Additional sources are appended after it in the order they were added.
+**Precedence.** Sources are ordered by precedence. The primary source is always `0` (highest priority). Additional sources are appended after it in the order they were added. Precedence orders the merge for `ref()` and lookup resolution.
 
-**Name collisions.** If the same model name exists in two sources, the **lowest-precedence source wins** and the superseded sibling is dropped from the merged Explores. Collisions are reported as **non-blocking warnings** naming both the winning and superseded source. Compilation does not fail.
+**Name collisions.** If the same model name exists in more than one source, **compilation fails** with an error that names each collision and which sources define it (in the form `<section> "<key>" is defined in both "<source A>" and "<source B>"`, listing up to 10 entries and ending with "Rename or remove the duplicate(s) before deploying."). Rename or remove the duplicates in one of the sources before deploying. Only identical dbt built-in macros and docs are merged silently.
 
 **What's merged vs. deduplicated.**
 
-- **Models**: collisions resolved by precedence as above. Models can `ref()` each other and be joined across sources.
+- **Models**: must be uniquely named across sources — a name collision fails the deploy. Once unique, models can `ref()` each other and be joined across sources.
 - **Metrics, docs, dbt sources, macros**: unioned across all repos.
 - **Identical dbt built-in macros and docs**: merged silently across repos and never reported as collisions.
 
 **Environment variables** are scoped to their source's connection and validated when that source is saved.
+
+### How refreshes work
+
+Every refresh — the **Refresh dbt** button in the UI, `lightdash refresh`, the refresh API, and **Test & deploy** in Project Settings — re-fetches and compiles all sources and merges them into one Explore set. If any single source fails (clone, manifest parsing, credentials, model-name collision), the whole refresh fails with an error naming that source. There are no partial deploys.
+
+<Warning>
+  **Do not use `lightdash deploy` against a multi-source project.** The CLI compiles the local repo and writes those Explores directly, without merging in the other sources — a CLI deploy will replace the project's Explores with only the local repo's models until the next server-side refresh. Teams using multiple dbt sources should sync via the **Refresh dbt** button, `lightdash refresh`, or the refresh API, and must not run `lightdash deploy` in CI against a multi-source project.
+</Warning>
 
 ### Write-back behavior
 
