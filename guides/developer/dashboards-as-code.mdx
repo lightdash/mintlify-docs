@@ -335,6 +335,66 @@ There are detailed instructions within the repo, but the general steps are as fo
 
 Note that these templates still rely on access to an underlying dbt model containing the relevant data, you might need to create or adjust this following the instructions in the [lightdash-templates](https://github.com/lightdash/lightdash-templates) repo.
 
+## Migrating a dashboard between Lightdash instances or projects
+
+A common use of dashboards as code is copying a dashboard from one place to another — from one Lightdash instance to another, or between two projects on the same instance. The steps below walk through the full round-trip.
+
+Prerequisites:
+
+* The [Lightdash CLI](/references/lightdash-cli) installed and authenticated.
+* The target project has the same dbt models and explores that the dashboard's charts reference. If they don't match, the upload will fail validation.
+
+### Step 1: Download from the source instance
+
+Log in to the source instance, select the source project, then download the dashboard. Charts, virtual views, and data apps referenced by the dashboard are pulled automatically.
+
+```bash theme={null}
+# Log in to the source instance
+lightdash login https://yourcompany.lightdash.cloud
+# Or use the shared clouds:
+# lightdash login https://app.lightdash.cloud
+# lightdash login https://eu1.lightdash.cloud
+
+# Select the source project
+lightdash config set-project
+
+# Download the dashboard (charts, virtual views, and data apps are included automatically)
+lightdash download -d my-dashboard-slug
+```
+
+### Step 2: Upload to the target instance or project
+
+If the target is on a different instance, log in to it first. If it's a different project on the same instance, skip the login and go straight to `set-project`.
+
+```bash theme={null}
+# Only needed when moving to a different instance
+lightdash login https://yourcompany.lightdash.cloud
+
+# Select the target project
+lightdash config set-project
+
+# Upload the dashboard with all dependencies
+lightdash upload --force -d my-dashboard-slug --include-charts --include-virtual-views --validate
+```
+
+### What's included automatically
+
+| Step     | Content       | Behavior                           |
+| -------- | ------------- | ---------------------------------- |
+| Download | Charts        | Automatic                          |
+| Download | Virtual views | Automatic                          |
+| Download | Data apps     | Automatic                          |
+| Upload   | Charts        | Requires `--include-charts`        |
+| Upload   | Virtual views | Requires `--include-virtual-views` |
+| Upload   | Data apps     | Automatic                          |
+
+### Notes
+
+* `--force` is required to create new content that doesn't already exist in the target project.
+* `--validate` checks for errors after upload.
+* The target project must expose the same dbt models and explores that the charts reference. Missing fields or tables will fail validation.
+* If the dashboard uses pivoted charts, run the download with `--strip-pivot-series` so the chart YAML doesn't hardcode pivot values from the source project. See [Make downloaded charts portable across projects](#make-downloaded-charts-portable-across-projects).
+
 ## Space management
 
 The `spaceSlug` field on every chart and dashboard YAML file controls which space the content lives in. This section covers everything you need to know about managing spaces through content as code.
