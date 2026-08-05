@@ -335,6 +335,87 @@ There are detailed instructions within the repo, but the general steps are as fo
 
 Note that these templates still rely on access to an underlying dbt model containing the relevant data, you might need to create or adjust this following the instructions in the [lightdash-templates](https://github.com/lightdash/lightdash-templates) repo.
 
+## Migrating a dashboard between Lightdash instances or projects
+
+A common use of dashboards as code is copying a dashboard from one place to another — from a project on one Lightdash instance to a project on another instance, or between two projects on the same instance. The steps below walk through the full round-trip.
+
+**Example scenario:** You want to copy a dashboard from a project on your dedicated instance (`acme.lightdash.cloud`) to a project on `app.lightdash.cloud`.
+
+Prerequisites:
+
+* The [Lightdash CLI](/references/lightdash-cli) installed.
+* The target project has the same dbt models and explores that the dashboard's charts reference. If they don't match, the upload will fail validation.
+
+### Step 1: Download from the source project
+
+Log in to the source instance, select the source project, then download the dashboard. Charts, virtual views, and data apps referenced by the dashboard are pulled automatically.
+
+```bash theme={null}
+# Log in to the source instance
+lightdash login https://acme.lightdash.cloud
+
+# Select the source project interactively
+lightdash config set-project
+
+# Download the dashboard
+lightdash download -d my-dashboard-slug
+```
+
+Or specify the project UUID directly instead of selecting interactively:
+
+```bash theme={null}
+lightdash download -d my-dashboard-slug --project 11111111-1111-1111-1111-111111111111
+```
+
+### Step 2: Upload to the target project
+
+If the target project is on a different instance, log in to it first, then select the project and upload:
+
+```bash theme={null}
+# Log in to the target instance
+lightdash login https://app.lightdash.cloud
+
+# Select the target project interactively
+lightdash config set-project
+
+# Upload the dashboard with all dependencies
+lightdash upload --force -d my-dashboard-slug --include-charts --include-virtual-views --validate
+```
+
+Or specify the project UUID directly:
+
+```bash theme={null}
+lightdash upload --force -d my-dashboard-slug --include-charts --include-virtual-views --validate --project 22222222-2222-2222-2222-222222222222
+```
+
+If the target project is on the same instance, skip the login step — just select the target project and upload:
+
+```bash theme={null}
+# Select the target project
+lightdash config set-project
+
+# Upload the dashboard with all dependencies
+lightdash upload --force -d my-dashboard-slug --include-charts --include-virtual-views --validate
+```
+
+### What's included automatically
+
+| Step     | Content       | Behavior                           |
+| -------- | ------------- | ---------------------------------- |
+| Download | Charts        | Automatic                          |
+| Download | Virtual views | Automatic                          |
+| Download | Data apps     | Automatic                          |
+| Upload   | Charts        | Requires `--include-charts`        |
+| Upload   | Virtual views | Requires `--include-virtual-views` |
+| Upload   | Data apps     | Automatic                          |
+
+### Notes
+
+* `--force` is required to create new content that doesn't already exist in the target project.
+* `--validate` checks for errors after upload.
+* The target project must expose the same dbt models and explores that the charts reference. Missing fields or tables will fail validation.
+* If the dashboard uses pivoted charts, run the download with `--strip-pivot-series` so the chart YAML doesn't hardcode pivot values from the source project. See [Make downloaded charts portable across projects](#make-downloaded-charts-portable-across-projects).
+
 ## Space management
 
 The `spaceSlug` field on every chart and dashboard YAML file controls which space the content lives in. This section covers everything you need to know about managing spaces through content as code.
