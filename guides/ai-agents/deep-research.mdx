@@ -40,16 +40,19 @@ Questions that work well include:
 
 ```mermaid
 flowchart LR
-    A["Question and agent configuration"] --> B["Plan competing hypotheses"]
-    B --> C["Investigate hypotheses in parallel"]
-    C --> D["Compare supporting and falsifying evidence"]
-    D --> E["Independent judge synthesizes the report"]
+    A["Question and agent configuration"] --> B["Coordinator investigates"]
+    B --> C["Up to two isolated data workers"]
+    C --> B
+    B --> D["Verified queries and their results"]
+    D --> E["Report written from that evidence"]
     E --> F["Report and chart snapshots"]
 ```
 
 Deep research uses the selected AI agent's configuration, including its instructions, semantic-layer access, knowledge documents, project and repository context, and enabled tools. It automatically inherits the organization's research limits and every MCP server attached to the agent; there is no per-run depth or source selection.
 
-For each run, a planner creates distinct, falsifiable hypotheses. Separate investigators test them in parallel, looking for both supporting and contradicting evidence. An independent judge then compares their findings and produces the final report. This structure helps the agent distinguish correlation from causation and makes inconclusive results explicit instead of forcing a single explanation.
+For each run, a coordinator owns the investigation: it gathers context, queries the data, and decides what to pursue next. When a question is genuinely separable it can hand that question to an isolated data worker, up to two per run. A worker sees only its own task and warehouse tools, and returns a compact findings packet rather than raw results.
+
+The coordinator does not write the report. When research ends, Lightdash rebuilds what the run established from the queries it actually ran and their results, and the report is written from that evidence. This keeps the report grounded in verified executions and means a run that stops early still reports what it found.
 
 Because the run executes on the server, you can close the tab or leave the thread. Reopening the thread restores the run card and its latest state.
 
@@ -74,14 +77,15 @@ Because the run executes on the server, you can close the tab or leave the threa
 
 Organization admins set the safety limits inherited by every deep research run. Go to **Organization settings** → **Ask AI** → **Deep research** to configure:
 
-- **Maximum tokens** — total model tokens across planning, parallel investigations, and judging
-- **Maximum tool calls** — total tool calls across the run
+- **Maximum steps** — model steps the coordinator may take before it must finish
+- **Maximum tool calls** — total tool calls across the coordinator and its workers
 - **Maximum warehouse queries** — total semantic-layer and SQL queries across the run
-- **Maximum hypotheses** — number of competing explanations the planner creates and investigators test
+- **Time limit (ms)** — wall-clock ceiling for the research phase
+- **Maximum tokens** — total model tokens across the run
 
-Each limit must be a positive whole number. When a run reaches a limit after producing usable findings, Lightdash preserves the best available report and marks the run as partially completed.
+Each limit must be a positive whole number. Defaults are 16 steps, 24 tool calls, 15 warehouse queries, a 10-minute time limit, and 10 million model tokens. Organization admins can change these values to match their governance and cost requirements.
 
-By default, a run can use up to 10 million model tokens, 1,000 tool calls, 100 warehouse queries, and 5 hypotheses. Organization admins can change these values to match their governance and cost requirements.
+Limits apply to the run as a whole, not to each worker separately. Well before a ceiling, a run stops widening its investigation and starts settling on an answer, so it usually finishes on its own rather than being cut off. When a run does reach a limit, Lightdash still writes the report from the evidence gathered up to that point and marks the run as partially completed.
 
 ## Sources and permissions
 
@@ -107,13 +111,13 @@ The run card stays next to the question that started it and shows the latest pha
     Lightdash accepted the run and is waiting for a background worker to start it.
   </Accordion>
   <Accordion title="Running">
-    The agent is planning hypotheses, investigating them in parallel, or synthesizing the report. Select **View activity** to inspect recent progress.
+    The agent is gathering context, querying the data, or writing the report. Select **View activity** to inspect recent progress.
   </Accordion>
   <Accordion title="Completed">
     The full report is ready and saved in the thread.
   </Accordion>
   <Accordion title="Partially completed">
-    The run reached a resource limit or recoverable error, but Lightdash preserved a usable report and its validated evidence.
+    The run reached a resource limit or recoverable error. Lightdash still wrote the report from the evidence gathered before it stopped.
   </Accordion>
   <Accordion title="Failed">
     The run could not produce a valid report. The run card keeps completed activity and provides safe retry guidance.
@@ -140,7 +144,7 @@ Select **Open full report** from a completed or partially completed run card. A 
 
 - A direct introduction that answers the question and states overall confidence
 - Two to five connected finding sections, each with a **low**, **medium**, or **high** confidence level
-- Charts when visual evidence improves the explanation
+- Charts, each backed by a query the run executed, when visual evidence improves the explanation
 - Caveats where data coverage, freshness, or the semantic layer limits the conclusion
 - A conclusion and citations for external evidence
 
@@ -152,7 +156,7 @@ Select **Open full report** from a completed or partially completed run card. A 
 
 Warehouse-backed charts open on a snapshot of the data the agent used when it wrote the report. This preserves the original evidence even if the underlying data changes later.
 
-Select **Live data** on a warehouse-backed chart to rerun its stored query and compare the latest result with the snapshot. Charts computed by the agent from derived or external data have no single warehouse query and cannot be refreshed.
+Every report chart is backed by one warehouse query the run actually executed, so any chart can be refreshed. Select **Live data** on a chart to rerun its stored query and compare the latest result with the snapshot.
 
 ### Report retention
 
@@ -191,7 +195,7 @@ Not in the same thread. You can keep chatting normally, or start deep research i
 
 **Why did my run partially complete?**
 
-The agent reached a resource budget or encountered a recoverable failure after producing a valid draft. Lightdash preserves the supported findings rather than discarding the report.
+The agent reached a resource budget or encountered a recoverable failure. Because the report is written from the queries the run executed rather than assembled as it goes, Lightdash still reports what the run established instead of discarding it.
 
 **Does deep research only read data?**
 
