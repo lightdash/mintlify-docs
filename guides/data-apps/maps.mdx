@@ -1,0 +1,259 @@
+---
+title: "Building a globe visualization with external connections"
+sidebarTitle: "Map tutorial"
+description: "Build interactive d3 maps and globes in a data app, powered by an external connection for shapes and your semantic layer for data."
+---
+
+This tutorial shows how to pull map shapes from an external connection, render them with `d3-geo`, and connect data from Lightdash inside a data app.
+
+<Frame>
+  <img src="/images/guides/data-apps/maps-world-view-hero.jpg" alt="A data app showing an interactive d3 globe with countries colored by GDP and a country detail panel for Spain" />
+</Frame>
+
+The ingredients:
+
+* **An external connection** that serves GeoJSON country shapes.
+* **A prompt** describing the globe and its interactions.
+* **A Lightdash query** joined onto the shapes by country code.
+
+## 1. Set up an external connection for geo data
+
+The map needs country boundary shapes. Data apps fetch external data through [external connections](/guides/data-apps/external-connections) — a project admin registers the API once, and apps call it through a proxy that pins requests to the registered host.
+
+A great free source is the [Natural Earth](https://www.naturalearthdata.com/) dataset mirrored on jsDelivr. Create a connection under **Project Settings → Data app connections** with:
+
+* **Name** - `world_geojson` (the name becomes the alias the app calls — keep it short and descriptive)
+* **Base URL** - `https://cdn.jsdelivr.net`
+* **Auth** - None (it's a public CDN)
+* **Allowed methods** - `GET`
+* **Allowed paths** - `/gh/nvkelso/natural-earth-vector/geojson/`
+* **Content types** - `application/json` and `application/geo+json`
+* **Max response size** - raise it to 8 MB. The world-countries file used below is ~0.8 MB, which brushes against the 1 MB default; higher-resolution files need more (see [Troubleshooting](#troubleshooting)).
+
+In the connection's **Instructions** field, tell the agent what lives there — this text is passed into the app-build sandbox:
+
+```markdown theme={null}
+Country and land shapes from the Natural Earth dataset. Fetch GeoJSON files
+under /gh/nvkelso/natural-earth-vector/geojson/, e.g.
+ne_110m_admin_0_countries.geojson for world country polygons. Features carry
+useful properties: NAME, ADM0_A3 (ISO-3 code), CONTINENT, POP_EST, GDP_MD.
+```
+
+Finally, use the wizard's **Test** step with the path `/gh/nvkelso/natural-earth-vector/geojson/ne_110m_admin_0_countries.geojson` and **Save as sample** — the generator then knows the exact response shape when it builds your app.
+
+<Frame>
+  <img src="/images/guides/data-apps/maps-connection-wizard.png" alt="The Data app connections settings page with a GeoJSON connection configured" />
+</Frame>
+
+### Where else geo data can come from
+
+Any HTTPS API an admin registers works the same way:
+
+* **Your own storage** - host simplified GeoJSON for your sales regions, store catchment areas, or delivery zones on S3/GCS/your CDN, and register that origin.
+* **Open-data APIs** - many government portals serve boundaries as GeoJSON (e.g. census, postcode, or administrative-area APIs).
+* **No connection at all** - for small, stable shapes you can ask the agent to inline a simplified GeoJSON directly into the app source. No network, no connection to manage — best under a few hundred KB.
+
+<Warning>
+  Prefer **GeoJSON** over TopoJSON sources. TopoJSON is smaller on the wire, but decoding it needs the `topojson-client` package, which isn't available in the app sandbox. Natural Earth publishes plain GeoJSON, so no conversion is needed.
+</Warning>
+
+## 2. Prompt the globe
+
+Create a new app with the **Custom** template. Describing the projection, the interactions, and the connection by name gets you most of the way in one prompt. This is the kind of prompt that produced the World Atlas app:
+
+```text theme={null}
+Build a "World Atlas" data explorer using the world_geojson connection.
+
+- A large interactive globe (d3 orthographic projection) that slowly
+  auto-rotates and can be dragged to spin. Draw it from
+  /gh/nvkelso/natural-earth-vector/geojson/ne_110m_admin_0_countries.geojson.
+- Color countries by a switchable metric — population, GDP, income group,
+  continent — with a matching legend.
+- Clicking a country pauses the rotation and opens a side panel with its
+  details.
+- Dark space theme with a subtle starfield. Aim for the polish of the d3
+  gallery on Observable.
+```
+
+Prompting tips for maps:
+
+* **Name the projection.** "Orthographic globe", "Natural Earth projection", "Mercator focused on Europe" — d3 supports them all, and naming one removes the guesswork.
+* **Name the connection and the file path.** The agent sees the connection's instructions and samples, but spelling out the exact file avoids a wrong guess.
+* **Describe the interactions** — rotate, hover tooltips, click-to-select, metric switcher — as user-visible behavior.
+* **Point at inspiration.** The [d3 gallery](https://observablehq.com/@d3/gallery) is a good shared vocabulary for the look you're after.
+
+## 3. Link the connection
+
+When you create or iterate on the app, open the resource picker in the builder and link `world_geojson`. The link is what authorizes the app to call the connection at runtime — the prompt text alone doesn't grant access.
+
+If the app calls a connection that isn't linked, the fetch fails with:
+
+```text theme={null}
+This app is not linked to the requested connection
+```
+
+You can review and change an app's linked connections from the same picker when iterating, without regenerating the app.
+
+Under the hood, the generated code fetches shapes like this:
+
+```tsx theme={null}
+import { useLightdashClient } from '@lightdash/query-sdk';
+
+const client = useLightdashClient();
+
+useEffect(() => {
+    client
+        .externalFetch('world_geojson', {
+            method: 'GET',
+            path: '/gh/nvkelso/natural-earth-vector/geojson/ne_110m_admin_0_countries.geojson',
+        })
+        .then((res) => setGeo(res.body)) // parsed GeoJSON FeatureCollection
+        .catch((err) => setError(err.message));
+}, [client]);
+```
+
+and the globe itself is standard `d3-geo` — a projection, a path generator, and one SVG `<path>` per country:
+
+```tsx theme={null}
+const projection = d3.geoOrthographic().scale(R).translate([cx, cy]).clipAngle(90);
+const path = d3.geoPath(projection);
+
+svg.append('path').datum({ type: 'Sphere' }).attr('class', 'geo')
+    .attr('d', path).attr('fill', '#0d3868'); // ocean
+
+svg.append('g').selectAll('path.country')
+    .data(geo.features)
+    .join('path')
+    .attr('class', 'geo country')
+    .attr('d', path)
+    .attr('fill', (feature) => colorFor(feature))
+    .attr('stroke', '#08121e');
+
+// Drag to rotate: nudge the projection, redraw every path
+const drag = d3.drag().on('drag', (event) => {
+    const [lambda, phi, gamma] = projection.rotate();
+    projection.rotate([
+        lambda + event.dx * 0.3,
+        Math.max(-70, Math.min(70, phi - event.dy * 0.3)),
+        gamma,
+    ]);
+    svg.selectAll('.geo').attr('d', path);
+});
+svg.call(drag);
+```
+
+You rarely write this by hand — but recognizing the shape helps you iterate with precise follow-up prompts ("slow the auto-rotation", "thicken country borders on hover").
+
+### A second connection: live data per location
+
+The same mechanism works for any API. The World Atlas app links a second connection, `weather` (Base URL `https://api.open-meteo.com`, path `/v1/forecast`, no auth), and fetches a forecast when you click a country:
+
+```tsx theme={null}
+const res = await client.externalFetch('weather', {
+    method: 'GET',
+    path: '/v1/forecast',
+    query: {
+        latitude: '48.86', // query values must be strings
+        longitude: '2.35',
+        current: 'temperature_2m,weathercode',
+        timezone: 'auto',
+    },
+});
+```
+
+## 4. Add Lightdash query data
+
+So far the colors come from properties baked into the GeoJSON. The real power move is coloring the map from **your semantic layer** — revenue by country, active users by region, on-time delivery by state — with the same permissions and access controls as everything else in your project.
+
+Ask for it in an iteration prompt:
+
+```text theme={null}
+Color the countries by total revenue from the orders explore instead of
+population. Join on the customer country ISO-3 code. Countries with no
+revenue stay gray.
+```
+
+The generated code runs a Lightdash query and joins it onto the features by country code:
+
+```tsx theme={null}
+import { query, useLightdash } from '@lightdash/query-sdk';
+
+const revenueByCountry = query('orders')
+    .label('Revenue by country')
+    .dimensions(['customers_country_code']) // ISO 3166-1 alpha-3
+    .metrics(['orders_total_revenue'])
+    .limit(500);
+
+function Globe({ geo }) {
+    const { data, loading, error, lineage } = useLightdash(revenueByCountry);
+
+    const byCountry = useMemo(
+        () =>
+            new Map(
+                (data ?? []).map((row) => [
+                    row.customers_country_code,
+                    row.orders_total_revenue,
+                ]),
+            ),
+        [data],
+    );
+
+    const color = d3
+        .scaleSequential(d3.interpolateBlues)
+        .domain([0, d3.max([...byCountry.values()]) ?? 1]);
+
+    const fillFor = (feature) => {
+        const value = byCountry.get(feature.properties.ADM0_A3);
+        return value != null ? color(value) : '#1a2535'; // gray = no data
+    };
+
+    // Render the globe with fillFor, and spread {...lineage} on the
+    // root element so the host's "Inspect data" can trace the query.
+}
+```
+
+<Tip>
+  **Mind your join keys.** A map only lights up where a row in your data matches a shape in the geo file. Pick a key that exists on both sides — country code, region code, postcode, admin ID — and make sure the format matches (ISO alpha-2 vs alpha-3, upper vs lower case, leading zeros). If your warehouse uses a different code than the geo file does, either translate it in the app or expose a matching dimension in your model.
+</Tip>
+
+Because the query runs through Lightdash, viewers only ever see data they're allowed to see — a map in a data app respects user attributes and project permissions like any chart.
+
+## 5. Flat maps and regions
+
+A globe is one `projection` swap away from a flat map. Useful iteration prompts:
+
+* "Make it a flat world map instead of a globe" → `d3.geoNaturalEarth1()`
+* "Focus the map on Europe only" → filter features, then fit the projection
+
+```tsx theme={null}
+// Flat world map, sized to the container
+const projection = d3.geoNaturalEarth1().fitSize([width, height], geo);
+
+// One region: filter the features, then fit the projection to them
+const europe = {
+    type: 'FeatureCollection',
+    features: geo.features.filter((f) => f.properties.CONTINENT === 'Europe'),
+};
+const regional = d3.geoMercator().fitExtent(
+    [[16, 16], [width - 16, height - 16]],
+    europe,
+);
+```
+
+For sub-country maps, Natural Earth also publishes first-level admin areas (states and provinces) under the same connection path — `ne_110m_admin_1_states_provinces.geojson`, or the more detailed `ne_50m_...` variants (raise the connection's max response size first).
+
+## Troubleshooting
+
+* **`This app is not linked to the requested connection`** - the app calls an alias that isn't linked. Link the connection in the builder's resource picker.
+* **Fetch fails or the response is cut off** - the GeoJSON is bigger than the connection's max response size. The 110m world file is ~0.8 MB (fine at 8 MB); 50m is ~5 MB; 10m files are larger still. Raise the limit, or step down a resolution — 110m is plenty for a world view.
+* **Countries missing or gray after a join** - check the join key. Use `ADM0_A3` (see the tip above), and make sure your dimension returns ISO alpha-3 codes.
+* **The agent tried to `fetch()` a URL directly** - direct network calls are blocked in the app sandbox. Data must come through `externalFetch` on a linked connection. If this happens, iterate with "use the `world_geojson` connection instead of fetching directly".
+* **No map tiles / basemap imagery** - tile servers are blocked by the app's content security policy, by design. d3's SVG projections don't need them. For a tile-based scatter or choropleth on a dashboard, use the core [Map chart](/references/chart-types/map) instead.
+* **Fonts look different than expected** - external stylesheets (e.g. Google Fonts) are also blocked by the content security policy; the app falls back to system fonts. Ask for system fonts in your prompt to avoid the console noise.
+
+## Related pages
+
+* [External connections](/guides/data-apps/external-connections) - configuring, testing, and securing the connections this tutorial uses
+* [Data apps](/guides/data-apps) - creating, iterating, and sharing apps
+* [Data app visualizations](/guides/data-apps/visualizations) - reusable single-chart components for the Explorer
+* [Map chart](/references/chart-types/map) - the core Leaflet-based map for dashboards, outside data apps
