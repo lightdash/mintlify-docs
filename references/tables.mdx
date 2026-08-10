@@ -147,6 +147,7 @@ You can customize how Tables look in Lightdash by adding configuration to your Y
 | [default_filters](#default-filters)                       | array              | Dimension filters that will be applied when no other filter on those dimension exists. [`Read about default_filters`](#default-filters) |
 | [default_show_underlying_values](#default-show-underlying-values) | array     | Default fields shown in "View underlying data" for all metrics in this model. [Read about default_show_underlying_values](#default-show-underlying-values) |
 | [explores](#explores)                                     | object             | Allows you to define multiple table explores in Lightdash from a single dbt model.                                                      |
+| [hidden](#hiding-the-base-explore)                        | boolean            | If `true`, the model's own explore is not created. The table can still be joined to and used as the base for `explores`. [Read about hiding the base explore.](#hiding-the-base-explore) |
 | [parameters](#parameters-configuration)                   | object             | Model-level parameters that can be referenced in SQL properties. [Read about parameters](#parameters-configuration)                     |
 | [sets](#sets)                                             | object             | Allows you to define a reference to a collection of fields. This reference can be re-used throughout the model.                         |
 | [case_sensitive](#case-sensitive)                         | boolean            | If set to `false`, string filters on dimensions in this table will be case insensitive by default. Defaults to `true`.                  |
@@ -1308,6 +1309,60 @@ Below is an advanced example of using Explores. This will result in three total 
 All the [table configuration options](#table-configuration) can be used under the `explores` tag.
 
 [Read this guide to learn more about explores](https://docs.lightdash.com/guides/explores)
+
+### Hiding the base explore
+
+By default, a model with `explores` still gets an explore of its own, so the model appears in the Tables list alongside its curated explores. If you only want to expose the curated explores, set `hidden: true` on the model. This is useful when you want to scope access to a curated explore only — for example, giving an AI agent access to a curated explore via explore-level `tags` without also exposing the underlying model.
+
+`hidden` only skips the model's own explore. The model is still compiled as a table, so it remains available as a join target from other tables and as the base table for its `explores` entries.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+    - name: deals
+      meta:
+        hidden: true
+        primary_key: deal_id
+        explores:
+          deals_curated:
+            label: 'Deals (Curated)'
+            description: The curated view of the deals table
+            tags: ['ai']
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+    - name: deals
+      config:
+        meta:
+          hidden: true
+          primary_key: deal_id
+          explores:
+            deals_curated:
+              label: 'Deals (Curated)'
+              description: The curated view of the deals table
+              tags: ['ai']
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: deals
+
+    hidden: true
+    primary_key: deal_id
+    explores:
+      deals_curated:
+        label: 'Deals (Curated)'
+        description: The curated view of the deals table
+        tags: ['ai']
+    ```
+  </Tab>
+</Tabs>
+
+In this example, only **Deals (Curated)** appears in Lightdash — the base **Deals** explore is not created.
 
 ## Sets
 
