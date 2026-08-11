@@ -1,7 +1,7 @@
 ---
 title: "Deep research"
 sidebarTitle: "Deep research"
-description: "Run a durable, multi-step AI investigation and get an evidence-backed report with confidence levels, charts, sources, and limitations."
+description: "Run a durable, multi-step AI investigation and get an evidence-backed report with verified charts, findings, sources, and limitations."
 ---
 
 <Info>
@@ -10,7 +10,7 @@ description: "Run a durable, multi-step AI investigation and get an evidence-bac
 
 Deep research is a long-running mode for Lightdash AI agents. It is designed for questions that need several queries, competing explanations, and a reusable report rather than one immediate answer.
 
-The agent investigates in the background using its Lightdash context and configured sources. It returns a structured Markdown report with confidence levels, supporting charts, citations for external sources, and explicit caveats.
+The agent investigates in the background using its Lightdash context and configured sources. It returns a structured report with verified charts, evidence-led findings, and explicit caveats where the data limits the conclusion.
 
 <Frame>
   <img
@@ -45,10 +45,10 @@ flowchart LR
     C --> B
     B --> D["Verified queries and their results"]
     D --> E["Report written from that evidence"]
-    E --> F["Report and chart snapshots"]
+    E --> F["Report and live charts"]
 ```
 
-Deep research uses the selected AI agent's configuration, including its instructions, semantic-layer access, knowledge documents, project and repository context, and enabled tools. It automatically inherits the organization's research limits and every MCP server attached to the agent; there is no per-run depth or source selection.
+Deep research uses the selected AI agent's configuration, including its instructions, semantic-layer access, knowledge documents, project and repository context, and enabled tools. It automatically inherits the organization's research limits and every MCP server attached to the agent; there is no per-run depth or source selection. If an attached MCP server is unavailable, Lightdash skips that server and continues with healthy MCP servers and built-in tools.
 
 For each run, a coordinator owns the investigation: it gathers context, queries the data, and decides what to pursue next. When a question is genuinely separable it can hand that question to an isolated data worker, up to two per run. A worker sees only its own task and warehouse tools, and returns a compact findings packet rather than raw results.
 
@@ -73,7 +73,7 @@ Because the run executes on the server, you can close the tab or leave the threa
   </Step>
 </Steps>
 
-## Organization-wide limits
+## Organization-wide settings and limits
 
 Organization admins set the safety limits inherited by every deep research run. Go to **Organization settings** → **Ask AI** → **Deep research** to configure:
 
@@ -82,10 +82,11 @@ Organization admins set the safety limits inherited by every deep research run. 
 - **Maximum warehouse queries** — total semantic-layer and SQL queries across the run
 - **Time limit (ms)** — wall-clock ceiling for the research phase
 - **Maximum tokens** — total model tokens across the run
+- **Allow raw SQL** — whether eligible users may use native or MCP `run_sql` tools during a run
 
-Each limit must be a positive whole number. Defaults are 16 steps, 24 tool calls, 15 warehouse queries, a 10-minute time limit, and 10 million model tokens. Organization admins can change these values to match their governance and cost requirements.
+Each numeric limit must be a positive whole number. Defaults are 16 steps, 24 tool calls, 15 warehouse queries, a 10-minute time limit, and 10 million model tokens. Raw SQL is disabled by default. Organization admins can change these values to match their governance and cost requirements.
 
-Limits apply to the run as a whole, not to each worker separately. Well before a ceiling, a run stops widening its investigation and starts settling on an answer, so it usually finishes on its own rather than being cut off. When a run does reach a limit, Lightdash still writes the report from the evidence gathered up to that point and marks the run as partially completed.
+Limits apply to the run as a whole, not to each worker separately. Well before a ceiling, a run stops widening its investigation and starts settling on an answer, so it usually finishes on its own rather than being cut off. When a run does reach a limit, Lightdash still writes the report from the evidence gathered up to that point and marks the run as partially completed. A warehouse resource-limit error can trigger up to two attempts with a narrower or simpler query; Lightdash does not retry the unchanged query.
 
 ## Sources and permissions
 
@@ -101,6 +102,8 @@ Deep research can use:
 </Warning>
 
 Deep research does not grant new permissions. The run starts with the creator's access and the selected agent's configuration, and Lightdash revalidates that access while the investigation runs. Revoking access or disconnecting a source can stop an active investigation or leave that source unavailable.
+
+Raw SQL requires both **Allow raw SQL** in **Organization settings** → **Ask AI** → **Deep research** and the initiating user's existing SQL Runner permission. Turning the organization setting off leaves governed semantic and metric queries available, but removes native and MCP raw SQL tools from the run.
 
 ## Follow progress
 
@@ -133,34 +136,29 @@ Only one deep research run can be active in a thread at a time. While it is acti
 
 ## Read the report
 
-Select **Open full report** from a completed or partially completed run card. A report contains:
+Select **Open full report** from a completed or partially completed run card. Deep Research reports are marked **Beta** and include a contents rail on larger screens so you can jump between findings. A report contains:
 
 <Frame>
   <img
     src="/images/guides/ai-agents/deep-research/deep-research-report.png"
-    alt="Deep Research report comparing pull request volume and merge rates across engineering teams, with confidence labels and a chart snapshot"
+    alt="Deep Research report comparing pull request volume and merge rates across engineering teams, with verified charts and evidence-led findings"
   />
 </Frame>
 
-- A direct introduction that answers the question and states overall confidence
-- Two to five connected finding sections, each with a **low**, **medium**, or **high** confidence level
-- Charts, each backed by a query the run executed, when visual evidence improves the explanation
-- Caveats where data coverage, freshness, or the semantic layer limits the conclusion
-- A conclusion and citations for external evidence
+- A short generated title and a direct introduction
+- Finding sections led by verified charts, followed by concise supporting narrative
+- A conclusion and inline caveats where data coverage, freshness, or the semantic layer limits the conclusion
+- Citations for external evidence when the report uses it
 
-<Note>
-  Confidence reflects the evidence available to the agent, not a guarantee that the conclusion is correct. Review the definitions, assumptions, and supporting queries before making a high-impact decision.
-</Note>
+### Report charts
 
-### Chart snapshots and live data
+Warehouse-backed charts are read-only inside the report. They keep inspection interactions such as tooltips, legends, highlights, and useful zoom, but do not offer report-side drill, filter, edit, or save actions.
 
-Warehouse-backed charts open on a snapshot of the data the agent used when it wrote the report. This preserves the original evidence even if the underlying data changes later.
-
-Every report chart is backed by one warehouse query the run actually executed, so any chart can be refreshed. Select **Live data** on a chart to rerun its stored query and compare the latest result with the snapshot.
+Every report chart is backed by one verified warehouse query the run actually executed. When you open or revisit a report, Lightdash runs that query through the normal async query path, so the chart shows current warehouse data rather than a persisted result snapshot. Select **Open in Explore** to continue investigating with the equivalent query, filters, fields, and visualization state in a new tab.
 
 ### Report retention
 
-Deep research report content and chart snapshots expire **30 days after the run completes**. The run's question, status, and completion date remain in the thread. After expiry, select **Run again** to start a new investigation from the original question using the agent's current configuration and the organization's current limits.
+Deep research report content and report-chart access expire **30 days after the run completes**. The run's question, status, and completion date remain in the thread. After expiry, select **Run again** to start a new investigation from the original question using the agent's current configuration and the organization's current limits.
 
 The regular chat agent can use the status and report from deep research runs in the same conversation when answering follow-up questions. Ask it to clarify a finding, compare evidence, or explain a limitation without pasting the report back into the chat.
 
@@ -196,6 +194,18 @@ Not in the same thread. You can keep chatting normally, or start deep research i
 **Why did my run partially complete?**
 
 The agent reached a resource budget or encountered a recoverable failure. Because the report is written from the queries the run executed rather than assembled as it goes, Lightdash still reports what the run established instead of discarding it.
+
+**What happens when a warehouse query exceeds a resource limit?**
+
+Lightdash asks the agent to narrow or simplify the query and allows up to two changed-query recovery attempts. If recovery is exhausted, the affected evidence is omitted and the report can still complete with a caveat when the remaining evidence is useful.
+
+**What does “No relevant data” mean?**
+
+The investigation completed cleanly but found no evidence relevant to the question. Refine the question or choose a project and data source that cover the topic; starting the same request again does not add new evidence.
+
+**Does retrying a failed run reuse its queries?**
+
+No. **Start over** creates a new run and does not reuse queries from the failed run.
 
 **Does deep research only read data?**
 
