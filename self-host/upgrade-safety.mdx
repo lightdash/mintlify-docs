@@ -115,8 +115,22 @@ This is the real artifact attached to release `1.121.0`:
     "recommendedStrategy": "RollingUpdate"
   },
   "api": {
-    "rest": { "checked": true, "breaking": false, "changes": [] },
-    "mcp": { "checked": true, "breaking": false, "changes": [] }
+    "rest": {
+      "checked": true,
+      "breaking": false,
+      "changes": [],
+      "breakingCount": 0,
+      "advisories": [],
+      "advisoryCount": 0
+    },
+    "mcp": {
+      "checked": true,
+      "breaking": false,
+      "changes": [],
+      "breakingCount": 0,
+      "advisories": [],
+      "advisoryCount": 0
+    }
   },
   "config": {
     "checked": true,
@@ -135,11 +149,10 @@ Reading it top to bottom:
 
 - **No migrations ship in this release** (`migrations.present: false`), so there is no schema change to coordinate.
 - **`rollingUpdateSafe: true`** — this is the explicit green verdict. Upgrading from `1.120.1` (the `previousVersion`) to `1.121.0` can be a rolling update.
-- **All three change surfaces were checked and came back clean**: no breaking REST API changes, no breaking MCP tool changes, no environment variable removals, renames, or default changes.
+- **All three change surfaces were checked and came back clean**: no breaking REST API changes, no breaking MCP tool changes (not even non-breaking advisories on either), and no environment variable removals, renames, or default changes.
 - **You may jump here directly from `1.111.0` or newer** (`upgrade.minPreviousVersion`), with no required stops on the way — but remember the span rule: the jump is only *rolling*-safe if every release in between is, which you check against the index, not this single artifact.
 - **No engineer declared a breaking change** (`declaredBreaks` is empty).
 
-Releases may attach additional informational counters on the API surfaces (for example `breakingCount` or `advisories`); the fields documented below are the stable contract.
 
 ## Field reference: `release-safety.json`
 
@@ -180,7 +193,13 @@ If you inspect the artifact *inside* a development build of the image you may se
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `api.rest`, `api.mcp` | object | One entry per API surface: `checked` (did the diff run), `breaking` (boolean or `"unknown"`), and `changes` (human-readable, endpoint- or tool-specific detail) |
+| `api.rest`, `api.mcp` | object | One entry per API surface — REST endpoints and MCP tools — with the fields below |
+| `…​.checked` | boolean | Whether the diff for that surface actually ran |
+| `…​.breaking` | boolean \| `"unknown"` | Whether the surface has consumer-breaking changes |
+| `…​.changes[]` | string[] | The breaking changes, one human-readable line each (e.g. `GET /api/v1/… — response property removed`). The list is capped with an explicit overflow line; `breakingCount` always carries the full total |
+| `…​.breakingCount` | integer | Uncapped total number of breaking changes |
+| `…​.advisories[]` | string[] | Non-breaking advisory notes (for example, a response enum gaining a new value) — worth a scan if you consume the API strictly, but they never affect the `breaking` verdict. Capped like `changes` |
+| `…​.advisoryCount` | integer | Uncapped total number of advisory notes |
 | `config.checked` | boolean | Whether the environment variable surface was diffed |
 | `config.breaking` | boolean \| `"unknown"` | Whether any config change is breaking |
 | `config.changes[]` | object | Each change is `removed` (with `previousDefault`), `renamed` (with `previousName` and `defaultValue`), or `defaultChanged` (with `previousDefault` and `defaultValue`) — scan this list for any environment variable you set explicitly |
