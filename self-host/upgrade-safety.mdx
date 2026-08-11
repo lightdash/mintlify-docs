@@ -39,50 +39,51 @@ Everything else on this page is detail on top of that rule.
 
 ## Checking an upgrade span
 
-The answer depends on exactly three inputs: the version you're running, the version you're targeting, and every release in between. Fetch the index once and check every release between your current version (exclusive) and your target (inclusive):
+The answer depends on exactly three inputs: the version you're running, the version you're targeting, and every release in between. The [Lightdash CLI](/guides/cli/how-to-install-the-lightdash-cli) answers it in one command:
+
+{/* Before this PR leaves draft: verify the verb against the published @lightdash/cli (npm view @lightdash/cli version), replace the illustrative output below with verbatim real output, and state the carrier CLI version here if we want one. */}
 
 ```bash
-FROM=1.111.0   # the version you are running
-TO=1.115.0     # the version you want
-
-curl -fsSL https://raw.githubusercontent.com/lightdash/lightdash/main/release-safety-index.json |
-jq --arg from "$FROM" --arg to "$TO" '
-  .entries
-  | (map(.version == $from) | index(true)) as $i
-  | (map(.version == $to) | index(true)) as $j
-  | if $i == null or $j == null then
-      error("version not found in index — treat the span as unsafe")
-    else
-      .[$i+1:$j+1]
-      | {
-          releasesInSpan: length,
-          rollingUpdateSafe: (map(.rollingUpdateSafe == true) | all),
-          requiredStops: (map(.requiredStops[]) | unique),
-          minPreviousVersionForTarget: (last.minPreviousVersion)
-        }
-    end'
+lightdash upgrade-check --from 1.111.0 --to 1.115.0
 ```
 
-Against the live index, that span answers:
+Example output (illustrative — format shown against the live index at the time of writing):
 
-```json
-{
-  "releasesInSpan": 5,
-  "rollingUpdateSafe": false,
-  "requiredStops": [],
-  "minPreviousVersionForTarget": "1.111.0"
-}
+```
+Release safety check: 1.111.0 -> 1.115.0
+Direction: upgrade
+Verdict: UNSAFE
+Unsafe rolling-update safety: 1.112.0
+Unknown rolling-update safety: 1.113.0, 1.113.1, 1.114.0, 1.115.0
+Minimum previous version: 1.111.0
+Covered releases: 1.112.0, 1.113.0, 1.113.1, 1.114.0, 1.115.0
 ```
 
-Read it in order:
+The command fetches the public index and applies the span rules from this page — AND-composition, required stops, minimum versions — locally. It needs **no Lightdash login, token, or instance access**, so it runs anywhere, including CI against an air-gapped production instance. Here the verdict is `UNSAFE` because the span crosses one release known not to be rolling-safe and several unproven ones — so **deploy with `Recreate`**: stop the old version, then start the new one.
 
-1. `requiredStops` is empty — no mandatory intermediate version, so a direct jump is allowed…
-2. …provided your current version is at or above `minPreviousVersionForTarget`. Here `1.111.0` ≥ `1.111.0`, so the jump is permitted.
-3. `rollingUpdateSafe` is `false` — the span crosses at least one release that is not proven rolling-safe, so **deploy with `Recreate`**: stop the old version, then start the new one.
+### Using it as a CI gate
 
-If your current version isn't in the index at all, the command errors on purpose. That's the fail-safe default: a version the index can't see is a span it can't vouch for.
+The exit code carries the verdict: **exit `0` only when the whole span is proven safe to roll**. Any other outcome — an `unknown` or `false` release in the span, a required stop, a version the index doesn't cover, a fetch failure — exits non-zero. That fail-closed contract means you can use the bare command as a pipeline gate:
 
-A CLI command that answers span checks (including for CI) is planned for a future release; until it ships, reading the index directly as above is the supported method.
+```bash
+lightdash upgrade-check --from "$CURRENT_VERSION" --to "$TARGET_VERSION"
+```
+
+For automation that needs the detail, `--json` prints a stable machine-readable object (`safe`, `verdict`, `direction`, `requiredStops`, `minPreviousVersion`, `coveredVersions`, `missingRanges`):
+
+```bash
+lightdash upgrade-check --from 1.111.0 --to 1.115.0 --json | jq .safe
+```
+
+### Checking the reverse direction
+
+`upgrade-check` also accepts a `--from` newer than `--to` and reports `Direction: rollback`, evaluating the same span with the same fail-closed semantics:
+
+```bash
+lightdash upgrade-check --from 1.123.0 --to 1.121.0
+```
+
+Versions `1.123.0` and later tolerate running an older image against a newer database natively; on older versions, going back needs additional steps — full rollback guidance is coming in an upgrade runbook.
 
 ## What the verdict means for your deployment
 
@@ -234,3 +235,48 @@ The index is a derived summary — one entry per release, oldest first. Per-rele
 - Scan `config.changes` for environment variables you set explicitly.
 - Confirm your database backup (and [point-in-time recovery](/self-host/production-deployment-checklist), if configured) is current.
 - After upgrading, [update the Lightdash CLI](/guides/cli/how-to-upgrade-cli) to match.
+
+## Appendix: checking a span without the CLI
+
+In environments where you can't run the CLI (no Node.js, or a fully air-gapped pipeline that mirrors the index), you can evaluate a span directly from the index with `curl` and `jq`. Check every release between your current version (exclusive) and your target (inclusive):
+
+```bash
+FROM=1.111.0   # the version you are running
+TO=1.115.0     # the version you want
+
+curl -fsSL https://raw.githubusercontent.com/lightdash/lightdash/main/release-safety-index.json |
+jq --arg from "$FROM" --arg to "$TO" '
+  .entries
+  | (map(.version == $from) | index(true)) as $i
+  | (map(.version == $to) | index(true)) as $j
+  | if $i == null or $j == null then
+      error("version not found in index — treat the span as unsafe")
+    else
+      .[$i+1:$j+1]
+      | {
+          releasesInSpan: length,
+          rollingUpdateSafe: (map(.rollingUpdateSafe == true) | all),
+          requiredStops: (map(.requiredStops[]) | unique),
+          minPreviousVersionForTarget: (last.minPreviousVersion)
+        }
+    end'
+```
+
+Against the live index, that span answers:
+
+```json
+{
+  "releasesInSpan": 5,
+  "rollingUpdateSafe": false,
+  "requiredStops": [],
+  "minPreviousVersionForTarget": "1.111.0"
+}
+```
+
+Read it in order:
+
+1. `requiredStops` is empty — no mandatory intermediate version, so a direct jump is allowed…
+2. …provided your current version is at or above `minPreviousVersionForTarget`. Here `1.111.0` ≥ `1.111.0`, so the jump is permitted.
+3. `rollingUpdateSafe` is `false` — the span crosses at least one release that is not proven rolling-safe, so deploy with `Recreate`.
+
+If your current version isn't in the index at all, the command errors on purpose. That's the fail-safe default: a version the index can't see is a span it can't vouch for — the same rule `upgrade-check` applies.
