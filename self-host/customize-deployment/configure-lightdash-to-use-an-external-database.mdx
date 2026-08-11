@@ -45,4 +45,17 @@ Lightdash requires the following extensions to be installed on the database:
 
 ## Migrations
 
-Migrations are ran automatically on starting the Lightdash server or workers. When upgrading Lightdash, migrations will be ran automatically. If migrations fail due to a pg\_lock error, check for a table called`knex_migrations_lock` to manually release the lock.
+Migrations are ran automatically on starting the Lightdash server or workers. When upgrading Lightdash, migrations will be ran automatically.
+
+If a migration gets stuck — for example after an interrupted deploy:
+
+- **On Lightdash `1.123.0` and later**, an interrupted migration's lock expires on its own and another process takes over automatically. To inspect migration state, or release a lock that is genuinely stuck, run the built-in `migrate` command inside a Lightdash container (`kubectl exec` / `docker compose exec`):
+
+  ```bash
+  pnpm -F backend migrate-production status
+  pnpm -F backend migrate-production unlock --actor "<your identity>"
+  ```
+
+  Do **not** edit the `knex_migrations_lock` table manually on these versions — it can release a lock that a live migration legitimately holds.
+
+- **On versions before `1.123.0`**, if migrations fail due to a pg\_lock error, check for a table called `knex_migrations_lock` to manually release the lock.
