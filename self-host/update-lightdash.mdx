@@ -23,6 +23,31 @@ Major version bumps can happen because the API or the self-hosted architecture h
 Before upgrading a production deployment, check the [release-safety signal](/self-host/upgrade-safety) for your upgrade span — it tells you whether a rolling update is safe and whether there are required stops on the way.
 </Note>
 
+## Monitor security advisories
+
+[GitHub Security Advisories](https://github.com/lightdash/lightdash/security/advisories) are the canonical source for published Lightdash vulnerabilities. Docker Hub and Docker Scout can provide supplemental findings, but pulling an image does not subscribe your team to security notifications and existing containers do not update automatically.
+
+DevOps teams can opt in to automated monitoring by polling GitHub's public repository-advisories API every six hours:
+
+```text
+GET https://api.github.com/repos/lightdash/lightdash/security-advisories?state=published&sort=updated&direction=desc&per_page=100
+Accept: application/vnd.github+json
+X-GitHub-Api-Version: 2026-03-10
+```
+
+The endpoint does not require authentication. Follow the `Link` response header when it is present and use `ETag` with `If-None-Match` to avoid downloading unchanged results. Persist each advisory's `ghsa_id`, `updated_at`, and a hash of its normalized content, then alert when an advisory is new or either value changes. The content hash is necessary because GitHub can update affected-product metadata without advancing `updated_at`. A non-null `withdrawn_at` means the advisory was withdrawn.
+
+Compare your deployed version against each applicable `vulnerabilities[].vulnerable_version_range` with a SemVer library. Treat an advisory without `patched_versions` as affected until the advisory says otherwise. The advisory's `html_url` is the canonical remediation guide.
+
+You can obtain the running version from the unauthenticated health endpoint:
+
+```bash
+curl --fail --silent https://lightdash.example.com/api/v1/health |
+  jq --raw-output '.results.version'
+```
+
+If your deployment manifest pins `lightdash/lightdash:<version>`, you can use that version instead. See the [Lightdash security policy](https://github.com/lightdash/lightdash/security/policy) for a cache-aware polling example and the complete operator contract.
+
 ## Local deployments
 
 If you're running Lightdash on your own laptop using Docker, you just need to instruct Docker to pull the latest version of Lightdash:
@@ -31,7 +56,7 @@ If you're running Lightdash on your own laptop using Docker, you just need to in
 docker pull lightdash/lightdash
 ```
 
-Now restart Lightdash and you'll be upgraded to the latest version.
+Now restart Lightdash and you'll be upgraded to the latest version. For a security update, pull the advisory's fixed version explicitly and verify the deployed container was replaced.
 
 ## Kubernetes/helm deployments
 
