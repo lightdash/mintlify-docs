@@ -5,7 +5,7 @@ description: "Run a durable, multi-step AI investigation and get an evidence-bac
 ---
 
 <Info>
-  **Availability:** Deep research is a [Beta](/references/workspace/feature-maturity-levels) feature available on **Enterprise** plans. It is behind a feature flag. [Contact Lightdash](mailto:support@lightdash.com) to enable it for your organization.
+  **Availability:** Deep research is a [Beta](/references/workspace/feature-maturity-levels) feature available wherever [AI agents](/guides/ai-agents/getting-started) are enabled, including eligible AI trials. Lightdash Cloud enables the feature flag by default. Self-hosted deployments need the same Enterprise Edition license and AI provider configuration required by AI agents, and must enable the `ai-deep-research` feature flag.
 </Info>
 
 Deep research is a long-running mode for Lightdash AI agents. It is designed for questions that need several queries, competing explanations, and a reusable report rather than one immediate answer.
@@ -48,7 +48,7 @@ flowchart LR
     E --> F["Report and live charts"]
 ```
 
-Deep research uses the selected AI agent's configuration, including its instructions, semantic-layer access, knowledge documents, project and repository context, and enabled tools. It automatically inherits the organization's research limits and every MCP server attached to the agent; there is no per-run depth or source selection. If an attached MCP server is unavailable, Lightdash skips that server and continues with healthy MCP servers and built-in tools.
+Deep research uses the selected AI agent's configuration, including its instructions, semantic-layer access, knowledge documents, project and repository context, and enabled tools. It automatically inherits the organization's research limits and every MCP server attached to the agent; there is no per-run depth or source selection. Lightdash retries transient MCP discovery and provider timeouts with a bounded backoff. If an attached MCP server remains unavailable, the run preserves completed evidence and continues with healthy MCP servers and built-in tools where possible.
 
 For each run, a coordinator owns the investigation: it gathers context, queries the data, and decides what to pursue next. When a question is genuinely separable it can hand that question to an isolated data worker, up to two per run. A worker sees only its own task and warehouse tools, and returns a compact findings packet rather than raw results.
 
@@ -63,7 +63,7 @@ Because the run executes on the server, you can close the tab or leave the threa
     Use the Ask AI composer on the homepage, start a new agent thread, or open an existing thread that you own. Deep research is unavailable in read-only threads, such as another user's thread or a thread started in Slack.
   </Step>
   <Step title="Enable Deep research">
-    Select **Deep research** in a new conversation, or select the telescope icon in an existing conversation. The control changes color when the mode is active.
+    Select **Deep research** in a new conversation, or select the telescope icon in an existing conversation. The control changes color when the mode is active. For longer investigative questions, the telescope can pulse once to suggest this mode; you can still continue in regular chat.
   </Step>
   <Step title="Describe the outcome you need">
     Include the decision or question, relevant time period, important segments, and any definitions or constraints the agent should preserve.
@@ -75,7 +75,7 @@ Because the run executes on the server, you can close the tab or leave the threa
 
 ## Organization-wide settings and limits
 
-Organization admins set the safety limits inherited by every deep research run. Go to **Organization settings** → **Ask AI** → **Deep research** to configure:
+When AI agents and the `ai-deep-research` feature flag are enabled, organization admins can go to **Organization settings** → **Ask AI** → **Deep research** to configure the safety limits inherited by every run:
 
 - **Maximum steps** — model steps the coordinator may take before it must finish
 - **Maximum tool calls** — total tool calls across the coordinator and its workers
@@ -86,7 +86,7 @@ Organization admins set the safety limits inherited by every deep research run. 
 
 Each numeric limit must be a positive whole number. Defaults are 16 steps, 24 tool calls, 15 warehouse queries, a 10-minute time limit, and 10 million model tokens. Raw SQL is disabled by default. Organization admins can change these values to match their governance and cost requirements.
 
-Limits apply to the run as a whole, not to each worker separately. Well before a ceiling, a run stops widening its investigation and starts settling on an answer, so it usually finishes on its own rather than being cut off. When a run does reach a limit, Lightdash still writes the report from the evidence gathered up to that point and marks the run as partially completed. A warehouse resource-limit error can trigger up to two attempts with a narrower or simpler query; Lightdash does not retry the unchanged query.
+Limits apply to the run as a whole, not to each worker separately. Well before a ceiling, a run stops widening its investigation and starts settling on an answer, so it usually finishes on its own rather than being cut off. When a run does reach a limit, Lightdash still writes the report from the evidence gathered up to that point and marks the run as partially completed. Lightdash blocks predictable unbounded field-value and dimension-only scans before warehouse execution and asks the agent to narrow them. A warehouse resource-limit error can trigger up to two attempts with a narrower or simpler query; Lightdash does not retry the unchanged query.
 
 ## Sources and permissions
 
@@ -120,10 +120,10 @@ The run card stays next to the question that started it and shows the latest pha
     The full report is ready and saved in the thread.
   </Accordion>
   <Accordion title="Partially completed">
-    The run reached a resource limit or recoverable error. Lightdash still wrote the report from the evidence gathered before it stopped.
+    The run reached a resource limit or recoverable error. Lightdash still wrote the report from the evidence gathered before it stopped. Select **Resume research** to continue unfinished work from the preserved evidence without rerunning successful queries.
   </Accordion>
   <Accordion title="Failed">
-    The run could not produce a valid report. The run card keeps completed activity and provides safe retry guidance.
+    The run could not produce a valid report. If it preserved usable evidence, select **Resume research** to continue unfinished work. Otherwise, the run card provides guidance to start over.
   </Accordion>
   <Accordion title="Cancelled">
     The creator stopped the run before it finished.
@@ -150,6 +150,8 @@ Select **Open full report** from a completed or partially completed run card. De
 - A conclusion and inline caveats where data coverage, freshness, or the semantic layer limits the conclusion
 - Citations for external evidence when the report uses it
 
+Before publishing, Lightdash validates every chart reference in the report. If a reference is malformed, duplicated, missing, or cannot be verified, Lightdash removes that reference while preserving valid findings and narrative. The run activity and report warning identify adjusted or omitted content.
+
 ### Report charts
 
 Warehouse-backed charts are read-only inside the report. They keep inspection interactions such as tooltips, legends, highlights, and useful zoom, but do not offer report-side drill, filter, edit, or save actions.
@@ -172,6 +174,10 @@ The regular chat agent can use the status and report from deep research runs in 
 - Treat a partially completed report as a starting point. Resolve unavailable sources or tighten the question before running it again; ask an organization admin to review the limits if runs repeatedly exhaust them.
 
 ## Access requirements
+
+Your organization must have the AI Agents entitlement or an eligible trial, the `ai-deep-research` feature flag enabled, and **Enable AI features for users** turned on in **Organization settings** → **Ask AI** → **General**. Self-hosted deployments must also configure an AI provider as described in the [AI Analyst environment variables](/self-host/customize-deployment/environment-variables#ai-analyst).
+
+Deep research is enabled by default on Lightdash Cloud. Self-hosted deployments must enable the `ai-deep-research` feature flag.
 
 Starting a run requires the Enterprise **Start Deep Research runs** scope (`create:AiDeepResearch`) for the project. Developer and Admin roles receive this scope by default. Add it explicitly to any [custom role](/references/workspace/custom-roles) that should be allowed to start runs.
 
@@ -205,7 +211,7 @@ The investigation completed cleanly but found no evidence relevant to the questi
 
 **Does retrying a failed run reuse its queries?**
 
-No. **Start over** creates a new run and does not reuse queries from the failed run.
+When a partially completed or failed run has usable evidence, **Resume research** creates a new run that reuses its completed queries, findings, and charts, then continues the unfinished work. If no usable evidence was preserved, **Start over** creates a new run from the original question.
 
 **Does deep research only read data?**
 
