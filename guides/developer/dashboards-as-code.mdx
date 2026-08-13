@@ -1049,7 +1049,7 @@ Agent config as code is **opt-in**: a bare `lightdash download` does not include
 
 ## Organization content as code
 
-Three organization-scoped resources — **custom roles**, **users**, and **groups** — can also be downloaded and uploaded as YAML using the `--organization` mode of `lightdash download` and `lightdash upload`. This is a separate workflow from project content (charts, dashboards, virtual views, and data apps) and requires an **organization admin**.
+Four organization-scoped resources — **custom roles**, **users**, **groups**, and **Data App themes** — can also be downloaded and uploaded using the `--organization` mode of `lightdash download` and `lightdash upload`. This is a separate workflow from project content (charts, dashboards, virtual views, and data apps) and requires an **organization admin**.
 
 A single `lightdash download --organization` writes every organization resource to a top-level folder in your working directory:
 
@@ -1061,13 +1061,26 @@ lightdash/
     <email-slug>.yml
   groups/
     <group-slug>.yml
+  themes/
+    <theme-slug>/
+      lightdash-theme.yml
+      css/
+      fonts/
+      images/
+      instructions/
 ```
 
-A single `lightdash upload --organization` reads all three folders and applies them **sequentially in dependency order**: custom roles first, then users, then groups. A failed phase prevents the dependent phases from running, so a user file can safely reference a custom role added in the same commit, and a group file can safely list a user added in the same commit.
+A single `lightdash upload --organization` preflights all local theme packages, then applies resources **sequentially in dependency order**: custom roles first, then users, groups, and themes. A failed phase prevents later phases from running, so a user file can safely reference a custom role added in the same commit and a group file can safely list a user added in the same commit. One invalid local theme prevents any organization resource from changing.
 
 <Note>
-  Organization mode cannot be combined with project-content flags such as `--charts`, `--dashboards`, `--project`, `--nested`, or `--force`. Uploads never delete resources in Lightdash — remove unwanted roles, users, or groups in the UI.
+  Organization mode cannot be combined with project-content flags such as `--charts`, `--dashboards`, `--project`, `--nested`, or `--force`. Uploads never delete resources in Lightdash — remove unwanted roles, users, groups, or themes in the UI.
 </Note>
+
+### Data App themes as code
+
+Themes are strict multi-file packages under `lightdash/themes/<slug>/`, rather than single YAML documents. Organization download exports UI-created themes into the canonical package layout. Organization upload creates or updates themes by manifest slug, skips unchanged packages, and leaves remotely existing themes alone when their local directory is absent.
+
+Theme upload does not change the organization default. Each theme import is atomic, but the complete multi-theme upload is not one transaction. For the manifest, supported assets, validation limits, synchronization behavior, and visual evaluation workflow, see [Manage themes as code](/guides/data-apps/themes#manage-themes-as-code).
 
 ### Custom roles as code
 
