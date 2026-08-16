@@ -206,7 +206,7 @@ If you're using the [Lightdash CLI](/guides/cli/how-to-install-the-lightdash-cli
 ## Connecting multiple dbt sources
 
 <Info>
-  **Private beta.** Multiple dbt sources is off by default and enabled per organization. Email [support@lightdash.com](mailto:support@lightdash.com) to have it turned on for your org. Self-hosted deployments need Lightdash v0.3275.0 or later (shipped July 2026).
+  **Availability.** On Lightdash Cloud, multiple dbt sources is enabled by default, so the **dbt sources** panel is already visible in Project Settings. On self-hosted deployments, add `multi-dbt-sources` to your `LIGHTDASH_ENABLE_FEATURE_FLAGS` environment variable (comma-separated, so append it to any flags you already have set) on Lightdash v0.3275.0 or later.
 </Info>
 
 A single Lightdash project can connect to more than one dbt project. Each connected dbt project is called a **dbt source**:
@@ -234,7 +234,7 @@ Go to **Project settings → dbt connection**. When the feature is enabled for y
 
 From the panel you can:
 
-- **Add an additional source**: pick a connection type (GitHub, GitLab, Azure DevOps, Bitbucket, dbt Cloud, and the other types supported for the primary source), give the source a display name, and fill in its repo/branch/subfolder/credentials and any environment variables. Environment variables are validated when the source is saved.
+- **Add an additional source**: connect a GitHub repository, give the source a display name, and fill in its repo/branch/subfolder/credentials and any environment variables. Environment variables are validated when the source is saved. Other connection types aren't supported for additional sources yet.
 - **Edit an additional source**: change its display name, connection details, or environment variables.
 - **Remove an additional source**: additional sources can be removed at any time.
 - **Edit the primary source**: the primary source is edited via the normal dbt connection form. It cannot be removed.
@@ -245,8 +245,8 @@ From the panel you can:
 
 Each additional source has:
 
-- A **display name**: how it appears in the sources panel and in collision warnings.
-- Its own **dbt connection**: same connection types as the primary, with its own repo, branch, subfolder, credentials, and environment variables.
+- A **display name**: how it appears in the sources panel and in collision errors.
+- Its own **dbt connection**: GitHub only for now. The primary source can use any of Lightdash's supported connection types (GitHub, GitLab, Azure DevOps, Bitbucket, dbt Cloud), but additional sources are limited to GitHub, each with its own repo, branch, subfolder, credentials, and environment variables.
 - A **precedence**: used to resolve name collisions across sources (see below).
 
 ### How compilation and merging works
@@ -256,6 +256,10 @@ On refresh, Lightdash compiles every source and merges the resulting manifests i
 **Precedence.** Sources are ordered by precedence. The primary source is always `0` (highest priority). Additional sources are appended after it in the order they were added. Precedence orders the merge for `ref()` and lookup resolution.
 
 **Name collisions.** If the same model name exists in more than one source, **compilation fails** with an error that names each collision and which sources define it (in the form `<section> "<key>" is defined in both "<source A>" and "<source B>"`, listing up to 10 entries and ending with "Rename or remove the duplicate(s) before deploying."). Rename or remove the duplicates in one of the sources before deploying. Only identical dbt built-in macros and docs are merged silently.
+
+<Warning>
+  **The CLI's `--combine-manifest` flag does not fail on collisions.** `lightdash preview` and `lightdash deploy` accept a separate `--combine-manifest <path|url>` flag (see the [CLI reference](/references/lightdash-cli#lightdash-deploy)) that merges an external manifest into the CLI-generated one. That merge is silent: the CLI-generated manifest always wins on conflicts, and any superseded models from the external manifest are dropped with no warning. This is a different mechanism from the additional-sources merge described above.
+</Warning>
 
 **What's merged vs. deduplicated.**
 
