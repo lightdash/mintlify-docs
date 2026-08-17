@@ -2,13 +2,21 @@
 
 Prepared 2026-07-28 from a full-corpus audit (218 pages, every page read).
 
+This is the one living process document for the reorganization. It describes the current state and
+the method; it is not a log. Snapshots and superseded working documents live in `archive/` and are
+never updated — read them for history, never as a description of how things are now.
+
 Planning artifacts in this directory (`ia-audit/`, excluded from the published site via `.mintignore`):
 
 | File | Contents |
 | --- | --- |
-| `tree-map.md` | Current-state tree: every page annotated with type, audience, gist, overlaps, flags |
-| `move-map.csv` | Per-page disposition: old slug → action (keep/move/merge/split/delete) → new slug, doc-type, redirect flag, notes |
-| `redirects-draft.json` | 188 new redirect entries + 62 existing redirects re-pointed to final URLs |
+| `move-map.csv` | Per-page disposition: old slug → action (keep/move/merge/split/delete) → new slug, doc-type, redirect flag, notes. Authoritative. |
+| `archive/tree-map.md` | Pre-reorganization tree as it stood on 2026-07-28, with per-page annotations. Historical input. |
+| `archive/redirects-draft.json` | The drafted redirect set, since absorbed into `docs.json` in full. Superseded. |
+| `archive/audit-report.md` | The original full-corpus audit findings. |
+| `archive/catch-up-cluster-reports/` | Per-area mappings from the `main` catch-up, 120 rows. Working documents. |
+
+`docs.json` is the single source of truth for navigation and redirects. Nothing in `archive/` is.
 
 The durable spec installed by this plan lives in `.mintlify/`, linked from `.mintlify/AGENTS.md` so our agents and Mintlify's share one system:
 
@@ -38,7 +46,8 @@ introduction              Landing; gains a short "consume these docs over MCP" s
 get-started/              quickstart (+ connect-project, get-project-lightdash-ready,
                           invite-new-users below it), explore-your-data/ (explorer track),
                           build-your-semantic-layer/ (developer track), lightdash-way (Guide)
-explore/                  BI consumption: chart-types/, filter-your-data, table-calculations/,
+explore/                  BI consumption: chart-types/ (flat gallery, incl. custom-vega-charts and
+                          custom-app-based-charts), filter-your-data, table-calculations/,
                           metrics-catalog/, dashboards, create-alerts, create-scheduled-deliveries,
                           spaces, pin-content, formatting, create-custom-fields, sql-runner,
                           date-zoom, version-history, keyboard-shortcuts…
@@ -48,29 +57,35 @@ semantic-layer/           The modeling language: metrics, dimensions, tables, jo
                           dbt/ (projects, metricflow, modeling-strategies, write-back, migrations)
 workflow/                 The software lifecycle around your project: cli/ (install, authenticate,
                           generate, deploy, validate, lint, compile, reference), set-up-ci-cd,
-                          preview-projects, pull-requests, content-as-code, set-up-vs-code,
+                          preview-projects, pull-requests, content-as-code,
+                          migrate-dashboards-between-projects (Tutorial), set-up-vs-code,
                           install-agent-skills, edit-dashboards-with-agents,
                           rename-models-and-fields, validating-your-content
 agents/                   Lightdash Agents: set-up-agents, use-ai-agents, data-access,
                           verified-answers, create-evaluation-suites, agent-memory, agents-as-code,
                           lightdash-mcp, connect-external-mcp-servers, ai-writeback,
                           effective-analytics-with-agents (Guide)…
-data-apps/                create-visualizations, customize-themes, external-connections, self-hosting
+data-apps/                apps-as-code, customize-themes, deliveries-and-syncs, external-connections,
+                          self-hosting, build-maps-and-globes (Tutorial), plus the children split out
+                          of the area landing (create-an-app, share-an-app, promote-an-app)
 embed/                    set-up-embedding, per-surface tutorials (embed-charts, embed-dashboards,
                           embed-ai-agents, embed-data-apps, embed-metrics-catalog), reference,
                           iframe, react-sdk
-integrations/             slack, sync-google-sheets, metrics-sql-api, snowflake-cortex
+integrations/             slack, google-sheets, metrics-sql-api, snowflake-cortex
 workspace-admin/          Org governance: roles, custom-roles, manage-groups, user-attributes,
                           scim-integration, sso/, service-accounts, manage-your-organization,
                           manage-projects, instance-health (Guide), set-project-timezone
 personal-settings/        create-personal-tokens, personal-warehouse-connections, timezone
-self-host/                (paths unchanged; content fixes only)
+self-host/                (paths largely unchanged; adds upgrading, upgrade-safety, upgrade-runbook,
+                          customize-deployment/organization-roadmap)
 api-reference/            (unchanged; OpenAPI-generated — remains the only tab besides Docs)
 help/                     support, generate-har-file, feature-maturity-levels
 snippets/                 Shared transcluded content (grows substantially — see directives)
 ```
 
 Navigation: two tabs (**Docs**, **API**). The `dbt guides` tab dissolves into `semantic-layer/dbt/`; the python SDK joins the API tab under an "SDKs" group. Every top-level area group sets `root` (its landing page, at the bare area slug) and `directory: "card"` — landings are a short orientation plus the auto-rendered child directory, "Overview" disappears as a sidebar item, and hand-built card grids are retired. Every page appears in exactly one nav position; `move-map.csv` is authoritative.
+
+Areas past roughly a dozen children are sectioned into subgroups (Explore, Agents, Workspace admin, and Customize deployment all are). Sectioning is nav-only: Mintlify derives a page's URL from its file path, so regrouping ships no redirects and carries no link risk. A flat list stays flat when the items are genuinely peers — `chart-types/` is a gallery, and sectioning it by chart kind would invent a taxonomy readers don't have.
 
 ## Consolidation directives
 
@@ -142,7 +157,7 @@ Run as four phases; each is independently landable. **Phase 1 before Phase 2**: 
 
 1. `git mv` every `move`/`split` row in move-map.csv old → new.
 2. Apply doc-type frontmatter from the CSV's `doc_type` column: `doc-type` on every typed page, plus `tag: Tutorial` / `tag: Guide` pills (lifecycle badges like `Beta` keep the slot where present).
-3. Rewrite `docs.json`: new nav tree with `root` + `directory: "card"` per area, append the 188 new redirects, apply the 62 destination re-points from redirects-draft.json (Mintlify does not chain redirects — every source must point at a final URL).
+3. Rewrite `docs.json`: new nav tree with `root` + `directory: "card"` per area, append the 188 new redirects, apply the 62 destination re-points from `archive/redirects-draft.json` (Mintlify does not chain redirects — every source must point at a final URL).
 4. Rewrite all internal links to final URLs (script the substitution from move-map.csv).
 5. Verify: the `docs-ia-audit` tool reports zero orphans/broken links/nav dupes; `mint broken-links` passes; spot-check 10 redirects in preview.
 
@@ -156,45 +171,99 @@ Execute the directives as eight independent workstreams, each a reviewable PR: (
 
 Expansions: introduction (define or drop "Context Layer"), explore/keyboard-shortcuts (documents 3 shortcuts today), personal-settings/create-personal-tokens (lifecycle/rotation/expiry), explore/filter-dashboard-by-url (text to match the Looms), migrate-to-fusion (CLI compatibility statement), secure-lightdash-with-https. Structural: split quickstart/connect-project (~9,000 words) into per-warehouse pages; split scim-integration into setup + reference; fold SQL templates into formula pages with tabs. Editorial: refresh The Lightdash Way as the model Guide under the new terminology.
 
-### Reconciliation and merge (runs once, right before landing)
+### Open work
 
-`main` keeps taking docs PRs while this branch diverges. Reconcile **once**, at the end — never pull `main` mid-reorg — so the re-homing happens against a stable target instead of repeatedly. This is the runbook for the agent that lands the branch.
+1. **Names and descriptions.** 19 pages whose title and slug disagree, and 31 with no `description` though the frontmatter contract requires one. Settle titles and slugs first, as a reviewed table; fill descriptions afterwards.
+2. **Duplicate contract.** The custom-roles-as-code YAML contract is written out in full twice, in `workflow/content-as-code.mdx` and `workspace-admin/custom-roles.mdx`.
+3. **Snippet candidates.** The self-host `<Note>` is copy-pasted across 15+ pages; the Node install block is byte-identical on two.
+4. **Debris.** `images/references/` holds orphaned files with zero inbound references; `explore/chart-types.mdx` lists two labels pointing at one URL.
+
+## Keeping current with `main`
+
+`main` keeps taking docs PRs while this branch diverges. Reconcile in passes: once to catch up on
+accumulated drift, and once more immediately before landing. This is the method.
+
+### The rule
+
+**`main` is authoritative on content. This branch is authoritative on structure — and nothing else.**
+
+Where the two differ on a fact, `main` wins by definition: the product moved and the branch sat
+still. A difference is never a disagreement to adjudicate, it is an update to file. The branch's
+only claim is where a fact belongs, what the page is called, and what type it is.
+
+Two consequences:
+
+- **Port from `origin/main`'s current state, never from an intervening commit.** The commit list is
+  a map for narrowing the diff surface, not a source. Facts get stated and later reversed: one
+  three-commit sequence flipped dbt-source collisions from "non-blocking warning" to "compilation
+  fails", connectors from "same as primary" to "GitHub only", and availability from "private beta"
+  to "on by default". Replaying commits ships the retracted version.
+- **Structure is ours to improve.** Placing `main`'s content correctly sometimes means a shape
+  neither side has today.
+
+Never rebase onto `main`. With ~700 renames on this branch the conflict surface is unmanageable and
+every resolution re-decides placement under pressure. Treat `main` commits as content sources and
+land the result as fresh thematic commits.
+
+### The passes
 
 **1. Snapshot the divergence.**
 
 ```text
 git fetch origin main
 BASE=$(git merge-base HEAD origin/main)
-git log --oneline $BASE..origin/main
-git diff --stat $BASE..origin/main -- '*.mdx' '*.md' docs.json snippets/ images/
+git log --reverse --no-merges --format='%h|%ad|%s' --date=short $BASE..origin/main
+git diff --name-status $BASE origin/main
 ```
 
-Classify every changed path on `main`: (a) content edit to an existing page, (b) new page, (c) deletion/rename, (d) `docs.json` nav/redirect change, (e) snippet/image asset.
+**2. Classify every changed path** against this branch's rename map
+(`git diff --name-status -M40% $BASE HEAD`), into four buckets:
 
-**2. Re-home each change into the new IA.** The reorg moved files, so a `main` delta almost never applies at its original path.
+| Class | Meaning |
+| --- | --- |
+| `MOVED` | The page exists here under a new path; apply the delta there. |
+| `SAME-PATH` | Unmoved; the delta usually applies directly. |
+| `DELETED-ON-BRANCH` | The reorg dissolved the page; land the delta in whatever absorbed it (check `move-map.csv` and the directives). |
+| `NEW-ON-MAIN` | No home yet; place by product area, declare the doc type, add nav, add a redirect. |
 
-- Translate every touched old slug through `move-map.csv` to its new slug; apply the content delta there. If the page was merged or split, land the delta in the correct canonical section — consult the D-directive that governs it.
-- New pages from `main`: place by product area per `.mintlify/ia-rules.md`, declare the doc type, add the nav entry, and add a redirect if the interim URL differs.
-- Deletions/renames from `main`: apply if the target still exists under the new IA.
+Watch for rename-detection noise: a page the reorg cut heavily reads as deleted plus added when it
+was neither.
 
-**3. Reconcile `docs.json` by hand.** Never take `main`'s `docs.json` wholesale — it encodes the pre-reorg structure. Port only the *content* of its additions: new nav entries go into the new tree at the re-homed path; new redirects are added to the reorg's redirect set, each re-pointed to a final URL, with no chains.
+**3. Map the totality before editing anything.** Work per product area, and collapse each area's
+commits into net changes — several commits often iterate one page. Record destination, action
+(`port` / `adapt` / `split` / `snippet` / `new-page` / `drop` / `decide`), and every link rewrite.
+Justify each `drop` explicitly. Only then edit.
 
-**4. Verify clean.**
+**4. Reconcile `docs.json` by hand.** Never take `main`'s wholesale — it encodes the pre-reorg
+structure. Port only the *content* of its additions, and check both directions: `main`'s new
+redirects often chain against this branch's already-correct entries, and URLs `main` shipped while
+the branch diverged need new redirects that exist nowhere yet.
 
-- The `docs-ia-audit` tool (Cloudy repo) → zero orphans, broken links, nav dupes, type drift.
-- `mint broken-links` passes.
-- `rg` every old slug from `move-map.csv` to confirm no inbound link still points at a pre-reorg URL.
-- Spot-check redirects (including any added from `main`) in a fresh preview.
+**5. Land it** as batched thematic commits per product area, not one commit per `main` commit.
 
-**5. Land it.** Rebase the reorg branch onto `origin/main` — the reorg commits replay on top; resolve the rename/content conflicts where `main` touched moved files by keeping the new-IA path and folding in the delta already computed in step 2. Never a merge commit; `--force-with-lease` the reorg branch only, never `main`. If the rebase conflict surface is genuinely unmanageable, fall back to landing the reorg fast-forward and applying `main`'s since-divergence deltas as follow-up commits — but prefer the rebase so history stays one story.
+**6. Verify** per the checklist under Redirect and link-integrity strategy.
 
 ## Redirect and link-integrity strategy
 
-- `docs.json` `redirects` is the mechanism (65 already in production here).
-- Every changed URL in move-map.csv has a redirect entry in redirects-draft.json; merge targets redirect to the page (with `#anchor` only after the Phase 0 test passes).
-- Existing redirects are re-pointed, never chained; 3 remain untouched.
-- Internal links always point at final URLs. The `docs-ia-audit` tool flags links that resolve only via redirect.
-- External breakage is bounded to deep links into anchors of merged pages; everything else lands via redirect.
+- `docs.json` `redirects` is the mechanism and the single source of truth.
+- **Only ever-public URLs get a redirect.** A slug that existed solely on this branch while the
+  reorganization was in progress never shipped, so nothing can link to it. Re-point the existing
+  entry to the final URL instead of adding a second hop to a slug no reader ever saw. This is the
+  main way a redirect set accumulates junk during a long-running refactor.
+- Existing redirects are re-pointed, never chained: no destination may itself be a source.
+- Internal links always point at final URLs. The `docs-ia-audit` tool flags links that resolve only
+  via redirect.
+- External breakage is bounded to deep links into anchors of merged pages; everything else lands via
+  redirect.
+
+### Verify before landing
+
+- `mint broken-links` passes.
+- Zero orphans: every `.mdx` outside `snippets/` is reachable from nav.
+- Zero dangling nav entries; every redirect destination resolves to a real page.
+- No redirect chains.
+- `rg` every old slug from `move-map.csv` — no inbound link points at a pre-reorg URL.
+- Every URL `main` shipped since the branch point resolves here.
 
 ## Maintenance systems (recommendations — implement as the fast-follow project)
 
