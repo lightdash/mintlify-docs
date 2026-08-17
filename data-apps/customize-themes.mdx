@@ -58,3 +58,82 @@ You can mark one theme as the default for your organization. New data apps will 
 ## Using a theme in a data app
 
 When you create a new data app, you can choose which theme to apply. The agent will use the theme's CSS, fonts, images, and `skill.md` instructions as part of the context for the build.
+
+## Themes as code
+
+Themes download, version, review, and upload through the same [organization content-as-code workflow](/workflow/content-as-code#organization-content-as-code) used for custom roles, users, and groups:
+
+```bash
+lightdash download --organization
+# Edit or add lightdash/themes/<slug>/
+lightdash upload --organization
+```
+
+Use it to move a UI-created theme into version control, or to create a theme locally. Organization download includes every theme and writes each one under its immutable slug:
+
+```text
+lightdash/
+  themes/
+    acme-brand/
+      lightdash-theme.yml
+      css/
+        theme.css
+      fonts/
+        acme-sans.woff2
+      images/
+        logo.svg
+      instructions/
+        skill.md
+```
+
+The directory name must exactly match the manifest's `slug`. Every manifest field is required; use `null` for an empty description or extra instructions:
+
+```yaml lightdash/themes/acme-brand/lightdash-theme.yml
+codeVersion: 1
+slug: acme-brand
+name: Acme Brand
+description: Brand theme for customer-facing data apps
+extraInstructions: |-
+  Use the horizontal logo in page headers.
+  Keep data-dense tables compact.
+```
+
+To create a theme locally, choose a lowercase, hyphenated slug, write this manifest and any asset folders you need, then run `lightdash upload --organization`. Upload creates or updates the theme by manifest slug. Treat the slug as immutable; change `name` when you only want to rename the theme for display.
+
+<Warning>
+  Organization mode has no theme-only selector. Before uploading, review custom roles, users, and groups under the same `lightdash/` directory as well as your themes.
+</Warning>
+
+### Files and validation
+
+The CLI validates every local theme before changing any organization resource. A theme package accepts:
+
+- `.css` files under `css/`
+- `.woff`, `.woff2`, `.ttf`, and `.otf` files under `fonts/`
+- `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`, and `.svg` files under `images/`
+- Markdown files under `instructions/`
+
+Files must live directly inside one of these folders. Nested folders, symlinks, unknown paths, unsafe filenames, unsupported file types, empty files, and files whose contents don't match their extension are rejected, as are packages over the [size limits](#size-limit).
+
+Don't commit or upload restricted Apple system-font binaries such as SF-family or New York fonts. Use a system font stack instead:
+
+```css
+font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+```
+
+### Synchronization behavior
+
+- A successful download replaces the complete local `themes/` directory with the remote theme set. If any theme cannot be downloaded or validated, your previous local themes are preserved.
+- Upload preflights every local theme before applying custom roles, users, groups, or themes. One invalid theme prevents all organization changes in that run.
+- An existing slug is updated, a new slug is created, and a theme whose manifest and files already match is skipped as unchanged.
+- A missing or empty local `themes/` directory is a no-op. Removing one local theme directory does not delete the remote theme.
+- Upload preserves each theme's UUID and whether it is the organization default. Set the default or delete a theme in the Lightdash UI.
+- Each theme import is atomic, but a multi-theme upload is not one transaction. If a later import fails, themes that completed earlier remain applied and the CLI reports the partial failure.
+
+There is no standalone `lightdash themes` command, theme-specific `--only` flag, or local theme preview. If an organization theme endpoint returns `404`, check that the Lightdash CLI and server versions both support theme packages.
+
+### Evaluate your changes
+
+Uploading proves the package is valid, but it doesn't rebuild or restyle existing data app versions. To see whether you like a theme, select it when generating a new data app or apply it to an existing app from the theme picker above the prompt. Lightdash creates a new app version that you can compare with the previous version.
+
+If you edit themes with an AI coding agent, install or update the [Lightdash agent skills](/workflow/install-agent-skills). The `developing-in-lightdash` skill teaches the agent this package format and the organization download/upload workflow. The agent can verify the CLI round trip without browser access; you still evaluate the generated app visually in Lightdash.
