@@ -172,6 +172,10 @@ Not sure whether to use `lightdash deploy` or `lightdash refresh`? Read about th
   **Never commit `profiles.yml` with credentials.** For mechanism #2, use either a secret-written-to-file approach or an `env_var()` template — but never check in plaintext credentials.
 </Warning>
 
+<Warning>
+  **Projects with [multiple dbt sources](#connecting-multiple-dbt-sources) must not use `lightdash deploy`.** Mechanisms #1 and #2 replace the project's Explores with only the local repo's models. Use #3, #4, or #5 instead.
+</Warning>
+
 <Tip>
   Mechanisms #4 and #5 are underused. Most existing CI examples lead with `lightdash deploy`, which is the heaviest option in CI (requires dbt + warehouse credentials duplicated into the runner). The refresh-based patterns are simpler and often a better fit when the project is git-connected.
 </Tip>
@@ -203,6 +207,108 @@ If you're using the [Lightdash CLI](/workflow/cli/install), you can use `lightda
 #### Set up continuous deployment
 
 [Read how to do that and check out our example workflow files](/workflow/set-up-ci-cd#deploy-changes-to-lightdash).
+
+## Connecting multiple dbt sources
+
+<Info>
+  **Availability.** On Lightdash Cloud, multiple dbt sources is enabled by default, so the **dbt sources** panel is already visible in Project Settings. On self-hosted deployments, add `multi-dbt-sources` to your `LIGHTDASH_ENABLE_FEATURE_FLAGS` environment variable (comma-separated, so append it to any flags you already have set) on Lightdash v0.3275.0 or later.
+</Info>
+
+A single Lightdash project can connect to more than one dbt project. Each connected dbt project is called a **dbt source**:
+
+- The dbt connection you set up when you first created the Lightdash project is the **primary source**.
+- Any dbt projects you add on top of it are **additional sources**.
+
+All sources are compiled together into one set of Explores, so tables from different dbt repos appear side-by-side in the same Lightdash project and can reference each other via `ref()` and joins.
+
+### When to use this
+
+- A monorepo you've split into multiple dbt projects and want to expose as one analytics surface.
+- Multiple teams that each own their own dbt project, but share the same warehouse and want a single place to explore the data.
+- Shared/common dbt packages you want to pull into a project alongside team-specific models.
+
+<Info>
+  All sources share the Lightdash project's **single warehouse connection**. Multiple dbt repos, one database.
+</Info>
+
+### Adding and managing sources
+
+Go to **Project settings → dbt connection**. When the feature is enabled for your org, you'll see a **dbt sources** panel that lists the primary source plus any additional ones. Each row shows the source's display name and its git identity (`repository · branch · subfolder`), or the connection type for non-git sources.
+
+From the panel you can:
+
+- **Add an additional source**: connect a GitHub repository, give the source a display name, and fill in its repo/branch/subfolder/credentials and any environment variables. Environment variables are validated when the source is saved. Other connection types aren't supported for additional sources.
+- **Edit an additional source**: change its display name, connection details, or environment variables.
+- **Remove an additional source**: additional sources can be removed at any time.
+- **Edit the primary source**: the primary source is edited via the normal dbt connection form. It cannot be removed.
+
+<Info>
+  If a source's saved credentials can't be loaded, its row in the sources panel shows a warning icon. Other sources keep working normally. Only operations that need that specific source's connection will fail.
+</Info>
+
+Each additional source has:
+
+- A **display name**: how it appears in the sources panel and in collision errors.
+- Its own **dbt connection**: GitHub only. The primary source can use any of Lightdash's supported connection types (GitHub, GitLab, Azure DevOps, Bitbucket, dbt Cloud), but additional sources are limited to GitHub, each with its own repo, branch, subfolder, credentials, and environment variables.
+- A **precedence**: the order in which sources are merged. Collisions fail the deploy rather than being resolved by precedence (see below). Precedence determines which source is reported as holding the existing definition and which as the duplicate.
+
+### How compilation and merging works
+
+On refresh, Lightdash compiles every source and merges the resulting manifests into a single set of Explores.
+
+**Precedence.** Sources are ordered by precedence. The primary source is always `0` (highest priority). Additional sources are appended after it in the order they were added. Precedence orders the merge for `ref()` and lookup resolution.
+
+**Name collisions.** If the same model name exists in more than one source, **compilation fails** with an error that names each collision and which sources define it (in the form `<section> "<key>" is defined in both "<source A>" and "<source B>"`, listing up to 10 entries and ending with "Rename or remove the duplicate(s) before deploying."). Rename or remove the duplicates in one of the sources before deploying. Only identical dbt built-in macros and docs are merged silently.
+
+<Warning>
+  **The CLI's `--combine-manifest` flag is a different mechanism.** It merges an external manifest into the manifest the CLI just generated, and unlike the additional-sources merge it does not fail on collisions — see [`lightdash deploy`](/workflow/cli/reference#lightdash-deploy) in the CLI reference.
+</Warning>
+
+**What's merged vs. deduplicated.**
+
+- **Models**: must be uniquely named across sources — a name collision fails the deploy. Once unique, models can `ref()` each other and be joined across sources.
+- **Metrics, docs, dbt sources, macros**: unioned across all repos.
+- **Identical dbt built-in macros and docs**: merged silently across repos and never reported as collisions.
+
+**Environment variables** are scoped to their source's connection and validated when that source is saved.
+
+### How refreshes work
+
+Every refresh — [sync mechanisms 3, 4, and 5](#sync-mechanisms), plus **Test & deploy** in Project Settings — re-fetches and compiles all sources and merges them into one Explore set. If any single source fails (clone, manifest parsing, credentials, model-name collision), the whole refresh fails with an error naming that source. There are no partial deploys.
+
+<Warning>
+  **Do not use `lightdash deploy` against a multi-source project.** The CLI compiles the local repo and writes those Explores directly, without merging in the other sources — a CLI deploy will replace the project's Explores with only the local repo's models until the next server-side refresh. Teams using multiple dbt sources should sync via mechanism #3, #4, or #5, and must not run `lightdash deploy` in CI against a multi-source project.
+</Warning>
+
+### Write-back behavior
+
+Lightdash has two write-back paths, and they behave differently in a multi-source project.
+
+#### AI agent write-back
+
+Fully supported across all git-backed sources. AI agents that open PRs with dbt changes work in a multi-source project. Before making changes, the agent resolves which source to target, in this order:
+
+1. A source you explicitly specified.
+2. The source a resumed thread is already bound to.
+3. The only source, if the project has just one.
+4. A source named in your prompt.
+
+If it can't decide, it doesn't guess. It asks you to pick from the candidate sources. The chosen source is remembered for the whole thread, so follow-up messages keep editing the same repo and updating the same PR.
+
+<Info>
+  Only git-backed sources (GitHub, GitLab, and other git connection types) can be targeted by agent write-back. If the primary source is not git-backed, the agent will skip it in favor of git-backed additional sources.
+</Info>
+
+#### Explore write-back
+
+Supported for the **primary source only**. Writing custom metrics and dimensions back as a PR from the Explore view always opens the PR against the primary source's repo. This means:
+
+- For models that come from the **primary source**, Explore write-back works normally.
+- For models that come from an **additional source**, Explore write-back will fail because the model's YAML file isn't in the primary repo.
+
+<Warning>
+  To edit models in additional sources, use AI agent write-back or edit the source's dbt project directly.
+</Warning>
 
 ## dbt project settings
 
