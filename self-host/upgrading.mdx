@@ -60,11 +60,19 @@ migrationJob:
   enabled: true
 ```
 
-If a deploy is interrupted mid-migration, the lock lives in the `knex_migrations_lock` table in the [Lightdash Postgres database](/self-host/customize-deployment/configure-lightdash-to-use-an-external-database) — release it there before retrying.
+If a deploy is interrupted mid-migration, inspect the migration lease with `migrate status` before doing anything. A lease whose holder died is taken over automatically once it expires; release one deliberately with `migrate unlock --actor`.
+
+<Warning>
+Do **not** edit the `knex_migrations_lock` table in the [Lightdash Postgres database](/self-host/customize-deployment/configure-lightdash-to-use-an-external-database) by hand on `1.123.0` and later. The lease runtime holds locks that live migrations legitimately own, and clearing them manually can let a second migrator start on top of the first.
+</Warning>
 
 ## Rollback
 
-Roll back the `image.tag` **only if the release notes say the migrations are backwards-compatible**. If they are not, a lower image running against an already-migrated database can fail — restore the database from backup instead.
+Rolling back means redeploying an older `image.tag`. It does not unwind the database, and Lightdash does not run down-migrations in production.
+
+On `1.123.0` and later the image classifies the migration ledger itself, so a database carrying migrations the image does not have is recognised as database-ahead and the image starts normally. Rolling back to an image older than `1.123.0` needs `ALLOW_MISSING_MIGRATIONS=true` on that deployment, which otherwise treats a database-only migration as a corrupt migration directory and refuses to start.
+
+Roll back promptly: schema compatibility is not data compatibility. The newer version may have written values the older code mishandles, and that risk grows the longer it serves traffic. Restoring the database from backup is the only path that undoes a schema change.
 
 Rebuilding an instance from scratch needs three things, so keep all three recoverable:
 
