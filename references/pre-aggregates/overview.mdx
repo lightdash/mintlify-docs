@@ -93,13 +93,27 @@ When a user runs a query, Lightdash checks whether a pre-aggregate can serve it 
 - **Fields are available** — every dimension, metric, and filter dimension in the query exists somewhere in the pre-aggregate.
 - **Grain is reachable** — if the query uses a time dimension, its granularity is **equal or coarser** than the pre-aggregate's, so the rows can be rolled up. Month is a coarser grain than day. Day is a coarser grain than hour.
 - **Scope is compatible** — if the pre-aggregate defines its own `filters`, the query includes an **equal or narrower** filter, so the subset can be filtered from the pre-aggregate base.
-- **Metrics re-aggregate cleanly** — all metrics are [supported types](#supported-metric-types). No non-additive metrics (like `count distinct`, `median`, etc. which require recalculation per grouping) and nothing resolved at runtime (raw SQL table calculations, [`sql_filter`](/references/tables#sql-filter-row-level-security) metrics, or SQL dependent on [Parameters](/references/lightdash-config-yml#parameters-configuration) and [user attributes](/references/workspace/user-attributes)). These can't be faithfully re-computed from stored rows.
+- **Metrics re-aggregate cleanly** — all metrics are [supported types](#supported-metric-types). Non-additive metrics like `count_distinct`, `median`, and `percentile` can't be faithfully re-computed from stored rows, so they only match on an [exact match](#exact-match-queries) of the pre-aggregate. Anything resolved at runtime — raw SQL table calculations, [`sql_filter`](/references/tables#sql-filter-row-level-security) metrics, or SQL dependent on [Parameters](/references/lightdash-config-yml#parameters-configuration) and [user attributes](/references/workspace/user-attributes) — is never eligible.
 
 <Tip>
   A **day** pre-aggregate serves `day`, `week`, `month`, `quarter`, and `year` queries. A **month** pre-aggregate serves `month`, `quarter`, and `year` — but **not** `day` or `week`, since those need finer-grained data.
 </Tip>
 
 When multiple pre-aggregates match a query, Lightdash picks the smallest one (fewest dimensions, then fewest metrics as tiebreaker).
+
+### Exact match queries
+
+A query is an **exact match** of a pre-aggregate when its selected dimensions are set-equal to the pre-aggregate's dimensions and its time dimension is at exactly the pre-aggregate's granularity. On an exact match, each result row is served from a single materialization row without any re-aggregation. This unlocks metric types that can't otherwise be re-aggregated — see [Non-additive metrics on exact matches](#non-additive-metrics-on-exact-matches).
+
+For a query to count as an exact match:
+
+- Every pre-aggregate dimension must appear in the query's selected dimensions, and vice versa.
+- The time dimension must be selected at exactly the pre-aggregate's granularity — not coarser, not finer.
+- Filters on selected dimensions are allowed. They only subset the stored rows, so the match still holds.
+- A pre-aggregate dimension referenced **only** by a query filter does not count as selected, and the query is no longer an exact match.
+- A dimension reached through a [custom bin](/guides/custom-fields#bin) does not count as selected either — bins collapse groups and break the one-row-per-result guarantee.
+
+Selecting a subset of the pre-aggregate's metrics is still an exact match, as long as the dimension set matches.
 
 ### Filtered pre-aggregates
 
@@ -126,13 +140,31 @@ Pre-aggregates support dimensions from joined tables. Reference them by their fu
 
 ## Supported metric types
 
-Pre-aggregates support metrics that can be re-aggregated from pre-computed results:
+Pre-aggregates support two kinds of metrics.
+
+**Re-aggregatable metrics** work for any matching query, including ones at a coarser grain or on a subset of the pre-aggregate's dimensions:
 
 - `sum`
 - `count`
 - `min`
 - `max`
 - `average`
+
+**Exact-only metrics** are non-additive and only match on an [exact-match query](#exact-match-queries):
+
+- `count_distinct`
+- `sum_distinct`
+- `average_distinct`
+- `median`
+- `percentile`
+
+You can add exact-only metrics to any pre-aggregate. They are materialized (or expected in the [external table's column contract](/references/pre-aggregates/external-tables#2-get-the-column-contract)) and served whenever a query matches the pre-aggregate exactly. Non-exact queries that include an exact-only metric miss with the reason **`non_additive_metric_requires_exact_match`** — the fix is to select exactly the pre-aggregate's dimensions at exactly its granularity.
+
+### Non-additive metrics on exact matches
+
+Non-additive metrics like `count_distinct`, `sum_distinct`, `average_distinct`, `median`, and `percentile` normally can't be re-aggregated from a rollup, because combining group-level values produces the wrong answer (see [Metrics that need re-aggregation to combine](#metrics-that-need-re-aggregation-to-combine)). But on an exact match there is nothing to re-aggregate: each result row corresponds to exactly one materialization row, so the stored value is already the correct answer.
+
+This is useful when a `count_distinct` (or another non-additive metric) is the slowest part of a query. Define a pre-aggregate whose dimensions and time-dimension granularity match how the metric is queried, and Lightdash serves those queries from the materialization instead of hitting the warehouse.
 
 ## Current limitations
 
@@ -156,9 +188,9 @@ Pre-aggregates do not support:
 - **At materialization time**, the filter is evaluated against your warehouse. If the SQL references [Parameters](/references/lightdash-config-yml#parameters-configuration) or [user attributes](/references/workspace/user-attributes), the values injected come from the materialization context — you can pin this to a fixed identity or attribute set with [`materialization_role`](/references/pre-aggregates/getting-started#materialization-role) so the materialization captures the rows you need.
 - **At query time**, the same filter is re-applied against the materialized data, which is served by DuckDB. If the `sql_filter` SQL uses warehouse-specific syntax that DuckDB doesn't understand, the query will fail to run against the pre-aggregate and fall back to the warehouse.
 
-### Metrics that can't be pre-aggregated
+### Metrics that need re-aggregation to combine
 
-Pre-aggregates do not support metric types that cannot be re-aggregated from pre-computed results.
+Non-additive metrics — `count_distinct`, `sum_distinct`, `average_distinct`, `median`, and `percentile` — can't be re-computed from a rollup. On a non-exact match, Lightdash would need to combine stored group-level values to answer the query, and that produces the wrong number.
 
 For example, consider `count_distinct` on a daily pre-aggregate. If the pre-aggregate stores "2 distinct customers on 2024-01-15" and "1 distinct customer on 2024-01-16", you cannot sum those daily values to get the monthly distinct count, because the same customer can appear on multiple days.
 
@@ -167,17 +199,19 @@ For example, consider `count_distinct` on a daily pre-aggregate. If the pre-aggr
 | 2024-01-15     | shipped | 2 (Alice, Bob)     |
 | 2024-01-16     | shipped | 1 (Alice)          |
 
-Re-aggregating gives `2 + 1 = 3`, but the correct monthly answer is `2` (`Alice`, `Bob`). The pre-aggregate no longer knows which customers were counted.
+Re-aggregating gives `2 + 1 = 3`, but the correct monthly answer is `2` (Alice, Bob). The pre-aggregate no longer knows which customers were counted.
 
-We're investigating supporting `count_distinct` through approximation algorithms. [Follow this issue](https://github.com/lightdash/lightdash/issues/21536) for updates.
+For that reason, non-additive metrics are only served on [exact-match queries](#exact-match-queries), where no combining happens. A non-exact query that includes one falls back to the warehouse with the miss reason `non_additive_metric_requires_exact_match`.
 
-For similar reasons, the following metric types are also not supported:
+We're investigating serving `count_distinct` on non-exact matches through approximation algorithms. [Follow this issue](https://github.com/lightdash/lightdash/issues/21536) for updates.
 
-- `sum_distinct`, `average_distinct`
-- `median`, `percentile`
+### Metrics that are never eligible
+
+The following metrics can't be pre-aggregated at all, on exact or non-exact matches:
+
 - `percent_of_total`, `percent_of_previous`
 - `running_total`
-- Custom SQL / post-calculation metrics (including many `number` metrics) — [Follow this issue](https://github.com/lightdash/lightdash/issues/21537)
+- Custom SQL / post-calculation metrics, including `type: number` metrics that reference a non-additive metric — [Follow this issue](https://github.com/lightdash/lightdash/issues/21537)
 - `number`, `string`, `date`, `timestamp`, `boolean`
 
 For metrics that can't be pre-aggregated, consider using [caching](/guides/developer/caching) instead.
@@ -209,7 +243,7 @@ A single pre-aggregate can serve many different queries. A daily pre-aggregate w
 | **Storage**                  | Query result (row set)                             | Pre-computed summary table                                             |
 | **Query execution**          | Exact cached result is returned                    | DuckDB workers re-aggregate at query time                              |
 | **Warehouse hit on first query?** | Yes                                           | No — only materialization hits the warehouse, not query-time serving    |
-| **Coverage**                 | All metric types, all query shapes                 | Only re-aggregatable metrics (sum, count, min, max, average)           |
+| **Coverage**                 | All metric types, all query shapes                 | Re-aggregatable metrics (sum, count, min, max, average) on any match; non-additive metrics (count_distinct, median, percentile, etc.) on exact matches only |
 | **Scope**                    | One cache entry per unique SQL                     | One pre-aggregate can serve many query shapes                          |
 | **Availability**             | Cloud Pro+ or self-hosted with license             | Enterprise (Beta)                                                      |
 
@@ -219,13 +253,13 @@ A single pre-aggregate can serve many different queries. A daily pre-aggregate w
 
 - You have high-traffic dashboards with predictable query patterns
 - You want to reduce warehouse cost or improve latency on the first query, not just repeat visits
-- The metrics are re-aggregatable (sum, count, min, max, average)
+- The metrics are re-aggregatable (sum, count, min, max, average), or they're non-additive (count_distinct, median, etc.) and the queries you want to speed up hit a pre-aggregate exactly
 - You're willing to design and schedule the materializations
 
 **Use results caching when:**
 
 - Query patterns are ad-hoc or unpredictable
-- You need unsupported features listed above, such as `count_distinct`, [Parameters](/references/lightdash-config-yml#parameters-configuration), [`sql_filter`](/references/tables#sql-filter-row-level-security), or raw SQL table calculations
+- You need unsupported features listed above, such as [Parameters](/references/lightdash-config-yml#parameters-configuration), [`sql_filter`](/references/tables#sql-filter-row-level-security), or raw SQL table calculations, or you need `count_distinct` and similar non-additive metrics across query shapes that aren't exact matches
 - You're using the SQL runner
 - You don't want upfront configuration work
 
