@@ -79,6 +79,7 @@ If you're using Lightdash YAML instead of dbt model YAML, see the [Lightdash YAM
 | `filters` | No | Static filters applied when materializing the pre-aggregate. Matching queries must include an equivalent or narrower filter to use this pre-aggregate. |
 | `time_dimension` | No | A time-based dimension for date grouping. Must be paired with `granularity`. |
 | `granularity` | No | Time granularity for the `time_dimension`. Valid values: `hour`, `day`, `week`, `month`, `quarter`, `year`. Must be paired with `time_dimension`. |
+| `sorts` | No | Controls how rows are ordered inside the materialization. See [Materialization sort order](#materialization-sort-order). |
 | `max_rows` | No | Maximum number of rows to store in the materialization. If the aggregation exceeds this limit, the result is truncated. Must be a positive integer. |
 | `refresh` | No | Schedule configuration for automatic re-materialization. See [Scheduling refreshes](#scheduling-refreshes). |
 | `materialization_role` | No | Fixed access context to use when materializing the pre-aggregate. This is useful when your model or joined tables use [`required_attributes`](/semantic-layer/tables#required-attributes) or [`any_attributes`](/semantic-layer/tables#any-attributes). See [Materialization role](#materialization-role). |
@@ -165,11 +166,44 @@ For the example above:
 - `order_date inThePast 12 weeks` can use the pre-aggregate
 - `order_date inThePast 52 weeks` can use the pre-aggregate
 - `order_date inThePast 104 weeks` cannot use the pre-aggregate
+- `order_date is 2026-01-15` cannot use the pre-aggregate, even though the date falls inside the last 52 weeks (see the operator-matching note below)
 - no `order_date` filter: cannot use the pre-aggregate
 
 <Tip>
   If a field is only used for filtering, you should still include it in the pre-aggregate's `dimensions` list so Lightdash can match and re-aggregate queries correctly.
 </Tip>
+
+<Warning>
+  Filter compatibility is only checked when the query filter and the pre-aggregate filter use the **same operator** — relative-to-relative (for example, `inThePast` compared against `inThePast`), or absolute-to-absolute (for example, `equals` compared against `equals`).
+
+  Lightdash does not resolve a relative filter into a concrete date range at match time, so an absolute date filter like `order_date is 2026-01-15` will not match a pre-aggregate filter like `order_date inThePast 52 weeks`, even when the selected date falls inside that window. The reverse is also true.
+
+  If a rolling window is what you're after, filter the query with the same relative operator to hit the pre-aggregate.
+</Warning>
+
+## Required filters and pre-aggregates
+
+Models can declare [`required_filters`](/semantic-layer/tables#default-filters) that every query on the explore must apply. Pre-aggregates coexist with required filters, with a few rules on both sides.
+
+### How required filters are applied
+
+Required filters are applied when a query reads from the pre-aggregate, not baked permanently into the materialized table. The materialization stores rows across every value of the required-filter field, and Lightdash re-applies the filter each time a query hits the rollup. This lets users override the required filter's default value (where the model allows it) and still be served from the pre-aggregate — they don't silently get an incomplete result from a materialization that only holds one value.
+
+### Every required-filter field must be a pre-aggregate dimension
+
+Because the filter is applied at query time, its target field has to exist as a column in the materialization. If any `required_filters` target on the model isn't listed in the pre-aggregate's `dimensions`, the pre-aggregate is ineligible for that explore and Lightdash queries the warehouse instead. This applies to fields on the base table and on joined tables. Sibling time-dimension grains (for example, a required filter on `created_at_week` when the pre-aggregate's time dimension is `created_at` at day grain) also need the underlying dimension in the pre-aggregate.
+
+Only filters actually marked `required: true` count. Model filters marked as not required don't need to be in the pre-aggregate.
+
+<Tip>
+  If a field only exists on the model to satisfy a required filter, add it to the pre-aggregate's `dimensions` list even if you never group by it.
+</Tip>
+
+### Don't duplicate required-filter targets in `filters`
+
+The pre-aggregate's own [`filters`](#filtered-pre-aggregates) narrow the materialization at build time and can't be overridden at query time. Setting an explicit pre-aggregate `filter` on the same field as a `required_filters` target creates a conflict — the required filter is meant to be overridable by the user, but the pre-aggregate filter isn't. Lightdash treats these queries as a miss (`pre_aggregate_filter_not_satisfied`) rather than silently returning partial results.
+
+Keep required-filter fields out of the pre-aggregate's `filters` block. If you need to narrow the materialization on a required-filter field, split it into a separate pre-aggregate that doesn't overlap.
 
 ## Multiple pre-aggregates per model
 
@@ -237,6 +271,44 @@ You can set `max_rows` to cap the size of a materialization. If the aggregation 
 <Warning>
   When `max_rows` is applied, some data is excluded from the materialization. Queries that match the pre-aggregate may return incomplete results. Use this setting carefully and monitor for the "max rows applied" warning in the [monitoring UI](/semantic-layer/pre-aggregates/monitoring).
 </Warning>
+
+## Materialization sort order
+
+Use `sorts` to control the order rows are written in the materialized table. Sorting the materialization on the dimensions you filter and group by most often can make downstream reads faster.
+
+`sorts` is a list of entries. Each entry has:
+
+- `fieldId` — the canonical field ID of a dimension included in the pre-aggregate. Joined-table fields use the `table.field` form.
+- `descending` — boolean, required. `true` sorts high to low, `false` sorts low to high.
+
+```yaml
+pre_aggregates:
+  - name: orders_daily_by_status
+    dimensions:
+      - status
+    metrics:
+      - total_order_amount
+    time_dimension: order_date
+    granularity: day
+    sorts:
+      - fieldId: orders_order_date_day
+        descending: true
+      - fieldId: orders_status
+        descending: false
+```
+
+The `sorts` key accepts four shapes, each with a different meaning:
+
+| Value                   | Behavior                                                                                           |
+| ----------------------- | -------------------------------------------------------------------------------------------------- |
+| Key omitted             | Lightdash picks a default sort order that covers every dimension in the pre-aggregate.             |
+| Explicit list of fields | Lightdash sorts the materialization only by the fields you list, in the order you list them.       |
+| `[]` (empty list)       | Materialization is written without an `ORDER BY`.                                                   |
+| `false`                 | Same as `[]` — materialization is written without an `ORDER BY`.                                    |
+
+<Note>
+  Every `fieldId` in `sorts` must also appear in the pre-aggregate's `dimensions` list. Metrics and time dimensions expanded from `time_dimension` + `granularity` use their canonical IDs (for example, `orders_order_date_day`).
+</Note>
 
 ## Materialization role
 
