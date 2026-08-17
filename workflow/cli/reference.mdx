@@ -118,12 +118,16 @@ For examples and command-specific options, click through the command in the tabl
 |[`lightdash generate-exposures`](/workflow/cli/reference#lightdash-generate-exposures) | [Experimental command] Generates a YAML file for Lightdash exposures               |
 |[`lightdash download`](/workflow/cli/reference#lightdash-download)                     | Download all charts and dashboards from your Lightdash project as code             |
 |[`lightdash upload`](/workflow/cli/reference#lightdash-upload)                         | Upload charts and dashboards as code to your Lightdash project                     |
+|[`lightdash apps create`](/workflow/cli/reference#lightdash-apps-create)               | Scaffold a new [data app](/data-apps/apps-as-code) locally                          |
+|[`lightdash apps preview`](/workflow/cli/reference#lightdash-apps-preview)             | Preview a downloaded [data app](/data-apps/apps-as-code) locally against real data   |
+|[`lightdash apps validate`](/workflow/cli/reference#lightdash-apps-validate)           | Validate a [data app](/data-apps/apps-as-code) locally before uploading             |
 |[`lightdash rename`](/workflow/cli/reference#lightdash-rename)                         | Rename model or field names across all your Lightdash content                      |
 |[`lightdash diagnostics`](/workflow/cli/reference#lightdash-diagnostics)               | Show diagnostic information about the CLI environment                              |
 |[`lightdash sql`](/workflow/cli/reference#lightdash-sql)                               | Run raw SQL query against the warehouse using project credentials                  |
 |[`lightdash warehouse-catalog`](/workflow/cli/reference#lightdash-warehouse-catalog)   | Explore the project's warehouse databases, schemas, tables, and fields             |
 |[`lightdash lint`](/workflow/cli/reference#lightdash-lint)                             | Validate Lightdash Code files against JSON schemas                                 |
 |[`lightdash pre-aggregate-audit`](/workflow/cli/reference#lightdash-pre-aggregate-audit) | Audit pre-aggregate hit/miss coverage for one or every dashboard                |
+|[`lightdash pre-aggregate-check-external`](/workflow/cli/reference#lightdash-pre-aggregate-check-external) | Print and verify the column contract for external pre-aggregates |
 ---
 
 ### `lightdash login`
@@ -768,14 +772,22 @@ You can make changes to the code and upload these changes back to your Lightdash
 - `--include-virtual-views`
   - (default: false)
   - opt-in flag to download every [virtual view](/semantic-layer/virtual-views) in the project as code. Use `--virtual-views <slugs...>` instead when you only want specific views.
-- `--apps <appUuids...>`
-  - opt-in flag to also download specific [data apps](/data-apps#data-apps-as-code) as code (enterprise only). Pass one or more app UUIDs to download just those apps — this is the only way to download apps that haven't been added to a space. Each app is written to `lightdash/apps/<slug>/` as a locally buildable project: `lightdash-app.yml` manifest, the app's `src/` tree, `package.json`, a read-only `.lightdash/context/` snapshot of the project's semantic layer, and agent skill files. For [data app visualizations](/data-apps/create-visualizations), the manifest also carries a `vizSchema` field with the viz's declared fields so the viz round-trips to the destination on upload. The built output is not included — the server rebuilds it on upload.
+- `--apps <refs...>`
+  - opt-in flag to also download specific [data apps](/data-apps/apps-as-code) as code (enterprise only). Pass one or more app references — a slug, UUID, or app URL. Works for apps that haven't been added to a space, and is never capped. Each app is written to `lightdash/apps/<slug>/` as a locally buildable project: `lightdash-app.yml` manifest (with the app's `slug`, `name`, `description`, and linked external connections), the app's `src/` tree, `package.json` / `pnpm-lock.yaml`, local build scaffolding (`vite.config.js`, `tsconfig.json`, `index.html`), a read-only `.lightdash/context/` snapshot of the project's semantic layer, and agent skill files (`AGENTS.md`, `.claude/skills/`). For [custom chart types](/explore/chart-types/custom-app-based-charts), the manifest also carries a `vizSchema` field with the chart type's declared inputs so it round-trips to the destination on upload. The built output is not included — the server rebuilds it on upload. Dashboards you download bring their referenced data apps along automatically.
 - `--include-apps`
   - (default: false)
-  - opt-in flag to download every [data app](/data-apps#data-apps-as-code) in the project that has been added to a space (enterprise only), capped at the first 10. Use `--apps <appUuids...>` to reach apps that aren't in a space, or to download more than 10.
+  - opt-in flag to download every [data app](/data-apps/apps-as-code) in the project as code (enterprise only), capped at `--apps-limit`. Use `--apps <refs...>` to fetch a specific set instead.
+- `--apps-limit <n>`
+  - (default: 50)
+  - cap on the number of apps returned by `--include-apps`.
 - `--apps-only`
   - (default: false)
-  - download only data apps, skipping charts, dashboards, and space files (implies `--skip-charts --skip-dashboards --skip-spaces`). Requires `--apps <appUuids...>` or `--include-apps`. Recommended for app-focused checkouts.
+  - download only data apps, skipping charts, dashboards, and space files (implies `--skip-charts --skip-dashboards --skip-spaces`). Requires `--apps <refs...>` or `--include-apps`. Recommended for app-focused checkouts.
+- `--external-connections <slugs...>`
+  - opt-in flag to download specific [external connection](/data-apps/external-connections) definitions to `lightdash/external-connections/<slug>.yml`. Secrets are never written to disk — provide them via environment variables on upload.
+- `--include-external-connections`
+  - (default: false)
+  - opt-in flag to download every external connection definition in the project.
 - `--skip-charts`
   - (default: false)
   - skip downloading charts (including SQL charts)
@@ -789,7 +801,7 @@ You can make changes to the code and upload these changes back to your Lightdash
   - opt-in flag to download every AI agent in the project as code. The endpoint is paginated, so the CLI walks all pages automatically. Agent files are written to `lightdash/ai-agents/`. Bare `lightdash download` does not include agents.
 - `--organization`
   - (default: false)
-  - switch to organization mode and download organization-scoped content (currently [custom roles](/workflow/content-as-code#custom-roles-as-code)) instead of project content. Files are written to `lightdash/custom-roles/<role-slug>.yml`. Requires organization admin permissions. Cannot be combined with project-content flags such as `--charts`, `--dashboards`, `--project`, or `--nested`.
+  - switch to organization mode and download [organization-scoped content](/workflow/content-as-code#organization-content-as-code) — [custom roles](/workflow/content-as-code#custom-roles-as-code), [users](/workflow/content-as-code#users-as-code), [groups](/workflow/content-as-code#groups-as-code), and [data app themes](/data-apps/customize-themes#themes-as-code) — instead of project content. Files are written to `lightdash/custom-roles/<role-slug>.yml`, `lightdash/users/<email-slug>.yml`, `lightdash/groups/<group-slug>.yml`, and `lightdash/themes/<theme-slug>/`. Theme packages are staged and validated before the local `themes/` directory is replaced, so a failed theme download preserves the previous local theme set. A successful download removes local theme directories that no longer exist remotely. Requires organization admin permissions. If the groups feature is disabled on the instance, the groups folder is skipped (run with `--verbose` for the explanation). Cannot be combined with project-content flags such as `--charts`, `--dashboards`, `--project`, or `--nested`.
 
 **Examples:**
 
@@ -879,7 +891,7 @@ Download only specific virtual views by slug.
 lightdash download --virtual-views orders_enriched customers_enriched
 ```
 
-Download every organization-scoped custom role as code (requires org admin).
+Download every [organization-scoped resource](/workflow/content-as-code#organization-content-as-code) as code — custom roles, users, groups, and data app themes (requires org admin).
 
 ```bash
 lightdash download --organization
@@ -934,11 +946,22 @@ If there have been changes made to a chart or dashboard in the application that 
 - `--skip-virtual-views`
   - (default: false)
   - skip uploading virtual views, even when `lightdash/virtual-views/` contains files
-- `--apps [appUuids...]`
-  - opt-in flag to also upload [data apps](/data-apps#data-apps-as-code) as code (enterprise only). Bare `--apps` uploads every app folder under `lightdash/apps/`. Pass one or more app UUIDs to upload just those apps. The CLI posts each app's `src/` tree and returns immediately — the destination rebuilds the app in its sandbox and publishes a new version. The app shows a `building` status in the UI until the build finishes. Uploading to the same project appends a new version and applies any edits to the manifest's `name` or `description`; uploading to a different project prompts for confirmation (in non-interactive shells the app is skipped with an error unless you also pass `--create-new`) and creates a new app in the target. After any create, the CLI prints the new app's URL and offers to retarget the local `lightdash-app.yml` (updating `appUuid`, `projectUuid`, and `version`) so future uploads update the new app. For [data app visualizations](/data-apps/create-visualizations), the manifest's `vizSchema` is sent alongside the source and persisted on the new version — so a downloaded viz appears in the destination project's viz picker after upload without needing to be regenerated. Uploading requires the [`create:DataApp` scope](/workspace-admin/roles), which is granted to Editor, Developer, and Admin roles.
+- `--apps [refs...]`
+  - opt-in flag to also upload [data apps](/data-apps/apps-as-code) as code (enterprise only). Pass one or more refs (slugs, or legacy UUIDs) to upload just those app folders, or use `--include-apps` to upload every folder under `lightdash/apps/`. The CLI posts each app's `src/` tree and manifest and returns immediately — the destination rebuilds the app in its sandbox and publishes a new version. The app shows a `building` status in the UI until the build finishes. Identity is the manifest's `slug`, upserted in the target project: an existing slug appends a new version (and applies edits to `name` / `description`); a new slug creates a new app. If the source, dependencies, and viz schema are byte-for-byte identical to the latest version, the upload is skipped with `matches v<n>` (name/description edits still apply); pass `--force` to rebuild anyway. Each project runs at most 5 app builds concurrently — if the cap is hit, the CLI waits automatically (up to 10 minutes of consecutive waiting) instead of failing. For [custom chart types](/explore/chart-types/custom-app-based-charts), the manifest's `vizSchema` is sent alongside the source and persisted on the new version. Uploading requires the [`create:DataApp` scope](/workspace-admin/roles), which is granted to Editor, Developer, and Admin roles. Dashboards you upload push their referenced app folders first, even without `--apps`.
+- `--include-apps`
+  - (default: false)
+  - upload every app folder under `lightdash/apps/`.
+- `--apps-only`
+  - (default: false)
+  - upload only data apps, skipping charts, dashboards, and space reconciliation. Bare `--apps-only` uploads every app folder in `lightdash/apps/`; pass `--apps <refs...>` to select a subset. Recommended for app-focused CI runs.
+- `--app-space <spaceRef>`
+  - space (slug or UUID) that new data apps created by this upload land in. Existing apps keep the space they already have. Without this flag, new apps go to the target project's default location. The space must already exist in the target project — resolve slugs to a single match, or pass the space UUID directly.
+- `--allow-custom-dependencies`
+  - (default: false)
+  - approve uploading apps that declare [custom dependencies](/data-apps/apps-as-code#experimental-custom-dependencies) without prompting. Required for non-interactive runs (CI) of apps that add packages beyond the template's base dependencies — without it, the CLI skips those apps with a per-app warning and counts them as failures.
 - `--create-new`
   - (default: false)
-  - always create a new data app from the uploaded source instead of appending a new version to the app referenced by `lightdash-app.yml`. Combine with `--apps` and `--project` when copying an app to a different project or instance in a non-interactive shell.
+  - always create a new data app (with a freshly generated slug) from the uploaded source instead of updating the app the manifest references. Useful for forking an app inside the same project.
 - `--agents <slugs...>`
   - upload only the AI agent files matching these slugs from `lightdash/ai-agents/`. Omit to upload every agent file in that folder. Upload is idempotent — the server creates missing agents, updates existing agents by slug, and leaves unchanged agents alone. Evaluation suites declared in a file are upserted by title, while undeclared suites remain unchanged. See [AI agents as code](/agents/agents-as-code).
 - `--skip-agents`
@@ -946,7 +969,10 @@ If there have been changes made to a chart or dashboard in the application that 
   - skip uploading AI agents even when `lightdash/ai-agents/` contains files. Use this to keep an agents folder in your repo without pushing changes on every `lightdash upload`.
 - `--organization`
   - (default: false)
-  - switch to organization mode and upload organization-scoped content (currently [custom roles](/workflow/content-as-code#custom-roles-as-code)) instead of project content. Reads YAML files from `lightdash/custom-roles/` and upserts each role by name — creating, updating, or reporting no change per file. Requires organization admin permissions. Cannot be combined with project-content flags such as `--charts`, `--dashboards`, `--project`, or `--force`. Uploads never delete roles.
+  - switch to organization mode and upload [organization-scoped content](/workflow/content-as-code#organization-content-as-code) — [custom roles](/workflow/content-as-code#custom-roles-as-code), [users](/workflow/content-as-code#users-as-code), [groups](/workflow/content-as-code#groups-as-code), and [data app themes](/data-apps/customize-themes#themes-as-code) — instead of project content. The CLI validates every local theme before making any organization change, then applies custom roles, users, groups, and themes in that order. Document resources are upserted by role name, primary email, or group name; themes are upserted by manifest slug and skipped when unchanged. A missing or empty `lightdash/themes/` directory is a no-op, and removing one theme directory never deletes the remote theme. Theme imports preserve the organization default and are atomic per theme, not per batch. Requires organization admin permissions. Cannot be combined with project-content flags such as `--charts`, `--dashboards`, `--project`, or `--force`. Uploads never delete roles, users, groups, or themes.
+- `--send-invites`
+  - (default: false)
+  - only valid with `--organization`. When uploading users, send invitation emails to eligible staged users. Users who have already authenticated, are disabled, or already have a valid outstanding invitation are skipped. Without this flag, users authenticate through the instance's existing domain, SSO, or manually triggered invitation flows — credentials are never carried in the YAML.
 
 **Examples:**
 
@@ -1036,10 +1062,153 @@ Upload only a specific AI agent by slug.
 lightdash upload --agents orders-support-agent
 ```
 
-Upload every custom role in `lightdash/custom-roles/` back to the organization (requires org admin).
+Upload every [organization-scoped resource](/workflow/content-as-code#organization-content-as-code) — custom roles, users, groups, and data app themes — back to the organization (requires org admin).
 
 ```bash
 lightdash upload --organization
+```
+
+Upload organization resources and also send invitation emails to any staged users who need to authenticate.
+
+```bash
+lightdash upload --organization --send-invites
+```
+
+
+### `lightdash apps create`
+
+Scaffold a new [data app](/data-apps/apps-as-code) folder locally. The app is created on the server on your first `lightdash upload`.
+
+The command derives a slug from the name, checks it's available in the target project, then installs the template's npm packages and generates the shadcn UI components locally — Node.js 20+ (with npm) is required.
+
+```console
+lightdash apps create <name>
+```
+
+**Options:**
+
+- `--description <text>`
+  - set the app description in the manifest.
+- `--slug <slug>`
+  - override the slug derived from the name. Must match `[a-z0-9-]` and start with an alphanumeric character.
+- `--project <project uuid>`
+  - the project the app will use (default: your selected project).
+- `--path <path>` or `-p`
+  - Lightdash content root (default: `./lightdash`).
+- `--assume-yes` or `-y`
+  - skip the npm-install confirmation prompts, useful in scripts.
+
+**Examples:**
+
+Scaffold a new app in your selected project.
+
+```bash
+lightdash apps create "Revenue explorer"
+```
+
+Scaffold an app with a custom slug and description.
+
+```bash
+lightdash apps create "Revenue explorer" --slug revenue-v2 --description "New pricing model exploration"
+```
+
+
+### `lightdash apps preview`
+
+Preview a downloaded (or locally created) [data app](/data-apps/apps-as-code) on your machine against a real Lightdash instance, authenticated as you. Starts the Vite dev server with a loopback proxy that forwards the app's API calls to Lightdash — your API key never reaches the app or the browser. Requires `npm install` in the app folder first.
+
+```console
+lightdash apps preview [path]
+```
+
+**Argument:**
+
+- `[path]`
+  - the app folder to preview (default: the current directory).
+
+**Options:**
+
+- `--project <project uuid>`
+  - preview against a specific project (default: the manifest's `projectUuid`).
+- `--url <url>`
+  - Lightdash server URL (default: your login config).
+- `--token <token>`
+  - API key (default: your login config). Prefer `lightdash login` or `LIGHTDASH_API_KEY` — `--token` leaks into shell history.
+
+**Examples:**
+
+Preview from inside the app folder.
+
+```bash
+cd lightdash/apps/revenue-explorer
+npm install
+lightdash apps preview
+```
+
+Preview a different app by passing its path.
+
+```bash
+lightdash apps preview lightdash/apps/marketing-funnel
+```
+
+
+### `lightdash apps validate`
+
+Validate one or more [data apps](/data-apps/apps-as-code) locally. Checks the app manifest (`lightdash-app.yml`), dependencies (`package.json` and `pnpm-lock.yaml`), source files under `src/`, external connection aliases, and semantic-layer references used in code.
+
+By default, semantic references are checked against the downloaded semantic-layer snapshot in each app's `.lightdash/context/` folder. Pass `--live` to check against fresh explores fetched from the app's project instead.
+
+Exits non-zero if any app has errors, so you can wire it into pre-commit hooks or CI.
+
+```console
+lightdash apps validate [paths...]
+```
+
+**Argument:**
+
+- `[paths...]`
+  - one or more app folders to validate together (default: the current directory).
+
+**Options:**
+
+- `--live`
+  - validate semantic-layer references against fresh explores from each app's project instead of the local snapshot. Requires a project selected via `lightdash config set-project`.
+- `--format <format>`
+  - output format: `human` (default) or `json`.
+- `--verbose`
+  - print additional diagnostic output.
+
+**Examples:**
+
+Validate the app in the current folder against its local semantic-layer snapshot.
+
+```bash
+cd lightdash/apps/revenue-explorer
+lightdash apps validate
+```
+
+Validate multiple apps at once.
+
+```bash
+lightdash apps validate lightdash/apps/revenue-explorer lightdash/apps/marketing-funnel
+```
+
+Validate all your apps.
+
+```bash
+lightdash apps validate lightdash/apps/*
+```
+
+Validate against live explores from the project.
+
+```bash
+lightdash apps validate --live
+```
+
+Emit a machine-readable report for CI.
+
+```bash
+lightdash apps validate --format json
 ```
 
 
@@ -1375,6 +1544,32 @@ This command does not support using dbt options.
   - Include ineligible tiles (and their reason) in the human output.
 
 See [Auditing pre-aggregates from the CLI](/semantic-layer/pre-aggregates/audit-with-cli) for the full guide, including miss-reason → YAML-fix mappings and CI examples.
+
+### `lightdash pre-aggregate-check-external`
+
+Prints the expected column contract and the exact materialization SQL for each [external pre-aggregate](/semantic-layer/pre-aggregates/external), and checks the declared table against that contract. Use it to build the table in the first place, and to catch column drift after a rebuild.
+
+```console
+lightdash pre-aggregate-check-external [options]
+```
+
+The command runs fully locally. It compiles your dbt project and reads warehouse credentials and dialect from your active `profiles.yml` target — no Lightdash server call is made, so it works before the project is ever deployed.
+
+**Options:**
+
+- `--all`
+  - Check every external pre-aggregate in the project.
+- `--json`
+  - Emit machine-readable JSON instead of human-friendly text. Designed for scripting the table build — wrap each generated SELECT in a `CREATE OR REPLACE TABLE`.
+- `--skip-dbt-compile`
+  - (default: false)
+  - Skip `dbt compile` and read from the existing ./target/manifest.json
+- `--clear-cache`
+  - Bypass the warehouse result cache. BigQuery and Snowflake key their caches on query text and can return the pre-rebuild schema without this.
+- `--fail-on-mismatch`
+  - Exit 1 on any column drift, so the check can gate CI next to the table build.
+
+See [External pre-aggregates](/semantic-layer/pre-aggregates/external) for the full workflow, including the column contract, worked invocations, and how average metrics decompose into components.
 
 ---
 
