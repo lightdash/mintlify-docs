@@ -54,7 +54,7 @@ None of these steps are required but are recommended for running Lightdash beyon
 
 - [Postgres HA, backups and point-in-time recovery](#postgresql) on the external database from Tier 1, plus the `pgvector` extension if you use Enterprise AI features
 - [Bucket strategy and lifecycle rules](#object-storage) - a dedicated bucket per purpose, with a 1-day lifecycle delete on the results bucket
-- [SMTP email](/self-host/customize-deployment/configure-smtp-for-lightdash-email-notifications)
+- [SMTP email](/self-host/customize-deployment/environment-variables#smtp)
 - [Email deliverability](#email-deliverability) - transactional provider, SPF/DKIM on the sender domain
 - [Load balancer settings](#load-balancer-and-networking) - timeout ≥ 300s, health check on `/api/v1/health`, request body limit ≥ `LIGHTDASH_MAX_PAYLOAD`
 
@@ -69,7 +69,7 @@ None of these steps are required but are recommended for running Lightdash beyon
 ### Enterprise features
 
 - [Pre-aggregations](/self-host/nats-workers/pre-aggregate-workers) — pre-aggregate NATS workers \+ a dedicated S3 bucket
-- [SCIM provisioning](/workspace-admin/scim-integration) from your IdP
+- [SCIM provisioning](/workspace-admin/sso/scim) from your IdP
 - [Results caching, embedding, service accounts, custom roles](#enterprise-feature-flags)
 
 ### Integrations (enable what you use)
@@ -81,7 +81,7 @@ None of these steps are required but are recommended for running Lightdash beyon
 ### Observability
 
 - [Prometheus metrics](/self-host/customize-deployment/configure-prometheus-metrics-for-self-hosted-lightdash) enabled, and [scraped on every pod](#observability)
-- [Structured JSON logging](/self-host/customize-deployment/configure-logging-for-lightdash) shipped to your log platform
+- [Structured JSON logging](/self-host/customize-deployment/environment-variables#logging) shipped to your log platform
 - [Alerts](#observability) on HTTP error rate/latency, queue depth, and Postgres pool saturation
 
 ## Architecture: what you're deploying
@@ -134,7 +134,7 @@ For secrets, prefer `existingSecret` populated by External Secrets Operator or a
 
 ## Headless browser
 
-Enabled by default in the chart — keep it on, and tune the browserless timeouts and memory guards for large dashboards. The browser renders dashboards by calling `SITE_URL`, so it must reach that URL from inside the cluster (use `INTERNAL_LIGHTDASH_HOST` if it can't). See [Headless browser](/self-host/customize-deployment/enable-headless-browser-for-lightdash) for the container and backend variables, and [Resource recommendations](/self-host/customize-deployment/recommended-resources) for sizing.
+Enabled by default in the chart — keep it on, and tune the browserless timeouts and memory guards for large dashboards. The browser renders dashboards by calling `SITE_URL`, so it must reach that URL from inside the cluster (use `INTERNAL_LIGHTDASH_HOST` if it can't). See [Headless browser](/self-host/customize-deployment/enable-headless-browser-for-lightdash) for the container and backend variables, and [Resource recommendations](/self-host/production-deployment-checklist#recommended-resources) for sizing.
 
 ## Upgrades and operations
 
@@ -146,7 +146,7 @@ Run a **dedicated scheduler worker** so a heavy dashboard export can't starve th
 
 ## Sizing and availability
 
-Size per-component resource requests and run 2+ backend replicas with pod anti-affinity and a pod disruption budget — the full component table and availability settings are in [Resource recommendations](/self-host/customize-deployment/recommended-resources).
+Size per-component resource requests and run 2+ backend replicas with pod anti-affinity and a pod disruption budget — the full component table and availability settings are in [Resource recommendations](/self-host/production-deployment-checklist#recommended-resources).
 
 ## PostgreSQL
 
@@ -158,7 +158,7 @@ Use a **dedicated bucket per purpose** with lifecycle rules, blocked public acce
 
 ## Email deliverability
 
-Env vars are in the [SMTP reference](/self-host/customize-deployment/configure-smtp-for-lightdash-email-notifications). Best practice on top:
+Env vars are in the [SMTP reference](/self-host/customize-deployment/environment-variables#smtp). Best practice on top:
 
 - Use a transactional provider (SES, Postmark, SendGrid) — Lightdash Cloud sends through Postmark.
 - Set up SPF/DKIM for the sender domain so scheduled deliveries don't land in spam.
@@ -198,12 +198,48 @@ Set `AI_COPILOT_ENABLED: "true"`, choose `AI_DEFAULT_PROVIDER` (openai, azure, a
 
 ### Data apps
 
-Serve app previews from a **separate domain** (`APP_RUNTIME_PREVIEW_ORIGIN`) so untrusted app content never shares an origin with your Lightdash session cookies, and use a persistent apps bucket with no delete lifecycle. Sandbox providers and their security model are in [sandboxes](/self-host/customize-deployment/sandboxes); configuration in [self-hosting data apps](/data-apps/self-hosting).
+Serve app previews from a **separate domain** (`APP_RUNTIME_PREVIEW_ORIGIN`) so untrusted app content never shares an origin with your Lightdash session cookies, and use a persistent apps bucket with no delete lifecycle. Sandbox providers and their security model are in [sandboxes](/self-host/customize-deployment/sandboxes); configuration in [self-hosting data apps](/self-host/data-apps).
 
 ## Observability
 
 Enable Prometheus metrics and structured JSON logging on every pod, and scrape them from your monitoring stack:
 
 - Metrics and alerting guidance: [Prometheus metrics](/self-host/customize-deployment/configure-prometheus-metrics-for-self-hosted-lightdash). Scrape port **9090** on all pods labelled `app.kubernetes.io/name=lightdash` (the chart ships no ServiceMonitor/PodMonitoring — create one; Lightdash Cloud scrapes at a 30s interval). If you run NATS, its Prometheus exporter is on port **7777** (`nats.promExporter.enabled: true`).
-- Log configuration: [Configure logging](/self-host/customize-deployment/configure-logging-for-lightdash). Ship `LIGHTDASH_LOG_FORMAT: json` to your log platform; `LIGHTDASH_LOG_LEVEL: audit` adds an audit trail of user actions.
+- Log configuration: [Configure logging](/self-host/customize-deployment/environment-variables#logging). Ship `LIGHTDASH_LOG_FORMAT: json` to your log platform; `LIGHTDASH_LOG_LEVEL: audit` adds an audit trail of user actions.
 - Alert on HTTP p95/error rate (`http_server_request_duration_seconds`), queue depth / scheduler job failures, Postgres pool saturation, and event-loop lag.
+
+## Recommended resources
+
+Baseline per-component resource requests for a standard self-hosted instance deployed with the official Helm chart:
+
+| Component | CPU | Memory | Ephemeral | Replicas |
+| --- | --- | --- | --- | --- |
+| Backend | 500m–1 | 1.5–4 Gi | 1–2 Gi | **2+** |
+| Scheduler worker | 500m | 1425 Mi | 1 Gi | 1 |
+| Warehouse NATS worker | 250m | 1.5 Gi | 9 Gi | 1 |
+| Pre-aggregate NATS worker | 650m | 4 Gi | 9 Gi | 1 |
+| Browserless | 2 | 4 Gi | 1 Gi | 1 |
+| NATS | 100m | 256 Mi–1 Gi | — | 1 |
+
+NATS workers buffer large result sets on ephemeral disk before uploading to S3 — the 9 Gi ephemeral-storage request is not a typo.
+
+### Availability
+
+Run at least two backend replicas with pod anti-affinity and a pod disruption budget:
+
+```yaml
+replicaCount: 2
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 60   # backend only; workers scale via replicas
+
+podAntiAffinity:
+  enabled: true        # spreads each component across nodes (hard) and zones (soft)
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+```
