@@ -1,6 +1,6 @@
 # Docs information-architecture rules
 
-Rules for maintaining the Lightdash docs site. The principles bind every change; the two profiles apply them at different scales. This file and the audit-exceptions log live in `.mintlify/`, linked from `AGENTS.md`, so every agent — ours or Mintlify's — works from the same rules. A manager agent enforces them with the `docs-ia-audit` tool (in the Claude Managed Agents repo), which reads both files against a checked-out docs tree.
+Rules for maintaining the Lightdash docs site. The principles bind every change; the two profiles apply them at different scales. This file lives in `.mintlify/`, linked from `AGENTS.md`, so every agent — ours or Mintlify's — works from the same rules. A manager agent enforces them with the `docs-ia-audit` tool in Cloudy. Approved exceptions live in Cloudy's database and are managed there, never in this repository.
 
 ## Doc types
 
@@ -30,25 +30,9 @@ The `tag` slot is also how lifecycle badges render (`Experimental`, `Beta` — G
 7. **Every URL change ships its redirect in the same PR.** Add the entry to `docs.json` `redirects`, re-point any existing redirect whose destination you moved (redirects must never chain), and update all internal links to the final URL — internal links never route through redirects.
 8. **Tutorials teach a journey once and link forward.** A step already taught earlier in the same journey is linked, not repeated; a feature walked through in passing links to its canonical doc rather than re-teaching it.
 9. **No shipped scaffolding.** No TODO comments, draft markers, review tags, or "Coming soon" pages. Content that isn't ready isn't in the nav.
-10. **Merge stubs; review giants.** Under ~150 words: merge into an existing page as a section, with a redirect (honest index pages exempt). Over ~3,000 words: size review — split unless a current exception entry explains why it stays whole (References often pass; Tutorials and Guides almost never do).
+10. **Merge stubs; review giants.** Under ~150 words: merge into an existing page as a section, with a redirect (honest index pages exempt). Over ~3,000 words: trigger a size review (References often pass; Tutorials and Guides almost never do).
 11. **One nav position per page.** A page that serves two audiences gets one nav home; the other surface links to it from its landing page.
-12. **Every area lands on a root page.** Top-level areas set `root` (the bare area slug, e.g. `agents`) and `directory: "card"` in `docs.json`. The landing page is a short orientation plus the auto-rendered child directory — never a hand-built card grid. "Overview" is not a sidebar item anywhere. Sizing signals cut both ways: an area that can't sustain a meaningful landing page is too thin — merge it up; a directory over ~12 children triggers a sectional review — split, subgroup, or log the exception.
-
-## Audit exceptions log
-
-`.mintlify/audit-exceptions.toml` records deliberate rule departures so reviews don't re-litigate them. Resolving an audit flag means fixing it **or** adding an `[[exceptions]]` block:
-
-```toml
-[[exceptions]]
-path = "get-started/quickstart/connect-project"
-check = "size"        # size | children | type | duplicate | stub
-metric = "words"      # words | children — what `snapshot` counts; omit for non-numeric checks
-snapshot = 8965       # the metric's value when granted
-date = 2026-07-28
-rationale = "Canonical per-warehouse connection reference; split tracked in Phase 3."
-```
-
-A page may hold more than one block. The audit re-flags an entry only on material growth past its `snapshot` — ten-plus percent more words, or any additional child — so a standing decision stays standing until the thing it covered actually changes. Outdated exceptions are reported for re-review, not silently dropped.
+12. **Every area lands on a root page.** Top-level areas set `root` (the bare area slug, e.g. `agents`) and `directory: "card"` in `docs.json`. The landing page is a short orientation plus the auto-rendered child directory — never a hand-built card grid. "Overview" is not a sidebar item anywhere. Sizing signals cut both ways: an area that can't sustain a meaningful landing page is too thin — merge it up; a directory over ~12 children triggers a sectional review.
 
 ## Patch profile — any agent making a docs change
 
@@ -67,9 +51,9 @@ Run the `docs-ia-audit` tool first; it reports orphans, nav duplicates, links ro
 1. **Fact drift:** versioned facts (image versions, sizing, env vars, limits) stated in more than one place — reconcile to one canonical home; if the copies *disagree*, escalate to a human with both sources cited rather than guessing which is current.
 2. **Duplicated content:** identical blocks → snippet; near-duplicate prose (the `qmd` similarity sweep catches paraphrase drift the hash check can't) → trim the non-canonical copy to a link.
 3. **Type drift:** declared type versus actual form — a Tutorial that has grown reference tables, docs that have grown a walkthrough → split per principle 3.
-4. **Size reviews:** pages and sections past the triggers without a current exception → split, or log the rationale with today's snapshot.
+4. **Size reviews:** review pages and sections past the triggers and split where warranted. The manager agent records approved departures in Cloudy.
 5. **Naming drift:** slug/title/sidebarTitle divergence; "best practices" appearing anywhere; two features whose names collide.
 6. **Debris:** stubs under the merge threshold, orphaned files, dead snippets, deprecated sections whose replacement is live, scaffolding markers.
 7. **Redirect hygiene:** chains, internal links through redirects, redundant entries.
 
-Fix in small per-cluster PRs, each independently reviewable. The audit ends clean — every remaining flag is either fixed or has an exception entry.
+Fix in small per-cluster PRs, each independently reviewable. Fix every flag returned by the audit; Cloudy's manager agent applies approved exception suppressions.

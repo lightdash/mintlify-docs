@@ -2,7 +2,7 @@
 
 You are editing the Lightdash documentation. Lightdash is a code-based BI and agentic analytics platform built on a dbt-defined semantic layer: users explore metrics and dimensions, build dashboards, run AI agents over their data, embed analytics, and self-host. Write for the product as it works now.
 
-These rules govern every change. The full system — doc-type contracts, cleanup profile, and the exceptions mechanism — is in [`ia-rules.md`](./ia-rules.md). A manager agent enforces the rules with a periodic IA audit; your job is to follow them on each change and leave `mint broken-links` clean.
+These rules govern every change. The full system — doc-type contracts and the patch and cleanup profiles — is in [`ia-rules.md`](.mintlify/ia-rules.md). A manager agent enforces the rules with a periodic IA audit and owns any approved exceptions in Cloudy; your job is to follow the rules on each change and leave `mint broken-links` clean.
 
 ## Before you write
 
@@ -13,7 +13,7 @@ These rules govern every change. The full system — doc-type contracts, cleanup
 
 - **Directories are product areas, never doc types:** `get-started`, `explore`, `semantic-layer`, `workflow` (incl. `workflow/cli`), `agents`, `data-apps`, `embed`, `integrations`, `workspace-admin`, `personal-settings`, `self-host`, `api-reference`, `help`. Place a page by which part of the product it serves. Never make a directory named for a content type.
 - **One name per feature.** Slug ≈ title ≈ sidebarTitle; the sidebar may shorten the title, never diverge from it. "Best practices" never appears in a title or slug — that content is a Guide with a real name.
-- **Add the nav entry in `docs.json` in the same change.**
+- **Add the nav entry in `docs.json` in the same change.** For navigation structure — tabs vs groups, root pages, sidebar rendering and density — load [`skills/mintlify-navigation/SKILL.md`](.mintlify/skills/mintlify-navigation/SKILL.md).
 
 ## Doc types
 
