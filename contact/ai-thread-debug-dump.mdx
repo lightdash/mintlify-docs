@@ -21,16 +21,7 @@ Organization AI admins can download a sanitized JSON dump of any AI agent thread
 
 - A self-hosted Lightdash instance with a valid `LIGHTDASH_LICENSE_KEY`.
 - [AI Analyst enabled](/self-host/customize-deployment/environment-variables#ai-analyst) (`AI_COPILOT_ENABLED=true` and a configured provider).
-
-## Enable the feature
-
-The thread debug dump is disabled by default. Set the following environment variable on your Lightdash deployment:
-
-```bash
-AI_COPILOT_THREAD_DUMP_ENABLED=true
-```
-
-Restart the Lightdash service to pick up the change. Once enabled, the per-row download action appears on threads in **Settings → Ask AI → Threads** for eligible users.
+- The thread debug dump feature enabled by setting `AI_COPILOT_THREAD_DUMP_ENABLED=true` on your Lightdash deployment. It is disabled by default. Restart Lightdash after setting the variable — once enabled, the per-row download action appears on threads in **Settings → Ask AI → Threads** for eligible users.
 
 ## Who can download a dump
 
@@ -48,43 +39,19 @@ Each dump is a single JSON file that includes:
 - **UUIDs only** — no user names or email addresses are included.
 - **Chart and dashboard artifact configs** produced by the agent during the conversation.
 
-## What is redacted
-
-The dump uses a deny-by-default allowlist for tool output. The following are stripped or reduced before the file is written:
-
-- **Query result rows** — column names and row counts are kept; the row values themselves are removed.
-- **Field value searches** — search terms and results are stripped.
-- **Unclassified tool output and MCP tool output** — dropped rather than included by default.
-- **Customer documents** and **repository contents** the agent may have read during the conversation.
-
 ## Accepted risks
 
 The dump is a support-oriented artifact, not a fully anonymized export. Before enabling the feature or sharing a file, make sure your team understands the following:
 
-- **Agent responses may quote data verbatim.** Redaction covers tool output, not the natural-language answers the agent wrote. Admins must review the file before sharing it.
+<Warning>
+Lightdash redacts query result rows, field value searches, and any customer documents or repository contents the agent may have read during the conversation. However, the agent's natural-language responses are **not** redacted — data values that made it into an answer can still appear verbatim in the dump. Review the file before sharing it.
+</Warning>
+
 - **Downloaded files leave Lightdash's retention window.** Once a dump is on disk, Lightdash cannot delete or expire it. The customer owns its lifecycle from that point on.
 - **End users are not notified** that their agent conversations may be shared. Organizations with internal privacy-notice obligations (for example, EU works councils) should document this internally before enabling the feature.
-
-## Auditability
-
-Every dump download emits an `AiAgentThreadDump` audit log event that records the actor, the thread, and the source IP address. Audit events are written at the `audit` log level, so they are only collected when the instance runs at that level or lower:
-
-```bash
-LIGHTDASH_LOG_LEVEL=audit
-```
-
-`LIGHTDASH_LOG_LEVEL=debug` also includes audit events. See [Configure logging for Lightdash](/self-host/customize-deployment/configure-logging-for-lightdash) for the full logging setup.
-
-If [Rudderstack telemetry](/self-host/customize-deployment/environment-variables#analytics--event-tracking) is enabled on the instance, a matching `ai_agent.thread_dump_downloaded` telemetry event also fires on each download.
-
-## Point-in-time caveat
-
-The `agent configuration` block in the dump reflects the agent's settings at the moment of download, not at the time of the conversation. If instructions, model, or toggles changed after the thread ran, the block shows the current values.
-
-Per-turn model configuration is historical, so the specific model used for each response in the conversation is preserved even if the agent's default model has since changed.
+- **The agent configuration block is a point-in-time snapshot.** It reflects the agent's settings at the moment of download, not at the time of the conversation. If instructions, model, or toggles changed after the thread ran, the block shows the current values. Per-turn model configuration is historical, so the specific model used for each response in the conversation is preserved even if the agent's default model has since changed.
 
 ## Related
 
 - [AI Analyst environment variables](/self-host/customize-deployment/environment-variables#ai-analyst)
 - [Lightdash AI agents overview](/guides/ai-agents)
-- [Configure logging for Lightdash](/self-host/customize-deployment/configure-logging-for-lightdash)
