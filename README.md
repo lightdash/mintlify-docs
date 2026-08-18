@@ -351,8 +351,8 @@ GROUP BY user_id
 
 #### Links
 
-- Use descriptive link text: [create a new dashboard](/get-started/explore-your-data/build-a-dashboard)
-- Not: Click [here](/get-started/explore-your-data/build-a-dashboard)
+- Use descriptive link text: [create a new dashboard](/explore/dashboards)
+- Not: Click [here](/explore/dashboards)
 
 #### Lists
 
