@@ -291,9 +291,26 @@ async function main() {
 
   const mdxFiles = findMDXFiles('.');
   const excludedPaths = ['node_modules', '.git', 'CONTRIBUTING.md'];
-  const filteredFiles = mdxFiles.filter(file =>
-    !excludedPaths.some(excluded => file.includes(excluded))
-  );
+
+  // Paths in .mintignore are excluded from the published site, so they are
+  // not pages: skip them here like Mintlify does.
+  const mintignorePath = path.join(process.cwd(), '.mintignore');
+  const mintignored = fs.existsSync(mintignorePath)
+    ? fs.readFileSync(mintignorePath, 'utf8')
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line && !line.startsWith('#'))
+    : [];
+
+  const filteredFiles = mdxFiles.filter(file => {
+    const relativePath = path.relative(process.cwd(), file).replace(/\\/g, '/');
+    if (excludedPaths.some(excluded => file.includes(excluded))) return false;
+    return !mintignored.some(pattern =>
+      pattern.endsWith('/')
+        ? relativePath.startsWith(pattern)
+        : relativePath === pattern || relativePath.startsWith(pattern + '/')
+    );
+  });
 
   const brokenLinks = [];
   const externalLinks = [];
