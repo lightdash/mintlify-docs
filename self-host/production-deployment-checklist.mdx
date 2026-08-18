@@ -48,6 +48,7 @@ None of these steps are required but are recommended for running Lightdash beyon
 - [NATS \+ warehouse workers](/self-host/nats-workers/overview) - `nats.enabled: true` **and** `warehouseNatsWorker.enabled: true` for handling large volumes of warehouse queries
 - [≥ 2 backend replicas](#sizing-and-availability) with pod anti-affinity and a pod disruption budget
 - [Size resource requests](#sizing-and-availability)
+- [Configure health probes](#health-probes) - readiness on `/api/v1/readyz`, not `/api/v1/health`, so a migrating pod leaves the load balancer without being restarted
 
 ### Infrastructure dependencies
 
@@ -221,6 +222,34 @@ podDisruptionBudget:
   enabled: true
   minAvailable: 1
 ```
+
+## Health probes
+
+Lightdash serves three health endpoints, and they are not interchangeable:
+
+| Probe | Endpoint | Why |
+| --- | --- | --- |
+| Liveness | `/api/v1/livez` | Answers without touching the database, so a database blip does not restart every pod at once |
+| Readiness | `/api/v1/readyz` | TTL-cached, gates on schema migration state. Keeps a pod out of the load balancer while it is migrating, without restarting it |
+| Startup | `/api/v1/livez` | Same endpoint as liveness, so a slow-starting pod is not killed before it is ready to serve |
+
+Avoid `/api/v1/health` for any of the three. It queries the database on every request, which is fine for a manual `curl` after a deploy but means a brief database blip fails every pod's check at the same time.
+
+The chart already points `startupProbe` and `livenessProbe` at `/api/v1/livez` by default. Set the readiness path explicitly:
+
+```yaml
+lightdashBackend:
+  readinessProbe:
+    path: /api/v1/readyz
+```
+
+Recent chart versions resolve this path for you on Lightdash `1.169.1` and later. Setting it explicitly is always supported, and an explicit value always wins.
+
+<Warning>
+Only point a readiness probe at `/api/v1/readyz` on Lightdash `1.169.1` or later. Before that, a parked migration marked every working pod as not ready, so a readiness probe on `/api/v1/readyz` could pull the whole backend out of service over a single stuck migration. See [what shipped when](/self-host/upgrade-runbook#what-shipped-when) and the [upgrade runbook](/self-host/upgrade-runbook#kubernetes-and-helm) for the full reasoning and the `503` reasons.
+</Warning>
+
+Leave worker probes alone. Worker pods serve their own handler at `/api/v1/health` (in-memory state, no database query) and do not serve `/api/v1/readyz` at all.
 
 ## PostgreSQL
 
