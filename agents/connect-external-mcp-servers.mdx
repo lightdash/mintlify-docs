@@ -31,7 +31,8 @@ Once an MCP server is connected to an agent, the agent can use its tools as part
 - **Linear** — file issues from anomalies the agent spots, comment on tickets, query project status. See [Linear MCP docs](https://linear.app/docs/mcp#general).
 - **Confluence** — search the knowledge base for context before answering, or publish summaries. See [Getting started with the Atlassian Remote MCP Server](https://support.atlassian.com/atlassian-rovo-mcp-server/docs/getting-started-with-the-atlassian-remote-mcp-server/).
 - **Lightdash Docs** — give agents access to the complete Lightdash documentation so they can answer questions about Lightdash concepts, configuration, and best practices. URL: `https://docs.lightdash.com/mcp`, auth type `None`. See [Lightdash Docs MCP](/agents/lightdash-mcp#lightdash-docs-mcp).
-- Any other service that exposes a remote MCP server (GitHub, Jira, Slack, internal tooling, etc.)
+- **Slack** — search channels, threads, and messages so agents can pull team context into answers. Slack requires extra app setup — see [Connect the Slack MCP server](#connect-the-slack-mcp-server).
+- Any other service that exposes a remote MCP server (GitHub, Jira, internal tooling, etc.)
 
 The agent decides when to call MCP tools based on the user's question and the agent's instructions, the same way it decides when to query your data.
 
@@ -69,6 +70,34 @@ MCP servers are configured per project and can be attached to one or more agents
     Edit any agent in the project and select the MCP server under **MCP servers**. The agent will now have access to that server's tools.
   </Step>
 </Steps>
+
+## Connect the Slack MCP server
+
+Slack's hosted MCP server (`https://mcp.slack.com/mcp`) needs more setup than most providers because Slack [does not support Dynamic Client Registration](https://docs.slack.dev/ai/slack-mcp-server/). You must bring your own OAuth client, and Slack only accepts clients backed by a registered Slack app that is either **published in the Slack Marketplace** or an **internal app** in your workspace — unlisted apps are rejected. The steps below walk through creating an internal Slack app and connecting it to Lightdash.
+
+<Steps>
+  <Step title="Create a Slack app">
+    Go to [api.slack.com/apps](https://api.slack.com/apps), click **Create New App → From scratch**, give it a name (e.g. `Lightdash AI`), and pick your workspace.
+  </Step>
+  <Step title="Add the Lightdash callback as a redirect URL">
+    In the app settings, go to **OAuth & Permissions → Redirect URLs**, add `https://<instance-name>.lightdash.cloud/api/v1/aiAgents/mcp/oauth/callback` (replace the host with your own URL if self-hosting), and click **Save URLs**. Slack matches the URI exactly — if this step is missed you'll see `redirect_uri did not match any configured URIs` during sign-in.
+  </Step>
+  <Step title="Enable Slack MCP server access for the app">
+    On the app's **Agents & AI Apps** page (`https://api.slack.com/apps/<app-id>/app-assistant`), enable access to the Slack MCP server. If this is skipped, sign-in completes but the connection then fails with `App is not enabled for Slack MCP server access`.
+  </Step>
+  <Step title="Copy the app's client credentials">
+    Go to **Basic Information → App Credentials** and copy the **Client ID** and **Client Secret**.
+  </Step>
+  <Step title="Create the MCP server in Lightdash">
+    Follow [Add an MCP server](#add-an-mcp-server) with URL `https://mcp.slack.com/mcp` and auth type **OAuth**, then open **More options** and paste the **Client ID** and **Client secret** from the previous step. Click **Create and connect** and sign in with your Slack account. If the client ID and secret are missing, the connection fails with `Incompatible auth server: does not support dynamic client registration`.
+  </Step>
+</Steps>
+
+You don't need to configure scopes on the app or install it to your workspace first — Slack requests the user scopes its MCP tools need during sign-in, and every user connects with their own account, so agents only see what that user can see in Slack. If your workspace restricts app installs, a Slack admin may need to approve the app the first time someone connects.
+
+<Note>
+  **Self-hosting?** If you set up a Slack app for the [Slack integration](/integrations/slack), you can reuse it here instead of creating a new one — it's already an internal app in your workspace. Skip step 1 and apply steps 2–4 to that app.
+</Note>
 
 ## How credentials work
 
@@ -151,6 +180,29 @@ The agent pulls the data from your warehouse, generates the summary, and appends
 
 The agent searches Confluence for the canonical definition, then answers using both the doc and your data.
 
+## Network requirements for self-hosted deployments
+
+MCP connections are validated and tested **server-side from the Lightdash backend**, not from your browser. When you add an MCP server, the backend performs a DNS lookup of the endpoint host (as an SSRF protection check) and then makes an actual HTTPS request to the MCP URL to test the connection. The same applies during every agent conversation that uses MCP tools.
+
+This means the **Lightdash backend container** must be able to reach every MCP endpoint you connect. On self-hosted deployments with restricted network egress, connection tests can fail even though the URL works fine from your laptop.
+
+Three common failures:
+
+| Error | What it means | Fix |
+| ----- | ------------- | --- |
+| **"We couldn't find a server at that URL"** | The backend's DNS lookup for the endpoint host failed — typically an internal hostname (e.g. `agentic-gateway.internal`) that the backend container can't resolve. | Configure DNS resolution and network routing from the backend pod to that host. |
+| **"fetch failed"** | DNS resolves, but the outbound HTTPS request from the backend container is blocked. | Allow outbound HTTPS (port 443) from the backend pod to the endpoint. |
+| **"MCP servers must use a public URL. Localhost and private network addresses are not supported."** | The endpoint resolves to a private or internal IP address, which is blocked by default as an SSRF safeguard. | Set [`AI_AGENT_MCP_ALLOW_PRIVATE_ADDRESSES=true`](/self-host/customize-deployment/environment-variables#ai-analyst) to allow MCP servers on private networks. |
+
+To resolve these, work with whoever owns your infrastructure to:
+
+- **Internal MCP endpoints** — configure DNS resolution and network routing from the Lightdash backend pod to the internal host, and set [`AI_AGENT_MCP_ALLOW_PRIVATE_ADDRESSES=true`](/self-host/customize-deployment/environment-variables#ai-analyst) if the host resolves to a private IP.
+- **External MCP endpoints** (e.g. `https://docs.lightdash.com/mcp`) — allow outbound HTTPS (port 443) egress from the backend pod to the public internet.
+
+<Tip>
+  A quick way to confirm reachability is to exec into the Lightdash backend container and try to resolve and reach the endpoint host from there (e.g. with `curl`). If it fails from inside the container, it's a networking issue on your infrastructure side rather than a Lightdash configuration problem.
+</Tip>
+
 ## Security
 
 - All credentials (bearer tokens and OAuth tokens) are encrypted at rest.
@@ -165,7 +217,7 @@ Every tool call made through a connected MCP server — who called it, with what
 
 ## Related
 
-- [Getting started with AI agents](/agents/set-up-agents)
+- [Set up AI agents](/agents/set-up-agents)
 - [Data access control](/agents/data-access)
 - [Agent visibility](/agents/visibility) — admin visibility into MCP tool calls
 - [Lightdash MCP server](/agents/lightdash-mcp) — the reverse direction: external assistants querying Lightdash data
