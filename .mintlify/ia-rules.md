@@ -1,6 +1,6 @@
 # Docs information-architecture rules
 
-Rules for maintaining the Lightdash docs site. The principles bind every change; the two profiles apply them at different scales. This file lives in `.mintlify/`, linked from `AGENTS.md`, so every agent — ours or Mintlify's — works from the same rules. A manager agent enforces them with the `docs-ia-audit` tool in Cloudy. Approved exceptions live in Cloudy's database and are managed there, never in this repository.
+Rules for maintaining the Lightdash docs site. The principles bind every change; the two profiles apply them at different scales. This file lives in `.mintlify/`, linked from `AGENTS.md`, so every agent — ours or Mintlify's — works from the same rules.
 
 ## Doc types
 
@@ -40,14 +40,57 @@ The `tag` slot therefore carries lifecycle badges only (`Experimental`, `Beta` �
     - An **area** is a product concept that owns a directory: `agents/`, `explore/dashboards/`, `semantic-layer/pre-aggregates/`. Its pages live *under* it. It sets `root` (the bare slug) and `directory: "card"`, which renders its children automatically. The landing page is a short orientation plus that auto-rendered directory. **Never re-list a node's own children by hand** — not as a `<CardGroup>`, not as a "Related resources" section, not as a bullet list of links. The nav already renders them, so a hand-built copy shows the same pages twice and goes stale the moment one is added, renamed, or removed. Link a child inline when the prose has a reason to; never enumerate them. An area can nest inside another area.
     - A **section** is nav-only grouping *inside* an area, collecting pages that already live at that area's level — `Build charts` gathering `explore/configure-charts` and its peers. It sets neither `root` nor `directory`; the group label is the whole affordance, and Mintlify renders it as a collapsible header rather than a destination. Sections are folders, not places.
 
-    Never force a root onto a section: an orientation page written to satisfy the rule rather than a reader is filler. If a would-be area cannot sustain a meaningful landing page, it is too thin — merge it up. Name a root page's `sidebarTitle` for what the page covers, or omit it; "Overview" is not a sidebar item anywhere. A node over ~12 children triggers a sectional review.
+Never force a root onto a section: an orientation page written to satisfy the rule rather than a reader is filler. If a would-be area cannot sustain a meaningful landing page, it is too thin — merge it up. Name a root page's `sidebarTitle` for what the page covers, or omit it; "Overview" is not a sidebar item anywhere. A node over ~12 children triggers a sectional review.
 13. **Section large groups; sectioning is free.** Mintlify derives a page's URL from its file path, so regrouping the nav ships no redirects and breaks no links. Group by what a reader is trying to do. A list stays flat when its items are genuine peers — a chart-type gallery is flat because sectioning it would invent a taxonomy readers don't have.
 14. **Long pages carry their own anchor index.** A page with sections a reader arrives wanting to jump to — a connection page covering ten warehouses, a reference covering four subsystems — names those sections as inline anchor links near the top. This is the one thing `directory: "card"` cannot do for you: it renders *child pages*, never same-page anchors. Write the index as prose with inline links, not as a grid or a bare bullet list.
+
+## Placement
+
+The question is always **which part of the product does this serve**, never what kind of doc it is. Doc type is a property of the page; the area is where it lives. Most placements are obvious from the directory list in principle 2. The tests below settle the ones that aren't.
+
+### The IA map
+
+Every area and section carries a placement annotation: what it is **for**, and where a boundary is
+contested, what it is **not** for and where that goes instead. Read the map as a walkable tree:
+
+```bash
+node scripts/ia-map.js
+```
+
+The tree itself is derived from `docs.json` at read time, so it cannot drift from the real structure.
+Only the annotations are hand-maintained, in `.mintlify/ia-map.yml`.
+
+**Update the annotations when you change the tree** — adding, renaming, moving, or dissolving an area
+or section. Adding a page does not touch them. `node scripts/ia-map.js --check` reports both failure
+modes and exits non-zero: a node with no annotation, and an annotation whose node no longer exists.
+
+If you cannot write a one-line `for:` that distinguishes a new node from its siblings, it should not
+be a node.
+
+### When two areas both fit
+
+Place by what the reader is doing, not by which feature the prose happens to mention. A page about querying that mentions dbt is still `explore/`.
+
+If both areas genuinely need the fact, that is principle 1, not a placement problem: pick the canonical home and have the other area link to it in a sentence.
+
+If the page teaches two different interfaces, that is a split, not a placement decision. Filtering in the Explore view and filtering a dashboard share a word and nothing else; each belongs to its own surface, with shared behaviour in a reference both link to.
+
+### A topic with no home yet
+
+1. **Search first.** Extending the canonical page beats adding one. A new page is the last resort,
+not the default.
+2. **Name the reader's task**, then apply the boundary tests. If you cannot say which part of the
+product it serves, the content is not ready to file.
+3. **Check the size.** Under ~150 words it is a section of an existing page, not a page.
+4. **Do not invent an area.** A new top-level area needs enough substance for a landing page and
+several children; anything less belongs inside an existing one. Sections are free (principle 13) — new areas are not.
+5. **Ship it whole:** doc type declared, frontmatter complete, nav entry added, redirect if anything
+moved.
 
 ## Patch profile — any agent making a docs change
 
 - **Search before writing.** Local agents: `qmd query` against the docs index when available, else `rg`. The Mintlify agent: site search. Default to extending the canonical page over adding a page.
-- **Place by product area** (principle 2). Add the nav entry in `docs.json` in the same change.
+- **Place by product area** (principle 2). When it isn't obvious, work the boundary tests under Placement. Add the nav entry in `docs.json` in the same change.
 - **Declare the doc type.** Verb-first slug if and only if it's a Tutorial.
 - **Write in current state.** The page describes how the product works now — no "new", "recently", "previously", or changelog narration.
 - **Restating a fact from another page?** Replace it with a link or snippet before finishing (principles 1, 5).
@@ -56,14 +99,14 @@ The `tag` slot therefore carries lifecycle badges only (`Experimental`, `Beta` �
 
 ## Cleanup profile — periodic review agents
 
-Run the `docs-ia-audit` tool first; it reports orphans, nav duplicates, links routed through redirects, stubs, size triggers, type-declaration inconsistencies, and identical code blocks. Then sweep, in priority order:
+Start by checking structural integrity: pages not reachable from nav, nav entries with no page, redirect chains, redirect destinations that no longer resolve, internal links that only work via a redirect, and missing frontmatter. Then sweep, in priority order:
 
 1. **Fact drift:** versioned facts (image versions, sizing, env vars, limits) stated in more than one place — reconcile to one canonical home; if the copies *disagree*, escalate to a human with both sources cited rather than guessing which is current.
 2. **Duplicated content:** identical blocks → snippet; near-duplicate prose (the `qmd` similarity sweep catches paraphrase drift the hash check can't) → trim the non-canonical copy to a link.
 3. **Type drift:** declared type versus actual form — a Tutorial that has grown reference tables, docs that have grown a walkthrough → split per principle 3.
-4. **Size reviews:** review pages and sections past the triggers and split where warranted. The manager agent records approved departures in Cloudy.
+4. **Size reviews:** review pages and sections past the triggers and split where warranted.
 5. **Naming drift:** slug/title/sidebarTitle divergence; "best practices" appearing anywhere; two features whose names collide.
 6. **Debris:** stubs under the merge threshold, orphaned files, dead snippets, deprecated sections whose replacement is live, scaffolding markers.
 7. **Redirect hygiene:** chains, internal links through redirects, redundant entries.
 
-Fix in small per-cluster PRs, each independently reviewable. Fix every flag returned by the audit; Cloudy's manager agent applies approved exception suppressions.
+Fix in small per-cluster PRs, each independently reviewable.
