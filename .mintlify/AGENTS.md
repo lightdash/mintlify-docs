@@ -19,11 +19,11 @@ These rules govern every change. The full system — doc-type contracts and the 
 
 Every page is plain docs unless it declares otherwise in frontmatter. See `ia-rules.md` for the full form contracts.
 
-- **Tutorial** — `doc-type: tutorial` + `tag: Tutorial`. Walks one task start to finish; verb-first slug (`set-up-slack-agents`). Links to canonical docs instead of re-teaching them.
-- **Guide** — `doc-type: guide` + `tag: Guide`. Opinionated "Lightdash Way" advice; noun-phrase slug.
+- **Tutorial** — `doc-type: tutorial`. Walks one task start to finish; verb-first slug (`set-up-slack-agents`). Links to canonical docs instead of re-teaching them.
+- **Guide** — `doc-type: guide`. Opinionated "Lightdash Way" advice; noun-phrase slug.
 - **Reference** — `doc-type: reference`. Exhaustive lookup; no pill.
 
-A lifecycle badge (`Experimental`, `Beta`) outranks the doc-type pill in the `tag` slot; `doc-type` stays declared either way.
+Doc-type pills are suppressed in the sidebar for now, so `tag` carries lifecycle badges only (`Experimental`, `Beta`). Keep declaring `doc-type` — it drives the form contract.
 
 ## Writing
 

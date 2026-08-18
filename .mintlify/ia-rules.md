@@ -4,15 +4,17 @@ Rules for maintaining the Lightdash docs site. The principles bind every change;
 
 ## Doc types
 
-Every page is plain docs unless it declares otherwise. Three marked types exist, declared in frontmatter with `doc-type`; Tutorials and Guides also set `tag`, which renders the sidebar pill. References carry no pill — their titles and tables announce them.
+Every page is plain docs unless it declares otherwise. Three marked types exist, declared in frontmatter with `doc-type`.
 
-The `tag` slot is also how lifecycle badges render (`Experimental`, `Beta` — GA is the unbadged default; see feature-maturity-levels). A page gets one pill: a lifecycle badge outranks a doc-type pill, and `doc-type` stays declared either way.
+**Doc-type pills are suppressed in the sidebar.** A pill earns its place only when it tells a reader something the neighbouring pages don't, and today too many Tutorials are the *only* documentation of their feature rather than a layer on top of it — so the label differentiates nothing, and a cluster of them is actively noisy. Keep declaring `doc-type`: it drives the form contract and the audit, and the pill comes back once Tutorials and Guides are consistently additional resources rather than load-bearing docs.
+
+The `tag` slot therefore carries lifecycle badges only (`Experimental`, `Beta` — GA is the unbadged default; see feature-maturity-levels).
 
 | Type | Declaration | Form contract |
 | --- | --- | --- |
 | Docs (default) | none | Feature documentation: what it is, how it behaves, its options. Most pages. |
-| Tutorial | `doc-type: tutorial` + `tag: Tutorial` | Walks one task start to finish. Verb-first title and slug: "Set up agents in Slack" → `set-up-slack-agents`. States prerequisites; links to canonical docs instead of re-teaching them. |
-| Guide | `doc-type: guide` + `tag: Guide` | Opinionated: how to work The Lightdash Way. Noun-phrase title and slug. |
+| Tutorial | `doc-type: tutorial` | Walks one task start to finish. Verb-first title and slug: "Set up agents in Slack" → `set-up-slack-agents`. States prerequisites; links to canonical docs instead of re-teaching them. |
+| Guide | `doc-type: guide` | Opinionated: how to work The Lightdash Way. Noun-phrase title and slug. |
 | Reference | `doc-type: reference` | Exhaustive lookup: schemas, tables, flags. Length is fine; one lookup topic and working anchors are required. |
 
 **Tutorials and Guides layer on top of docs; they never substitute for them.** Every feature earns plain documentation first — what it is, how it behaves, its options. A Tutorial then walks one path through it, and a Guide argues for one way of using it, both linking down to the docs rather than re-teaching them. A Tutorial or Guide that is the only place a feature is documented is load-bearing in a way it should not be: the feature has no reference, and readers who want the full surface have to reverse-engineer it from a walkthrough. When you find one, the fix is to move the feature documentation into its product area and leave the walkthrough pointing at it.
