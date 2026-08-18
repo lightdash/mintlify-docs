@@ -293,6 +293,64 @@ When you select a dashboard with `-d`, its dependencies follow it — automatica
 
 Selecting virtual views or data apps on their own, rather than through a dashboard, is opt-in on both commands — see [`lightdash download`](/workflow/cli/reference#lightdash-download) and [`lightdash upload`](/workflow/cli/reference#lightdash-upload) for those flags.
 
+## Rename a chart slug
+
+Use `lightdash slug-update` when you want to change a chart's URL slug without creating a new chart or breaking existing links:
+
+```bash
+lightdash slug-update --from copy-of-total-orders --to total-orders
+```
+The command performs both sides of the rename:
+
+1. It renames the chart in Lightdash and keeps the previous slug as an alias.
+2. It updates the chart file and every supported reference in your local content-as-code directory.
+
+Local updates include dashboard chart tiles, scheduled deliveries, alerts, Google Sheets syncs, language maps, filenames, and content metadata. The output lists each file that changed, including filename moves such as:
+
+```text
+charts/copy-of-total-orders.yml -> charts/total-orders.yml
+dashboards/executive-overview.yml
+```
+
+You do not need to upload after a successful rename: Lightdash and your local files are already synchronized. For a Git-managed workflow, review the changes and commit them in the same pull request as any related content updates.
+
+Preview the local changes before applying the rename with `--dry-run`:
+
+```bash
+lightdash slug-update \
+  --dry-run \
+  --from copy-of-total-orders \
+  --to total-orders
+```
+
+<Warning>
+The dry run does not validate whether the server-side target slug is available. The real command performs permission, alias, and uniqueness checks before changing any local files.
+</Warning>
+
+### How aliases protect existing content
+
+When a chart changes from `copy-of-total-orders` to `total-orders`, Lightdash keeps `copy-of-total-orders` as an alias for the same chart. This means:
+
+- bookmarks, shared links, and CI-generated URLs using the old slug still work;
+- a stale branch or checkout that uploads the old slug updates the existing chart instead of creating a duplicate;
+- re-running the same rename is a safe no-op;
+- you can rename the chart back to a previous slug without losing the newer slug—it becomes the alias instead.
+
+If the API rename succeeds but the CLI cannot write the local files, the command reports that Lightdash was updated. Fix the local filesystem issue and run the same command again; the server-side rename is idempotent and the CLI will finish updating the local files.
+
+Use `--path <path>` when your content-as-code files are not in the default `lightdash/` directory:
+
+```bash
+lightdash slug-update \
+  --from copy-of-total-orders \
+  --to total-orders \
+  --path ./analytics-content
+```
+
+<Note>
+Slug renaming currently supports regular charts only. SQL chart, dashboard, space, and data app slugs are not renamed by this command.
+</Note>
+
 ## Lightdash content templates
 
 You can use the `lightdash download` and `lightdash upload` commands to easily build templates for Lightdash content and reuse these templates to build new or update existing projects.

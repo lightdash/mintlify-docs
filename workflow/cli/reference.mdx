@@ -118,6 +118,7 @@ For examples and command-specific options, click through the command in the tabl
 |[`lightdash generate-exposures`](/workflow/cli/reference#lightdash-generate-exposures) | [Experimental command] Generates a YAML file for Lightdash exposures               |
 |[`lightdash download`](/workflow/cli/reference#lightdash-download)                     | Download all charts and dashboards from your Lightdash project as code             |
 |[`lightdash upload`](/workflow/cli/reference#lightdash-upload)                         | Upload charts and dashboards as code to your Lightdash project                     |
+|[`lightdash slug-update`](/workflow/cli/reference#lightdash-slug-update)               | Rename a chart slug and update its local content-as-code references                 |
 |[`lightdash apps create`](/workflow/cli/reference#lightdash-apps-create)               | Scaffold a new [data app](/data-apps/download-data-apps-as-code) locally                          |
 |[`lightdash apps preview`](/workflow/cli/reference#lightdash-apps-preview)             | Preview a downloaded [data app](/data-apps/download-data-apps-as-code) locally against real data   |
 |[`lightdash apps validate`](/workflow/cli/reference#lightdash-apps-validate)           | Validate a [data app](/data-apps/download-data-apps-as-code) locally before uploading             |
@@ -1074,6 +1075,66 @@ Upload organization resources and also send invitation emails to any staged user
 lightdash upload --organization --send-invites
 ```
 
+
+### `lightdash slug-update`
+
+Renames a chart slug in Lightdash and updates the corresponding files in your local content-as-code directory.
+
+```bash
+lightdash slug-update --from old-chart-slug --to new-chart-slug
+```
+
+A successful rename:
+
+- changes the chart's canonical slug and URL in Lightdash;
+- keeps the previous slug as an alias, so existing links continue working;
+- updates the chart YAML slug and filename;
+- updates saved-chart references in dashboard YAML;
+- updates chart references in scheduled deliveries, alerts, and Google Sheets syncs;
+- updates chart language-map files and `.lightdash-metadata.json`, when present.
+
+You do not need to run `lightdash upload` afterward. The command updates Lightdash first and then updates the local files. If you keep content in Git, review and commit the resulting file changes.
+
+<Note>
+The command currently supports regular charts only. It does not rename SQL chart, dashboard, space, or data app slugs. Dashboard tile slugs are also left unchanged because they identify the tile, not the chart.
+</Note>
+
+**Options:**
+
+- `--from <slug>`
+  - required; the chart's current canonical slug, or its previous slug when safely retrying the same rename.
+- `--to <slug>`
+  - required; the new slug. Slugs contain lowercase letters, numbers, and hyphen-separated words.
+- `--path <path>`
+  - use a custom content-as-code directory instead of the default `lightdash/` directory in your current working directory.
+- `--project <project uuid>`
+  - rename the chart in a specific project instead of your currently selected project.
+- `--dry-run`
+  - preview the intended slug change and list the local files that would change without renaming the chart or writing files.
+- `--verbose`
+  - show detailed command output.
+
+<Warning>
+`--dry-run` validates and previews local file changes only. Lightdash checks the source chart, permissions, aliases, and target-slug availability when you run the command without `--dry-run`.
+</Warning>
+
+**Examples:**
+
+Preview a rename and its local file changes:
+
+```bash
+lightdash slug-update --dry-run --from copy-of-orders --to orders
+Rename a chart and update a custom content-as-code directory:
+```bash
+lightdash slug-update \
+  --from copy-of-orders \
+  --to orders \
+  --path ./analytics-content
+```
+
+The command is idempotent. Re-running the same rename safely completes any missing local updates. You can also rename a chart back to one of its previous slugs; the slug you replace becomes the new alias.
+
+Aliases reserve their slugs within the project. Creating or uploading another chart with a current or historical slug uses the existing chart or generates a different unique slug instead of creating an ambiguous duplicate.
 
 ### `lightdash apps create`
 

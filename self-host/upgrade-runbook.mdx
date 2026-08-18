@@ -60,18 +60,20 @@ Exit `0` means the whole span is proven safe to roll. Anything else, including a
 
 ### The `migrate` commands
 
-These ship inside the Lightdash image and are the runtime execution layer. Invoke them the same way the image's own entrypoint does, from the `/usr/app` working directory:
+These ship inside the Lightdash image and are the runtime execution layer. Invoke them the same way the image's own entrypoint does:
 
 ```bash
 pnpm -F backend migrate-production <command> [flags]
 ```
+
+You do not need to change directory first. The image's working directory is `/usr/app/packages/backend`, which is where the entrypoint runs this command, and both `kubectl exec` and `docker compose exec` inherit it. The chart's migration Job runs the same command from `/usr/app` instead. Either directory works.
 
 | Command | What it does |
 | --- | --- |
 | `up` | Runs pending Knex and Graphile Worker migrations. This is the default when no command is given, and it is what the image entrypoint and the Helm migration Job run |
 | `preflight` | Checks migration safety **without changing the database**. Also runs automatically at the start of every `up` |
 | `status` | Prints the migration lease, the Knex ledger, and recent migration run history |
-| `wait` | Waits for another process to finish migrating, and takes over if that process died |
+| `wait` | Waits for migrations to finish. Follows a live migrator without racing it, and claims the lease itself if work is pending and no live holder exists |
 | `unlock` | Clears migration locks for recovery, with attribution |
 
 | Flag | Valid on | Meaning |
@@ -89,14 +91,20 @@ The commands need the deployment's database environment, so run them where that 
 
 <Tabs>
 <Tab title="kubectl exec">
-Against a running pod. Substitute your release name:
+Against a running pod:
 
 ```bash
-kubectl exec deploy/<release>-lightdash -- \
+kubectl exec deploy/lightdash-backend -- \
   pnpm -F backend migrate-production status
 ```
 
 `exec` bypasses the image entrypoint, so this inspects without triggering a migration.
+
+The examples on this page assume a release called `lightdash`, matching the `helm upgrade` command above. The chart names the backend Deployment `<fullname>-backend` and the migration Job `<fullname>-migrate`, where `<fullname>` is your release name when it already contains `lightdash`, and `<release>-lightdash` when it does not. `fullnameOverride` replaces it outright. If your release is named differently, list the real names:
+
+```bash
+kubectl get deploy,job -l app.kubernetes.io/instance=<release>
+```
 </Tab>
 <Tab title="One-off pod">
 To run the **new** image's preflight before you upgrade, run a Job on the new tag that reuses your backend's environment sources:
@@ -123,11 +131,12 @@ spec:
                   name: <your-database-secret>
                   key: <password-key>
           envFrom:
-            # the same ConfigMap and Secret your backend deployment uses
+            # the same ConfigMap and Secret your backend deployment uses,
+            # both named <fullname> by the chart
             - configMapRef:
-                name: <release>-lightdash
+                name: lightdash
             - secretRef:
-                name: <release>-lightdash
+                name: lightdash
 ```
 
 Read the result with `kubectl logs job/lightdash-preflight`.
@@ -182,12 +191,20 @@ The decision is one of `proceed`, `proceed-with-warnings`, `abort`, or `force-pr
 | --- | --- |
 | `idle` | Nobody holds the lease and nothing is parked |
 | `migrating` | A process holds the lease and is heartbeating |
-| `stale` | A process holds the lease but its heartbeat has expired. Another process will take over |
+| `stale` | A process holds the lease but its heartbeat has expired, 75 seconds after the last one. Another process will take over |
 | `parked` | Migration failed its retries and stopped. It will not retry on this app version until a human intervenes |
 
 Alongside the state it prints the lease holder (hostname, pod, app version, current migration, last heartbeat), the parked details if any, the completed and pending Knex migration counts, the ledger classification, and recent migration runs with their outcomes. Any prior `unlock` is recorded against the run that followed it, so the audit trail survives.
 
 `--json` gives you the same payload for automation.
+
+#### When you need `wait`
+
+`wait` blocks until the database is migrated. While another process holds a live lease, it follows that process and never migrates alongside it. If migrations are still pending and the lease is unheld or has expired, `wait` claims the lease and runs them itself. It gives up after 30 minutes by default; change that with `--timeout-ms` or `MIGRATION_WAIT_TIMEOUT_MS`.
+
+So `wait` is not a read-only command. It will not race a live migrator, but it will become the migrator when there is work to do and nobody is doing it. Use `status` when you only want to look.
+
+You rarely need to run `wait` by hand. On the non-Job path, `up` already falls back to this exact behaviour when it loses the race for the lease, which is how the pod that does not migrate ends up waiting for the pod that does.
 
 ## Kubernetes and Helm
 
@@ -229,8 +246,8 @@ With `migrationJob.enabled: true`, the chart runs migrations in a `pre-install,p
 Follow the migration:
 
 ```bash
-kubectl logs -f job/<release>-lightdash-migrate     # when migrationJob is enabled
-kubectl exec deploy/<release>-lightdash -- \
+kubectl logs -f job/lightdash-migrate     # when migrationJob is enabled
+kubectl exec deploy/lightdash-backend -- \
   pnpm -F backend migrate-production status
 ```
 
@@ -342,17 +359,36 @@ If verification fails, freeze: open a freeze issue, escalate to the channel, and
 
 ## Recovery
 
+### The migration Job failed
+
+On the `migrationJob.enabled` path, a failed upgrade shows up as a failed Job. Read its logs before you reach for anything else. The migration's own error says what broke; the commands below only tell you the state it left behind.
+
+```bash
+kubectl logs job/lightdash-migrate
+kubectl describe job/lightdash-migrate
+```
+
+The Job retries before it gives up. `migrationJob.backoffLimit` defaults to `10`, so Kubernetes marks the Job failed only after 11 attempts. Each attempt runs in its own pod, so `kubectl logs job/...` shows you one of them and `kubectl get pods` shows the rest.
+
+<Warning>
+**Those logs delete themselves.** `migrationJob.ttlSecondsAfterFinished` defaults to `100`, so Kubernetes removes the Job about 100 seconds after it finishes — failed or succeeded — and the pod logs go with it. If you are debugging upgrades, raise that value in your values file, or ship the Job's logs off the cluster before the window closes.
+</Warning>
+
+If you missed the window, the database still has the durable record. `migrate status` reports the parked details and recent migration runs with their outcomes, and that record outlives the Job object.
+
+To retry after you have fixed the cause, re-run `helm upgrade` to recreate the hook Job. See [what resumes on its own](#after-an-unlock-what-resumes-on-its-own).
+
 ### A migration is stuck
 
 Start by looking, not by fixing:
 
 ```bash
-kubectl exec deploy/<release>-lightdash -- \
+kubectl exec deploy/lightdash-backend -- \
   pnpm -F backend migrate-production status
 ```
 
 - **`migrating`** with a recent heartbeat: it is working. Migrations on large tables can take a long time. Leave it alone.
-- **`stale`**: the holder died. Another process takes the lease over automatically once it expires. No action needed in most cases.
+- **`stale`**: the holder died. The lease expires 75 seconds after its last heartbeat, and another process takes it over automatically. No action needed in most cases.
 - **`parked`**: the migration failed its retries (three attempts with backoff) and stopped deliberately. The same app version will refuse to retry, which is what stops a crash-looping pod from hammering a half-applied migration. Fix the cause, then deploy a fixed version, or unlock with attribution and retry.
 
 <Warning>
@@ -362,7 +398,7 @@ Do **not** edit the `knex_migrations_lock` table by hand on `1.123.0` and later.
 ### Releasing a lock
 
 ```bash
-kubectl exec deploy/<release>-lightdash -- \
+kubectl exec deploy/lightdash-backend -- \
   pnpm -F backend migrate-production unlock --actor "alex@example.com"
 ```
 
