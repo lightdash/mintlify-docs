@@ -1,0 +1,275 @@
+---
+title: "Upgrade safety"
+description: "How to read the release-safety artifact Lightdash publishes with every release, check an upgrade span, and pick the right deployment strategy."
+tag: "Beta"
+doc-type: reference
+---
+
+<Info>
+  **Release-safety artifacts are in [Beta](/help/feature-maturity-levels).** The artifacts are published for every release and are safe to read today, but we're still refining how we classify risk and what the artifact carries, so fields and verdicts may change.
+
+  Build automation against it, and keep that automation easy to change. If the artifact doesn't answer a question you need it to, [tell us](https://github.com/lightdash/lightdash/issues).
+</Info>
+
+<Note>
+🛠 This page is for engineering teams self-hosting their own Lightdash instance. If you're on Lightdash Cloud, upgrades are handled for you automatically.
+</Note>
+
+Every Lightdash release publishes a machine-readable answer to the question: **"is upgrading from version X to version Y safe to roll, and are there required stops on the way?"**
+
+Two documents carry that answer:
+
+| Document | Scope | Where to get it |
+| --- | --- | --- |
+| `release-safety.json` | One release: the step from `previousVersion` to `version` | Attached to every [GitHub release](https://github.com/lightdash/lightdash/releases) as an asset, and committed at the repository root of the release tag (so it ships inside the Docker image) |
+| `release-safety-index.json` | Every release back to the index floor (~12 months) | Committed at the repository root: [`raw.githubusercontent.com/lightdash/lightdash/main/release-safety-index.json`](https://raw.githubusercontent.com/lightdash/lightdash/main/release-safety-index.json) |
+
+Both are public — no account or license required — and both are designed to be consumed by your own automation (CI checks, GitOps hooks) as well as by a human before an upgrade.
+
+## The one rule that matters
+
+<Warning>
+**Only an explicit `rollingUpdateSafe: true` means a rolling update is advised. `unknown` means NOT safe.**
+
+`unknown` is what the pipeline publishes when it could not *prove* safety — a degraded check, an unclassifiable change, an old release nobody vouched for. Treat every `unknown` exactly like `false`: use the `Recreate` strategy. Never write automation that treats "not false" as safe.
+</Warning>
+
+Everything else on this page is detail on top of that rule.
+
+<Note>
+This page is the decision layer: whether an upgrade is safe. Once you have your verdict, the [upgrade runbook](/self-host/upgrade-runbook) is the execution layer: the sequence for Kubernetes, docker compose, and automation, plus the `migrate` command reference, recovery, and rollback.
+</Note>
+
+## How to read the signal
+
+1. **Verdicts compose by AND across a span.** Upgrading across several releases (say `1.111.0` → `1.115.0`) is rolling-safe only if *every* release in the span is `rollingUpdateSafe: true`. One `false` or `unknown` anywhere in the span means the whole upgrade needs `Recreate`. The cumulative index exists so you can evaluate a whole span in one fetch.
+2. **Required stops are hard requirements.** If any release in your span lists a version in `requiredStops`, you must upgrade *to that version first*, let it run its migrations, and then continue. Skipping a stop runs later migrations against a schema that's missing the prerequisites they assume — which is how databases end up in states that need manual repair.
+3. **`minPreviousVersion` floors direct jumps.** Each release states the oldest version you may upgrade from directly. If you're on something older, upgrade to an intermediate version first.
+4. **Versions older than the index floor route through the floor.** The index reaches back to `0.1893.0`. If you're running something older, first upgrade to `0.1893.0` (the floor entry is marked `syntheticRequiredStop: true` for exactly this reason), then evaluate the rest of your span normally. In practice: upgrading from `0.1050.0` to `1.121.0` means `0.1050.0` → `0.1893.0` → whatever the span check from there tells you.
+5. **Backfilled entries are conservative.** Entries marked `backfilled: true` were generated retroactively — nobody vouched for those releases at the time they shipped. Expect `unknown` verdicts there, and plan a `Recreate` upgrade for any span that crosses them.
+
+## Checking an upgrade span
+
+The answer depends on exactly three inputs: the version you're running, the version you're targeting, and every release in between. The [Lightdash CLI](/workflow/cli/install) (version `1.126.0` or later) answers it in one command:
+
+```bash
+lightdash upgrade-check --from 1.111.0 --to 1.115.0
+```
+
+```text
+Release safety check: 1.111.0 -> 1.115.0
+Direction: upgrade
+Verdict: UNSAFE
+Unsafe rolling-update safety: 1.112.0
+Unknown rolling-update safety: 1.113.0, 1.113.1, 1.114.0, 1.115.0
+Minimum previous version: 1.111.0
+Covered releases: 1.112.0, 1.113.0, 1.113.1, 1.114.0, 1.115.0
+```
+
+The command fetches the public index and applies the span rules from this page — AND-composition, required stops, minimum versions — locally. It needs **no Lightdash login, token, or instance access**, so it runs anywhere, including CI against an air-gapped production instance. Here the verdict is `UNSAFE` because the span crosses one release known not to be rolling-safe and several unproven ones — so **deploy with `Recreate`**: stop the old version, then start the new one.
+
+### Using it as a CI gate
+
+The exit code carries the verdict: **exit `0` only when the whole span is proven safe to roll**. Any other outcome — an `unknown` or `false` release in the span, a required stop, a version the index doesn't cover, a fetch failure — exits non-zero. That fail-closed contract means you can use the bare command as a pipeline gate:
+
+```bash
+lightdash upgrade-check --from "$CURRENT_VERSION" --to "$TARGET_VERSION"
+```
+
+For automation that needs the detail, `--json` prints a stable machine-readable object (`fromVersion`, `toVersion`, `direction`, `safe`, `verdict`, `requiredStops`, `minPreviousVersion`, `coveredVersions`, `missingRanges`):
+
+```bash
+lightdash upgrade-check --from 1.111.0 --to 1.115.0 --json | jq .safe
+```
+
+## What the verdict means for your deployment
+
+| Verdict for the span | Kubernetes / Helm | docker compose |
+| --- | --- | --- |
+| Every release `rollingUpdateSafe: true` | `RollingUpdate` strategy is advised — old and new pods may serve side by side during rollout | `docker compose up -d` with the new tag |
+| Anything `false` or `unknown` | Use `Recreate` (or scale to zero before switching the image tag) | `docker compose down`, update the tag, `docker compose up -d` |
+
+`Recreate` means a short window of downtime, but it guarantees old and new code never run against the database at the same time. That matters because Lightdash runs its database migrations automatically at startup: with `Recreate`, every old replica has stopped before the new version boots and migrates; with a rolling update, old replicas keep serving against a schema that is changing underneath them — which is exactly what the verdict certifies as safe or not.
+
+## Worked example: reading a release artifact
+
+This is the real artifact attached to release `1.121.0`:
+
+```json
+{
+  "schemaVersion": "2",
+  "version": "1.121.0",
+  "previousVersion": "1.120.1",
+  "releaseDate": "2026-08-11T11:08:39.052Z",
+  "migrations": {
+    "present": false,
+    "count": 0,
+    "coreCount": 0,
+    "eeCount": 0,
+    "files": []
+  },
+  "compatibility": {
+    "rollingUpdateSafe": true,
+    "recommendedStrategy": "RollingUpdate"
+  },
+  "api": {
+    "rest": {
+      "checked": true,
+      "breaking": false,
+      "changes": [],
+      "breakingCount": 0,
+      "advisories": [],
+      "advisoryCount": 0
+    },
+    "mcp": {
+      "checked": true,
+      "breaking": false,
+      "changes": [],
+      "breakingCount": 0,
+      "advisories": [],
+      "advisoryCount": 0
+    }
+  },
+  "config": {
+    "checked": true,
+    "breaking": false,
+    "changes": []
+  },
+  "upgrade": {
+    "minPreviousVersion": "1.111.0",
+    "requiredStops": []
+  },
+  "declaredBreaks": []
+}
+```
+
+Reading it top to bottom:
+
+- **No migrations ship in this release** (`migrations.present: false`), so there is no schema change to coordinate.
+- **`rollingUpdateSafe: true`** — this is the explicit green verdict. Upgrading from `1.120.1` (the `previousVersion`) to `1.121.0` can be a rolling update.
+- **All three change surfaces were checked and came back clean**: no breaking REST API changes, no breaking MCP tool changes (not even non-breaking advisories on either), and no environment variable removals, renames, or default changes.
+- **You may jump here directly from `1.111.0` or newer** (`upgrade.minPreviousVersion`), with no required stops on the way — but remember the span rule: the jump is only *rolling*-safe if every release in between is, which you check against the index, not this single artifact.
+- **No engineer declared a breaking change** (`declaredBreaks` is empty).
+
+## Field reference: `release-safety.json`
+
+Fields that can't prove safety report the string `"unknown"` instead of a boolean — and per the rule above, you consume `"unknown"` as unsafe.
+
+### Top level
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `schemaVersion` | string | Always `"2"` for this format |
+| `version` | string | The release this artifact describes |
+| `previousVersion` | string \| null | The release immediately before it — the step this artifact covers |
+| `releaseDate` | ISO date-time | When the release was published |
+
+### `migrations`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `present` | boolean \| `"unknown"` | Whether this release ships database migrations |
+| `count`, `coreCount`, `eeCount` | integer | How many, split between core and Enterprise migrations |
+| `files[].name` | string | Migration file name |
+| `files[].edition` | `core` \| `ee` | Which edition ships it |
+| `files[].tables` | string[] | Tables the migration touches |
+| `files[].heaviness` | object | Three verdicts — `locksTable`, `rewritesTable`, `scansTable` — each boolean or `"unknown"`, flagging migrations that may lock, rewrite, or scan whole tables (and therefore take time or block writes on large databases) |
+
+### `compatibility`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `rollingUpdateSafe` | boolean \| `"unknown"` | **The verdict.** Only `true` means a rolling update is advised |
+| `recommendedStrategy` | `RollingUpdate` \| `Recreate` | A convenience rendering of the verdict. Gate your automation on `rollingUpdateSafe`, not on this field |
+
+### `api` and `config`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `api.rest`, `api.mcp` | object | One entry per API surface — REST endpoints and MCP tools — with the fields below |
+| `…​.checked` | boolean | Whether the diff for that surface actually ran |
+| `…​.breaking` | boolean \| `"unknown"` | Whether the surface has consumer-breaking changes |
+| `…​.changes[]` | string[] | The breaking changes, one human-readable line each (e.g. `GET /api/v1/… — response property removed`). The list is capped with an explicit overflow line; `breakingCount` always carries the full total |
+| `…​.breakingCount` | integer | Uncapped total number of breaking changes |
+| `…​.advisories[]` | string[] | Non-breaking advisory notes (for example, a response enum gaining a new value) — worth a scan if you consume the API strictly, but they never affect the `breaking` verdict. Capped like `changes` |
+| `…​.advisoryCount` | integer | Uncapped total number of advisory notes |
+| `config.checked` | boolean | Whether the environment variable surface was diffed |
+| `config.breaking` | boolean \| `"unknown"` | Whether any config change is breaking |
+| `config.changes[]` | object | Each change is `removed` (with `previousDefault`), `renamed` (with `previousName` and `defaultValue`), or `defaultChanged` (with `previousDefault` and `defaultValue`) — scan this list for any environment variable you set explicitly |
+
+### `upgrade` and `declaredBreaks`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `upgrade.minPreviousVersion` | string \| null | Oldest version you may upgrade from directly |
+| `upgrade.requiredStops` | string[] | Versions you must pass through on the way to this release |
+| `declaredBreaks[]` | object | Breaking changes declared by engineers in the source (`file`, `line`, `reason`, and whether the break makes this release a `requiredStop`) |
+
+## Field reference: `release-safety-index.json`
+
+The index is a derived summary — one entry per release, oldest first. Per-release artifacts remain the source of truth.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `backfillFloorVersion` | string | The oldest release the index covers (`0.1893.0`) |
+| `entries[].version`, `previousVersion`, `releaseDate` | | Same meaning as the per-release artifact |
+| `entries[].rollingUpdateSafe` | boolean \| `"unknown"` | The verdict for that single release step |
+| `entries[].requiredStops`, `minPreviousVersion` | | Same meaning as the per-release artifact |
+| `entries[].backfilled` | boolean | `true` when the entry was generated retroactively — expect conservative (`unknown`) verdicts |
+| `entries[].syntheticRequiredStop` | boolean | `true` only on the floor entry: versions older than the floor must upgrade to it first |
+
+## Before you upgrade: checklist
+
+- Read the [release notes](https://github.com/lightdash/lightdash/releases) for every release in your span.
+- Run the [span check](#checking-an-upgrade-span) — note the verdict, required stops, and `minPreviousVersion`.
+- If the span verdict is anything other than `true`, plan a maintenance window and use `Recreate`.
+- If migrations are present, check their `heaviness` flags in the per-release artifacts — table rewrites and scans on large tables take time.
+- Scan `config.changes` for environment variables you set explicitly.
+- Confirm your database backup (and [point-in-time recovery](/self-host/production-deployment-checklist), if configured) is current.
+- Follow the [upgrade runbook](/self-host/upgrade-runbook) for the sequence itself, and read its [rollback section](/self-host/upgrade-runbook#rolling-back) before you need it.
+- After upgrading, [update the Lightdash CLI](/workflow/cli/install#updating-the-lightdash-cli) to match.
+
+## Appendix: checking a span without the CLI
+
+In environments where you can't run the CLI (no Node.js, or a fully air-gapped pipeline that mirrors the index), you can evaluate a span directly from the index with `curl` and `jq`. Check every release between your current version (exclusive) and your target (inclusive):
+
+```bash
+FROM=1.111.0   # the version you are running
+TO=1.115.0     # the version you want
+
+curl -fsSL https://raw.githubusercontent.com/lightdash/lightdash/main/release-safety-index.json |
+jq --arg from "$FROM" --arg to "$TO" '
+  .entries
+  | (map(.version == $from) | index(true)) as $i
+  | (map(.version == $to) | index(true)) as $j
+  | if $i == null or $j == null then
+      error("version not found in index — treat the span as unsafe")
+    else
+      .[$i+1:$j+1]
+      | {
+          releasesInSpan: length,
+          rollingUpdateSafe: (map(.rollingUpdateSafe == true) | all),
+          requiredStops: (map(.requiredStops[]) | unique),
+          minPreviousVersionForTarget: (last.minPreviousVersion)
+        }
+    end'
+```
+
+Against the live index, that span answers:
+
+```json
+{
+  "releasesInSpan": 5,
+  "rollingUpdateSafe": false,
+  "requiredStops": [],
+  "minPreviousVersionForTarget": "1.111.0"
+}
+```
+
+Read it in order:
+
+1. `requiredStops` is empty — no mandatory intermediate version, so a direct jump is allowed…
+2. …provided your current version is at or above `minPreviousVersionForTarget`. Here `1.111.0` ≥ `1.111.0`, so the jump is permitted.
+3. `rollingUpdateSafe` is `false` — the span crosses at least one release that is not proven rolling-safe, so deploy with `Recreate`.
+
+If your current version isn't in the index at all, the command errors on purpose. That's the fail-safe default: a version the index can't see is a span it can't vouch for — the same rule `upgrade-check` applies.

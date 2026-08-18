@@ -1,0 +1,426 @@
+---
+title: "Upgrade runbook"
+description: "Step-by-step sequences for upgrading a self-hosted Lightdash deployment on Kubernetes, docker compose, or automation, plus the migration command reference and recovery paths."
+tag: "Beta"
+doc-type: reference
+---
+
+<Info>
+  **Safety-gated upgrades are in [Beta](/help/feature-maturity-levels).** Every command on this page ships in a released image and the recovery paths are supported, but we're still refining the workflow on our own instances, so some sequences and outputs will change.
+
+  Feedback shapes where this goes next. [Open an issue](https://github.com/lightdash/lightdash/issues) if a step doesn't fit your deployment.
+</Info>
+
+<Note>
+🛠 This page is for engineering teams self-hosting their own Lightdash instance. If you're on Lightdash Cloud, upgrades are handled for you automatically.
+</Note>
+
+[Upgrade safety](/self-host/upgrade-safety) tells you **whether** an upgrade is safe to roll and whether there are required stops on the way. This page tells you **how to run it**: the exact sequence for each deployment shape, the commands that inspect and drive migrations, and what to do when something gets stuck.
+
+Read them in that order. Decide first, then execute.
+
+## No Lightdash account is needed to upgrade safely
+
+Nothing in this runbook requires a Lightdash login, a personal access token, or an authenticated instance:
+
+- `lightdash upgrade-check` reads the public release-safety index over plain HTTPS. It never contacts your instance and never asks who you are.
+- The `migrate` commands run **inside your own Lightdash container** and authenticate with the same database environment variables the server already uses (`PGHOST`, `PGUSER`, `PGPASSWORD`, and friends). There is no second credential to provision.
+
+That matters for air-gapped and locked-down deployments: the decision layer runs in CI with no secrets, and the execution layer runs in your cluster with credentials that already exist.
+
+## What shipped when
+
+Every command on this page is in a released image. Version-fence your runbook accordingly:
+
+| Capability | Available from |
+| --- | --- |
+| Migration lease runtime, `migrate status`, `migrate wait`, `migrate unlock` | Lightdash `1.123.0` |
+| `migrate preflight` | Lightdash `1.125.0` |
+| `lightdash upgrade-check` | Lightdash CLI `1.126.0` |
+| `/api/v1/livez` and `/api/v1/readyz` probes | Lightdash `1.129.0` |
+
+If you are upgrading *from* something older, that is fine. These are properties of the image you are upgrading *to*, and of the CLI you run the check with. The one place the old world still shows up is [rolling back across the `1.123.0` boundary](#rolling-back).
+
+## The command surface
+
+### `lightdash upgrade-check`
+
+Answers the span question from the public index, with no login and no instance access. Full detail, including the JSON shape and the exit-code contract, is on [upgrade safety](/self-host/upgrade-safety#checking-an-upgrade-span).
+
+```bash
+lightdash upgrade-check --from 1.130.0 --to 1.138.0
+lightdash upgrade-check --from 1.130.0 --to 1.138.0 --json
+```
+
+Exit `0` means the whole span is proven safe to roll. Anything else, including a version the index cannot see, exits non-zero. Both `--from` and `--to` are required and must be `X.Y.Z` release versions.
+
+<Warning>
+`upgrade-check` only answers **forward** spans. Asking it about a rollback (a `--to` older than `--from`) is an error, not a verdict. Rollback guidance is [further down this page](#rolling-back).
+</Warning>
+
+### The `migrate` commands
+
+These ship inside the Lightdash image and are the runtime execution layer. Invoke them the same way the image's own entrypoint does, from the `/usr/app` working directory:
+
+```bash
+pnpm -F backend migrate-production <command> [flags]
+```
+
+| Command | What it does |
+| --- | --- |
+| `up` | Runs pending Knex and Graphile Worker migrations. This is the default when no command is given, and it is what the image entrypoint and the Helm migration Job run |
+| `preflight` | Checks migration safety **without changing the database**. Also runs automatically at the start of every `up` |
+| `status` | Prints the migration lease, the Knex ledger, and recent migration run history |
+| `wait` | Waits for another process to finish migrating, and takes over if that process died |
+| `unlock` | Clears migration locks for recovery, with attribution |
+
+| Flag | Valid on | Meaning |
+| --- | --- | --- |
+| `--timeout-ms <ms>` | `up`, `wait` | How long to wait for another process to finish before giving up. Defaults to 30 minutes, or to `MIGRATION_WAIT_TIMEOUT_MS` |
+| `--json` | `status`, `preflight` | Emit the payload as a single JSON object instead of human-readable lines |
+| `--strict` | `up`, `preflight` | Promote preflight warnings to blockers |
+| `--force` | `up`, `preflight`, `unlock` | Override blocking preflight checks, an actively held lease, or a legacy Knex lock |
+| `--actor <identity>` | `unlock` | Required on `unlock`. Records who released the lock |
+| `-h`, `--help` | all | Print usage |
+
+#### Running them in context
+
+The commands need the deployment's database environment, so run them where that environment already exists.
+
+<Tabs>
+<Tab title="kubectl exec">
+Against a running pod. Substitute your release name:
+
+```bash
+kubectl exec deploy/<release>-lightdash -- \
+  pnpm -F backend migrate-production status
+```
+
+`exec` bypasses the image entrypoint, so this inspects without triggering a migration.
+</Tab>
+<Tab title="One-off pod">
+To run the **new** image's preflight before you upgrade, run a Job on the new tag that reuses your backend's environment sources:
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: lightdash-preflight
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: preflight
+          image: lightdash/lightdash:<new-version>
+          workingDir: /usr/app
+          command: ["pnpm", "-F", "backend", "migrate-production", "preflight"]
+          env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: <your-database-secret>
+                  key: <password-key>
+          envFrom:
+            # the same ConfigMap and Secret your backend deployment uses
+            - configMapRef:
+                name: <release>-lightdash
+            - secretRef:
+                name: <release>-lightdash
+```
+
+Read the result with `kubectl logs job/lightdash-preflight`.
+</Tab>
+<Tab title="docker compose">
+Against the running container:
+
+```bash
+docker compose exec lightdash \
+  pnpm -F backend migrate-production status
+```
+
+To run the new image's preflight after pulling but before switching, override the entrypoint so the container does not migrate on the way in:
+
+```bash
+docker compose run --rm --entrypoint pnpm lightdash \
+  -F backend migrate-production preflight
+```
+</Tab>
+</Tabs>
+
+#### Reading `preflight`
+
+Preflight probes the live database and reports one line per check, then a decision:
+
+```text
+[RED PASS] version-path: The migration ledger structurally matches the target artifact direct-predecessor or up-to-date path
+[RED PASS] postgres-version: ...
+[RED PASS] migration-privileges: ...
+[YELLOW WARN] long-transactions: ...
+[INFO INFO] pending-migrations: ...
+Preflight decision: proceed-with-warnings (0 red, 1 yellow)
+```
+
+| Check | Severity | What it catches |
+| --- | --- | --- |
+| `version-path` | red (yellow when the image has no baked artifact) | A ledger that diverges from the image's migration files, an unreadable release-safety artifact, or unresolved required stops |
+| `postgres-version` | red | A PostgreSQL server older than major version 12 |
+| `migration-privileges` | red | The migration role cannot create in its schema, or does not own tables the pending migrations touch |
+| `held-locks` | yellow | Existing locks on tables the pending migrations will touch |
+| `long-transactions` | yellow | Transactions running longer than 5 minutes against those tables |
+| `disk-headroom` | yellow | Less than 5 GiB free, when you tell it how much there is via `MIGRATION_PREFLIGHT_DISK_HEADROOM_BYTES` |
+| `pending-migrations` | info | The inventory of what is about to run, including whether each migration runs in a transaction |
+
+The decision is one of `proceed`, `proceed-with-warnings`, `abort`, or `force-proceed`. Any red failure aborts; `--strict` makes yellow warnings abort too; `--force` turns an abort into `force-proceed` and prints a loud override banner. A standalone `preflight` that aborts exits non-zero, which makes it a usable CI gate.
+
+#### Reading `status`
+
+`status` reports one of four states:
+
+| State | Meaning |
+| --- | --- |
+| `idle` | Nobody holds the lease and nothing is parked |
+| `migrating` | A process holds the lease and is heartbeating |
+| `stale` | A process holds the lease but its heartbeat has expired. Another process will take over |
+| `parked` | Migration failed its retries and stopped. It will not retry on this app version until a human intervenes |
+
+Alongside the state it prints the lease holder (hostname, pod, app version, current migration, last heartbeat), the parked details if any, the completed and pending Knex migration counts, the ledger classification, and recent migration runs with their outcomes. Any prior `unlock` is recorded against the run that followed it, so the audit trail survives.
+
+`--json` gives you the same payload for automation.
+
+## Kubernetes and Helm
+
+<Steps>
+<Step title="Take a database backup">
+This is step one, not advice. Production recovery is forward-only: there are no down-migrations to unwind a bad upgrade, so a current backup is what makes the worst case survivable.
+
+Take a fresh backup, and confirm it restores. If you run point-in-time recovery, confirm the window covers the whole upgrade.
+</Step>
+
+<Step title="Check the span">
+Read the release notes for every release you are crossing, then check the span:
+
+```bash
+lightdash upgrade-check --from 1.130.0 --to 1.138.0
+```
+
+Green means a `RollingUpdate` is advised. Anything else means `Recreate` (or scale to zero before switching the tag), and a maintenance window. If the check reports required stops, upgrade to the first stop and let it finish before continuing. See [upgrade safety](/self-host/upgrade-safety) for how verdicts compose across a span.
+</Step>
+
+<Step title="Preflight the new image (optional)">
+`up` runs preflight automatically, so this step buys you the answer *before* you commit to the deploy rather than during it. Run the [one-off Job](#running-them-in-context) on the new tag and read its report.
+
+Worth doing when the span ships heavy migrations, when the database is large, or when you want a green light before opening a maintenance window.
+</Step>
+
+<Step title="Upgrade">
+Bump `image.tag` in your values and upgrade:
+
+```bash
+helm repo update lightdash
+helm upgrade -f values.yml lightdash lightdash/lightdash
+```
+
+With `migrationJob.enabled: true`, the chart runs migrations in a `pre-install,pre-upgrade` hook Job and the backend pods then start without migrating, so replicas never race for the lock. This is the recommended setup for any multi-replica deployment. Without it, the pods migrate at startup and the lease runtime arbitrates between them: one pod wins and migrates, the rest wait.
+</Step>
+
+<Step title="Watch it land">
+Follow the migration:
+
+```bash
+kubectl logs -f job/<release>-lightdash-migrate     # when migrationJob is enabled
+kubectl exec deploy/<release>-lightdash -- \
+  pnpm -F backend migrate-production status
+```
+
+Then confirm the instance is actually ready. On `1.129.0` and later, `/api/v1/readyz` returns `200` only when the schema gate has passed and the migration run ledger is clean:
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' https://lightdash.example.com/api/v1/readyz
+```
+
+A `503` carries a `reason`: `schema_pending` (migrations still outstanding), `migration_parked` (a migration failed and stopped), `migration_ledger_unavailable`, or `db_unavailable`. `/api/v1/livez` answers without touching the database, which is why it is the right liveness probe and the wrong readiness signal.
+
+Confirm the version too, then upgrade the [Lightdash CLI](/workflow/cli/install#updating-the-lightdash-cli) to match.
+</Step>
+
+<Step title="If the release is bad">
+Redeploy the previous image tag. Code rollback is the supported mitigation: it takes the new code out of service while leaving the migrated schema in place, which is the safe direction. Read [rolling back](#rolling-back) before you reach for a database rollback, which is a different and much heavier operation.
+</Step>
+</Steps>
+
+## Docker compose
+
+<Warning>
+A single-container compose deployment has **no zero-downtime upgrade path**. Recreating the container stops the old version, boots the new one, and runs migrations before the server accepts traffic. A green `rollingUpdateSafe` verdict does not change that: it certifies that old and new code *may* overlap, and compose never overlaps them. Plan for a few minutes of downtime, more if the release ships heavy migrations.
+</Warning>
+
+<Steps>
+<Step title="Take a database backup">
+Step one here too, for the same reason. If your Postgres runs in the compose stack, back up the volume as well as the database.
+</Step>
+
+<Step title="Check the span">
+```bash
+lightdash upgrade-check --from 1.130.0 --to 1.138.0
+```
+
+Respect required stops: upgrade to the stop, let it come up cleanly, then continue.
+</Step>
+
+<Step title="Pull and preflight (optional)">
+Pull the new image first, then run preflight against it without letting the entrypoint migrate:
+
+```bash
+docker compose pull lightdash
+docker compose run --rm --entrypoint pnpm lightdash \
+  -F backend migrate-production preflight
+```
+</Step>
+
+<Step title="Upgrade">
+Pin the new tag (or pull it, if you track a floating tag), then recreate:
+
+```bash
+docker compose pull lightdash
+docker compose up --detach --remove-orphans
+```
+
+The new container runs migrations on the way up, so the server is unavailable until they finish. Follow along with `docker compose logs -f lightdash`.
+</Step>
+
+<Step title="Verify">
+```bash
+docker compose exec lightdash \
+  pnpm -F backend migrate-production status
+curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8080/api/v1/readyz
+```
+
+Expect `idle` with no pending migrations, and `200`.
+</Step>
+</Steps>
+
+## Automated upgrades
+
+The Lightdash repository ships a generic reference automation at [`examples/upgrade-automation`](https://github.com/lightdash/lightdash/tree/main/examples/upgrade-automation): a GitHub Actions workflow plus two composite actions that keep a deployment on the newest release the public safety gate can reach. It is deliberately generic, sends no telemetry, and keeps all of its evidence in your own repository. Copy it and point it at the file that pins your image tag.
+
+The loop it implements is the sequence to copy even if you build your own:
+
+<Steps>
+<Step title="Trigger per release">
+Schedule, manual dispatch, or a `repository_dispatch` event when a release lands. These are detection mechanisms only. There is no upgrade window and no veto delay: a release is considered as soon as a trigger notices it.
+</Step>
+
+<Step title="Gate on upgrade-check">
+Read the currently pinned version, then run `lightdash upgrade-check` against the public index to pick the **newest green-reachable target**. Required stops resolve hop by hop, so the automation steps *to* a stop rather than over it, and never crosses a red break silently. Unknown or incomplete safety data fails closed and retries on the next run.
+</Step>
+
+<Step title="Open a pin pull request">
+The bump lands as a pull request carrying the full verdict JSON, so the evidence for the decision is attached to the change that acts on it.
+
+- **Green verdict:** auto-merge, zero-touch. Nobody is asked to approve a machine-verified safe hop.
+- **Not green:** hold the pull request and notify a channel with a plain explanation of what stopped it. Yellow and unknown both count as not green.
+</Step>
+
+<Step title="Deploy">
+Merging the pin triggers your existing deployment workflow. The automation does not deploy; it drives the thing that does.
+</Step>
+
+<Step title="Verify after deploy">
+Poll `/api/v1/readyz` until it returns `200` and the served version matches the version you pinned. Require **three consecutive** green polls, inside a configurable budget that defaults to about 20 minutes. One green poll can catch an old pod that has not been replaced yet.
+</Step>
+
+<Step title="Fail closed">
+If verification fails, freeze: open a freeze issue, escalate to the channel, and stop planning further upgrades until a human closes it. There is **no auto-rollback**. Recovery is forward-only, and an automation that rolls back unattended is an automation that can undo a migration nobody watched.
+</Step>
+</Steps>
+
+### Recommended default policy
+
+**Auto-apply when green, hold when not.** A proven-safe hop is exactly the case where human review adds latency and no information; everything else is exactly the case where it adds both. Keep the freeze switch manual and obvious, so disarming upgrades during an incident is one action rather than a code change.
+
+## Recovery
+
+### A migration is stuck
+
+Start by looking, not by fixing:
+
+```bash
+kubectl exec deploy/<release>-lightdash -- \
+  pnpm -F backend migrate-production status
+```
+
+- **`migrating`** with a recent heartbeat: it is working. Migrations on large tables can take a long time. Leave it alone.
+- **`stale`**: the holder died. Another process takes the lease over automatically once it expires. No action needed in most cases.
+- **`parked`**: the migration failed its retries (three attempts with backoff) and stopped deliberately. The same app version will refuse to retry, which is what stops a crash-looping pod from hammering a half-applied migration. Fix the cause, then deploy a fixed version, or unlock with attribution and retry.
+
+<Warning>
+Do **not** edit the `knex_migrations_lock` table by hand on `1.123.0` and later. The lease runtime holds locks that live migrations legitimately own, and clearing them manually can let a second migrator start on top of the first. Use `migrate status` to inspect and `migrate unlock` to release.
+</Warning>
+
+### Releasing a lock
+
+```bash
+kubectl exec deploy/<release>-lightdash -- \
+  pnpm -F backend migrate-production unlock --actor "alex@example.com"
+```
+
+`--actor` is mandatory and is recorded against the next migration run, so an unlock is always attributable afterwards.
+
+`unlock` refuses, by design, when the lease is actively held by a live process, or when a pre-lease Knex lock is still held. Both refusals mean "something may still be running". Terminate the holder first. Only then reach for `--force`, which overrides the refusal.
+
+### After an unlock: what resumes on its own
+
+| Deployment | Behaviour |
+| --- | --- |
+| Kubernetes, pods migrating at startup | Self-resumes. The waiting followers re-race for the freed lease and one of them takes over |
+| Kubernetes with `migrationJob.enabled` | May need re-triggering. If the hook Job exhausted its `backoffLimit`, nothing is left to claim the lease. Re-run `helm upgrade` to recreate the hook Job |
+| docker compose | Needs a container restart: `docker compose restart lightdash` |
+
+### Rebuilding an instance from scratch
+
+Three things are needed to stand an instance back up, so keep all three recoverable:
+
+- the Postgres backup,
+- the `LIGHTDASH_SECRET` (it decrypts data at rest — losing it means losing access to encrypted data), and
+- your Helm values.
+
+## Rolling back
+
+Rolling back means redeploying an older image. It does **not** unwind the database, and Lightdash does not run down-migrations in production.
+
+- **Back up first.** Always, and before the upgrade rather than after you need it. A backup restore is the only path that undoes a schema change, and it costs you everything written since the snapshot.
+- **Prefer small spans.** One release back is a decision. Ten releases back is an archaeology project. Frequent, small upgrades keep the rollback target close.
+- **Roll back promptly.** Schema compatibility is not data compatibility. The new version may have written values the old code mishandles or cannot read, and that risk grows every hour the new version serves traffic. A rollback ten minutes in is a very different proposition from one ten days in.
+- **`upgrade-check` will not help here.** It answers forward spans only; reverse spans are an error, not a verdict. Use the guidance on this page instead.
+
+### The `1.123.0` fence
+
+The image you roll back **to** determines what happens when it meets a database that is ahead of it:
+
+- **`1.123.0` and later**: the migrate command classifies the ledger itself. A database carrying migrations the image does not have is recognised as database-ahead and the image starts normally. `ALLOW_MISSING_MIGRATIONS` is a deprecated no-op on this path and logs a warning saying so.
+- **Before `1.123.0`**: the image validates the migration directory at boot and treats any database-only migration as a corrupt migration directory. It will refuse to start. Set `ALLOW_MISSING_MIGRATIONS=true` on that deployment so it can start against the newer database.
+
+So a rollback from `1.130.0` to `1.124.0` needs nothing extra, while a rollback from `1.130.0` to `1.122.0` needs `ALLOW_MISSING_MIGRATIONS=true`.
+
+### Migration batch granularity
+
+The lease runtime applies each migration as its **own** Knex batch, rather than grouping a whole deploy into one batch as stock Knex does. That changes the granularity of the development-tooling rollback: `knex migrate:rollback` unwinds **one migration per invocation**, not one deploy per invocation.
+
+This matters mid-incident, when someone reaches for a rollback expecting a whole deploy to come off in one command. It will not. Production recovery remains forward-only regardless.
+
+## For contributors
+
+If you write migrations, the safety verdict this runbook depends on is generated from **declarations in the migration files themselves**. A migration containing a detected breaking operation must declare it in the same file:
+
+```typescript
+export const breaking = {
+    reason: 'old pods read legacy_column',
+    requiredStop: true,
+};
+```
+
+Raw SQL that the static lint cannot classify needs an explicit `export const classification = { kind: 'safe' | 'breaking', reason: '...' }`. Declaring a break is not a way to make CI pass: it flips the release to not rolling-safe and advises every self-hosted deployment to use `Recreate`. Try an expand-only redesign first.
+
+The full rules, including the idempotency contract for `transaction: false` migrations and the `down()` requirements, live in `packages/backend/src/database/migrations/CLAUDE.md` in the Lightdash repository.

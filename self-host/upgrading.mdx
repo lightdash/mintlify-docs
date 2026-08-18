@@ -1,7 +1,7 @@
 ---
 title: "Upgrading Lightdash"
 sidebarTitle: "Upgrading"
-description: "How Lightdash versioning works and how to upgrade a self-hosted deployment safely, including the migration job and rollback."
+description: "How Lightdash versioning works, when to upgrade a self-hosted deployment, and how to plan a safe rollout."
 doc-type: reference
 ---
 
@@ -28,54 +28,43 @@ Your UAT environment should mirror production closely enough that upgrade testin
 - **The same configuration and environment variables as production** — feature flags, SSO, SMTP, object storage, license key, scheduler and headless browser config. Differences here are the most common reason an upgrade passes pre-production but fails in production.
 - **A replica of the production Lightdash database** (including `pgvector`), not an empty or hand-seeded one. Real data volume, migrations, and project/role/embed state are what surface upgrade regressions. Refresh the replica from production before each round of testing.
 
-## Upgrade mechanics
+## Monitor security advisories
 
-### Local Docker deployments
+[GitHub Security Advisories](https://github.com/lightdash/lightdash/security/advisories) are the canonical source for published Lightdash vulnerabilities. Docker Hub and Docker Scout can provide supplemental findings, but pulling an image does not subscribe your team to security notifications and existing containers do not update automatically.
 
-If you're running Lightdash on your own laptop with Docker, pull the latest image and restart:
+Opt in to automated monitoring by polling GitHub's public repository-advisories API every six hours:
+
+```text
+GET https://api.github.com/repos/lightdash/lightdash/security-advisories?state=published&sort=updated&direction=desc&per_page=100
+Accept: application/vnd.github+json
+X-GitHub-Api-Version: 2026-03-10
+```
+
+The endpoint does not require authentication. Follow the `Link` response header when it is present and use `ETag` with `If-None-Match` to avoid downloading unchanged results. Persist each advisory's `ghsa_id`, `updated_at`, and a hash of its normalized content, then alert when an advisory is new or either value changes. The content hash is necessary because GitHub can update affected-product metadata without advancing `updated_at`. A non-null `withdrawn_at` means the advisory was withdrawn.
+
+Compare your deployed version against each applicable `vulnerabilities[].vulnerable_version_range` with a SemVer library. Treat an advisory without `patched_versions` as affected until the advisory says otherwise. The advisory's `html_url` is the canonical remediation guide.
+
+Read the running version from the unauthenticated health endpoint, or from the version your deployment manifest pins:
+
+```bash
+curl --fail --silent https://lightdash.example.com/api/v1/health |
+  jq --raw-output '.results.version'
+```
+
+See the [Lightdash security policy](https://github.com/lightdash/lightdash/security/policy) for a cache-aware polling example and the complete operator contract.
+
+## Running an upgrade
+
+Start with the [release-safety signal](/self-host/upgrade-safety) for your upgrade span: it tells you whether a rolling update is advised and whether there are required stops on the way. Then follow the [upgrade runbook](/self-host/upgrade-runbook) for the sequence itself — Kubernetes, docker compose, or automation — plus the `migrate` command reference, the recovery paths, and [rollback](/self-host/upgrade-runbook#rolling-back).
+
+If you're running Lightdash on your own laptop with Docker, none of that applies: pull the latest image and restart.
 
 ```bash
 docker pull lightdash/lightdash
 ```
 
-### Kubernetes / Helm deployments
+For a security update, pull the advisory's fixed version explicitly and verify the container was replaced.
 
-If you install Lightdash into Kubernetes with the [community Helm charts](https://github.com/lightdash/helm-charts), update the chart repository and upgrade your deployment:
+## Update the Lightdash CLI
 
-```bash
-helm repo update lightdash
-helm upgrade -f values.yml lightdash lightdash/lightdash
-```
-
-The upgrade path is: bump `image.tag` → `helm upgrade` → the migration job runs database migrations → the backend rolls out.
-
-## Database migrations
-
-Migrations run automatically when the Lightdash server or workers start, so a routine upgrade applies them for you.
-
-Once you run multiple backend replicas, enable the **migration job** so replicas don't race on the migration lock. It runs migrations as a Helm `pre-install,pre-upgrade` hook exactly once, and the backend then starts without migrating:
-
-```yaml
-migrationJob:
-  enabled: true
-```
-
-If a deploy is interrupted mid-migration, inspect the migration lease with `migrate status` before doing anything. A lease whose holder died is taken over automatically once it expires; release one deliberately with `migrate unlock --actor`.
-
-<Warning>
-Do **not** edit the `knex_migrations_lock` table in the [Lightdash Postgres database](/self-host/customize-deployment/configure-lightdash-to-use-an-external-database) by hand on `1.123.0` and later. The lease runtime holds locks that live migrations legitimately own, and clearing them manually can let a second migrator start on top of the first.
-</Warning>
-
-## Rollback
-
-Rolling back means redeploying an older `image.tag`. It does not unwind the database, and Lightdash does not run down-migrations in production.
-
-On `1.123.0` and later the image classifies the migration ledger itself, so a database carrying migrations the image does not have is recognised as database-ahead and the image starts normally. Rolling back to an image older than `1.123.0` needs `ALLOW_MISSING_MIGRATIONS=true` on that deployment, which otherwise treats a database-only migration as a corrupt migration directory and refuses to start.
-
-Roll back promptly: schema compatibility is not data compatibility. The newer version may have written values the older code mishandles, and that risk grows the longer it serves traffic. Restoring the database from backup is the only path that undoes a schema change.
-
-Rebuilding an instance from scratch needs three things, so keep all three recoverable:
-
-- the Postgres backup,
-- the `LIGHTDASH_SECRET` (it decrypts data at rest — losing it means losing access to encrypted data), and
-- your Helm values.
+Your CLI version should match the version your instance runs, so after upgrading a deployment, everyone using the CLI should [update it to match](/workflow/cli/install#updating-the-lightdash-cli).
