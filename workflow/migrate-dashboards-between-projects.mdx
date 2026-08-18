@@ -1,0 +1,80 @@
+---
+title: "Migrate dashboards between projects"
+sidebarTitle: "Migrate dashboards"
+description: "Copy a dashboard and its charts between Lightdash projects or instances with the CLI."
+doc-type: tutorial
+tag: "Tutorial"
+---
+
+A common use of [content as code](/workflow/content-as-code) is copying a dashboard from one place to another — from a project on one Lightdash instance to a project on another instance, or between two projects on the same instance. The steps below walk through the full round-trip.
+
+To move a dashboard between two projects on the same instance where one is configured as the other's upstream, [promoting content](/explore/promote-content) does the same job from the UI, without the CLI.
+
+**Example scenario:** you want to copy a dashboard from a project on your dedicated instance (`acme.lightdash.cloud`) to a project on `app.lightdash.cloud`.
+
+## Before you start
+
+- Install the [Lightdash CLI](/workflow/cli/install).
+- Check that the target project has the same dbt models and explores that the dashboard's charts reference. If they don't match, the upload fails validation.
+
+## Step 1: Download from the source project
+
+Log in to the source instance, select the source project, then download the dashboard. Charts, virtual views, and data apps referenced by the dashboard are pulled automatically.
+
+```bash
+# Log in to the source instance
+lightdash login https://acme.lightdash.cloud
+
+# Select the source project interactively
+lightdash config set-project
+
+# Download the dashboard
+lightdash download -d my-dashboard-slug
+```
+
+Or specify the project UUID directly instead of selecting interactively:
+
+```bash
+lightdash download -d my-dashboard-slug --project 11111111-1111-1111-1111-111111111111
+```
+
+If the dashboard uses pivoted charts, add `--strip-pivot-series` so the chart YAML doesn't hardcode pivot values from the source project:
+
+```bash
+lightdash download -d my-dashboard-slug --strip-pivot-series
+```
+
+See [Make downloaded charts portable across projects](/workflow/content-as-code#make-downloaded-charts-portable-across-projects) for details.
+
+## Step 2: Upload to the target project
+
+If the target project is on a different instance, log in to it first, then select the project and upload:
+
+```bash
+# Log in to the target instance
+lightdash login https://app.lightdash.cloud
+
+# Select the target project interactively
+lightdash config set-project
+
+# Upload the dashboard with all dependencies
+lightdash upload --force -d my-dashboard-slug --include-charts --include-virtual-views --validate
+```
+
+Or specify the project UUID directly:
+
+```bash
+lightdash upload --force -d my-dashboard-slug --include-charts --include-virtual-views --validate --project 22222222-2222-2222-2222-222222222222
+```
+
+If the target project is on the same instance, skip the login step — select the target project and upload:
+
+```bash
+# Select the target project
+lightdash config set-project
+
+# Upload the dashboard with all dependencies
+lightdash upload --force -d my-dashboard-slug --include-charts --include-virtual-views --validate
+```
+
+`--force` is required to create content that doesn't already exist in the target project, and `--validate` checks for errors after the upload finishes. For which dependencies travel automatically and which need a flag, see [What download and upload include](/workflow/content-as-code#what-download-and-upload-include).

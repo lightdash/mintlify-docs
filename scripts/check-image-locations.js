@@ -5,7 +5,7 @@
  * Images should mirror the page structure as defined in CONTRIBUTING.md
  *
  * Rules:
- * - A page at guides/dashboard.mdx should use images from images/guides/dashboard/
+ * - A page at workflow/content-as-code.mdx should use images from images/workflow/content-as-code/
  * - Shared images can be in parent folders
  * - All images must exist
  *
@@ -91,7 +91,7 @@ function getExpectedImageDirectory(mdxFilePath) {
   const withoutExt = relativePath.replace(/\.(mdx|md)$/, '');
 
   // Convert to expected image path
-  // e.g., guides/dashboard.mdx -> images/guides/dashboard/
+  // e.g., workflow/content-as-code.mdx -> images/workflow/content-as-code/
   // e.g., get-started/setup.mdx -> images/get-started/setup/
   return path.join('images', withoutExt);
 }
