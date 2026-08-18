@@ -73,7 +73,7 @@ You do not need to change directory first. The image's working directory is `/us
 | `up` | Runs pending Knex and Graphile Worker migrations. This is the default when no command is given, and it is what the image entrypoint and the Helm migration Job run |
 | `preflight` | Checks migration safety **without changing the database**. Also runs automatically at the start of every `up` |
 | `status` | Prints the migration lease, the Knex ledger, and recent migration run history |
-| `wait` | Waits for another process to finish migrating, and takes over if that process died |
+| `wait` | Waits for migrations to finish. Follows a live migrator without racing it, and claims the lease itself if work is pending and no live holder exists |
 | `unlock` | Clears migration locks for recovery, with attribution |
 
 | Flag | Valid on | Meaning |
@@ -91,14 +91,20 @@ The commands need the deployment's database environment, so run them where that 
 
 <Tabs>
 <Tab title="kubectl exec">
-Against a running pod. Substitute your release name:
+Against a running pod:
 
 ```bash
-kubectl exec deploy/<release>-lightdash -- \
+kubectl exec deploy/lightdash-backend -- \
   pnpm -F backend migrate-production status
 ```
 
 `exec` bypasses the image entrypoint, so this inspects without triggering a migration.
+
+The examples on this page assume a release called `lightdash`, matching the `helm upgrade` command above. The chart names the backend Deployment `<fullname>-backend` and the migration Job `<fullname>-migrate`, where `<fullname>` is your release name when it already contains `lightdash`, and `<release>-lightdash` when it does not. `fullnameOverride` replaces it outright. If your release is named differently, list the real names:
+
+```bash
+kubectl get deploy,job -l app.kubernetes.io/instance=<release>
+```
 </Tab>
 <Tab title="One-off pod">
 To run the **new** image's preflight before you upgrade, run a Job on the new tag that reuses your backend's environment sources:
@@ -125,11 +131,12 @@ spec:
                   name: <your-database-secret>
                   key: <password-key>
           envFrom:
-            # the same ConfigMap and Secret your backend deployment uses
+            # the same ConfigMap and Secret your backend deployment uses,
+            # both named <fullname> by the chart
             - configMapRef:
-                name: <release>-lightdash
+                name: lightdash
             - secretRef:
-                name: <release>-lightdash
+                name: lightdash
 ```
 
 Read the result with `kubectl logs job/lightdash-preflight`.
@@ -193,9 +200,11 @@ Alongside the state it prints the lease holder (hostname, pod, app version, curr
 
 #### When you need `wait`
 
-`wait` blocks until the database is migrated, without racing anyone for the lease. If another process holds a live lease, `wait` follows it to the end. If that lease has expired, `wait` promotes itself and finishes the job. It gives up after 30 minutes by default; change that with `--timeout-ms` or `MIGRATION_WAIT_TIMEOUT_MS`.
+`wait` blocks until the database is migrated. While another process holds a live lease, it follows that process and never migrates alongside it. If migrations are still pending and the lease is unheld or has expired, `wait` claims the lease and runs them itself. It gives up after 30 minutes by default; change that with `--timeout-ms` or `MIGRATION_WAIT_TIMEOUT_MS`.
 
-You rarely need to run it by hand. On the non-Job path, `up` already falls back to this exact behaviour when it loses the race for the lease, which is how the pod that does not migrate ends up waiting for the pod that does. Reach for `wait` when you want a process to block on the schema being ready and never be the one to migrate it first.
+So `wait` is not a read-only command. It will not race a live migrator, but it will become the migrator when there is work to do and nobody is doing it. Use `status` when you only want to look.
+
+You rarely need to run `wait` by hand. On the non-Job path, `up` already falls back to this exact behaviour when it loses the race for the lease, which is how the pod that does not migrate ends up waiting for the pod that does.
 
 ## Kubernetes and Helm
 
@@ -237,8 +246,8 @@ With `migrationJob.enabled: true`, the chart runs migrations in a `pre-install,p
 Follow the migration:
 
 ```bash
-kubectl logs -f job/<release>-lightdash-migrate     # when migrationJob is enabled
-kubectl exec deploy/<release>-lightdash -- \
+kubectl logs -f job/lightdash-migrate     # when migrationJob is enabled
+kubectl exec deploy/lightdash-backend -- \
   pnpm -F backend migrate-production status
 ```
 
@@ -355,8 +364,8 @@ If verification fails, freeze: open a freeze issue, escalate to the channel, and
 On the `migrationJob.enabled` path, a failed upgrade shows up as a failed Job. Read its logs before you reach for anything else. The migration's own error says what broke; the commands below only tell you the state it left behind.
 
 ```bash
-kubectl logs job/<release>-lightdash-migrate
-kubectl describe job/<release>-lightdash-migrate
+kubectl logs job/lightdash-migrate
+kubectl describe job/lightdash-migrate
 ```
 
 The Job retries before it gives up. `migrationJob.backoffLimit` defaults to `10`, so Kubernetes marks the Job failed only after 11 attempts. Each attempt runs in its own pod, so `kubectl logs job/...` shows you one of them and `kubectl get pods` shows the rest.
@@ -374,7 +383,7 @@ To retry after you have fixed the cause, re-run `helm upgrade` to recreate the h
 Start by looking, not by fixing:
 
 ```bash
-kubectl exec deploy/<release>-lightdash -- \
+kubectl exec deploy/lightdash-backend -- \
   pnpm -F backend migrate-production status
 ```
 
@@ -389,7 +398,7 @@ Do **not** edit the `knex_migrations_lock` table by hand on `1.123.0` and later.
 ### Releasing a lock
 
 ```bash
-kubectl exec deploy/<release>-lightdash -- \
+kubectl exec deploy/lightdash-backend -- \
   pnpm -F backend migrate-production unlock --actor "alex@example.com"
 ```
 
