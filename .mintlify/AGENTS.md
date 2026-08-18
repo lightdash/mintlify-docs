@@ -11,7 +11,7 @@ These rules govern every change. The full system — doc-type contracts and the 
 
 ## Placement and naming
 
-- **Directories are product areas, never doc types:** `get-started`, `explore`, `semantic-layer`, `workflow` (incl. `workflow/cli`), `agents`, `data-apps`, `embed`, `integrations`, `workspace-admin`, `personal-settings`, `self-host`, `api-reference`, `help`. Place a page by which part of the product it serves. Never make a directory named for a content type.
+- **Directories are product areas, never doc types:** `get-started`, `explore`, `semantic-layer`, `workflow` (incl. `workflow/cli`), `agents`, `data-apps`, `embed`, `integrations`, `workspace-admin`, `personal-settings`, `self-host`, `api-reference`, `support`. Place a page by which part of the product it serves. Never make a directory named for a content type.
 - **One name per feature.** Slug ≈ title ≈ sidebarTitle; the sidebar may shorten the title, never diverge from it. "Best practices" never appears in a title or slug — that content is a Guide with a real name.
 - **Add the nav entry in `docs.json` in the same change.** For navigation structure — tabs vs groups, root pages, sidebar rendering and density — load [`skills/mintlify-navigation/SKILL.md`](.mintlify/skills/mintlify-navigation/SKILL.md).
 
