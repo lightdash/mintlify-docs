@@ -60,11 +60,13 @@ Exit `0` means the whole span is proven safe to roll. Anything else, including a
 
 ### The `migrate` commands
 
-These ship inside the Lightdash image and are the runtime execution layer. Invoke them the same way the image's own entrypoint does, from the `/usr/app` working directory:
+These ship inside the Lightdash image and are the runtime execution layer. Invoke them the same way the image's own entrypoint does:
 
 ```bash
 pnpm -F backend migrate-production <command> [flags]
 ```
+
+You do not need to change directory first. The image's working directory is `/usr/app/packages/backend`, which is where the entrypoint runs this command, and both `kubectl exec` and `docker compose exec` inherit it. The chart's migration Job runs the same command from `/usr/app` instead. Either directory works.
 
 | Command | What it does |
 | --- | --- |
@@ -182,12 +184,18 @@ The decision is one of `proceed`, `proceed-with-warnings`, `abort`, or `force-pr
 | --- | --- |
 | `idle` | Nobody holds the lease and nothing is parked |
 | `migrating` | A process holds the lease and is heartbeating |
-| `stale` | A process holds the lease but its heartbeat has expired. Another process will take over |
+| `stale` | A process holds the lease but its heartbeat has expired, 75 seconds after the last one. Another process will take over |
 | `parked` | Migration failed its retries and stopped. It will not retry on this app version until a human intervenes |
 
 Alongside the state it prints the lease holder (hostname, pod, app version, current migration, last heartbeat), the parked details if any, the completed and pending Knex migration counts, the ledger classification, and recent migration runs with their outcomes. Any prior `unlock` is recorded against the run that followed it, so the audit trail survives.
 
 `--json` gives you the same payload for automation.
+
+#### When you need `wait`
+
+`wait` blocks until the database is migrated, without racing anyone for the lease. If another process holds a live lease, `wait` follows it to the end. If that lease has expired, `wait` promotes itself and finishes the job. It gives up after 30 minutes by default; change that with `--timeout-ms` or `MIGRATION_WAIT_TIMEOUT_MS`.
+
+You rarely need to run it by hand. On the non-Job path, `up` already falls back to this exact behaviour when it loses the race for the lease, which is how the pod that does not migrate ends up waiting for the pod that does. Reach for `wait` when you want a process to block on the schema being ready and never be the one to migrate it first.
 
 ## Kubernetes and Helm
 
@@ -342,6 +350,25 @@ If verification fails, freeze: open a freeze issue, escalate to the channel, and
 
 ## Recovery
 
+### The migration Job failed
+
+On the `migrationJob.enabled` path, a failed upgrade shows up as a failed Job. Read its logs before you reach for anything else. The migration's own error says what broke; the commands below only tell you the state it left behind.
+
+```bash
+kubectl logs job/<release>-lightdash-migrate
+kubectl describe job/<release>-lightdash-migrate
+```
+
+The Job retries before it gives up. `migrationJob.backoffLimit` defaults to `10`, so Kubernetes marks the Job failed only after 11 attempts. Each attempt runs in its own pod, so `kubectl logs job/...` shows you one of them and `kubectl get pods` shows the rest.
+
+<Warning>
+**Those logs delete themselves.** `migrationJob.ttlSecondsAfterFinished` defaults to `100`, so Kubernetes removes the Job about 100 seconds after it finishes — failed or succeeded — and the pod logs go with it. If you are debugging upgrades, raise that value in your values file, or ship the Job's logs off the cluster before the window closes.
+</Warning>
+
+If you missed the window, the database still has the durable record. `migrate status` reports the parked details and recent migration runs with their outcomes, and that record outlives the Job object.
+
+To retry after you have fixed the cause, re-run `helm upgrade` to recreate the hook Job. See [what resumes on its own](#after-an-unlock-what-resumes-on-its-own).
+
 ### A migration is stuck
 
 Start by looking, not by fixing:
@@ -352,7 +379,7 @@ kubectl exec deploy/<release>-lightdash -- \
 ```
 
 - **`migrating`** with a recent heartbeat: it is working. Migrations on large tables can take a long time. Leave it alone.
-- **`stale`**: the holder died. Another process takes the lease over automatically once it expires. No action needed in most cases.
+- **`stale`**: the holder died. The lease expires 75 seconds after its last heartbeat, and another process takes it over automatically. No action needed in most cases.
 - **`parked`**: the migration failed its retries (three attempts with backoff) and stopped deliberately. The same app version will refuse to retry, which is what stops a crash-looping pod from hammering a half-applied migration. Fix the cause, then deploy a fixed version, or unlock with attribution and retry.
 
 <Warning>
