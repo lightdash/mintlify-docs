@@ -1,11 +1,12 @@
 ---
-title: "Dashboards as code"
-description: "You can download your charts and dashboards as code, make changes, then upload your changes back to your Lightdash project using the CLI. Content as code is also useful for creating new Lightdash projects where you want the content to be copied from an existing project and added to your new project."
+title: "Content as code"
+description: "Download your charts, dashboards, spaces, agents, and roles as code, make changes, then upload them back to your Lightdash project with the CLI. Content as code is also how you copy content from an existing project into a new one."
+doc-type: reference
 ---
 
 ## Choosing a workflow
 
-There are two main approaches to working with dashboards as code. You can mix and match these within your organization — for example, using disposable editing for quick changes and Git-managed dashboards for production-critical content.
+There are two main approaches to working with content as code. You can mix and match these within your organization — for example, using disposable editing for quick changes and Git-managed dashboards for production-critical content.
 
 |  | Disposable editing | Git-managed dashboards |
 | --- | --- | --- |
@@ -18,24 +19,7 @@ There are two main approaches to working with dashboards as code. You can mix an
 
 ### Disposable editing (recommended)
 
-When using dashboards as code with AI agents or CLI tools, we recommend treating the downloaded files as **temporary working files** rather than a permanent source of truth. This is the best starting point for most teams.
-
-#### The disposable workflow
-
-1. **Download** the content you want to edit using `lightdash download`
-2. **Make your changes** locally (manually or with AI assistance)
-3. **Upload** your changes back to Lightdash using `lightdash upload`
-4. **Discard** your local files instead of committing them to version control
-
-This approach keeps the Lightdash application as your source of truth while still enabling powerful code-based editing workflows.
-
-#### Why disposable?
-
-Treating dashboards as code as disposable config files provides flexibility:
-
-- **UI changes remain easy** — team members can continue making updates directly in the Lightdash UI without needing to sync a codebase
-- **No repository maintenance** — you avoid the overhead of keeping code files synchronized with UI changes
-- **Best of both worlds** — you get the power of code-based editing and AI assistance without the rigidity of a code-first workflow
+Treat the downloaded YAML as temporary working files: download, edit by hand or with an AI agent, upload, then discard the local copies instead of committing them. This keeps the Lightdash application as your source of truth while still giving you code-based, agent-assisted editing. See [Editing dashboards with agents](/workflow/edit-dashboards-with-agents) for the full workflow.
 
 ### Git-managed dashboards
 
@@ -46,7 +30,7 @@ An alternative approach where your **Git repository is the single source of trut
 - You want a full audit trail of every dashboard change via Git history
 - You want to enforce review processes (pull requests, approvals) before changes reach production
 - You're comfortable with all edits happening in code rather than the UI
-- You want to validate dashboard changes in [preview environments](/guides/developer/preview-projects) before merging
+- You want to validate dashboard changes in [preview environments](/workflow/preview-projects) before merging
 - You're deploying the same content across multiple Lightdash instances
 
 #### Lock down the UI
@@ -63,7 +47,7 @@ You don't have to manage everything this way. Organize code-managed content into
 The typical workflow for editing Git-managed dashboards:
 
 1. **Branch** — create a feature branch in your repository
-2. **Preview** — spin up a [preview environment](/guides/developer/preview-projects) to test against
+2. **Preview** — spin up a [preview environment](/workflow/preview-projects) to test against
 3. **Edit the YAML files** — make changes to chart and dashboard files in the `lightdash/` directory. This is where AI coding assistants are especially useful — you can describe changes in natural language and have the assistant edit the YAML for you
 4. **Upload to the preview** — run `lightdash upload --force` to push your changes to the preview environment and verify everything looks right
 5. **Open a pull request** — once the changes look good in the preview, commit and open a PR for review
@@ -76,16 +60,16 @@ To fully automate this workflow, set up two CI jobs:
 - **Deploy on merge to main** — install the Lightdash CLI and dbt, then run `lightdash deploy` (to sync the semantic layer) followed by `lightdash upload --force` (to push chart and dashboard changes to production). You'll need `LIGHTDASH_API_KEY`, `LIGHTDASH_URL`, and `LIGHTDASH_PROJECT` configured as secrets in your CI environment.
 - **Preview environments on PRs** (optional) — automatically create a preview environment on every PR so reviewers can see dashboard changes before approving. On PR open or update, run `lightdash start-preview` and `lightdash upload --force`, then post the preview link as a PR comment. On PR close, run `lightdash stop-preview` to clean up.
 
-See the [Lightdash CLI reference](/references/lightdash-cli) for full details on available commands.
+See the [Lightdash CLI reference](/workflow/cli/reference) for full details on available commands.
 
 ## `lightdash download`
 
-From the [Lightdash CLI](/references/lightdash-cli), you can use the command `lightdash download` to download all of the charts and dashboards from your Lightdash project as code. All of the charts and dashboards will be written as .yml files to a `lightdash` directory wherever you're running the command.
+From the [Lightdash CLI](/workflow/cli/reference), you can use the command `lightdash download` to download all of the charts and dashboards from your Lightdash project as code. All of the charts and dashboards will be written as .yml files to a `lightdash` directory wherever you're running the command.
 
 E.g. if you're running this command inside your dbt directory (eg: `/home/javi/dbt`) then it will create a folder (`/home/javi/dbt/lightdash`). If you're running this command in `/home/javi/documents` it will create the folder in `/home/javi/documents/lightdash`.
 
 <Frame>
-  ![](/images/guides/developer/download-content-924b51a78c9840990608f3ed81f80b56.jpg)
+  ![](../images/workflow/content-as-code/download-content-924b51a78c9840990608f3ed81f80b56.jpg)
 </Frame>
 
 ##### Running `lightdash download` will overwrite any changes you have locally
@@ -192,7 +176,7 @@ You can find a project's UUID from your Lightdash URL. For example, `https://app
 
 `lightdash upload` updates any content as code to your project.
 
-From the [Lightdash CLI](/references/lightdash-cli), you can use the command `lightdash upload` to upload any changes you've made to your charts or dashboards as code. To upload new charts that you've created as code to your Lightdash project, you need to run `lightdash upload --force`
+From the [Lightdash CLI](/workflow/cli/reference), you can use the command `lightdash upload` to upload any changes you've made to your charts or dashboards as code. To upload new charts that you've created as code to your Lightdash project, you need to run `lightdash upload --force`
 
 ### Select specific items to upload
 
@@ -495,126 +479,14 @@ Filtered chart and dashboard operations (`-c`, `-d`) never reconcile unrelated s
 
 ## Virtual views
 
-You can manage [virtual views](/guides/developer/virtual-views) as code alongside your charts and dashboards. This is useful when you want to review virtual-view changes in a pull request, promote the same SQL across projects (for example from a staging to a production Lightdash instance), or template a set of virtual views for reuse.
-
-Virtual views are **opt-in** — a bare `lightdash download` does not pull them, and a bare `lightdash upload` does not push them. You have to ask for them explicitly with `--include-virtual-views` or `--virtual-views <slug>`.
-
-### Download virtual views
-
-Use `--include-virtual-views` to download every virtual view in the project, or `--virtual-views <slug>` to download specific ones:
-
-```bash
-# All virtual views in the project
-lightdash download --include-virtual-views
-
-# Only the virtual views you name
-lightdash download --virtual-views orders_enriched customers_enriched
-```
-
-Each virtual view is written to `lightdash/virtual-views/<slug>.yml`. To skip virtual views when a filter is otherwise selecting them, add `--skip-virtual-views`.
-
-### Virtual view YAML
-
-Virtual views serialize to a portable YAML contract keyed by a project-scoped `slug` (the immutable explore name used by any charts, dashboards, or joined models that reference the view). The `name` is the mutable display label shown in the UI.
-
-```yml Virtual view YAML example
-contentType: virtual_view
-version: 1
-slug: orders_enriched
-name: "Orders enriched"
-sql: |-
-  select
-    o.order_id,
-    o.customer_id,
-    o.status,
-    o.created_at,
-    o.total_amount,
-    c.country
-  from ecom.orders o
-  left join ecom.customers c on c.customer_id = o.customer_id
-columns:
-  - reference: country
-    type: string
-  - reference: created_at
-    type: timestamp
-  - reference: customer_id
-    type: string
-  - reference: order_id
-    type: string
-  - reference: status
-    type: string
-  - reference: total_amount
-    type: number
-parameters: null
-```
-
-| Field | Description |
-| --- | --- |
-| `contentType` | Always `virtual_view`. |
-| `version` | Schema version. Currently `1`. |
-| `slug` | Immutable project-scoped identifier. Must be canonical `snake_case` — this is the explore name that downstream charts and dashboards reference. |
-| `name` | Display label for the UI. Safe to rename. |
-| `sql` | Raw SELECT for the virtual view. Referenced parameters must have matching keys in `parameters`. |
-| `columns` | The list of columns exposed as dimensions. Each entry needs a unique `reference` and a valid dimension `type`. Columns are sorted by reference on download. |
-| `parameters` | Saved parameter values used by the view's SQL, or `null` if the view takes no parameters. |
-
-### Upload virtual views
-
-Use `--virtual-views <slug>` on `lightdash upload` to target specific views, or run a bare upload (without any content filters) to include every virtual view in `lightdash/virtual-views/`.
-
-```bash
-# Upload one virtual view
-lightdash upload --virtual-views orders_enriched
-
-# Upload everything, including any virtual views on disk
-lightdash upload
-```
-
-The CLI compares each file against the current cached version of the view and reports one of:
-
-- **created** — no view with this slug existed yet.
-- **updated** — the view existed and one or more fields changed.
-- **skipped** — the file is byte-equivalent to the current view, so nothing is sent.
-
-If the same slug already exists as a **non-virtual** explore (for example, a dbt model), the upload is rejected — Lightdash won't adopt a dbt-managed explore into virtual-view storage.
-
-### Validation errors
-
-Uploads fail fast with a `ParameterError` when the YAML isn't a valid virtual view. Common causes:
-
-- `slug` is empty, contains slashes, or isn't canonical `snake_case`.
-- `name` or `sql` is empty.
-- `columns` is empty, contains duplicate or blank `reference` values, or uses an unknown `type`.
-- `parameters` includes keys that the `sql` never references.
-- `contentType` isn't `virtual_view` or `version` isn't the supported version.
-
-Fix the YAML locally and re-run `lightdash upload`.
-
-### Destructive changes and `--force`
-
-Removing a column or changing its type is a **destructive** change — any charts or dashboards that reference the removed or retyped column will break. To protect against accidental breakage, the CLI rejects destructive column changes by default and lists the offending columns in the error.
-
-Re-run the upload with `--force` when the change is intentional:
-
-```bash
-lightdash upload --virtual-views orders_enriched --force
-```
-
-`--force` also allows replacing a virtual view whose cached state can no longer be represented as YAML (for example, a legacy view with non-subquery SQL).
-
-### Permissions
-
-Virtual view download and upload reuse the same content-as-code scopes as charts and dashboards:
-
-- `view:ContentAsCode` is required to download virtual views.
-- `manage:ContentAsCode` is required to upload virtual views. Uploads also check the virtual-view edit permissions the UI enforces, so the CLI, API, and app stay in lockstep.
+You can manage virtual views as code alongside your charts and dashboards — the same `lightdash download` / `lightdash upload` workflow, opt-in with `--include-virtual-views` or `--virtual-views <slug>`. See [Manage virtual views as code](/semantic-layer/virtual-views#manage-virtual-views-as-code) for the YAML contract, flags, and validation rules.
 
 ## Dashboard as code yml reference
 
 The yml configuration for dashboards as code is extensive. It covers both dashboards and individual charts. The best way to start is often to create your content in the Lightdash UI, download it, and in most cases the structure will be fairly intuitive. Below are outlines of the structures you will find for both types of content to provide some additional context.
 
 <Tip>
-  The examples below are not exhaustive, so if you have additional questions, you can always [reach out to our support team](/contact/contact-info) for more details.
+  The examples below are not exhaustive, so if you have additional questions, you can always [reach out to our support team](/help/support) for more details.
 </Tip>
 
 ### Dashboards
@@ -743,7 +615,7 @@ verification:
 verified: true
 # `verified` is the writable flag. Set to true/false to verify/unverify on upload,
 # or omit to leave verification state unchanged.
-# See /guides/verified-content for full semantics.
+# See /explore/verified-content for full semantics.
 ```
 
 ### Charts
@@ -765,7 +637,7 @@ Each of the above can have a number of sub categories of information. With that 
 
 Here's an image of the chart that we have generated code for, and just below that is the code itself.
 
-![](/images/guides/developer/dashboards-as-code-chart-example.png)
+![](../images/workflow/content-as-code/dashboards-as-code-chart-example.png)
 
 ```yml Charts as code example [expandable]
 name: My cool chart
@@ -901,7 +773,7 @@ verification:
 verified: true
 # `verified` is the writable flag. Set to true/false to verify/unverify on upload,
 # or omit to leave verification state unchanged.
-# See /guides/verified-content for full semantics.
+# See /explore/verified-content for full semantics.
 ```
 
 ### SQL runner charts
@@ -957,10 +829,10 @@ And the matching tile entry on a dashboard:
 
 AI agent configuration can also be managed as code and promoted between projects with the same `lightdash download` / `lightdash upload` workflow used for charts and dashboards. This is useful for keeping agent instructions and tags under review in Git, and for copying a working agent from a preview or staging project into production.
 
-Agent config as code is **opt-in**: a bare `lightdash download` does not include agents. See [AI agents as code](/guides/ai-agents/agents-as-code) for the full guide, including the YAML schema, CLI flags, and what runtime state stays in the target environment.
+Agent config as code is **opt-in**: a bare `lightdash download` does not include agents. See [AI agents as code](/agents/agents-as-code) for the full guide, including the YAML schema, CLI flags, and what runtime state stays in the target environment.
 ## Custom roles as code
 
-[Custom roles](/references/workspace/custom-roles) are also managed as code. Unlike charts and dashboards, custom roles are **organization-scoped** rather than project-scoped, so downloading and uploading them uses the `--organization` mode of `lightdash download` and `lightdash upload` and requires an organization admin.
+[Custom roles](/workspace-admin/custom-roles) are also managed as code. Unlike charts and dashboards, custom roles are **organization-scoped** rather than project-scoped, so downloading and uploading them uses the `--organization` mode of `lightdash download` and `lightdash upload` and requires an organization admin.
 
 ### When to use it
 
@@ -989,7 +861,7 @@ scopes:
 | `name` | The role's display name. This is the portable identity — a role is matched to an existing role by exact name within the organization. |
 | `description` | Optional human-readable description. Set to `null` to clear an existing description. |
 | `level` | Either `organization` or `project`. Determines which scopes are allowed. Immutable — once a role is created, its level cannot be changed via upload. |
-| `scopes` | The list of scope grants for the role. See the [scope reference](/references/workspace/custom-roles#scope-reference) for available scopes. |
+| `scopes` | The list of scope grants for the role. See the [scope reference](/workspace-admin/custom-roles#scope-reference) for available scopes. |
 
 The filename is derived from the role name; the CLI creates safe filenames and disambiguates collisions automatically.
 
@@ -1039,32 +911,8 @@ You can use AI coding assistants like Cursor, Claude Code, and Codex to create a
   <iframe width="560" height="315" src="https://www.youtube.com/embed/nAN5LBUCxCM" title="AI-assisted chart development with Cursor" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
 </Frame>
 
-For detailed guidance on using agents to edit dashboards—including the recommended workflow for treating files as temporary rather than committing them—see [Editing dashboards with agents](/guides/developer/editing-dashboards-with-agents).
+See [Editing dashboards with agents](/workflow/edit-dashboards-with-agents) for the full agent workflow, including the recommended practice of treating downloaded files as temporary rather than committing them.
 
-## JSON schema validation in VSCode
+## Validate content YAML in your editor
 
-When building content as code in YAML format, you can enable JSON schema validation in VSCode to get autocomplete suggestions and validation. This helps you understand what properties are supported and ensures your YAML files are correctly formatted.
-
-To set this up:
-
-1. Install the [YAML extension for VSCode](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)
-2. Open your VSCode user settings in JSON format (press `Cmd/Ctrl + Shift + P` and search for "Preferences: Open User Settings (JSON)")
-3. Add the following configuration:
-
-```json VSCode settings.json [expandable]
-"[yaml]": {
-  "editor.defaultFormatter": "redhat.vscode-yaml"
-}, 
-"yaml.schemas": {
-  "https://raw.githubusercontent.com/lightdash/lightdash/refs/heads/main/packages/common/src/schemas/json/chart-as-code-1.0.json": [
-    "path_to_charts/charts/*.yml"
-  ],
-  "https://raw.githubusercontent.com/lightdash/lightdash/refs/heads/main/packages/common/src/schemas/json/dashboard-as-code-1.0.json": [
-    "path_to_dashboards/dashboards/*.yml"
-  ]
-}
-```
-
-<Note>
-  Make sure to update `path_to_charts/charts/*.yml` and `path_to_dashboards/dashboards/*.yml` to match the actual paths where your content as code files are stored (e.g., `lightdash/charts/*.yml` and `lightdash/dashboards/*.yml`).
-</Note>
+Set up JSON schema validation in your editor so chart and dashboard YAML is checked — with autocomplete and inline errors — as you write it. See [Set up VS Code](/workflow/set-up-vs-code) for the schema configuration.

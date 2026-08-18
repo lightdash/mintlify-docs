@@ -2,6 +2,8 @@
 title: "Configure Lightdash to use external storage"
 sidebarTitle: "External storage"
 boost: 0.001
+doc-type: tutorial
+tag: "Tutorial"
 ---
 
 On Lightdash, we generate some files like:
@@ -89,10 +91,22 @@ S3_SECRET_KEY      # optional if using IAM role
 S3_EXPIRATION_TIME # optional, defaults to 259200 seconds (3 days)
 ```
 
-For a comprehensive list of all possible S3-related environment variables and other configurations, please visit the [Environment Variables documentation](https://docs.lightdash.com/self-host/customize-deployment/environment-variables#s3).
+For a comprehensive list of all possible S3-related environment variables and other configurations, please visit the [Environment Variables documentation](/self-host/customize-deployment/environment-variables#s3).
 
 ### Using IAM roles
 
 Lightdash also supports authentication via IAM roles. If you omit the `S3_ACCESS_KEY` and `S3_SECRET_KEY` variables, the S3 library will automatically attempt to use IAM roles. For more details on how this works, refer to the [AWS SDK for JavaScript documentation on setting credentials in Node.js](https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/setting-credentials-node.html).
 
 If you are using an IAM role to generate signed URLs, be aware that these URLs have a maximum validity of 7 days due to AWS limitations, independently of the `S3_EXPIRATION_TIME` configuration.
+
+## Production bucket strategy
+
+For an enterprise deployment, use a **dedicated bucket per purpose**, each with a scoped credential that can only touch its own bucket. This is how Lightdash Cloud sets up storage:
+
+- **Results / cache bucket** — add a lifecycle rule deleting objects after **1 day**. Results are ephemeral, so this keeps the bucket small and cheap.
+- **Pre-aggregations bucket** (if using [pre-aggregates](/self-host/nats-workers/pre-aggregate-workers)) — lifecycle delete after **~30 days**.
+- **Data-apps bucket** (if using [data apps](/data-apps/self-hosting)) — persistent, with **no** delete lifecycle.
+
+**Block all public access** on every bucket. Prefer **IAM roles** (IRSA on EKS, Workload Identity on GKE) over static keys — noting that signed URLs are then capped at 7 days.
+
+If users share download links that must outlive the signed-URL TTL (`S3_EXPIRATION_TIME`, default 3 days), enable `PERSISTENT_DOWNLOAD_URLS_ENABLED: "true"` — see [persistent download URLs](/self-host/customize-deployment/environment-variables#persistent-download-urls).

@@ -4,10 +4,14 @@ description: "We use a chrome headless browser to generate images from your char
 sidebarTitle: Headless browser
 
 boost: 0.001
+doc-type: tutorial
+tag: "Tutorial"
 ---
 
+import HeadlessBrowserEnv from '/snippets/self-host/headless-browser-env.mdx';
+
 <Note>
-🛠 This page is for engineering teams self-hosting their own Lightdash instance. If you want to set up scheduled deliveries, go to the [Scheduled deliveries](/guides/how-to-create-scheduled-deliveries) guide.
+🛠 This page is for engineering teams self-hosting their own Lightdash instance. If you want to set up scheduled deliveries, go to the [Scheduled deliveries](/explore/create-scheduled-deliveries) guide.
 </Note>
 
 Images can be requested on `Slack unfurl` or using our `Scheduler`
@@ -33,7 +37,7 @@ If the image was requested by Slack unfurl, we will unfurl the image using the S
 ## Configure headless browser on lightdash
 
 <Note>
-  Lightdash uses Browserless for headless browser functionality. We recommend using the `ghcr.io/browserless/chromium` image with version `v2.24.3`, which is the version used in Lightdash Cloud deployments.
+  Lightdash uses Browserless for headless browser functionality with the `ghcr.io/browserless/chromium` image. Match the version Lightdash Cloud runs, which the official [Helm chart](https://github.com/lightdash/helm-charts) pins as the `browserless-chrome.image.tag` default — deploy that tag rather than choosing your own.
 </Note>
 
 In order to make this work, there are a few key ENV variables that need to be configured correctly.
@@ -41,6 +45,10 @@ In order to make this work, there are a few key ENV variables that need to be co
 * `HEADLESS_BROWSER_HOST` : If you're running docker, this could be `headless-browser`, or `localhost` if you're running it locally (or with network:host)
 * `HEADLESS_BROWSER_PORT` : Optional port for headless browser, defaults to 3001
 * `SITE_URL` : The URL for your Lightdash instance.
+
+### Headless browser environment variables
+
+<HeadlessBrowserEnv />
 
 <Info>
   This SITE\_URL variable (eg: [https://eu1.lightdash.cloud](https://eu1.lightdash.cloud)) needs to be accessible from this headless browser service, either by a local connection, or via Internet. Otherwise it will not be able to open a page and generate the image.
@@ -62,18 +70,20 @@ Set these environment variables on the **headless browser pod/container** (the
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TIMEOUT` | `30000` | Maximum time (ms) Browserless allows a browser session to run before terminating it. Increase this if large dashboards time out during export. A value of `120000` (2 minutes) works well for most cases. |
+| `CONNECTION_TIMEOUT` | `180000` | Maximum time (ms) Browserless waits on a connection. The chart default of 180s can truncate very large dashboards — raise to `300000` (5 min) if exports are cut off. |
+| `HEALTH` | `false` | When `true`, Browserless rejects new sessions under memory pressure (HTTP 429) instead of risking an OOM kill mid-screenshot. |
+| `MAX_MEMORY_PERCENT` | — | Memory threshold (percent) above which `HEALTH` sheds new sessions. Set e.g. `85` to reject load before the container OOMs. |
 
 ### Lightdash backend
 
-Set these environment variables on the **Lightdash backend** (the main app or
-scheduler worker):
+On the **Lightdash backend** (the main app or scheduler worker), the screenshot retry
+settings — `HEADLESS_BROWSER_MAX_SCREENSHOT_RETRIES` and `HEADLESS_BROWSER_RETRY_BASE_DELAY_MS` —
+are documented in [Headless browser environment variables](#headless-browser-environment-variables)
+above. Two scheduler variables also govern screenshot exports, and their canonical reference lives
+in the [Scheduler environment variables](/self-host/customize-deployment/environment-variables#scheduler):
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `HEADLESS_BROWSER_MAX_SCREENSHOT_RETRIES` | `5` | Number of times Lightdash retries a failed screenshot before giving up. |
-| `HEADLESS_BROWSER_RETRY_BASE_DELAY_MS` | `3000` | Base delay (ms) between screenshot retries. Uses exponential backoff. |
-| `SCHEDULER_JOB_TIMEOUT` | `600000` (10 min) | Maximum time (ms) for any scheduler job (including screenshot exports) to complete. |
-| `SCHEDULER_SCREENSHOT_TIMEOUT` | — | Maximum time (ms) for taking a screenshot of a chart or dashboard. Increase this if individual screenshot captures are timing out, separate from the overall job timeout. |
+- `SCHEDULER_JOB_TIMEOUT` — maximum time (ms) for any scheduler job (including screenshot exports) to complete (default `600000`, 10 minutes).
+- `SCHEDULER_SCREENSHOT_TIMEOUT` — maximum time (ms) for taking a single chart or dashboard screenshot. Increase this if individual captures time out, separate from the overall job timeout.
 
 ### Troubleshooting large dashboard exports
 

@@ -1,23 +1,40 @@
 ---
 title: "Resource recommendations"
-description: The recommended resource requests for each Lightdash component are as follows
+description: "Recommended resource requests and availability settings for each Lightdash component."
 boost: 0.001
+doc-type: reference
 ---
 
-## lightdash
+Baseline per-component resource requests for a standard self-hosted instance deployed with the official Helm chart:
 
-* **CPU**: 1
-* **Memory**: 1.5Gi
-* **Ephemeral Storage**: 1Gi
+| Component | CPU | Memory | Ephemeral | Replicas |
+| --- | --- | --- | --- | --- |
+| Backend | 500m–1 | 1.5–4 Gi | 1–2 Gi | **2+** |
+| Scheduler worker | 500m | 1425 Mi | 1 Gi | 1 |
+| Warehouse NATS worker | 250m | 1.5 Gi | 9 Gi | 1 |
+| Pre-aggregate NATS worker | 650m | 4 Gi | 9 Gi | 1 |
+| Browserless | 2 | 4 Gi | 1 Gi | 1 |
+| NATS | 100m | 256 Mi–1 Gi | — | 1 |
 
-## browserlessChrome
+NATS workers buffer large result sets on ephemeral disk before uploading to S3 — the 9 Gi ephemeral-storage request is not a typo.
 
-* **CPU**: 2
-* **Memory**: 4Gi
-* **Ephemeral Storage**: 1Gi
+## Availability
 
-## scheduler
+Run at least two backend replicas with pod anti-affinity and a pod disruption budget:
 
-* **CPU**: 1
-* **Memory**: 1425Mi
-* **Ephemeral Storage**: 1Gi
+```yaml
+replicaCount: 2
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 60   # backend only; workers scale via replicas
+
+podAntiAffinity:
+  enabled: true        # spreads each component across nodes (hard) and zones (soft)
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+```

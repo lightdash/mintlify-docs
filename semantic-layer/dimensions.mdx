@@ -2,15 +2,17 @@
 title: "Dimensions reference"
 description: "Dimensions are the columns in your table. They are the \"attributes\" of your data. For example, `user_id` in your users table is a dimension."
 sidebarTitle: "Dimensions"
+doc-type: reference
 ---
 
 import LiquidTemplating from '/snippets/liquid-templating.mdx';
+import FieldFormattingOptions from '/snippets/field-formatting-options.mdx';
 
 Dimensions usually match 1:1 with columns in your dbt models (see [additional dimensions](#additional-dimensions) for counterexamples).
 
 ## Adding dimensions to your project
 
-Read more about [adding dimensions to your project in our docs here](/get-started/develop-in-lightdash/how-to-create-dimensions).
+Read more about [adding dimensions to your project in our docs here](/get-started/build-your-semantic-layer/create-dimensions).
 
 For a dimension to appear in Lightdash, you just need to declare it in your dbt model's YAML file.
 
@@ -222,7 +224,7 @@ We currently support these dimension types:
 Column descriptions in your YAML file are automatically pulled into Lightdash and you can spot them if you hover over the dimension name.
 
 <Frame>
-  ![](/images/references/screenshot-column-descriptions-3498d7b3c09c38fda5b755ce21358b2c.png)
+  ![](../images/semantic-layer/dimensions/screenshot-column-descriptions-3498d7b3c09c38fda5b755ce21358b2c.png)
 </Frame>
 
 Descriptions support any formatting that works with YAML, but the three characters used most often are:
@@ -277,305 +279,9 @@ and it will stay on multiple lines
 
 ### Using dbt doc blocks
 
-You can also use dbt docs blocks in descriptions, [more on that here](/guides/cli/how-to-auto-generate-schema-files#using-doc-blocks-to-build-better-yml-files).
+You can also use dbt docs blocks in descriptions, [more on that here](/workflow/cli/generate#using-doc-blocks-to-build-better-yml-files).
 
-## Format
-
-You can use the `format` parameter to have your dimensions show in a particular format in Lightdash. Lightdash supports spreadsheet-style format expressions for all dimension types.
-
-To help you build your format expression, we recommend using https://customformats.com/.
-
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    - name: us_revenue
-      meta:
-        dimension:
-          type: number
-          description: 'Revenue in USD, with two decimal places, compacted to thousands'
-          format: '$#,##0.00," K"' # 505,430 will appear as '$505.43 K'
-        additional_dimensions:
-          percent_of_global_revenue:
-            type: number
-            description: 'Percent of total global revenue coming from US revenue.'
-            sql: ${us_revenue} / ${global_revenue}
-            format: '0.00%' # 0.67895243 will appear as '67.89%
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    - name: us_revenue
-      config:
-        meta:
-          dimension:
-            type: number
-            description: 'Revenue in USD, with two decimal places, compacted to thousands'
-            format: '$#,##0.00," K"' # 505,430 will appear as '$505.43 K'
-          additional_dimensions:
-            percent_of_global_revenue:
-              type: number
-              description: 'Percent of total global revenue coming from US revenue.'
-              sql: ${us_revenue} / ${global_revenue}
-              format: '0.00%' # 0.67895243 will appear as '67.89%
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    dimensions:
-      - name: us_revenue
-        type: number
-        description: 'Revenue in USD, with two decimal places, compacted to thousands'
-        format: '$#,##0.00," K"' # 505,430 will appear as '$505.43 K'
-      - name: percent_of_global_revenue
-        type: number
-        description: 'Percent of total global revenue coming from US revenue.'
-        sql: ${us_revenue} / ${global_revenue}
-        format: '0.00%' # 0.67895243 will appear as '67.89%
-    ```
-  </Tab>
-</Tabs>
-
-### Example format expressions:
-
-| Description                                    | Format Expression     | Raw Value            | Formatted Output      |
-| :--------------------------------------------- | :-------------------- | :------------------- | :-------------------- |
-| **Adds "km" suffix to the value**              | `#,##0.00" km"`       | 100000.00            | 100,000.00 km         |
-|                                                |                       | 15000.25             | 15,000.25 km          |
-|                                                |                       | 500                  | 500.00 km             |
-| **Format date with 12-hour clock**             | `m/d/yyyy h:mm AM/PM` | 2023-09-05T15:45:00Z | 9/5/2023 3:45 PM      |
-|                                                |                       | 2024-01-20T08:30:00Z | 1/20/2024 8:30 AM     |
-| **Display the full name of the day**           | `dddd`                | 2023-09-05T15:45:00Z | Tuesday               |
-|                                                |                       | 2024-01-20T08:30:00Z | Saturday              |
-| **Format positive, negative, and zero values** | `"⬆️ "0;"⬇️ "0;0`     | -500                 | ⬇️ 500                |
-|                                                |                       | 200                  | ⬆️ 200                |
-|                                                |                       | 0                    | 0                     |
-| **Text formatting**                            | `"Delivered in "@`    | 2 weeks              | Delivered in 2 weeks  |
-|                                                |                       | 18 hours             | Delivered in 18 hours |
-| **Percentage formatting**                      | `#,##0.00%`           | 0.6758               | 67.58%                |
-|                                                |                       | 0.1                  | 10.00%                |
-|                                                |                       | 0.002                | 0.20%                 |
-| **No formatting**                              | `0`                   | 12345232             | 12345232              |
-|                                                |                       | 56.7856              | 57                    |
-| **Currency formatting**                        | `[$$]#,##0.00`        | 15430.75436          | \$15,430.75           |
-|                                                |                       | 15430.75436          | \$15,430.75           |
-| **Compact currency in thousands**              | `[$$]#,##0,"K"`       | 15430.75436          | \$15K                 |
-|                                                |                       | 15430.75436          | \$15.43K              |
-| **Compact currency in millions**               | `[$$]#,##0.00,,"M"`   | 13334567             | \$13.33M              |
-|                                                |                       | 120000000            | \$120.00M             |
-
-<Accordion title="(Legacy) format and round options">
-  Spreadsheet-style format expressions are the recommended way of adding formatting to your metrics in Lightdash. There are legacy formatting options, listed below, which are less flexible than the spreadsheet-style formatting.
-
-  <Info>
-    If you use both legacy and spreadsheet-style formatting options for a single dimension, Lightdash will ignore the legacy `format` and `round` options and only apply the spreadsheet-style formatting expression.
-  </Info>
-  #### Format (legacy)
-
-  <Tabs>
-    <Tab title="dbt v1.9 and earlier">
-      ```yaml
-      models:
-        - name: sales_stats
-          columns:
-            - name: revenue
-              description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
-              meta:
-                dimension:
-                  format: 'gbp'
-      ```
-    </Tab>
-    <Tab title="dbt v1.10+ and Fusion">
-      ```yaml
-      models:
-        - name: sales_stats
-          columns:
-            - name: revenue
-              description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
-              config:
-                meta:
-                  dimension:
-                    format: 'gbp'
-      ```
-    </Tab>
-    <Tab title="Lightdash YAML">
-      ```yaml
-      type: model
-      name: sales_stats
-
-      dimensions:
-        - name: revenue
-          description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
-          format: 'gbp'
-      ```
-    </Tab>
-  </Tabs>
-
-  These are the options:
-
-  | Option  | Equivalent format expression | Description                                                                         | Raw value | Displayed value |
-  | :------ | :--------------------------- | :---------------------------------------------------------------------------------- | :-------- | :-------------- |
-  | km      | '#,##0.00" km"'              | Adds the suffix `km` to your value                                                  | 10        | 10 km           |
-  | mi      | '#,##0.00" mi"'              | Adds the suffix `mile` to your value                                                | 10        | 10 mi           |
-  | usd     | '[\$\$]#,##0.00'             | Adds the `$` symbol to your number value                                            | 10        | \$10.00         |
-  | gbp     | '[\$£]#,##0.00'              | Adds the `£` symbol to your number value                                            | 10        | £10.00          |
-  | eur     | '[\$€]#,##0.00'              | Adds the `€` symbol to your number value                                            | 10        | €10.00          |
-  | jpy     | '[\$¥]#,##0.00'              | Adds the `¥` symbol to your number value                                            | 10        | ¥10             |
-  | percent | '#,##0.00%'                  | Adds the `%` symbol and multiplies your value by 100                                | 0.1       | %10             |
-  | id      | '0'                          | Removes commas and spaces from number or string types so that they appear like IDs. | 12389572  | 12389572        |
-
-  #### Round (legacy)
-
-  You can round values to appear with a certain number of decimal points.
-
-  <Tabs>
-    <Tab title="dbt v1.9 and earlier">
-      ```yaml
-      models:
-        - name: sales
-          columns:
-            - name: revenue
-              meta:
-                dimension:
-                  round: 0 # equivalent format expression: '#,##0.0'
-      ```
-    </Tab>
-    <Tab title="dbt v1.10+ and Fusion">
-      ```yaml
-      models:
-        - name: sales
-          columns:
-            - name: revenue
-              config:
-                meta:
-                  dimension:
-                    round: 0 # equivalent format expression: '#,##0.0'
-      ```
-    </Tab>
-    <Tab title="Lightdash YAML">
-      ```yaml
-      type: model
-      name: sales
-
-      dimensions:
-        - name: revenue
-          round: 0 # equivalent format expression: '#,##0.0'
-      ```
-    </Tab>
-  </Tabs>
-</Accordion>
-
-## Compact
-
-You can compact values in your YAML. For example, if I wanted all of my revenue values to be shown in thousands (e.g. `1,500` appears as `1.50K`), then I would write something like this in my .yml:
-
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: sales
-        columns:
-          - name: revenue
-            meta:
-              dimension:
-                compact: thousands # You can also use 'K'
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    models:
-      - name: sales
-        columns:
-          - name: revenue
-            config:
-              meta:
-                dimension:
-                  compact: thousands # You can also use 'K'
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: sales
-
-    dimensions:
-      - name: revenue
-        compact: thousands # You can also use 'K'
-    ```
-  </Tab>
-</Tabs>
-
-| Value     | Alias                | Equivalent format expression          | Example output |
-| :-------- | :------------------- | :------------------------------------ | :------------- |
-| thousands | "K" and "thousand"   | '#,##0," K"' or '#,##0.00," K"'       | 1K             |
-| millions  | "M" and "million"    | '#,##0,," M"' or '#,##0.00,," M"'     | 1M             |
-| billions  | "B" and "billion"    | '#,##0,,," B"' or '#,##0.00,,," B"'   | 1B             |
-| trillions | "T" and "trillion"   | '#,##0,,,," T"' or '#,##0.00,,,," T"' | 1T             |
-| kilobytes | "KB" and "kilobyte"  |                                       | 1KB            |
-| megabytes | "MB" and "megabyte"  |                                       | 1MB            |
-| gigabytes | "GB" and "gigabyte"  |                                       | 1GB            |
-| terabytes | "TB" and "terabyte"  |                                       | 1TB            |
-| petabytes | "PB" and "petabyte"  |                                       | 1PB            |
-| kibibytes | "KiB" and "kibibyte" |                                       | 1KiB           |
-| mebibytes | "MiB" and "mebibyte" |                                       | 1MiB           |
-| gibibytes | "GiB" and "gibibyte" |                                       | 1GiB           |
-| tebibytes | "TiB" and "tebibyte" |                                       | 1TiB           |
-| pebibytes | "PiB" and "pebibyte" |                                       | 1PiB           |
-
-## Separator
-
-You can use the `separator` property to control the grouping and decimal characters used when rendering numbers, so values display correctly for non-US locales (e.g. `1.234.567,50` in Europe or `1'234'567.50` in Switzerland).
-
-`separator` only changes the separator characters. It composes with `format` (including spreadsheet-style `format` expressions), `compact`, `round`, and `currency`, which still control the overall shape of the number.
-
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: sales
-        columns:
-          - name: revenue
-            meta:
-              dimension:
-                format: '[$€]#,##0.00'
-                separator: periodComma # 1.234.567,50 €
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    models:
-      - name: sales
-        columns:
-          - name: revenue
-            config:
-              meta:
-                dimension:
-                  format: '[$€]#,##0.00'
-                  separator: periodComma # 1.234.567,50 €
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: sales
-
-    dimensions:
-      - name: revenue
-        format: '[$€]#,##0.00'
-        separator: periodComma # 1.234.567,50 €
-    ```
-  </Tab>
-</Tabs>
-
-These are the supported values:
-
-| Value               | Example output  | Description                                                                  |
-| :------------------ | :-------------- | :--------------------------------------------------------------------------- |
-| `default`           | `1,234,567.50`  | Uses the Lightdash default (comma thousands, period decimal). Same as omitting `separator`. |
-| `commaPeriod`       | `1,234,567.50`  | Comma thousands separator, period decimal separator.                         |
-| `spacePeriod`       | `1 234 567.50`  | Space thousands separator, period decimal separator.                         |
-| `periodComma`       | `1.234.567,50`  | Period thousands separator, comma decimal separator.                         |
-| `noSeparatorPeriod` | `1234567.50`    | No thousands separator, period decimal separator.                            |
-| `apostrophePeriod`  | `1'234'567.50`  | Apostrophe thousands separator, period decimal separator (Swiss).            |
+<FieldFormattingOptions />
 
 ## Time intervals
 
@@ -591,7 +297,7 @@ For example, here we have the timestamp dimension `created` defined in our dbt p
 Lightdash breaks this out into the default intervals automatically. So, this is how `created` appears in our Lightdash project:
 
 <Frame>
-  ![screenshot-default-intervals](/images/references/screenshot-default-intervals-1fb6e04e2d4f617bb22f9fea86fa52c6.png)
+  ![screenshot-default-intervals](../images/semantic-layer/dimensions/screenshot-default-intervals-1fb6e04e2d4f617bb22f9fea86fa52c6.png)
 </Frame>
 
 <Info>
@@ -657,7 +363,7 @@ In this example, `created` would now appear as a single, timestamp dimension wit
 </Tabs>
 
 <Frame>
-  ![screenshot-intervals-off](/images/references/screenshot-intervals-off-e786a3290b6c8b8454fe7f223a5682d8.png)
+  ![screenshot-intervals-off](../images/semantic-layer/dimensions/screenshot-intervals-off-e786a3290b6c8b8454fe7f223a5682d8.png)
 </Frame>
 
 
@@ -741,7 +447,7 @@ You can see all of the standard interval options for date and timestamp fields b
 ### Using custom granularities
 
 <Info>
-**Availability:** Custom granularities are a [Beta](/references/workspace/feature-maturity-levels) feature.
+**Availability:** Custom granularities are a [Beta](/help/feature-maturity-levels) feature.
 </Info>
 
 You can define reusable custom time granularities in your `lightdash.config.yml` file and reference them in the `time_intervals` array. Unlike [custom time intervals using additional dimensions](#custom-time-intervals-with-additional-dimensions), custom granularities **appear in the date zoom dropdown** alongside standard options (Day, Week, Month, etc.).
@@ -797,7 +503,7 @@ custom_granularities:
 The `${COLUMN}` placeholder in the SQL expression is automatically replaced with the dimension's column SQL at runtime. Custom granularities also inherit `requiredAttributes` and `anyAttributes` from the parent dimension.
 
 <Info>
-  See [lightdash.config.yml reference](/references/lightdash-config-yml#custom-granularities-configuration) for the full configuration options and the [Date zoom guide](/guides/date-zoom) for information on configuring the date zoom dropdown.
+  See [lightdash.config.yml reference](/semantic-layer/lightdash-config-yml#custom-granularities-configuration) for the full configuration options and the [Date zoom guide](/explore/date-zoom) for information on configuring the date zoom dropdown.
 </Info>
 
 ### Custom time intervals with additional dimensions
@@ -991,7 +697,7 @@ To do this, you need to set up `group_details` in the model's configuration. The
 This example would look like this in the sidebar:
 
 <Frame>
-  ![](/images/references/groups-757097385f03095824be4746f585d50b.png)
+  ![](../images/semantic-layer/dimensions/groups-757097385f03095824be4746f585d50b.png)
 </Frame>
 
 
@@ -1043,7 +749,7 @@ Lightdash users can interact with dimension values by clicking on them. If you'r
 By adding custom urls you can configure the actions available to your users. Like linking to external tools, or taking actions in other tools.
 
 <Frame>
-  ![](/images/references/clickable-dimension-link-70554874d4e468900e9d8fadf3b53cd2.jpg)
+  ![](../images/semantic-layer/dimensions/clickable-dimension-link-70554874d4e468900e9d8fadf3b53cd2.jpg)
 </Frame>
 
 In the example below, users can click on a company name and open a corresponding record in their CRM or search for the company in google or open that company's Slack channel.
@@ -1149,7 +855,7 @@ This URL will only work if I have `customer_id` included in my results table.
 
 The `richText` property allows you to define custom HTML/Markdown templates for displaying dimension and metric values in table cells. This enables sophisticated data presentation with formatting, styling, conditional logic, and external integrations.
 
-![Rich text examples rendered in a Table chart](/images/references/rich-text-hero.png)
+![Rich text examples rendered in a Table chart](../images/semantic-layer/dimensions/rich-text-hero.png)
 
 <Info>
 Rich text only renders in the **Table chart visualization**. It does not affect the Results panel below the explore, CSV/Excel exports, or the underlying data values. To see your `richText` take effect, switch the chart type to **Table**.
@@ -1202,7 +908,7 @@ Display a dimension value with bold text, an inline code span, and clickable lin
   </Tab>
 </Tabs>
 
-![Cells rendered with a bold "Customer ID:" label, a code-style ID, and two inline links per row](/images/references/rich-text-basic-markdown-links.png)
+![Cells rendered with a bold "Customer ID:" label, a code-style ID, and two inline links per row](../images/semantic-layer/dimensions/rich-text-basic-markdown-links.png)
 
 ### Conditional formatting
 
@@ -1279,7 +985,7 @@ Use Liquid control flow tags to switch rendering based on the value — for exam
   </Tab>
 </Tabs>
 
-![Conditional tiers rendered with emoji, bold and italic text, and a grey "No data" fallback for null values](/images/references/rich-text-conditional-tiers.png)
+![Conditional tiers rendered with emoji, bold and italic text, and a grey "No data" fallback for null values](../images/semantic-layer/dimensions/rich-text-conditional-tiers.png)
 
 <Note>
 Liquid blocks inside dbt YAML must be wrapped in `{% raw %}...{% endraw %}` so dbt's Jinja engine passes the template through to Lightdash untouched.
@@ -1372,7 +1078,7 @@ For richer layouts, combine inline HTML with images and `style` attributes. This
   </Tab>
 </Tabs>
 
-![Avatar image with colored initials, bold name, and a LinkedIn link rendered per row](/images/references/rich-text-html-avatars.png)
+![Avatar image with colored initials, bold name, and a LinkedIn link rendered per row](../images/semantic-layer/dimensions/rich-text-html-avatars.png)
 
 ### Liquid templating in rich text
 
@@ -1472,7 +1178,7 @@ While `required_attributes` uses AND logic (all conditions must match), `any_att
 
 In this example, users with `department = "hr"` OR `department = "finance"` OR `role = "manager"` can see the `salary` dimension.
 
-You can combine both `required_attributes` and `any_attributes` on the same dimension. When both are set, both checks must pass. See [user attributes](/references/workspace/user-attributes#combining-required_attributes-and-any_attributes) for details.
+You can combine both `required_attributes` and `any_attributes` on the same dimension. When both are set, both checks must pass. See [user attributes](/workspace-admin/user-attributes#combining-required_attributes-and-any_attributes) for details.
 
 
 ### Current limitations
@@ -1490,7 +1196,7 @@ Lightdash dimensions and custom metrics are protected by this feature, however, 
 ## Convert timezone
 
 <Info>
-  **Experimental:** The `convert_timezone` dimension override is currently in the [Experimental](/references/workspace/feature-maturity-levels) phase. Contact support to enable it for your organization. Has no effect unless the [project query timezone](/guides/developer/timezones#project-query-timezone-ui-setting) is set.
+  **Experimental:** The `convert_timezone` dimension override is currently in the [Experimental](/help/feature-maturity-levels) phase. Contact support to enable it for your organization. Has no effect unless the [project query timezone](/workspace-admin/set-project-timezone#configure-your-project-timezone) is set.
 </Info>
 
 Set `convert_timezone: false` on a `timestamp` dimension to opt it out of the project query timezone. This is useful for columns that should always render in their raw warehouse value - system timestamps, audit logs, or pre-converted timezone columns.
@@ -1531,7 +1237,7 @@ Filters still use the project query timezone regardless of this setting, so ever
   </Tab>
 </Tabs>
 
-See [Per-dimension timezone opt-out](/guides/developer/timezones#per-dimension-timezone-opt-out) in the Timezones guide for how this interacts with other timezone settings and filter behavior.
+See [Per-dimension timezone opt-out](/workspace-admin/set-project-timezone#opt-a-column-out-of-timezone-conversion) in the Timezones guide for how this interacts with other timezone settings and filter behavior.
 
 ## Timestamp domain
 
@@ -1571,7 +1277,7 @@ Lightdash reads whether a `timestamp` column stores an instant (`aware`) or a ba
 
 The YAML value wins over the catalog. It's ignored on dimensions with custom `sql` and on additional dimensions. Interval children (`_day`, `_month`, ...) inherit from their base.
 
-See [Override a column timestamp domain](/guides/developer/timezones#override-a-column-timestamp-domain) in the Timezones guide.
+See [Override a column timestamp domain](/workspace-admin/set-project-timezone#override-a-column-timestamp-domain) in the Timezones guide.
 
 ## Color
 
@@ -1623,7 +1329,7 @@ You can predefine colors for your string type dimensions, these colors will be u
 </Tabs>
 
 <Frame>
-  ![](/images/references/pie-chart-color-b5c761ad3dc797717c6397920572b1c4.png)
+  ![](../images/semantic-layer/dimensions/pie-chart-color-b5c761ad3dc797717c6397920572b1c4.png)
 </Frame>
 
 <Info>
@@ -1704,7 +1410,7 @@ UPPER("customers"."first_name") LIKE UPPER('%jes%')
 So with `case_sensitive: false`, filtering for `john` would match `John`, `JOHN`, `john`, etc.
 
 <Info>
-  Dimension-level `case_sensitive` settings override explore-level and project-level settings. See [Tables reference](/references/tables#case-sensitive) for explore-level configuration and [lightdash.config.yml reference](/references/lightdash-config-yml#defaults-configuration) for project-level defaults.
+  Dimension-level `case_sensitive` settings override explore-level and project-level settings. See [Tables reference](/semantic-layer/tables#case-sensitive) for explore-level configuration and [lightdash.config.yml reference](/semantic-layer/lightdash-config-yml#defaults-configuration) for project-level defaults.
 </Info>
 
 
@@ -1716,7 +1422,7 @@ You can customize the suggestions users see when filtering on a dimension. This 
 - Label warehouse-fetched values with a human-readable name from another dimension in the same table (for example, showing customer names next to customer IDs).
 - Disable the live warehouse lookup for autocomplete to reduce warehouse queries on dimensions with very high cardinality or sensitive values.
 
-Regardless of which option you use, filter autocomplete always returns `{ value, label }` pairs. The `value` is what gets used in the filter, and the `label` is what's displayed in the dropdown. Parameters that source their options from the same dimension via [`options_from_dimension`](/references/tables#parameter-configuration) automatically pick up these labels too.
+Regardless of which option you use, filter autocomplete always returns `{ value, label }` pairs. The `value` is what gets used in the filter, and the `label` is what's displayed in the dropdown. Parameters that source their options from the same dimension via [`options_from_dimension`](/semantic-layer/parameters#parameters-configuration) automatically pick up these labels too.
 
 ### Properties
 
@@ -1860,7 +1566,7 @@ For example, an `orders` model exposes a `customer_id` dimension that users want
   </Tab>
 </Tabs>
 
-The referenced dimension must live in the same table. Any [parameter](/references/tables#parameter-configuration) that sources its options from `customer_id` via `options_from_dimension` also picks up the customer name labels automatically.
+The referenced dimension must live in the same table. Any [parameter](/semantic-layer/parameters#parameters-configuration) that sources its options from `customer_id` via `options_from_dimension` also picks up the customer name labels automatically.
 
 ## Image Display
 
@@ -2282,7 +1988,7 @@ image:
 You can add tags to individual dimensions to categorize them for programmatic use. Tags are string arrays that Lightdash preserves and exposes via the API.
 
 Tags are useful for:
-- **AI agent access control** — restrict which dimensions an [AI agent](/guides/ai-agents/data-access) can see
+- **AI agent access control** — restrict which dimensions an [AI agent](/agents/data-access) can see
 - **API filtering** — filter the [data catalog metrics endpoint](/api-reference/v1/recipes#filter-metrics-by-tag-using-the-data-catalog-api) by tag to retrieve only the dimensions you need
 - **Pipeline ingestion** — flag specific dimensions for downstream ETL or semantic layer workflows
 

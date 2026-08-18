@@ -1,8 +1,10 @@
 ---
 title: "Secure Lightdash with HTTPS"
 description: To run Lightdash in production it is highly recommended to secure it with HTTPS. This is usually done using your cloud provider's load balancer or ingress controller. Optionally you could use a proxy service like [nginx](https://www.nginx.com/) or [traefik](https://traefik.io).
-sidebaRTitle: Secure with HTTPS
+sidebarTitle: Secure with HTTPS
 boost: 0.001
+doc-type: tutorial
+tag: "Tutorial"
 ---
 
 ## Configuration options for HTTPS
@@ -19,7 +21,7 @@ configMap:
   # (optional) allow http traffic behind a https enabled proxy
   TRUST_PROXY: 'true'
 
-# Depending on your ingress implemantation you may need to set the following
+# Depending on your ingress implementation you may need to set the following
 service:
   type: NodePort
 
@@ -37,3 +39,25 @@ ingress:
         - lightdash.mycompany.com
       secretName: lightdash-tls
 ```
+
+## SECURE_COOKIES and TRUST_PROXY
+
+Both default to `false`. A production instance behind a TLS-terminating load balancer or ingress needs both set to `"true"`:
+
+- `SECURE_COOKIES: "true"` tells Lightdash to only send its session cookies over HTTPS. Lightdash uses cookies to keep users signed in, so this keeps sessions from traveling over plain HTTP.
+- `TRUST_PROXY: "true"` tells Lightdash to trust the `X-Forwarded-Proto` header from your proxy. When TLS terminates at the load balancer, requests reach Lightdash over HTTP with that header set — without `TRUST_PROXY`, Lightdash treats the request as insecure and refuses to set secure cookies.
+
+Set both together: `SECURE_COOKIES` without `TRUST_PROXY` behind a terminating proxy locks users out. Changing `SITE_URL` later means reconfiguring every OAuth integration, so set the final `https://` URL before first boot.
+
+## Load balancer and networking
+
+Match what Lightdash Cloud configures at the load balancer:
+
+- **Redirect HTTP → HTTPS**, minimum **TLS 1.2**.
+- **Backend/LB timeout ≥ 300s** — long-running exports and queries are killed by the common 30–60s defaults.
+- **Health check** on `GET /api/v1/health`.
+- Request body size limit at the ingress ≥ your `LIGHTDASH_MAX_PAYLOAD` (dbt manifests for large projects are tens of MB).
+- Optional: IP allowlisting, WAF, or rate limiting at the load balancer.
+- On GKE, the chart can create a `BackendConfig` (`backendConfig.create: true`, `backendConfig.spec`) to attach timeouts, CDN, and Cloud Armor policies — this is how they're configured on Lightdash Cloud.
+
+If backend pods can't reach `SITE_URL` from inside the cluster (hairpin/NAT), set `INTERNAL_LIGHTDASH_HOST` to the in-cluster service URL — the headless browser and internal calls use it.
