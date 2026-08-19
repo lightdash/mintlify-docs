@@ -38,6 +38,11 @@ Every command on this page is in a released image. Version-fence your runbook ac
 | `migrate preflight` | Lightdash `1.125.0` |
 | `lightdash upgrade-check` | Lightdash CLI `1.126.0` |
 | `/api/v1/livez` and `/api/v1/readyz` probes | Lightdash `1.129.0` |
+| `/api/v1/readyz` keeps working pods in service during a parked migration | Lightdash `1.169.1` |
+
+<Warning>
+On Lightdash `1.129.0` to `1.168.x`, do not point a readiness probe at `/api/v1/readyz`. A parked migration marked every working pod as not ready, so a single stuck migration removed the whole backend from the load balancer. Fixed in `1.169.1`. See [configuring health probes](/self-host/production-deployment-checklist#health-probes) for the current setup.
+</Warning>
 
 If you are upgrading *from* something older, that is fine. These are properties of the image you are upgrading *to*, and of the CLI you run the check with. The one place the old world still shows up is [rolling back across the `1.123.0` boundary](#rolling-back).
 
@@ -258,6 +263,8 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://lightdash.example.com/api/v1/r
 ```
 
 A `503` carries a `reason`: `schema_pending` (migrations still outstanding), `migration_parked` (a migration failed and stopped), `migration_ledger_unavailable`, or `db_unavailable`. `/api/v1/livez` answers without touching the database, which is why it is the right liveness probe and the wrong readiness signal.
+
+`/api/v1/health` also answers, but it queries the database on every call. That makes it a fine manual check to run after a deploy, and a poor probe, since a brief database blip fails it on every pod at once. Worker pods serve their own handler at this same path, backed by in-memory worker state rather than the database, and workers do not serve `/api/v1/readyz` at all. For which endpoint belongs on which probe, see the [production deployment checklist](/self-host/production-deployment-checklist#health-probes).
 
 Confirm the version too, then upgrade the [Lightdash CLI](/workflow/cli/install#updating-the-lightdash-cli) to match.
 </Step>
