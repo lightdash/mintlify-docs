@@ -10,11 +10,17 @@ doc-type: reference
   **Availability:** MetricFlow support is a [Beta](/support/feature-maturity-levels) feature. Behavior and supported features may change as we iterate.
 </Info>
 
-If your dbt project defines metrics using [MetricFlow](https://docs.getdbt.com/docs/build/about-metricflow) (dbt's semantic layer), the Lightdash CLI can translate them into Lightdash metrics automatically when you deploy. You keep a single source of truth for metric definitions in MetricFlow format, and Lightdash reads them directly from your compiled dbt project. You don't need a dbt Cloud subscription or the dbt Semantic Layer API, and you don't need to duplicate the definitions.
+If your dbt project defines metrics using [MetricFlow](https://docs.getdbt.com/docs/build/about-metricflow) (dbt's semantic layer), Lightdash can translate them into Lightdash metrics automatically. You keep a single source of truth for metric definitions in MetricFlow format, and Lightdash reads them directly from your dbt project — you don't need to duplicate the definitions.
+
+This works with every way of connecting a dbt project:
+
+- **Lightdash CLI** (`lightdash deploy` / `compile` / `preview`) — reads your compiled `manifest.json`. No dbt Cloud subscription or dbt Semantic Layer API needed.
+- **Git connections** (GitHub, GitLab, Azure DevOps, Bitbucket) — the same translation runs when Lightdash compiles your project server-side.
+- **[dbt Cloud connection](/get-started/quickstart/connect-project#dbt-cloud)** — Lightdash pulls your semantic models and metrics from the dbt Cloud Discovery API when you refresh the project. See [Using the dbt Cloud connection](#using-the-dbt-cloud-connection) for details and limitations.
 
 ## How it works
 
-When you run `lightdash deploy` (or `lightdash compile` / `lightdash preview`), the CLI reads your project's compiled `manifest.json`, which contains everything MetricFlow knows about your project: the `semantic_models` (entities, dimensions, measures) and the `metrics` defined on top of them.
+When you run `lightdash deploy` (or `lightdash compile` / `lightdash preview`), the CLI reads your project's compiled `manifest.json`, which contains everything MetricFlow knows about your project: the `semantic_models` (entities, dimensions, measures) and the `metrics` defined on top of them. Projects connected via git are compiled the same way server-side when you refresh dbt in Lightdash.
 
 These metrics can then be used everywhere Lightdash metrics work (charts, dashboards, the API, AI agents).
 
@@ -106,6 +112,21 @@ becomes `${total_revenue} / ${unique_customers}`. Inputs using `offset_window` o
 <Info>
   **Why same-model only?** MetricFlow computes each input metric in its own aggregation subquery — even across unrelated tables — and joins the already-aggregated results. Lightdash compiles one query per explore, so ratio/derived metrics translate faithfully only when all inputs resolve to metrics on the same dbt model. Cross-model inputs are skipped with a warning naming the models involved.
 </Info>
+
+## Using the dbt Cloud connection
+
+Projects connected through the [dbt Cloud connection type](/get-started/quickstart/connect-project#dbt-cloud) don't have a local `manifest.json` — instead, Lightdash fetches your semantic models and metrics from the [dbt Cloud Discovery API](https://docs.getdbt.com/docs/dbt-apis/discovery-querying) alongside your models when you refresh the project. Translation then works exactly as described above, with no extra setup:
+
+- Your service token's existing **'Metadata Only'** permission covers the semantic layer queries — no dbt Semantic Layer configuration is required.
+- Definitions come from the environment's latest successful run, like the rest of your dbt Cloud metadata: run a job that parses your project (any `dbt build` / `dbt run` job) and refresh dbt in Lightdash.
+
+<Warning>
+The Discovery API doesn't expose every field that's in the manifest, so a few things behave differently compared to the CLI or git connections:
+
+- **Percentile measures are skipped** (with a warning) — the API doesn't return `agg_params.percentile`, and translating without the percentile value would silently compute a median.
+- **Measure-level `label` and `config.meta`** (e.g. `hidden` or `group_label` set on a measure) aren't available. Set these on the metric instead of the measure — metric-level values come through fine.
+- **Dimension `expr` isn't available**, so metric `filter:` references resolve against the dimension *name*. If a filtered dimension's name doesn't match a real column on your model, define the filter on the metric in Lightdash YAML instead.
+</Warning>
 
 ## What's not supported yet
 
