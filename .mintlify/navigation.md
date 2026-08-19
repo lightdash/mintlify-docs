@@ -1,11 +1,6 @@
----
-name: mintlify-navigation
-description: Express a docs information architecture as Mintlify navigation (docs.json tabs, groups, anchors, root pages) and control how the mint-theme sidebar renders it. Use when editing docs.json navigation, restructuring the sidebar, choosing tabs vs groups vs anchors, or debugging sidebar rendering — gaps, group styles, icons, density.
----
-
 # Mintlify Navigation
 
-The `navigation` tree in docs.json is where a docs IA becomes an interface. Page placement rules live in `.mintlify/ia-rules.md`; this skill covers how navigation structure renders and how to choose between the primitives.
+The `navigation` tree in docs.json is where a docs IA becomes an interface. Page placement rules live in [`ia-rules.md`](ia-rules.md); this doc covers how navigation structure renders and how to choose between the primitives.
 
 ## Primitives
 
