@@ -1,0 +1,230 @@
+---
+title: "Migrating from another BI tool"
+description: "A step-by-step process for moving reports, dashboards, and modeling logic from an existing BI tool (Looker, Tableau, Power BI, Metabase, Mode, and others) into Lightdash."
+sidebarTitle: Migrate from another BI tool
+icon: right-left
+doc-type: guide
+---
+
+Use this guide when you're replacing an existing BI tool with Lightdash. It works for any source tool — Looker, Tableau, Power BI, Metabase, Mode, Sigma, or an in-house solution — because the process is the same: extract what you have, translate the modeling into Lightdash YAML or dbt, and rebuild the dashboards on top of your new semantic layer.
+
+The steps below are designed to be followed in order. You'll do most of the modeling work with an AI coding agent (Claude Code, Cursor, or Codex) using Lightdash skills, and finish by rebuilding the dashboards visually in Lightdash.
+
+<Info>
+  Before you start, make sure you have:
+  - A Lightdash project connected to your warehouse. See the [Quickstart](/get-started/quickstart).
+  - Admin (or export-equivalent) access to the BI tool you're migrating from.
+  - A dbt project (or an empty repo where one will live) connected to the same warehouse.
+</Info>
+
+## 1. Install the Lightdash CLI and skills
+
+The AI-assisted path is by far the fastest way to migrate. Install the CLI and skills first so your coding agent knows how to write Lightdash YAML, metrics, and dashboards correctly.
+
+<Steps>
+  <Step title="Install the Lightdash CLI">
+    Follow [Install the CLI](/workflow/cli/install) and [Authenticate](/workflow/cli/authenticate) against your Lightdash project.
+  </Step>
+
+  <Step title="Install Lightdash skills">
+    Run this from your dbt or YAML project root:
+
+    ```bash
+    lightdash install-skills
+    ```
+
+    This installs skills into `.claude/skills/` (also read by GitHub Copilot). For Cursor or Codex, pass `--agent cursor` or `--agent codex`. To share across projects, add `--global`. See [Install agent skills](/workflow/install-agent-skills) for all options.
+  </Step>
+
+  <Step title="Confirm your agent picks up the skills">
+    In Claude Code, prefix migration prompts with `/developing-in-lightdash` so the agent uses the Lightdash context. Cursor and Codex pick the skills up automatically.
+  </Step>
+</Steps>
+
+## 2. Set up your migration workspace
+
+Before touching your source BI tool, get a clean workspace ready to receive the migrated content.
+
+<Steps>
+  <Step title="Create a migration branch in your dbt or YAML repo">
+    Work on a branch (for example `migration/from-looker`) so you can iterate without affecting production models.
+  </Step>
+
+  <Step title="Create a Lightdash preview project">
+    Use a [preview project](/workflow/preview-projects) or a separate development project so the migrated content is isolated until you're ready to promote it. This gives you a safe place to validate metrics against the source tool.
+  </Step>
+
+  <Step title="Create a working folder for source exports">
+    In the repo, add a folder like `migration/source/` to hold everything you export from the source tool (LookML, `.twb` files, `.pbix` unpacks, question JSON, screenshots). Your agent will read from this folder.
+  </Step>
+</Steps>
+
+## 3. Extract your source information
+
+Pull every piece of information out of the source BI tool that Lightdash will need to rebuild the reports. What you extract depends on the tool, but the goal is the same: capture the modeling logic, the queries, and the visual layout.
+
+Choose the option that matches your source tool. If more than one applies, do them all — the more source material your agent has, the better the translation.
+
+### Modeling logic as code
+
+If the source tool stores modeling logic in files, export those files first. This is the highest-signal input for the migration.
+
+- **Looker** — clone the LookML project (`.lkml`, `.view.lkml`, `.model.lkml`, `.dashboard.lookml`).
+- **dbt-based tools** (Metabase Metrics Layer, Mode with dbt) — you already have the source; note which models are actually used by the reports.
+- **Sigma / Hex / Omni** — export workbook or dataset definitions as JSON or YAML where the tool supports it.
+
+Copy the files into `migration/source/` in your repo.
+
+### Workbooks and reports as files
+
+If the source tool stores reports as binary or archive files, unpack them so the agent can read the SQL and field definitions.
+
+- **Tableau** — save workbooks as `.twbx` (packaged) then unzip to expose the underlying `.twb` XML. The XML contains data source definitions, calculated fields, filters, and worksheet layouts.
+- **Power BI** — export `.pbix` files and unpack them (for example with a `.pbix` viewer or `pbi-tools`) to extract the data model, DAX measures, and report layout as JSON/XML.
+- **Mode / Metabase / Redash** — export questions or reports as SQL. Group them by dashboard so you know which queries feed which report.
+
+Put the extracted files under `migration/source/<tool>/`.
+
+### API extraction
+
+For SaaS BI tools without a file export, pull the definitions through the API. This is usually the best route when there are hundreds of reports and manual export isn't practical.
+
+- **Looker** — [Looker API](https://cloud.google.com/looker/docs/reference/looker-api/latest) endpoints for `looks`, `dashboards`, and `queries`.
+- **Tableau** — [Metadata API](https://help.tableau.com/current/api/metadata_api/en-us/index.html) for workbooks, data sources, calculated fields, and lineage.
+- **Power BI** — [REST API](https://learn.microsoft.com/en-us/rest/api/power-bi/) for datasets, reports, and DAX definitions.
+- **Metabase** — `/api/card` and `/api/dashboard` for questions and dashboards.
+- **Mode** — `/api/{workspace}/reports` for reports and their queries.
+
+Write a small script to dump the responses to JSON in `migration/source/api/`. Include the raw SQL, field definitions, filters, and any joins.
+
+### Direct SQL
+
+For everything else — bespoke reports, undocumented queries, ad-hoc dashboards — capture the executed SQL. Query your warehouse's query history (Snowflake `QUERY_HISTORY`, BigQuery `INFORMATION_SCHEMA.JOBS`, Redshift `STL_QUERY`) filtered to the BI tool's service user to see what actually runs in production. Save the top queries by frequency into `migration/source/sql/`.
+
+## 4. Take screenshots of the source dashboards
+
+Screenshots are the reference for rebuilding the visual layer. Your coding agent can't see the source tool, so it needs the images to match layout, chart types, and filter positions.
+
+<Steps>
+  <Step title="Capture each dashboard end to end">
+    Take a full-page screenshot of every dashboard you're migrating. Include the filters, tab structure, and any drilldowns.
+  </Step>
+
+  <Step title="Capture chart-level detail where it matters">
+    For complex visualizations (custom colors, conditional formatting, mixed chart types), take a zoomed-in screenshot too. Also grab the underlying query where the source tool exposes it.
+  </Step>
+
+  <Step title="Store screenshots alongside the source files">
+    Save them under `migration/source/screenshots/`, named by dashboard. Reference them in your prompts so the agent uses them when rebuilding layouts.
+  </Step>
+</Steps>
+
+## 5. Translate the modeling into Lightdash
+
+With everything extracted, use your coding agent to translate the source modeling into Lightdash's semantic layer. Do this in passes — models first, then metrics, then joins — rather than all at once.
+
+<Steps>
+  <Step title="Prompt the agent to profile the warehouse and read the source">
+    Point the agent at both the source files and your warehouse schema. For example:
+
+    ```
+    /developing-in-lightdash
+
+    Read the LookML files under migration/source/looker/ and profile the
+    corresponding tables in our warehouse. For each Looker view that
+    underlies a dashboard in migration/source/screenshots/, propose a
+    Lightdash model with matching dimensions and metrics. Do not create
+    files yet — list the models and metrics you plan to create.
+    ```
+
+    Review the plan before letting it write files.
+  </Step>
+
+  <Step title="Generate models one source at a time">
+    Ask the agent to write the Lightdash YAML (or dbt `meta` tags) for one source at a time. See [Lightdash YAML](/semantic-layer/yaml) for the format. After each file, run:
+
+    ```bash
+    lightdash lint
+    ```
+
+    Fix errors before moving on.
+  </Step>
+
+  <Step title="Translate metrics, calculated fields, and measures">
+    Map source metric types to Lightdash [metric types](/semantic-layer/metrics). Common mappings:
+
+    | Source                         | Lightdash                                                    |
+    | ------------------------------ | ------------------------------------------------------------ |
+    | Looker `measure: sum`          | `type: sum` metric                                           |
+    | Looker `measure: count_distinct` | `type: count_distinct` metric                              |
+    | Tableau calculated field (agg) | Lightdash metric with `sql`                                  |
+    | Power BI DAX `SUMX` / `CALCULATE` | Lightdash metric, or a dbt column plus a `sum` metric      |
+    | Metabase custom expression     | Lightdash metric with `sql`, or a [table calculation](/explore/table-calculations) if it's row-level |
+
+    Ask the agent to add descriptions and categories so the migrated fields land in the [metrics catalog](/explore/metrics-catalog) cleanly.
+  </Step>
+
+  <Step title="Rebuild joins">
+    Translate source joins to Lightdash [joins](/semantic-layer/joins). Specify the relationship (`one-to-many`, `many-to-one`, `one-to-one`) — this is what unlocks correct fan-out handling.
+  </Step>
+
+  <Step title="Deploy to your preview project">
+    ```bash
+    lightdash deploy
+    ```
+
+    Then run [`lightdash validate`](/workflow/cli/validate) to catch broken references.
+  </Step>
+</Steps>
+
+## 6. Rebuild the dashboards
+
+With the semantic layer in place, rebuild the dashboards on top of it.
+
+<Steps>
+  <Step title="Rebuild charts against the migrated tables">
+    Open each source dashboard screenshot side by side with Lightdash. For each chart, build the equivalent in Lightdash using the migrated metrics and dimensions. See [Configure charts](/explore/configure-charts) and the [chart types gallery](/explore/chart-types).
+
+    If you'd rather do this conversationally, ask your agent to build the dashboards for you — it can generate [content as code](/workflow/content-as-code) from the screenshots and the migrated models.
+  </Step>
+
+  <Step title="Rebuild dashboard-level filters and tabs">
+    Recreate the source dashboard's filter set with [dashboard filters](/explore/filters-reference) and multi-tab layouts. Match the visual grouping from the screenshots.
+  </Step>
+
+  <Step title="Validate the numbers match the source">
+    For every migrated dashboard, run the same query in the source tool and in Lightdash and compare the results. Any mismatch usually points to:
+
+    - A missing or mismapped join
+    - A different aggregation type
+    - A silent filter in the source tool (default date range, hidden user filter)
+    - A timezone difference — see [Set the project timezone](/workspace-admin/set-project-timezone)
+
+    Do this before you cut anyone over.
+  </Step>
+</Steps>
+
+## 7. Layer in best practices and the customer's own conventions
+
+Once the content works, take a pass to align it with Lightdash conventions and any modeling standards the team already follows.
+
+- **Follow Lightdash's modeling guidance.** Read [modeling strategies](/semantic-layer/modeling-strategies) and apply it: name fields consistently, keep grain explicit, use pre-aggregates where warranted.
+- **Apply the customer's own style guide.** If the team has a metric naming convention, category structure, or documentation standard, feed that into the agent as extra context so the migrated fields match. Skills read anything in the project — a `MODELING_GUIDE.md` at the repo root is often enough.
+- **Write good descriptions.** See [Writing descriptions](/semantic-layer/writing-descriptions). Migrations are the best time to fix the descriptions that never got written in the source tool.
+- **Verify canonical content.** Mark the migrated dashboards and charts as [verified content](/explore/verified-content) so users know which reports are the source of truth going forward.
+- **Set up promotion.** Once validated in preview, use [content promotion](/explore/promote-content) to move dashboards to production.
+- **Plan the cutover.** Announce a date, keep the source tool read-only for a defined grace period, and use [scheduled deliveries](/explore/create-scheduled-deliveries) to replace any recurring exports from the old tool.
+
+## Common pitfalls
+
+- **Migrating everything.** Most BI tools carry hundreds of stale reports. Use warehouse query history to see what's actually used, and migrate that subset first.
+- **Trying to match the old tool 1:1.** Lightdash's metric definitions are reusable across charts. Consolidate duplicates instead of copying every one-off calculated field.
+- **Skipping joins.** LookML `explores` and Tableau data sources bake in joins that aren't obvious from the SQL. Read the model definitions, not just the queries.
+- **Forgetting user attributes and access.** Row-level filters and user attributes from the source tool need to be re-modeled with Lightdash [user attributes](/workspace-admin/user-attributes).
+
+## Next steps
+
+- [Install agent skills](/workflow/install-agent-skills)
+- [Lightdash YAML](/semantic-layer/yaml)
+- [Modeling strategies](/semantic-layer/modeling-strategies)
+- [Content as code](/workflow/content-as-code)
