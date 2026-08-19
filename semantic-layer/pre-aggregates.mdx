@@ -160,7 +160,7 @@ When a user runs a query, Lightdash checks whether a pre-aggregate can serve it 
 - **Fields are available** — every dimension, metric, and filter dimension in the query exists somewhere in the pre-aggregate.
 - **Grain is reachable** — if the query uses a time dimension, its granularity is **equal or coarser** than the pre-aggregate's, so the rows can be rolled up. Month is a coarser grain than day. Day is a coarser grain than hour.
 - **Scope is compatible** — if the pre-aggregate defines its own `filters`, the query includes an **equal or narrower** filter, so the subset can be filtered from the pre-aggregate base.
-- **Metrics re-aggregate cleanly** — all metrics are [supported types](#supported-metric-types). Non-additive metrics like `count_distinct`, `median`, and `percentile` can't be faithfully re-computed from stored rows, so they only match on an [exact match](#exact-match-queries) of the pre-aggregate. Anything resolved at runtime — raw SQL table calculations, [`sql_filter`](/semantic-layer/tables#sql-filter-row-level-security) metrics, or SQL dependent on [Parameters](/semantic-layer/parameters) and [user attributes](/workspace-admin/user-attributes) — is never eligible.
+- **Metrics re-aggregate cleanly** — all metrics are [supported types](#supported-metric-types). Non-additive metrics like `count_distinct`, `median`, and `percentile` can't be faithfully re-computed from stored rows, so they only match on an [exact match](#exact-match-queries) of the pre-aggregate. Raw SQL table calculations and SQL that depends on [Parameters](/semantic-layer/parameters) are resolved at query time and are never eligible. Model [`sql_filter`](/semantic-layer/tables#sql-filter-row-level-security) is eligible as long as every field it references is a pre-aggregate dimension — see [`sql_filter` and pre-aggregates](#sql-filter-and-pre-aggregates).
 
 <Tip>
   A **day** pre-aggregate serves `day`, `week`, `month`, `quarter`, and `year` queries. A **month** pre-aggregate serves `month`, `quarter`, and `year` — but **not** `day` or `week`, since those need finer-grained data.
@@ -513,17 +513,20 @@ Pre-aggregates do not support:
 
 - [Personal warehouse connections](/personal-settings/personal-warehouse-connections). Materialization always runs under a single user's credentials, so warehouse-level access rules are not applied per viewer. If you rely on personal warehouse connections to enforce data access, use [results caching](/semantic-layer/caching) instead.
 - [Parameters](/semantic-layer/parameters) — parameter values are picked at query time, so they cannot be resolved during materialization. Queries that use parameters fall back to the warehouse.
-- [User attributes](/workspace-admin/user-attributes) when referenced from SQL. [`required_attributes`](/semantic-layer/tables#required-attributes) and [`any_attributes`](/semantic-layer/tables#any-attributes) are still supported through [`materialization_role`](/semantic-layer/pre-aggregates#materialization-role).
+- [User attributes](/workspace-admin/user-attributes) referenced from a dimension or metric SQL expression. They're only resolved at serve time in [`sql_filter`](#sql-filter-and-pre-aggregates); [`required_attributes`](/semantic-layer/tables#required-attributes) and [`any_attributes`](/semantic-layer/tables#any-attributes) are supported through [`materialization_role`](/semantic-layer/pre-aggregates#materialization-role).
 - [Custom metrics](/explore/create-custom-fields#custom-metrics) created in the Explorer
 - [Custom SQL dimensions](/explore/create-custom-fields#custom-sql) created in the Explorer ([Custom bin dimensions](/explore/create-custom-fields#bin) are supported)
 - SQL table calculations ([Formula table calculations](/explore/table-calculations/formulas) are supported)
 
-### SQL compatibility
+### `sql_filter` and pre-aggregates
 
-[`sql_filter`](/semantic-layer/tables#sql-filter-row-level-security) (and its alias `sql_where`) runs both at materialization time and at query time on top of the materialized data.
+[`sql_filter`](/semantic-layer/tables#sql-filter-row-level-security) (and its alias `sql_where`) is applied both when the pre-aggregate materializes and when a query is served from it. On the serve pass, the filter is rewritten to run against the materialization's columns instead of the source tables:
 
-- **At materialization time**, the filter is evaluated against your warehouse. If the SQL references [Parameters](/semantic-layer/parameters) or [user attributes](/workspace-admin/user-attributes), the values injected come from the materialization context — you can pin this to a fixed identity or attribute set with [`materialization_role`](/semantic-layer/pre-aggregates#materialization-role) so the materialization captures the rows you need.
-- **At query time**, the same filter is re-applied against the materialized data, which is served by DuckDB. If the `sql_filter` SQL uses warehouse-specific syntax that DuckDB doesn't understand, the query will fail to run against the pre-aggregate and fall back to the warehouse.
+- **`${field}` references** — including joined ones like `${customers.segment}` — resolve to the materialized column for that field. Every field the `sql_filter` references must be one of the pre-aggregate's `dimensions`; if a referenced field isn't covered, matching records a **`sql_filter` field not in pre-aggregate** miss and the query falls back to the warehouse. Adding the referenced field to `dimensions` is also what makes the aggregation grain correct.
+- **`${lightdash.attribute_name}` references** are substituted with the querying user's [user attribute](/workspace-admin/user-attributes) values at serve time. If the user is missing a referenced attribute, the pre-aggregate fails closed and the query falls back to the warehouse.
+- **Non-field references** — `${TABLE}.some_column` or hand-written `some_table.some_column` — pass through verbatim. For [external pre-aggregates](/semantic-layer/pre-aggregates/external) these columns must exist in the external table under their raw source names; on managed pre-aggregates a warehouse-specific column reference that DuckDB doesn't understand causes the query to fall back to the warehouse. Correctness of the grain when non-field references filter on non-dimension columns is on you.
+
+At materialization time, the same filter is evaluated against your warehouse under the materialization identity. Use [`materialization_role`](/semantic-layer/pre-aggregates#materialization-role) to pin that identity when the filter references user attributes, so the materialization captures a stable slice of rows regardless of who triggered the build.
 
 ### Metrics that need re-aggregation to combine
 
@@ -702,6 +705,6 @@ These queries would **not** match and would query the warehouse directly:
 - Queries grouped by a dimension not in the pre-aggregate (for example, `customer_id`)
 - Queries with hourly granularity (finer than the pre-aggregate's `day`)
 - Queries without `status = completed` or with a broader `status` filter
-- Queries with [Parameters](/semantic-layer/parameters), [user attributes](/workspace-admin/user-attributes) inside SQL, or [`sql_filter`](/semantic-layer/tables#sql-filter-row-level-security)
+- Queries with [Parameters](/semantic-layer/parameters), or with [user attributes](/workspace-admin/user-attributes) referenced from a dimension or metric SQL expression (user attributes in [`sql_filter`](#sql-filter-and-pre-aggregates) are supported)
 - Queries including a non-additive metric like `count_distinct` unless they select exactly the pre-aggregate's dimensions at exactly its granularity (see [Exact match queries](#exact-match-queries))
 - Queries with raw SQL table calculations
