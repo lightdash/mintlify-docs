@@ -30,8 +30,12 @@ lightdash deploy         # translates MetricFlow metrics as part of the deploy
 ```
 
 <Info>
-  If you define a metric with the same name in both MetricFlow and your model's `meta.metrics`, the `meta.metrics` (Lightdash YAML) definition will take precedence.
+  If you define a metric with the same name in both MetricFlow and your model's `meta.metrics`, the `meta.metrics` (Lightdash YAML) definition will take precedence — so you can always override a translated metric by hand.
 </Info>
+
+### Requirements
+
+- **dbt Core 1.6 or later** (manifest schema `v10`, the first version to include MetricFlow's semantic layer). The legacy metrics format used by pre-1.6 dbt (`calculation_method` / `expression` / `time_grains`) is no longer read.
 
 ### Use the latest MetricFlow spec
 
@@ -57,8 +61,10 @@ Lightdash supports the latest and legacy spec, though it's recommended to use th
 
 Also carried over:
 
-- **Measure** `expr`: bare column references and SQL expressions both become the metric's SQL.
+- **Measure** `expr`: bare column references become the metric's SQL, qualified with `${TABLE}` (for example, `expr: amount` becomes `sql: ${TABLE}.amount`). Full SQL expressions are used verbatim.
 - **Labels and descriptions**: from the metric, falling back to the measure's.
+- **Percentile value**: MetricFlow's legacy spec authors percentile as a `0–1` fraction (`percentile: 0.95`) and the latest spec authors it as `0–100` (`percentile: 95`). Both are normalized to Lightdash's `0–100` scale automatically.
+- **`config.meta.hidden` and `config.meta.group_label`**: read from the metric first, falling back to the measure. Use them to hide translated helper metrics from the explore sidebar or [group them](/semantic-layer/metrics#groups) alongside your other Lightdash metrics. Unknown keys under `config.meta` are ignored.
 
 ### Filters
 
@@ -139,6 +145,7 @@ These are skipped with a warning on deploy (details under `--verbose`):
 | Cross-model `ratio` / `derived` inputs | inputs must resolve to metrics on the same model (see above) |
 | `offset_window` / `offset_to_grain` inputs | time-shifted inputs have no Lightdash metric equivalent |
 | Cross-model or non-`Dimension()` `filter:` templates | only same-model `{{ Dimension('entity__dim') }}` references translate |
+| `agg: percentile` without a numeric `percentile` value | skipped rather than defaulted — set `type_params.measure.agg_params.percentile` (legacy) or `agg_params.percentile` (latest) |
 | `percentile_type: discrete` | Lightdash percentiles always compile to `PERCENTILE_CONT` |
 | `join_to_timespine`, `fill_nulls_with`, `non_additive_dimension` | no equivalents |
 
@@ -166,10 +173,15 @@ semantic_models:
         type: time
         type_params:
           time_granularity: day
+      - name: status
+        type: categorical
     measures:
       - name: total_revenue
         agg: sum
         expr: amount
+      - name: order_count
+        agg: count
+        expr: order_id
       # create_metric: true auto-creates a metric — also translated
       - name: unique_customers
         agg: count_distinct
@@ -182,6 +194,25 @@ metrics:
     type: simple
     type_params:
       measure: total_revenue
+    # config.meta carries over to the translated Lightdash metric
+    config:
+      meta:
+        group_label: Order metrics
+  # Same-model filter → CASE WHEN in the metric SQL
+  - name: completed_revenue
+    label: Completed revenue
+    type: simple
+    type_params:
+      measure: total_revenue
+    filter: |
+      {{ Dimension('order__status') }} = 'completed'
+  # Same-model ratio → Lightdash `number` metric
+  - name: revenue_per_order
+    label: Revenue per order
+    type: ratio
+    type_params:
+      numerator: total_revenue
+      denominator: order_count
 ```
 
-Deploying this project gives the `orders` explore two metrics, `Total revenue` (`SUM("orders".amount)`) and `unique_customers` (`COUNT(DISTINCT "orders".customer_id)`), with no Lightdash-specific YAML.
+Deploying this project produces four metrics on the `orders` explore: `total_revenue` (`sum` on `${TABLE}.amount`, grouped under "Order metrics"), `unique_customers` (`count_distinct` on `${TABLE}.customer_id`, from the `create_metric: true` measure), `completed_revenue` (a `sum` over `CASE WHEN ${TABLE}.status = 'completed' THEN ${TABLE}.amount END`), and `revenue_per_order` (a `number` metric of `(${total_revenue} * 1.0) / NULLIF(${order_count}, 0)`) — all with no Lightdash-specific YAML.
