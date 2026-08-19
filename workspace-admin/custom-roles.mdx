@@ -43,6 +43,10 @@ Organization-level custom role -> organization-only scopes + project scopes
   **Custom roles can only add permissions, not remove them.** Lightdash uses an additive permission model. If a user already has a permission granted through their organization-level role, a custom project role cannot take it away. Toggling off a scope in a custom role has no effect for users who already have that scope from their org role.
 </Warning>
 
+<Info>
+  Enterprise organizations can also hold **more than one role at the same level** — a system role plus one or more custom roles, or several custom roles — as a single *role set*. See [Assigning multiple roles](#assigning-multiple-roles-role-sets) below.
+</Info>
+
 ### How additive permissions work
 
 Custom roles operate at the **project level** and can only grant additional permissions on top of what the user's organization role already provides. They cannot restrict or override org-level permissions.
@@ -134,6 +138,94 @@ Custom roles are assigned at the project level to provide granular access contro
 2. Find the group you want to assign a role to
 3. Select the custom role from the dropdown
 4. All members of the group will inherit the custom role permissions for this project
+
+## Assigning multiple roles (role sets)
+
+By default every user or group holds **one** role per level: one organization role, and at most one role per project. Enterprise organizations can ask Lightdash to enable **multiple roles**, which turns each of those single roles into a **role set**:
+
+- **at most one system role** — the base (`viewer`, `editor`, `admin`, …), or none;
+- **any number of custom roles** of the matching level (organization or project), added on top.
+
+Permissions are the **union** of every role in the set. Identical roles are de-duplicated, and a set can never be empty.
+
+```text
+Organization role set: [ Viewer ] + [ Roadmap viewer ] + [ SQL runner ]
+Project role set:      [ Editor ] + [ Finance exports ]
+Restrictive set:                     [ Report reader ]        (custom only, no base)
+```
+
+Because permissions only add up, a system base is never narrowed by the custom roles next to it. To build a *restrictive* profile, leave the system role out and use a custom-only set (the same "start from Viewer or Member" approach described in [Restricting permissions with custom roles](#restricting-permissions-with-custom-roles)).
+
+### Eligibility
+
+Multiple roles require:
+
+- a Lightdash **Enterprise** plan with custom roles;
+- the **multiple roles** feature enabled for your organization — contact your Lightdash account team to switch it on.
+
+Until it is enabled, the role pickers, API endpoints and provisioning integrations behave exactly as before, with one role per level. Any extra roles that were assigned while the feature was on stay effective if it is later switched off — only the ability to *manage* sets is gated.
+
+### In the UI
+
+Once enabled, the single role dropdown becomes a role picker on:
+
+- **Settings → Users & groups → Users** — the organization role set of each member;
+- **Project settings → Project access → Users** — a member's direct project role set;
+- **Project settings → Project access → Groups** — a group's project role set.
+
+The picker shows one pill per role. Choosing a system role replaces the current system role; choosing a custom role adds it. Removing the last pill is not allowed — use the remove-access action to drop direct access instead. Rows that inherit their access ("Inherits Editor", "No project access") work as before: picking a role creates a direct assignment.
+
+Invitations and the "add access" dialogs still assign a single role; add more roles from the table afterwards.
+
+### Via the API
+
+Three `v2` endpoints read and replace a whole set atomically. They return `403` when multiple roles are not enabled for the organization.
+
+| Level | Endpoint |
+| --- | --- |
+| Organization member | `GET` / `PUT /api/v2/orgs/{orgUuid}/roles/assignments/user/{userUuid}/set` |
+| Project member | `GET` / `PUT /api/v2/projects/{projectUuid}/roles/assignments/user/{userUuid}/set` |
+| Project group | `GET` / `PUT /api/v2/projects/{projectUuid}/roles/assignments/group/{groupUuid}/set` |
+
+The body and the response share one shape — `systemRole` is a system role name or `null`, `customRoleUuids` lists custom roles of the matching level:
+
+```bash
+curl -X PUT \
+  -H "Authorization: ApiKey $LIGHTDASH_API_KEY" \
+  -H "Content-Type: application/json" \
+  "$LIGHTDASH_URL/api/v2/projects/3675b69e-8324-4110-bdca-059031aa8da3/roles/assignments/user/e0dd2003-c291-4e14-b977-7a03b7edc842/set" \
+  -d '{
+    "systemRole": "editor",
+    "customRoleUuids": ["11df7b19-1db7-44f3-aa48-54f8bbd6c89a"]
+  }'
+```
+
+```json
+{
+  "status": "ok",
+  "results": {
+    "systemRole": "editor",
+    "customRoleUuids": ["11df7b19-1db7-44f3-aa48-54f8bbd6c89a"]
+  }
+}
+```
+
+A `PUT` **replaces** the whole set: roles you leave out are removed. Requests are rejected with `400` when the set is empty or contains a role of the wrong level, and with `403` when a role belongs to another organization, when the caller could not grant one of the requested roles themselves, or when the change would leave the organization without an active admin.
+
+The existing single-role endpoints keep working. Their responses report the **primary** role of the set (the system role, or the first custom role when there is no system role) plus a `hasMultipleRoles: true` flag when the assignment holds more roles, and a **single-role write replaces the whole set** with that one role — so an older client or script that assigns a role clears any extras. Use the `…/set` endpoints from clients that need to keep sets intact.
+
+### SCIM and users as code
+
+- **SCIM** represents every role in a set as one entry of the standard `roles` array — see [User Role Provisioning](/workspace-admin/sso/scim#user-role-provisioning).
+- **Users as code** carries extra organization custom roles in an `additionalRoles` list — see [Users as code](/workflow/content-as-code#users-as-code).
+
+### Troubleshooting multiple roles
+
+- **`403 Multiple roles are not enabled`** on the `…/set` endpoints — the feature is not switched on for the organization; single-role behaviour applies.
+- **`400 A role set must contain at least one role`** — send at least one system or custom role, or use the remove-access endpoint / trash action to drop the assignment.
+- **A user lost their extra roles** — a single-role write (an older client, script, or IdP payload) replaced the set. Re-assign the extras with the picker or the `…/set` endpoint.
+- **A custom role in the set does not seem to restrict anything** — sets are additive; check whether a system role sits in the same set or at the organization level. See [How additive permissions work](#how-additive-permissions-work).
+- **Changes not visible yet** — the affected user may need to refresh; permissions rebuild on their next request.
 
 ## Scope reference
 

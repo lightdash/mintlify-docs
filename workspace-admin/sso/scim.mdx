@@ -293,7 +293,7 @@ You can find the full API docs and examples for SCIM [here](/api-reference/scim/
 - `userName` is mapped to the user's primary email in Lightdash. Make sure your identity provider sets `userName` to the user's primary email (and, if sending an `emails` array, the primary email should match).
 - When a user is updated to be inactive (`active: false`) via SCIM, Lightdash will mark the user as inactive, lower their organization role to `member`, and remove their access from all projects and groups. If you later reactivate the user, you'll need to re-assign their group and project access via SCIM or in Lightdash.
 - An organization must always have at least one `admin`. Any SCIM request that would leave the organization with no admins (for example, demoting or deactivating the sole remaining admin) will be rejected with an error.
-- A user can only have one role per organization and per project.
+- A user can only have one role per organization and per project, unless [multiple roles](/workspace-admin/custom-roles#assigning-multiple-roles-role-sets) are enabled for the organization — see [Provisioning role sets](#provisioning-role-sets) below.
 - A user must have an organization role.
 - On creation, if no `roles` are provided, the organization role will default to `member`.
 - On edit (PUT/PATCH), if no `roles` are provided, no changes are made to the user's roles.
@@ -395,6 +395,34 @@ Examples:
     },
 ]
 ```
+
+### Provisioning role sets
+
+When [multiple roles](/workspace-admin/custom-roles#assigning-multiple-roles-role-sets) are enabled for the organization, the same `roles` array can carry a complete **role set** per level: at most one system role plus any number of custom roles for the organization, and likewise per project. No Lightdash-specific schema extension is needed.
+
+**Reading.** `GET /Users` and `GET /Users/{id}` list every role the user holds. The organization's system role (or its only custom role) is marked `"primary": true`; every additional role is `"primary": false`.
+
+```json
+"roles": [
+  { "value": "viewer", "display": "Viewer", "type": "Organization", "primary": true },
+  { "value": "6aa57126-fc60-42c3-9d83-495c40ae4ec3", "display": "Roadmap viewer", "type": "Organization", "primary": false },
+  { "value": "3675b69e-8324-4110-bdca-059031aa8da3:editor", "display": "Jaffle shop - Editor", "type": "Project - Jaffle shop", "primary": false },
+  { "value": "3675b69e-8324-4110-bdca-059031aa8da3:11df7b19-1db7-44f3-aa48-54f8bbd6c89a", "display": "Jaffle shop - SQL runner", "type": "Project - Jaffle shop", "primary": false }
+]
+```
+
+**Writing.** SCIM owns the complete direct role set of the users it manages:
+
+- `PUT` and `PATCH` `replace` on `roles` set the **exact** set: roles that are omitted are removed, and — as before — a project with no entry in the payload loses the user's direct access (`<project_uuid>:no-role` still works for explicit removal).
+- `PATCH` `add` unions the named roles into the existing set; `PATCH` `remove` takes the named roles out.
+- Identical entries are de-duplicated. A payload with no organization entry, more than one system organization role, or more than one system role for the same project is rejected with `400`.
+- Deactivating a user (`active: false`) still clears their roles as described above.
+
+While the feature is disabled, a `roles` array with more than one entry per level is rejected exactly as before, so existing IdP mappings do not change behaviour until you opt in.
+
+<Warning>
+  A payload with a **single** role per level (the legacy shape) replaces the whole set with that one role. If your IdP is the source of truth, make sure every role a user should keep is present in its `roles` mapping before enabling multiple roles.
+</Warning>
 
 ### Configuring available roles in your Identity Provider (IdP)
 
