@@ -1,0 +1,210 @@
+---
+title: "External pre-aggregates"
+sidebarTitle: "External"
+description: "Route pre-aggregate queries to a warehouse table you build and refresh yourself"
+doc-type: reference
+---
+
+import PreAggregatesAvailability from '/snippets/pre-aggregates-availability.mdx';
+
+<PreAggregatesAvailability />
+
+By default, Lightdash owns the entire pre-aggregate lifecycle: it materializes the rollup on your warehouse, stores the result, and serves matching queries from that stored copy. See [Pre-aggregates](/semantic-layer/pre-aggregates) for how the managed path works.
+
+An **external pre-aggregate** flips ownership of the materialization. You point a pre-aggregate at a warehouse table that you build and refresh yourself, and Lightdash uses it purely for query routing.
+
+## Managed vs external at a glance
+
+|                                | Managed pre-aggregate                               | External pre-aggregate                                     |
+| ------------------------------ | --------------------------------------------------- | ---------------------------------------------------------- |
+| **You own**                    | The pre-aggregate definition                        | The pre-aggregate definition **and** the warehouse table   |
+| **Lightdash owns**             | Materialization, refresh, storage, serving          | Matching and routing only                                  |
+| **Where the data lives**       | Lightdash storage (Parquet on S3), served by DuckDB | A table in your warehouse, served by your warehouse        |
+| **Refresh**                    | On compile, cron, or manual trigger in Lightdash    | Your orchestration (dbt, Airflow, scheduled query, etc.)   |
+| **Marked in YAML by**          | No `table` key                                      | A `table` key on the pre-aggregate                         |
+| **Materialization-only keys**  | `refresh`, `sorts`, `max_rows`, `materialization_role` apply | Silently ignored                                    |
+
+Managed pre-aggregates are the default. Use external pre-aggregates when you already maintain warehouse rollups (for example, BigQuery materialized views that refresh incrementally per partition) and don't want Lightdash to rebuild the same data on your warehouse.
+
+<Warning>
+  With an external pre-aggregate, you are on the hook for the table's shape, contents, and freshness. Lightdash does not check that the table exists, that its columns match, or that its data is up to date. If the table is missing rows or is stale, Lightdash will serve incomplete or out-of-date results without warning.
+</Warning>
+
+## How it works
+
+1. **Declare** the external pre-aggregate in your dbt YAML with a `table` key pointing at the warehouse relation you'll build.
+2. **Get the column contract** with the CLI. Lightdash generates the exact column names, types, and materialization SQL your table must conform to.
+3. **Build the table** in your warehouse using any orchestration you like — dbt models, Airflow DAGs, scheduled queries.
+4. **Verify** the built table matches the contract with the same CLI command, and wire the check into CI.
+5. **Deploy** the YAML change.
+
+At query time, matching is identical to managed pre-aggregates ([dimension, metric, filter, and granularity coverage](/semantic-layer/pre-aggregates#query-matching)). When a query matches an external pre-aggregate, Lightdash compiles it against your table in your warehouse's SQL dialect and runs it on your project warehouse — DuckDB and Lightdash storage are not involved. Serve errors (missing table, missing column, type mismatch) fall back to the warehouse per query.
+
+## 1. Declare the pre-aggregate
+
+Add a `table` key on the pre-aggregate. Its value is a warehouse relation reference, injected verbatim into the generated SQL — quote and qualify it exactly as your warehouse expects.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
+        meta:
+          pre_aggregates:
+            - name: orders_daily_by_status
+              dimensions:
+                - status
+              metrics:
+                - total_order_amount
+              time_dimension: order_date
+              granularity: day
+              table: '`analytics-prod`.`marts`.`orders_daily_by_status_mv`'
+    ```
+  </Tab>
+
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: orders
+        config:
+          meta:
+            pre_aggregates:
+              - name: orders_daily_by_status
+                dimensions:
+                  - status
+                metrics:
+                  - total_order_amount
+                time_dimension: order_date
+                granularity: day
+                table: '`analytics-prod`.`marts`.`orders_daily_by_status_mv`'
+    ```
+  </Tab>
+
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    pre_aggregates:
+      - name: orders_daily_by_status
+        dimensions:
+          - status
+        metrics:
+          - total_order_amount
+        time_dimension: order_date
+        granularity: day
+        table: '`analytics-prod`.`marts`.`orders_daily_by_status_mv`'
+    ```
+  </Tab>
+</Tabs>
+
+Everything else on the definition — `dimensions`, `metrics`, `filters`, `time_dimension`, `granularity` — is the same as a managed pre-aggregate and drives matching identically. The materialization-only keys `refresh`, `sorts`, `max_rows`, and `materialization_role` are silently ignored on an external definition; you own the build, so Lightdash cannot honor them.
+
+## 2. Get the column contract
+
+Your table must conform to a column contract that Lightdash generates from the pre-aggregate definition. The `lightdash pre-aggregate-check-external` CLI command prints the expected columns and the exact materialization SQL for each external pre-aggregate. Its full flag set is in the [CLI reference](/workflow/cli/reference).
+
+<Info>
+  `lightdash pre-aggregate-check-external` runs fully locally. It compiles your dbt project and reads warehouse credentials and dialect from your active `profiles.yml` target — no Lightdash server call is made, so it works before the project is ever deployed.
+</Info>
+
+```bash
+lightdash pre-aggregate-check-external --all
+```
+
+For each external pre-aggregate, the output prints:
+
+* The **expected column contract** — column name, type, and role (dimension, time dimension + grain, metric, or metric component)
+* An **actual column check** against the declared table when it exists (or a warning that the table is missing)
+* The **materialization SQL** — the exact SELECT Lightdash expects to serve from
+
+```text
+orders / orders_daily_by_status → `analytics-prod`.`marts`.`orders_daily_by_status_mv`
+  ⚠ Could not introspect declared table: notFound - Table ... was not found
+
+  EXPECTED                        TYPE       ROLE
+  orders_status                   string     dimension
+  orders_order_date_day           timestamp  time dimension (day)
+  orders_total_order_amount       number     metric (sum)
+
+  Materialization SQL (bigquery):
+  SELECT
+    `orders`.status AS `orders_status`,
+    TIMESTAMP_TRUNC(`orders`.order_date, DAY) AS `orders_order_date_day`,
+    SUM(`orders`.amount) AS `orders_total_order_amount`
+  FROM `analytics-prod`.`raw`.`orders` AS `orders`
+  GROUP BY 1, 2
+```
+
+Two column-contract details are worth calling out:
+
+* **Average metrics decompose into components.** An `average` metric stores as `<fieldId>__sum` and `<fieldId>__count` columns, and the materialization SQL emits `SUM(expr)` and `COUNT(expr)`. You never store an average value directly; Lightdash re-computes the average from the components at query time.
+* **Joins are baked in at materialization time.** If your pre-aggregate lists dimensions from joined tables (for example, `customers.country`), the generated SQL includes the join. Your external table stores the joined-dimension columns as flat columns — no join happens at serve time.
+
+## 3. Build the table
+
+Any orchestration works. The CLI's `--json` flag is designed for scripting the build itself — for example, wrapping every generated SELECT in a `CREATE OR REPLACE TABLE`:
+
+```bash
+lightdash pre-aggregate-check-external --all --skip-dbt-compile --json \
+  | jq -r '.[] | "CREATE OR REPLACE TABLE \(.table) AS\n\(.sql)"'
+```
+
+You can then pipe each statement into your warehouse (`bq query`, `snowsql`, `psql`, etc.). More commonly, teams register the generated SQL as a dbt model or a warehouse-native materialized view and refresh it on their existing orchestration cadence.
+
+## 4. Verify the table matches
+
+Re-run the check with `--fail-on-mismatch` after the build. This exits with code 1 on any column drift, so you can wire it into CI next to the table build:
+
+```bash
+lightdash pre-aggregate-check-external --all --skip-dbt-compile --clear-cache --fail-on-mismatch
+```
+
+```text
+orders / orders_daily_by_status  ✓ Table matches — 3/3 columns.
+```
+
+`--clear-cache` matters right after a rebuild: BigQuery and Snowflake result caches key on query text and can return the pre-rebuild schema if you don't invalidate them. On mismatch the output lists per-column `✗` (missing / type_mismatch) alongside the rebuild SQL.
+
+See [Auditing pre-aggregates from the CLI](/semantic-layer/pre-aggregates/audit-with-cli) for related audit tooling that reports hit and miss coverage across dashboards.
+
+## 5. Deploy
+
+Deploy the YAML change with `lightdash deploy` (or your CI deploy) as normal. External pre-aggregates take effect on the next compile — there is no materialization job to wait for.
+
+<Warning>
+  **Deploy with a CLI that supports external pre-aggregates.** A CLI version that predates them parses the definition as managed, strips the `table` key, and enqueues a full warehouse rebuild. Keep the CLI up to date, or refresh from the UI, so `table` is preserved end to end.
+</Warning>
+
+## What Lightdash owns vs what you own
+
+External pre-aggregates split responsibility explicitly:
+
+**Lightdash owns:**
+
+* Matching — same rules as managed pre-aggregates ([field coverage, granularity, filter compatibility, non-additive metrics on exact matches only, smallest-wins](/semantic-layer/pre-aggregates#query-matching))
+* Compiling the served query against your table in your warehouse's dialect
+* Re-truncating the stored time dimension for coarser-grain queries (a day-grain table serves week, month, quarter, year)
+* Re-aggregating `__sum` and `__count` components into `average` metrics at query time
+* Applying [`sql_filter`](/semantic-layer/tables#sql-filter-row-level-security), model [required filters](/semantic-layer/tables#default-filters), and [required attributes](/semantic-layer/tables#required-attributes) at serve time — the same access control the warehouse path enforces
+* Falling back to the warehouse per query if serving errors (missing table, missing column, type mismatch)
+* Recording hits and misses in [pre-aggregate analytics](/semantic-layer/pre-aggregates/monitoring#hit-and-miss-statistics) and the [dashboard audit](/semantic-layer/pre-aggregates/monitoring#dashboard-pre-aggregate-view)
+
+**You own:**
+
+* Building the table with the exact column names and types Lightdash generates
+* Refreshing the table on whatever cadence and orchestration you choose
+* Keeping the table complete — missing rows produce silently incomplete results
+* Applying the pre-aggregate's `filters` at build time — Lightdash does not re-apply them at serve time on external tables
+* Access — every credential that queries Lightdash must be able to read the table, including any per-user warehouse credentials
+
+## Limitations
+
+External pre-aggregates are opt-in per pre-aggregate. Definitions without a `table` key run as managed pre-aggregates.
+
+External pre-aggregates:
+
+* Do not check the table's existence or schema at deploy time. Use `lightdash pre-aggregate-check-external` (locally and in CI) to catch drift.
+* Do not check freshness — Lightdash trusts that the table is current.
+* Silently ignore the materialization-only keys (`refresh`, `sorts`, `max_rows`, `materialization_role`) on the definition.
+* Do not show a dedicated "external" indicator in the Project Settings pre-aggregates UI. Hits and misses still show up in analytics and dashboard audits.

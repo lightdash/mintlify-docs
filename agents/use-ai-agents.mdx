@@ -1,0 +1,242 @@
+---
+title: Using AI agents
+description: Ask questions, use SQL mode, mention charts, and schedule deliveries from an agent conversation
+---
+
+## Core capabilities
+
+AI agents in Lightdash allow you to:
+
+- **Ask questions in natural language** - Simply type what you want to know about your data, like "What's our total revenue by region?" or "Show me user growth over the last 6 months"
+- **Get instant visualizations** - Receive bar charts, time series, and tables automatically generated based on your questions
+- **Explore interactively** - Follow up with additional questions, drill down into specific data points, or request different chart types
+- **Maintain conversation context** - AI agents remember your conversation history, so you can build on previous questions and refine your analysis
+- **Provide text-only responses** - Get answers in natural language when visualizations aren't needed
+- **Guide you to the right data** - Direct you to the most relevant explores or tables for your questions
+- **Discover existing content** - Find and share relevant charts and dashboards that have already been created in your project
+- **Generate complete dashboards** - Create multiple related visualizations at once that tell a cohesive story about your data, perfect for executive summaries or thematic analyses
+- **Open pull requests against your dbt repository** - Ask the agent to rename a metric, add a dimension, or edit a YAML file and it can open a pull request for review. See [AI writeback](/agents/ai-writeback).
+- **Compare across time periods** - Ask for month-over-month, year-over-year, or any custom period offset, and the agent adds a comparison column next to each metric automatically
+
+As mentioned earlier, Lightdash agents use the **semantic layer** defined in your dbt models to understand your data structure, relationships, and business logic.
+This ensures that the AI generates accurate queries and visualizations based on your specific data context.
+So, *when an Agent generates an answer, the output is a semantic query, **not SQL!*** This means that you can easily swap between the conversational AI interface and the standard Lightdash exploration experience.
+
+## SQL mode
+
+SQL mode lets the agent reach for raw SQL when a question can't be answered from the semantic layer alone — for example, when the data exists in your warehouse but hasn't been modeled as an explore yet. With SQL mode on, the agent can list warehouse tables, describe their columns, and run SQL queries against your warehouse.
+
+SQL mode is **off by default** on every new thread. You opt in per conversation using the **SQL mode** toggle below the message input.
+
+### When to use it
+
+- The data you need lives in a warehouse table that isn't part of an explore.
+- You want a one-off lookup, audit, or shape-of-the-data check before modeling it.
+- The agent has already told you it can't answer from the semantic layer.
+
+Prefer the default (semantic) mode for anything that *can* be answered from your modeled explores — answers stay governed by your dbt metrics, joins, and row-level filters.
+
+### Who can use it
+
+The SQL mode toggle is visible only to users who hold the **`manage:SqlRunner`** ability — the same permission required to use the [SQL Runner](/explore/sql-runner) page. If you don't see the toggle, ask a workspace admin to grant SQL Runner access to your role.
+
+### How approvals work
+
+SQL mode is gated by a human-in-the-loop check on every query:
+
+1. You flip **SQL mode** on for the thread.
+2. You ask a question. The agent drafts a SQL query.
+3. Lightdash shows the proposed SQL inline and waits for you to **Approve** or **Reject** before anything runs against your warehouse.
+4. Approved queries return results to the agent, which then summarizes or visualizes them.
+
+Each SQL call is approved individually — there is no \"approve all\" shortcut, and approvals don't carry over between threads.
+
+### SQL mode in Slack
+
+Slack-triggered prompts can only use SQL mode when your organization has the **\"Require Slack users to authenticate with Lightdash\"** setting (`aiRequireOAuth`) turned on. Without it, Slack messages run under a shared workspace-default identity, so SQL execution is disabled fail-closed regardless of the toggle. See [Slack AI bot setup](/agents/set-up-agents) for how to configure OAuth.
+
+## Asking about a chart or dashboard
+
+You can launch an AI conversation with a chart or dashboard pre-loaded as context. From the resource's `⋯` menu, click **Ask AI Agent**.
+
+This opens a new tab on the new-thread page for your default agent. The chart or dashboard appears as a **pinned context card** above the input, and the agent treats it as the subject of the conversation.
+
+<Frame>
+  <img
+    src="/images/agents/ask-ai-agent-from-chart.png"
+    alt="Ask AI Agent menu item on a saved chart"
+  />
+</Frame>
+
+### Pinned context
+
+- The pinned card stays visible above your message in the thread, so anyone reading later can tell what was being discussed.
+- Click the pinned card to open the chart or dashboard in a new tab.
+- The pinned context persists across follow-up messages — *"now break it down by region"* still refers to the originally pinned chart.
+
+### Mentioning dashboard tiles
+
+When the pinned context is a dashboard, you can `@`-mention any of its chart tiles directly in your message to focus the agent on a single tile.
+
+Type `@` in the input and pick a tile from the **Dashboard tiles** group in the suggestion list. The selected chart is added alongside the pinned dashboard, so the agent answers about that specific tile while still keeping the dashboard as overall context.
+
+This is useful when a dashboard has many charts and you want to drill into one without leaving the thread:
+
+- *"Why did @Weekly active users drop last week?"*
+- *"Break @Revenue by region down by channel."*
+
+### What you can ask
+
+When you pin a saved chart, the agent can read its actual data (subject to your [data access setting](/agents/data-access)). It honors the chart's saved filters, sorts, custom metrics, and [parameter values](/semantic-layer/parameters), so you can ask:
+
+- *"Why is this trending up?"*
+- *"Are there outliers in this chart?"*
+- *"Compare this chart's last 30 days to the previous period."*
+
+If your agent has data access disabled, pinning still works — the agent sees the chart's structure (name, dimensions, metrics) but no row values are sent to the underlying LLM.
+
+## Mentioning charts and dashboards with `@`
+
+You can reference saved charts and dashboards directly from the chat input by typing `@`. This adds them as context for the agent's next message, similar to a pinned card, without leaving the conversation.
+
+Type `@` followed by part of a name to open the suggestion menu. Suggestions are grouped so the most relevant content appears first:
+
+- **Already mentioned** — content already referenced earlier in this thread.
+- **Current page** — the chart or dashboard you're viewing when you open the chat.
+- **Dashboard tiles** — charts on the dashboard you're currently viewing.
+- **Search results** — any chart or dashboard you have access to, ranked by your search query. [Verified content](/explore/verified-content) is marked with a green check.
+
+Use the arrow keys to highlight a suggestion and press `Enter` or `Tab` to insert it. While the menu is open, `Enter` selects the suggestion instead of sending the message.
+
+Each mention becomes a chip in the input — for example, `@Weekly revenue` — and travels with the message as prompt context. The agent uses the same access rules as a pinned card: it can read the resource's structure and (when [data access](/agents/data-access) is enabled) its underlying data.
+
+<Tip>
+  Mention multiple resources in a single message to ask comparative questions, such as *"How does @Weekly revenue compare to @Marketing dashboard's signups trend?"*
+</Tip>
+
+You can only mention content you have permission to view. Mentions are available in agent threads, in the AI Router, and in the launcher used to start new threads.
+
+## Read-only threads
+
+In some cases, the chat input on an existing thread is disabled and you can't send follow-up messages. The input shows a short message explaining why. You'll see this when:
+
+- **The thread was started in Slack.** Reply in the original Slack thread to continue the conversation.
+- **The thread belongs to another user.** You can read the conversation, but only the original author can post follow-ups.
+- **The model used in the thread is no longer available.** Threads are pinned to the model that produced the first assistant response, so the conversation history stays consistent. If an admin removes that model from the agent — or the provider no longer offers it — start a new thread to continue with one of the agent's current models.
+
+To start a new thread, open the agent and click **New thread**.
+
+## Schedule a recurring delivery from a conversation
+
+When an agent lands on an answer worth watching, you can turn that conversation into a recurring [scheduled delivery](/explore/create-scheduled-deliveries). Lightdash re-runs the agent on your chosen frequency and sends the refreshed chart, along with an AI-written summary, to Slack, email, or Microsoft Teams.
+
+Open the `⋯` **Quick actions** menu on a saved chart the agent produced and choose **Schedule delivery**.
+
+<Frame>
+  <img
+    alt="Schedule delivery quick action in an AI agent conversation"
+    className="block dark:hidden"
+    src="/images/agents/schedule-delivery-from-conversation_light.png"
+  />
+  <img
+    alt="Schedule delivery quick action in an AI agent conversation"
+    className="hidden dark:block"
+    src="/images/agents/schedule-delivery-from-conversation_dark.png"
+  />
+</Frame>
+
+This opens the scheduled delivery form pre-filled to run that conversation's agent over the chart, so you get the same style of answer, on a schedule, without rebuilding anything. See [AI agent](/explore/create-scheduled-deliveries#ai-agent) for how the generated message works.
+
+## Example use cases
+
+### Period-over-period comparisons
+
+Agents can answer time-comparison questions directly — month-over-month, year-over-year, or any custom offset — without you having to set up the comparison in the Explorer first.
+
+When you ask a comparison question, the agent picks a base metric, a time dimension, a granularity (day, week, month, quarter, or year), and an offset (how many periods back). It then runs the query and adds a comparison column next to the base metric, labelled with the offset (for example, `Revenue (Previous month)`).
+
+**Prompts that work well**
+
+- *"Compare revenue to last month"*
+- *"Month-over-month new users"*
+- *"Year-over-year orders by week"*
+- *"Show revenue this quarter vs the previous quarter, and vs the same quarter last year"*
+
+You can stack multiple comparisons on the same metric (for example, MoM and YoY together) and you can use a [custom metric](/explore/create-custom-fields) as the base.
+
+<Tip>
+  Period-over-period is for comparing whole prior periods (last month, last quarter, last year). For period-to-date questions like MTD or YTD, ask the agent for a filtered aggregation instead — for example, *"revenue so far this month vs the same point last month"*.
+</Tip>
+
+**Limitations**
+
+- The granularity must match the time dimension's interval — ask for *"monthly revenue vs last month"* (not *"daily revenue vs last month"*).
+- The agent can't yet sort or filter on the generated comparison column directly; sort or filter on the base metric or the time dimension instead.
+
+### Advanced visualizations with window functions
+
+AI agents can handle complex analytical queries that would traditionally require writing intricate SQL or YAML configurations. In this example, we demonstrate building a 3-month rolling average visualization using nothing but natural language.
+
+<iframe
+  width="560"
+  height="315"
+  src="https://www.youtube.com/embed/S0jKfLjQEqM"
+  title="YouTube video player"
+  frameborder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+  allowfullscreen
+></iframe>
+
+This demo shows:
+- Creating complex window function calculations with plain English
+- Building a 3-month rolling average without writing SQL or YAML
+- AI agent understanding your semantic layer context automatically
+- Generating production-ready charts from a single natural language query
+- No need to manually configure partitions, ordering, or frame clauses
+- From question to visualization in seconds, not hours
+
+## FAQs
+
+1. Does Lightdash store the query data?
+
+Lightdash only stores simple one-line answers so you can look back at your conversation history. We also save the basic query info to recreate these when needed. The actual data and detailed results stays in your warehouse and gets pulled fresh when the results are revisited (unless data access is enabled).
+
+2. Can I assign a default agent?
+
+You can assign your default agent in Ask AI by clicking the star by your agent's name. 
+<Frame>
+    <img
+      src="/images/agents/set_default_agent.png"
+      alt="Set Default Agent"
+    />
+  </Frame>
+The default agent setting is per-user, per-project. There's no project-wide default at the moment.
+
+When you have a default agent set, Ask AI opens it directly — even if the [AI Router](/agents/enable-ai-router) is enabled.
+
+If you haven't set a default and the AI Router is enabled, Lightdash routes each question to the best-fit agent automatically. If the router is off and you have no default, there's no predictable way to determine which agent appears first.
+
+## Known limitations
+
+<Warning>
+  These limitations reflect the current state of AI agents as we continue
+  developing and improving the feature. Many of these constraints will be
+  addressed in future releases, so stay tuned! Your feedback and feature
+  requests help us prioritize what to build next.
+</Warning>
+
+### Data analysis and calculations
+
+As mentioned in the [FAQs](#faqs), AI Agents currently work with your dbt model metadata rather than actual data values. This means they can't perform forecasting, predictive analytics or custom statistical calculations. They also can't create [table calculations](https://docs.lightdash.com/explore/table-calculations) or [custom fields](https://docs.lightdash.com/references/custom-fields) on-the-fly.
+
+### Query and visualizations constraints
+
+Results are limited by configurable query limits set at server level to ensure good performance. These limits can only be adjusted through environment variables at the moment.
+
+Agents can create tables, bar charts, vertical bar charts, line charts, scatter plots, pie/donut charts, and funnel charts, but don't yet support [custom visualizations](https://docs.lightdash.com/references/custom-charts) or big number charts.
+
+### Data access and context
+
+Agent access to your data is controlled thorugh tags in your dbt models. If certain fields aren't accessible, check that they have the appropiate tags assigned to your agent.
+
+Agents don't remember context between different conversation sessions. Each chat start fresh.

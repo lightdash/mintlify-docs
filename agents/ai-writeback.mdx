@@ -1,0 +1,212 @@
+---
+title: AI writeback (Beta)
+description: Ask an AI agent to edit your dbt project in chat and open a pull request with the changes
+doc-type: tutorial
+---
+
+<Warning>
+  AI writeback is currently in Beta and gated by a feature flag. Contact
+  Lightdash support to enable it for your organization.
+</Warning>
+
+AI writeback lets you ask an AI agent in chat or Slack to change something in the dbt repository that backs your project — rename a metric, add a dimension, edit a model's SQL, fix a YAML description — and have the agent open a pull request (or GitLab merge request) with the change.
+
+This is the same writeback capability you would normally trigger from the Custom Metric or SQL Runner menus, surfaced inside the conversation with your AI agent.
+
+## When to use it
+
+Use AI writeback when the change you want needs to land in your dbt project files:
+
+- Rename a metric in a YAML file
+- Add a new metric or dimension to a dbt model
+- Edit a model's SQL
+- Update a description, label, or `meta` block
+- Fix a typo in a column definition
+
+For other kinds of changes, the agent will pick a different tool:
+
+| You want to… | The agent uses… |
+| --- | --- |
+| Ask a question about data | Query and discovery tools |
+| Edit an existing chart or dashboard in Lightdash | `editContent` |
+| Change the underlying dbt repository | `editDbtProject` |
+
+## Prerequisites
+
+- The **AI writeback** feature flag must be enabled for your organization.
+- Your project's dbt connection must be a **GitHub** or **GitLab** repository. Bitbucket, Azure DevOps, dbt Cloud, and local dbt projects are not supported.
+- The matching Lightdash app must be installed for the repository so the agent can open requests:
+  - **GitHub** — install the Lightdash GitHub App on the repository.
+  - **GitLab** — connect the Lightdash GitLab App for your organization (self-hosted GitLab is supported via the project's `host_domain`).
+- You need at least [project Developer](/workspace-admin/roles) permissions on the project.
+
+## How it works
+
+When you ask the agent for a change that belongs in the repo, it calls a tool called `editDbtProject`. The tool:
+
+1. Generates a self-contained instruction from your request and starts a fresh, sandboxed environment with no memory of your chat.
+2. Edits the relevant files and runs `lightdash compile` to validate the result.
+3. Pushes a new branch and opens a pull request (GitHub) or merge request (GitLab) against your repository's default branch.
+4. Returns the pull request URL to you in chat.
+
+The tool call is synchronous and can take a few minutes. The agent will tell you a pull request is being prepared while it waits.
+
+<Note>
+  GitHub commits are signed by the Lightdash GitHub App. GitLab commits are
+  pushed over OAuth and are unsigned.
+</Note>
+
+## Using it in chat
+
+Phrase your request as a direct change to the repo and, where possible, name the file, model, or field you want touched. The more specific you are, the more reliably the agent finds the right place to edit.
+
+**Good prompts**
+
+```text
+In models/orders.yml, rename the metric `total_revenue` to `net_revenue`
+and update its description to "Revenue after refunds and discounts."
+```
+
+```text
+Add a new metric `active_users_7d` to the users model. It should be a
+count_distinct of user_id filtered to events in the last 7 days.
+```
+
+```text
+In the customers model, fix the typo in the `lifetime_value` dimension
+description: change "lifteime" to "lifetime."
+```
+
+### Mentioning project files with `@`
+
+In the agent chat input, type `@` to open the mention menu. Alongside the existing **Charts** and **Dashboards** groups, you'll see a **Files** group listing the source files in your project's dbt repository. Pick a file and its path is inserted as a pill in your message.
+
+Use file mentions to point the writeback agent at the exact file you want changed:
+
+```text
+Update @models/orders.yml so the `total_revenue` metric is renamed to
+`net_revenue`.
+```
+
+When the agent processes your message, it reads the mentioned file directly from the repository and uses it as the starting point for the change — reducing the chance of editing the wrong model or YAML block in a large project.
+
+File mentions are available on **GitHub**-connected projects only and require the same source-code access as the rest of the writeback flow. Non-GitHub projects don't see the **Files** group in the mention menu.
+
+**Less effective prompts**
+
+```text
+Clean up our metrics.
+```
+
+```text
+Make the orders model better.
+```
+
+When the pull request is ready, the agent posts a card in the thread with everything you need to review and act on it without leaving Lightdash.
+
+## Reviewing and acting on the pull request
+
+The writeback PR card has two action groups:
+
+- **View ▾** — a dropdown with up to three entries:
+  - **Preview** — opens the Lightdash preview environment for the PR's branch, so you can click around the change before merging. Hidden if no preview is available (for example, on non-GitHub runs or when preview deploys aren't set up for the project).
+  - **Pull request** — opens the PR on GitHub or GitLab in a new tab.
+  - **Diff** — opens a diff viewer inside Lightdash with a file-list sidebar (path and per-file `+/−` counts) and a unified diff for the selected file. The diff viewer also has an inline **Merge PR** action.
+- **Close PR** / **Merge PR** — a button group for finishing the review in place:
+  - **Merge PR** stays disabled until the host reports the PR as mergeable (CI green, no conflicts, branch not blocked by branch protection). The card pins the commit SHA it was opened against, so you can't accidentally merge a newer commit that was pushed after the agent posted the card.
+  - **Close PR** closes the PR without merging.
+  - Both actions ask you to confirm before sending the request.
+  - Once the PR reaches a terminal state, the button group collapses to a **Merged** or **Closed** marker and the card stops polling.
+
+When you merge from the card, Lightdash recompiles the project automatically — the same refresh as **Settings → Project → Sync dbt project** — so the merged change goes live without a manual sync. If the change renamed or removed a field, the agent then presents a plan to migrate the affected charts and dashboards to the new fields and, where it has edit access, repoints them for you once you confirm.
+
+<Note>
+  Merging or closing a writeback PR from the card uses your project permissions
+  on the connected repository. You need at least project **Developer** to act on
+  PRs that don't target a protected branch — the same permission required to
+  open a writeback PR in the first place. If the host refuses the merge (for
+  example, branch protection blocks it or the head moved), the error is
+  surfaced on the card.
+</Note>
+
+## Impact and safety checks
+
+For changes that could break existing content or change results, the agent does extra work around the pull request so you can review it with confidence.
+
+**What the change would break.** When a change removes or renames a metric or dimension, saved charts, dashboards, dependent metrics, and scheduled deliveries may still reference the old field. After opening the pull request, the agent reports the impact in its reply — whether the change is breaking, how many items of each kind are affected, and a few of the most notable ones — or tells you it's safe when nothing references the field. This is advisory and never delays opening the PR; pure additions and description-only edits skip it.
+
+**That the numbers still hold.** When a change relies on results staying the same — consolidating two duplicate metrics, replacing one field with another, splitting a metric into parts, or refactoring a field's SQL — the agent proves it rather than asserting it. It either shows the guarantee from the model SQL, or runs the affected fields at a total and across a time dimension and confirms they match, before calling the change safe. If the numbers diverge, it tells you exactly what differs instead of shipping the change.
+
+## Reading the dbt repository
+
+The agent can also read source files in your dbt repository to ground its answers and plan a writeback before opening a pull request. Use it when the question is about how a model is built (its SQL, refs, or `dbt_project.yml` config), or to confirm what the file currently contains before asking for an edit.
+
+For questions about what data exists, what a metric means, or whether two metrics overlap, the agent stays on the semantic-layer tools — the repo is for dbt implementation details, not the catalogue of what's queryable.
+
+### Requirements
+
+- Your project's dbt connection must be a **GitHub** repository with the Lightdash GitHub App installed. GitLab is not yet supported for read access.
+- The user asking the question needs the **view source code** permission on the project.
+- In Slack, read access is only available when [AI Agents OAuth](/integrations/slack#ai-agents-configuration) is required, so the agent can evaluate permissions against the asking user.
+
+### What the agent can see
+
+- Read access is scoped to the dbt project directory (the connection's `project_sub_path`). Files elsewhere in the repository — CI workflows, other apps, secrets in unrelated directories — are not reachable.
+- The agent can list directories, read files, and search for strings, but it cannot modify anything. To change a file, it still has to call `editDbtProject`.
+
+Each repo command shows up as its own sub-step under a terminal icon, so you can see exactly what the agent looked at before answering or proposing a change.
+
+## Automatic preview project
+
+For pull requests opened against a **GitHub**-connected project, Lightdash builds a [preview project](/workflow/preview-projects) from the PR's branch as soon as the pull request is opened. You can use it to verify the agent's change against your data before merging — no GitHub Action or CI setup required in your repository.
+
+When the preview is ready:
+
+- The agent's reply in chat (or the writeback status on a review item) includes a **View preview** link to the preview project.
+- A bot comment is posted on the pull request with the same preview URL.
+- The preview also shows up under [Pull requests](/workflow/pull-requests) in project settings, with a **View preview** action on the row.
+
+The preview project is built using the same dbt connection as your production project, with the branch overridden to the PR's head branch. It's compiled by Lightdash's own scheduler — the customer repository doesn't need to install or run the Lightdash preview-deploy GitHub Action.
+
+If the preview can't be built — for example, the project isn't connected to GitHub, the dbt compile fails on the PR branch, or the GitHub App can't reach the repo — the pull request is still opened and the agent reports the PR link without a preview. The writeback itself never fails because the preview failed.
+
+## Iterating on an existing pull request
+
+When you follow up on a change whose pull request is already open — either earlier in the same thread or one you pasted a link to — the agent commits onto that PR's branch instead of opening a new one, and refreshes its title and description to reflect the latest change.
+
+- **Continue the current change.** A follow-up, fix, or refinement to a change you just asked for resumes its pull request automatically. You don't need to paste the link.
+- **Ask for a separate change.** When your next request is unrelated to the open PR, the agent opens a new pull request for it rather than piling an unrelated commit onto the existing one, and tells you what went into which PR.
+- **Paste a link.** Paste the GitHub pull request URL alongside your request — in this thread or a new one — and the agent checks out that PR's branch and commits your edits onto it.
+
+<Note>
+If the pull request behind a change has already been merged or closed — from the chat card or directly on GitHub/GitLab — the agent can't push more commits to its branch. Rather than blocking, it opens a fresh pull request for your follow-up in the same thread, so there's no need to start a new one.
+</Note>
+
+```text
+Update https://github.com/my-org/analytics/pull/482 so the `net_revenue`
+metric is rounded to 2 decimal places.
+```
+
+The pasted pull request must:
+
+- Live in the same GitHub repository as the project's dbt connection.
+- Be **open** — merged or closed PRs are rejected.
+- Have its branch in the same repository (PRs opened from forks are rejected).
+
+If any of those checks fail, the agent stops and tells you why instead of silently opening a new pull request.
+
+## What happens if it can't run
+
+| Situation | Result |
+| --- | --- |
+| Feature flag is off | The tool isn't available. The agent answers normally without offering to open a pull request. |
+| Project's dbt connection isn't GitHub or GitLab | The agent tells you the project must be connected to a supported git host for writeback. |
+| GitHub App isn't installed on the repo | The agent surfaces a setup error. Install the Lightdash GitHub App on the repository (from your project's dbt connection settings) and try again. |
+| Writeback agent makes no file changes | No pull request or merge request is opened. The agent reports back that nothing needed to change. |
+| Pasted PR link is in a different repo, merged, closed, or from a fork | The agent rejects the link with an explanation and does not open a new pull request. |
+| The pull request behind a change has been merged or closed | The agent can't add to that pull request, so a follow-up opens a fresh one in the same thread. |
+| GitLab App isn't connected for the organization | The agent surfaces a `GitLab App is not installed` error. Connect the Lightdash GitLab App for your organization and try again. |
+
+## Related
+
+- [dbt write-back](/integrations/dbt/write-back) — write back individual custom metrics, dimensions, and SQL Runner queries from the Lightdash UI.

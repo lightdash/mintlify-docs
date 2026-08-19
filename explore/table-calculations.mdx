@@ -1,0 +1,142 @@
+---
+title: "Table calculations"
+description: "Create calculations on the fly across your results table, like running totals and window aggregations"
+doc-type: tutorial
+---
+
+You add table calculations in the Explore view and they appear as green columns in your results table (remember, [dimensions](/semantic-layer/dimensions) are blue, and [metrics](/semantic-layer/metrics) are orange).
+
+<Frame>
+  <img src="/images/explore/table-calculations/table-calc-results-light.png" alt="Table calculation column in the results table" className="block dark:hidden" />
+  <img src="/images/explore/table-calculations/table-calc-results-dark.png" alt="Table calculation column in the results table" className="hidden dark:block" />
+</Frame>
+
+Table calculations can be built in two ways:
+
+- **[Formula](/explore/table-calculations/formulas)**: a spreadsheet-style syntax that reads like Google Sheets. The default mode for new table calculations.
+- **SQL**: raw SQL.
+
+Both modes are available on every warehouse Lightdash supports. With either mode you can build mathematical, True/False, text, and date-based calculations on top of your results.
+
+## When to use table calculations
+
+The Lightdash semantic layer allows you to define metrics and dimensions that can be reused across your organization. This creates consistency and saves time by establishing standard definitions everyone can rely on. Sometimes the predefined metrics and dimensions aren't quite enough, and you might need to perform additional calculations for specific visualizations, create specialized metrics for particular analyses, or build custom logic to better communicate your insights.
+
+### How Table Calculations Help
+
+Table calculations work as an additional computational layer that builds on top of:
+
+- Semantic layer metrics and dimensions (your standard definitions)
+- Custom metrics and dimensions (created at the BI layer)
+- Other table calculations (you can even stack them)
+
+<Warning>
+Table calculations are useful for specialized, temporary needs, but if you find yourself repeatedly reusing a table calculation, it's a sign to add it to dbt so it's tracked in the semantic layer. This keeps your organization's metrics centralized and consistently defined. You can read more about [adding metrics to your dbt project here](/semantic-layer/metrics).
+</Warning>
+
+## Creating table calculations
+
+Before you create a table calculation, you need to add some dimensions and/or metrics to your results table.
+
+Table calculations work with whatever data you've already pulled into your results table - they can reference the dimensions and metrics you've selected, as well as other table calculations you've built from those same underlying fields. Think of it like building with blocks: you start with your base dimensions and metrics, then you can stack table calculations on top of those, and even build new calculations that reference the ones you've already created.
+
+### Using quick calculations
+
+Quick calculations are shortcuts to the most common table calculations, these are only available to metrics in the contextual menu in the results table.
+
+<Frame>
+  <img src="/images/explore/table-calculations/quick-calculation-menu-light.png" alt="Quick calculation menu on a metric column" className="block dark:hidden" />
+  <img src="/images/explore/table-calculations/quick-calculation-menu-dark.png" alt="Quick calculation menu on a metric column" className="hidden dark:block" />
+</Frame>
+
+To learn more about what these calculations are doing, check out the docs [here](/explore/table-calculations/sql-templates). Once the table calculation is generated you can edit it to modify the SQL query or update the format.
+
+### Using custom table calculations
+
+Once you've got some data in your results table, you can create a table calculation by clicking on the `+ Table calculation` in the `Results` tab of the Explore view:
+
+<Frame>
+  <img src="/images/explore/table-calculations/create-table-calc-button-light.png" alt="+ Table calculation button in the Results header" className="block dark:hidden" />
+  <img src="/images/explore/table-calculations/create-table-calc-button-dark.png" alt="+ Table calculation button in the Results header" className="hidden dark:block" />
+</Frame>
+
+##### Write the SQL for your table calculation in the pop-up box
+
+Your table calculation is defined using raw SQL that you write up in this pop up box. If you're not sure what to write here, you can [check out some of our table calculation SQL templates](#table-calculation-functions-and-sql-templates).
+
+To reference the metrics and dimensions in your results table, you can either use the autocomplete, or you can manually write the full field name using the format `${table_name.field_name}`.
+
+<Frame>
+  <img src="/images/explore/table-calculations/table-calc-modal-light.png" alt="Add table calculation modal with SQL editor and inline format options" className="block dark:hidden" />
+  <img src="/images/explore/table-calculations/table-calc-modal-dark.png" alt="Add table calculation modal with SQL editor and inline format options" className="hidden dark:block" />
+</Frame>
+
+
+### Using table calculation functions
+
+In addition to writing raw SQL, you can use built-in functions that simplify common table calculation patterns.
+
+
+These functions compile to SQL window functions automatically, so you don't need to write `LAG`, `LEAD`, or `ROW_NUMBER` by hand.
+
+##### Update the format of your table calculation (if needed)
+
+If needed, you can update the format of your table calculation — percent, currency, number with custom prefix/suffix — in the **Format** section of the modal, just below the SQL editor.
+
+<Frame>
+  <img src="/images/explore/table-calculations/table-calc-format-light.png" alt="Format options for a table calculation" className="block dark:hidden" />
+  <img src="/images/explore/table-calculations/table-calc-format-dark.png" alt="Format options for a table calculation" className="hidden dark:block" />
+</Frame>
+
+See [Formatting table calculations](/explore/formatting-your-fields#formatting-table-calculations) for the full list of format types and their options.
+
+##### Choose how totals are calculated (if needed)
+
+Use the **Totals** setting in the table calculation modal to control how Lightdash calculates grand totals, column totals, pivot row totals, and subtotals for the calculation.
+
+| Totals mode | How it works | When to use it |
+| :--- | :--- | :--- |
+| **Formula** (default) | Re-applies the calculation to aggregated total values. | Ratios, percentages, and calculations that should be evaluated at the total grain. |
+| **Sum of rows** | Calculates the value for each row, then sums those row-level values at the requested total grain. | Additive row-level transformations such as `${metric} + 2`, window calculations, and template calculations. |
+| **None** | Leaves total cells blank for this table calculation. | Calculations where a total would not be meaningful. |
+
+You can choose a different mode for each table calculation in the same table. For example, use **Formula** for a profit-margin ratio and **Sum of rows** for an adjustment applied to every row.
+
+<Note>
+  **Formula** mode can only produce a total when Lightdash can evaluate the calculation at the aggregated total grain. If a calculation references dimensions, other table calculations, or window logic, use **Sum of rows** to total its row-level results.
+</Note>
+
+##### To edit or remove your table calculation, open the column dropdown
+
+Click the chevron next to the table calculation column header in the results table. From there you can **Edit calculation** to reopen the modal, or **Remove** to drop it.
+
+<Frame>
+  <img src="/images/explore/table-calculations/table-calc-edit-delete-light.png" alt="Edit / delete dropdown on a table calculation column header" className="block dark:hidden" />
+  <img src="/images/explore/table-calculations/table-calc-edit-delete-dark.png" alt="Edit / delete dropdown on a table calculation column header" className="hidden dark:block" />
+</Frame>
+
+
+## Table calculation execution and limitations
+
+The processing order:
+
+1. **Raw data filtering happens first** - Dimension and metric filters are applied to your base data.
+
+2. **All table calculations run** - Using this filtered dataset, all calculations are performed.
+
+3. **Table calculation filters apply last** - Only then are rows hidden based on calculated values.
+
+### Key limitations
+Since all calculations are performed before filtering, table calculation filters only hide rows without affecting the underlying calculations.
+
+For example: You use table calculations to calculate the `percentage_of_shipping_method_amount`, then filter to hide rows below 30%. The filtered rows (shown in purple) will disappear but the `percentage_total` calculation still shows 100% even though the visible percentages in the `percentage_of_shipping_method_amount` column no longer add up to 100%.
+
+<Frame>
+![](/images/explore/table-calculations/table_calculation_filter_example.jpg)
+</Frame>
+
+## Table calculation functions and SQL templates
+
+If you prefer not to write raw SQL, check out the built-in [row functions](/explore/table-calculations/functions/row-functions), [pivot functions](/explore/table-calculations/functions/pivot-functions), and [aggregate functions](/explore/table-calculations/functions/aggregate-functions) — they handle common patterns like accessing previous rows, row numbering, working across pivot columns, and computing totals.
+
+For more advanced or custom SQL, we also have copy-paste SQL templates to help you get started with common table calculations. You can check out our table calculation SQL templates [here](/explore/table-calculations/sql-templates).

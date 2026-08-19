@@ -1,7 +1,9 @@
 ---
 title: "Configure Lightdash to use external storage"
 sidebarTitle: "External storage"
+description: "Set up the required S3-compatible bucket on GCP, AWS, Azure, or MinIO"
 boost: 0.001
+doc-type: tutorial
 ---
 
 On Lightdash, we generate some files like:
@@ -89,29 +91,38 @@ S3_SECRET_KEY      # optional if using IAM role
 S3_EXPIRATION_TIME # optional, defaults to 259200 seconds (3 days)
 ```
 
+For a comprehensive list of all possible S3-related environment variables and other configurations, please visit the [Environment Variables documentation](/self-host/customize-deployment/environment-variables#s3).
+
 ### Use separate storage for query results
 
-By default, query results use the main S3 configuration. To store query results with a different S3-compatible provider, set the `RESULTS_S3_*` variables that differ from your main configuration:
+Query results use the main S3 configuration by default. To store them with a different S3-compatible provider, set the `RESULTS_S3_*` variables that differ from it — credentials and path-style addressing have `RESULTS_S3_*` equivalents too:
 
 ```bash
 RESULTS_S3_ENDPOINT=https://s3.eu-west-1.amazonaws.com
 RESULTS_S3_REGION=eu-west-1
 RESULTS_S3_BUCKET=my-lightdash-query-results
-RESULTS_S3_ACCESS_KEY=AKIA...
-RESULTS_S3_SECRET_KEY=...
-RESULTS_S3_FORCE_PATH_STYLE=false
 ```
 
 Any omitted result storage setting inherits its corresponding `S3_*` value.
 
 <Warning>
-  Raw JSONL result downloads use a presigned URL that browsers fetch directly from `RESULTS_S3_ENDPOINT`. This endpoint must be reachable from users' browsers; `S3_PUBLIC_ENDPOINT` does not apply to the query results bucket. The bucket can remain private, but an IP policy that limits `GetObject` to Lightdash's backend egress addresses will block these downloads.
+Raw JSONL result downloads use a presigned URL that browsers fetch directly from `RESULTS_S3_ENDPOINT`. This endpoint must be reachable from users' browsers; `S3_PUBLIC_ENDPOINT` does not apply to the query results bucket. The bucket can remain private, but an IP policy that limits `GetObject` to Lightdash's backend egress addresses will block these downloads.
 </Warning>
-
-For a comprehensive list of all possible S3-related environment variables and other configurations, please visit the [Environment Variables documentation](https://docs.lightdash.com/self-host/customize-deployment/environment-variables#s3).
 
 ### Using IAM roles
 
 Lightdash also supports authentication via IAM roles. If you omit the `S3_ACCESS_KEY` and `S3_SECRET_KEY` variables, the S3 library will automatically attempt to use IAM roles. For more details on how this works, refer to the [AWS SDK for JavaScript documentation on setting credentials in Node.js](https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/setting-credentials-node.html).
 
 If you are using an IAM role to generate signed URLs, be aware that these URLs have a maximum validity of 7 days due to AWS limitations, independently of the `S3_EXPIRATION_TIME` configuration.
+
+## Production bucket strategy
+
+For an enterprise deployment, use a **dedicated bucket per purpose**, each with a scoped credential that can only touch its own bucket. This is how Lightdash Cloud sets up storage:
+
+- **Results / cache bucket** — add a lifecycle rule deleting objects after **1 day**. Results are ephemeral, so this keeps the bucket small and cheap.
+- **Pre-aggregations bucket** (if using [pre-aggregates](/self-host/nats-workers/pre-aggregate-workers)) — lifecycle delete after **~30 days**.
+- **Data-apps bucket** (if using [data apps](/self-host/data-apps)) — persistent, with **no** delete lifecycle.
+
+**Block all public access** on every bucket. Prefer **IAM roles** (IRSA on EKS, Workload Identity on GKE) over static keys — noting that signed URLs are then capped at 7 days.
+
+If users share download links that must outlive the signed-URL TTL (`S3_EXPIRATION_TIME`, default 3 days), enable `PERSISTENT_DOWNLOAD_URLS_ENABLED: "true"` — see [persistent download URLs](/self-host/customize-deployment/environment-variables#persistent-download-urls).

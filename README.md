@@ -24,30 +24,35 @@ mintlify dev
 ### Troubleshooting
 
 - Mintlify dev isn't running - Run `mintlify install` to re-install dependencies
-- Page loads as a 404 - Make sure you are running in a folder with `mint.json`
+- Page loads as a 404 - Make sure you are running in a folder with `docs.json`
 
 ## 📁 Documentation Structure
 
-Our documentation follows a strict folder structure where **images mirror the page structure**:
+Directories are product areas, never doc types — a page lives wherever the part of the product it documents lives:
 
+```text
+get-started/            # Onboarding: quickstart + explorer/developer tracks
+explore/                # Charts, dashboards, spaces, scheduled deliveries
+semantic-layer/         # Dimensions, metrics, pre-aggregates
+workflow/               # Version control, CI/CD, the CLI (workflow/cli/)
+agents/                 # AI analyst agents
+data-apps/              # Data apps
+embed/                  # Embedding
+integrations/           # Third-party integrations
+workspace-admin/        # Org, project, and permissions admin
+personal-settings/      # Per-user settings
+self-host/              # Self-hosting
+help/                   # Support
+api-reference/          # REST API
+sdk/                    # SDKs
+snippets/               # Shared content transcluded into multiple pages
 ```
-docs/
-├── get-started/          # Onboarding and setup guides
-├── guides/               # Feature guides and how-tos
-├── references/           # API and feature reference docs
-├── dbt-guides/           # dbt-specific guides
-└── self-host/            # Self-hosting documentation
 
-images/
-├── get-started/          # ✅ Mirrors docs structure
-├── guides/
-├── references/
-└── ...
-```
+Whether a page is a Tutorial, Guide, or Reference is a frontmatter property (`doc-type`), not a folder — see [Creating a New Page](#creating-a-new-page) below. The full placement and naming rules live in [`.mintlify/ia-rules.md`](.mintlify/ia-rules.md); check it before creating a new page or directory.
 
-### Key Principles
+**Images mirror page paths.** `images/` reproduces the same tree as the docs:
 
-1. **Images belong with their pages**: A page at `guides/dashboard.mdx` should use images from `images/guides/dashboard/`
+1. **Images belong with their pages**: A page at `explore/spaces.mdx` should use images from `images/explore/spaces/`
 2. **Shared images go higher**: If an image is used by multiple pages, place it in the nearest common parent folder
 3. **Use kebab-case**: All files and folders use `kebab-case` (e.g., `my-new-guide.mdx`, not `my_new_guide.mdx`)
 
@@ -57,13 +62,20 @@ Thank you for your interest in improving Lightdash's documentation!
 
 ### Creating a New Page
 
-1. **Choose the right location**:
-   - **get-started/**: For new users setting up Lightdash
-   - **guides/**: Step-by-step instructions for specific tasks
-   - **references/**: Detailed feature documentation and API docs
-   - **dbt-guides/**: dbt-specific content
+1. **Place it by product area**, not by doc type — pick the directory for the part of the product the page documents (`explore/`, `semantic-layer/`, `workflow/`, `agents/`, and so on; see [Documentation Structure](#-documentation-structure)). Full placement and naming rules are in [`.mintlify/ia-rules.md`](.mintlify/ia-rules.md).
 
-2. **Create the MDX file** with proper frontmatter:
+2. **Declare the doc type in frontmatter** if the page isn't a plain docs page:
+
+   | Type | Frontmatter |
+   | --- | --- |
+   | Docs (default) | none |
+   | Tutorial | `doc-type: tutorial` + `tag: "Tutorial"` |
+   | Guide | `doc-type: guide` + `tag: "Guide"` |
+   | Reference | `doc-type: reference` |
+
+   See `.mintlify/ia-rules.md` for what each type covers and when to use it.
+
+3. **Create the MDX file** with proper frontmatter:
 
 ```mdx
 ---
@@ -80,7 +92,7 @@ Introduction paragraph explaining what this page covers.
 Content here...
 ```
 
-3. **Add to navigation** in `docs.json`:
+4. **Add to navigation** in `docs.json`:
 
 ```json
 {
@@ -98,9 +110,10 @@ Content here...
 - ❌ **Bad**: "Dashboards"
 
 #### Write for Your Audience
-- **get-started/**: Assume no prior Lightdash knowledge
-- **guides/**: Assume basic familiarity
-- **references/**: Technical users who need details
+- **Docs** (default type): Assume basic familiarity with the feature
+- **Tutorials**: Walk a first-timer through one task start to finish
+- **Guides**: Opinionated recommendations for readers already familiar with the basics
+- **References**: Technical users who need exhaustive detail
 
 #### Structure Your Content
 ```mdx
@@ -134,8 +147,8 @@ More instructions...
 
 1. **Create a folder matching your page**:
    ```
-   guides/my-new-feature.mdx
-   images/guides/my-new-feature/
+   explore/my-new-feature.mdx
+   images/explore/my-new-feature/
    ```
 
 2. **Use descriptive filenames**:
@@ -153,7 +166,7 @@ More instructions...
 
 ```mdx
 <Frame>
-  <img src="/images/guides/my-feature/screenshot.png" alt="Descriptive alt text"/>
+  <img src="/images/explore/my-feature/screenshot.png" alt="Descriptive alt text"/>
 </Frame>
 ```
 
@@ -172,57 +185,27 @@ Always include meaningful alt text:
 
 ## 🔁 Using Reusable Snippets
 
-To maintain consistency across the documentation, we use reusable snippets for common callouts and content blocks.
+Identical text in two or more pages is a snippet, not a copy — copies drift, and this repo has shipped contradictory sizing numbers and semantics because of copied tables. Shared tables, warnings, and content blocks live in `/snippets/` and are transcluded with an MDX import, not copy-pasted.
 
-### Available Snippets
+### Using an Existing Snippet
 
-#### Feature Availability Callouts
-
-```mdx
-<!-- Enterprise-only features -->
-<Snippet file="snippets/callouts/enterprise-only.mdx" />
-
-<!-- Cloud-only features -->
-<Snippet file="snippets/callouts/cloud-only.mdx" />
-
-<!-- Self-hosted only features -->
-<Snippet file="snippets/callouts/self-hosted-only.mdx" />
-```
-
-#### Permission & Access Callouts
+Import the snippet and render it where the shared content belongs:
 
 ```mdx
-<!-- Requires admin permissions -->
-<Snippet file="snippets/callouts/admin-only.mdx" />
+import EmbedAvailability from '/snippets/embedding-availability.mdx';
 
-<!-- Beta features -->
-<Snippet file="snippets/callouts/beta-feature.mdx" />
+<EmbedAvailability />
 ```
 
-#### Common Setup Sections
+`snippets/embedding-availability.mdx` (a feature-availability callout) and `snippets/liquid-templating.mdx` (a shared explanation transcluded into both the dimensions and metrics references) are two examples already in use.
 
-```mdx
-<!-- dbt prerequisites (includes heading) -->
-<Snippet file="snippets/setup/dbt-project-required.mdx" />
-
-<!-- Support channels (includes heading) -->
-<Snippet file="snippets/common/support-channels.mdx" />
-```
-
-### When to Use Snippets
-
-- ✅ **Use snippets** for standard callouts that appear across multiple pages
-- ✅ **Use snippets** for repeated setup instructions or prerequisites
-- ❌ **Don't use snippets** for page-specific content that won't be reused
-
-### Creating New Snippets
+### Creating a New Snippet
 
 If you notice the same content repeated across 3+ pages:
 
-1. Create a new snippet file in `/snippets/` with an appropriate subdirectory
-2. Use descriptive filenames: `enterprise-only.mdx` not `callout1.mdx`
-3. Document the new snippet in this section
-4. Update existing pages to use the snippet
+1. Create a new file in `/snippets/` with a descriptive name (`embedding-availability.mdx`, not `callout1.mdx`)
+2. Import and render it on every page that needs it, replacing the copied text
+3. Update the canonical page's content only from then on — every other page stays in sync automatically
 
 ## 🔄 Submitting Changes
 
@@ -271,7 +254,7 @@ node scripts/check-image-locations.js
 **What these scripts check:**
 
 - **check-links.js** - Validates all internal markdown and JSX links, verifies linked files exist, and identifies orphaned pages (not in `docs.json`)
-- **check-image-locations.js** - Ensures images mirror page structure (e.g., `guides/dashboard.mdx` → `images/guides/dashboard/`), checks for missing images, and validates file extensions
+- **check-image-locations.js** - Ensures images mirror page structure (e.g., `explore/dashboard.mdx` → `images/explore/dashboard/`), checks for missing images, and validates file extensions
 
 **Automated checks:** These scripts run automatically on all PRs via GitHub Actions. The validation workflow will comment on your PR with any issues found (but won't block merging).
 
@@ -298,7 +281,7 @@ node scripts/fix-image-locations.js
 
 **Troubleshooting common issues:**
 
-- **Broken links:** Use absolute paths from root (`/guides/my-guide` not `../guides/my-guide`) and omit file extensions in links
+- **Broken links:** Use absolute paths from root (`/explore/spaces` not `../explore/spaces`) and omit file extensions in links
 - **Misplaced images:** Run `node scripts/fix-image-locations.js` to automatically fix
 - **Shared images:** Can be placed in the nearest common parent directory
 
@@ -368,8 +351,8 @@ GROUP BY user_id
 
 #### Links
 
-- Use descriptive link text: [create a new dashboard](/get-started/exploring-data/dashboards)
-- Not: Click [here](/get-started/exploring-data/dashboards)
+- Use descriptive link text: [create a new dashboard](/explore/dashboards)
+- Not: Click [here](/explore/dashboards)
 
 #### Lists
 

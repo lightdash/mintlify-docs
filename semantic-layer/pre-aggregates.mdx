@@ -1,0 +1,707 @@
+---
+title: "Pre-aggregates"
+description: "Speed up dashboards and reduce warehouse costs by serving queries from pre-computed, materialized summaries"
+---
+
+import PreAggregatesAvailability from '/snippets/pre-aggregates-availability.mdx';
+
+<PreAggregatesAvailability />
+
+Pre-aggregates let you define materialized summaries of your data directly in your dbt YAML. When a user runs a query in Lightdash, the system checks if the query can be answered from a pre-aggregate instead of querying your warehouse. If it matches, the query is served from the pre-computed results, making it significantly faster and reducing warehouse load.
+
+This is especially useful for dashboards with high traffic or expensive aggregations that don't need real-time data.
+
+Any query that goes through the Lightdash semantic layer can hit a pre-aggregate — this includes the Lightdash app, the [API](/api-reference/v1/introduction), [MCP](/agents/lightdash-mcp), [AI agents](/agents), the [Embed SDK](/embed/reference), and the [React SDK](/embed/react-sdk).
+
+Watch this video walkthrough for an overview of how to get started with pre-aggregates:
+
+<Frame>
+  <iframe width="100%" height="420" src="https://www.loom.com/embed/91133871cd994723b4f9ca4b5b35228b" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen />
+</Frame>
+
+## Managed and external pre-aggregates
+
+Pre-aggregates come in two flavors, distinguished by who owns the underlying table:
+
+* **Managed pre-aggregates** are the default. Lightdash materializes the rollup on your warehouse, stores the result, and serves matching queries from that stored copy. You only write the definition.
+* **External pre-aggregates** delegate the materialization to you. You point a pre-aggregate at a warehouse table you build and refresh yourself, and Lightdash uses the definition only for matching and routing. See [External pre-aggregates](/semantic-layer/pre-aggregates/external) for the full workflow.
+
+Managed and external pre-aggregates can coexist on the same model, and the matching rules are identical on both paths.
+
+## How it works
+
+Pre-aggregates follow a four-step cycle:
+
+1. **Define** — You add a `pre_aggregates` block to your dbt model YAML, specifying which dimensions and metrics to include.
+2. **Materialize** — Lightdash runs the aggregation query against your warehouse and stores the results. This happens automatically on compile, on a cron schedule you define, or when you trigger it manually.
+3. **Match** — When a user runs a query, Lightdash checks if every requested dimension, metric, and filter is covered by a pre-aggregate.
+4. **Serve** — If a match is found, the query is served from the materialized data instead of hitting your warehouse.
+
+### Example
+
+Suppose you have an `orders` table with thousands of rows, and you define a pre-aggregate with dimensions `status` and metrics `total_amount` (sum) and `order_count` (count), with a `day` granularity on `order_date`.
+
+**Your warehouse data:**
+
+| order_date | status  | customer | amount |
+|---|---|---|---|
+| 2024-01-15 | shipped | Alice    | $100   |
+| 2024-01-15 | shipped | Bob      | $50    |
+| 2024-01-15 | pending | Charlie  | $75    |
+| 2024-01-16 | shipped | Alice    | $200   |
+| 2024-01-16 | pending | Charlie  | $30    |
+| ... | ... | ... | ... |
+
+**Lightdash materializes this into a pre-aggregate:**
+
+| order_date_day | status  | total_amount | order_count |
+|---|---|---|---|
+| 2024-01-15     | shipped | $150         | 2           |
+| 2024-01-15     | pending | $75          | 1           |
+| 2024-01-16     | shipped | $200         | 1           |
+| 2024-01-16     | pending | $30          | 1           |
+
+Now when a user queries "total amount by status, grouped by **month**", Lightdash re-aggregates from the daily pre-aggregate instead of scanning the full table:
+
+| order_date_month | status  | total_amount |
+|---|---|---|
+| January 2024     | shipped | $350         |
+| January 2024     | pending | $105         |
+
+This works because `sum` can be re-aggregated — summing daily sums gives the correct monthly sum.
+
+## Defining pre-aggregates
+
+Pre-aggregates are defined under the `pre_aggregates` key in your model configuration.
+
+If you're using Lightdash YAML instead of dbt model YAML, see the [Lightdash YAML syntax guide](/semantic-layer/yaml) for the surrounding model structure.
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
+        meta:
+          pre_aggregates:
+            - name: orders_daily_by_status
+              dimensions:
+                - status
+              metrics:
+                - total_order_amount
+                - average_order_size
+              filters:
+                - order_date: inThePast 52 weeks
+              time_dimension: order_date
+              granularity: day
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: orders
+        config:
+          meta:
+            pre_aggregates:
+              - name: orders_daily_by_status
+                dimensions:
+                  - status
+                metrics:
+                  - total_order_amount
+                  - average_order_size
+                filters:
+                  - order_date: inThePast 52 weeks
+                time_dimension: order_date
+                granularity: day
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    pre_aggregates:
+      - name: orders_daily_by_status
+        dimensions:
+          - status
+        metrics:
+          - total_order_amount
+          - average_order_size
+        filters:
+          - order_date: inThePast 52 weeks
+        time_dimension: order_date
+        granularity: day
+    ```
+  </Tab>
+</Tabs>
+
+## Configuration reference
+
+| Property | Required | Description |
+|---|---|---|
+| `name` | Yes | Unique identifier for the pre-aggregate. Must contain only letters, numbers, and underscores. |
+| `dimensions` | Yes | List of dimension names to include. Must contain at least one dimension. |
+| `metrics` | Yes | List of metric names to include. Must contain at least one metric. |
+| `filters` | No | Static filters applied when materializing the pre-aggregate. Matching queries must include an equivalent or narrower filter to use this pre-aggregate. |
+| `time_dimension` | No | A time-based dimension for date grouping. Must be paired with `granularity`. |
+| `granularity` | No | Time granularity for the `time_dimension`. Valid values: `hour`, `day`, `week`, `month`, `quarter`, `year`. Must be paired with `time_dimension`. |
+| `sorts` | No | Controls how rows are ordered inside the materialization. See [Materialization sort order](#materialization-sort-order). |
+| `max_rows` | No | Maximum number of rows to store in the materialization. If the aggregation exceeds this limit, the result is truncated. Must be a positive integer. |
+| `refresh` | No | Schedule configuration for automatic re-materialization. See [Scheduling refreshes](#scheduling-refreshes). |
+| `materialization_role` | No | Fixed access context to use when materializing the pre-aggregate. This is useful when your model or joined tables use [`required_attributes`](/semantic-layer/tables#required-attributes) or [`any_attributes`](/semantic-layer/tables#any-attributes). See [Materialization role](#materialization-role). |
+
+<Note>
+  If you specify `time_dimension`, you **must** also specify `granularity`, and vice versa.
+</Note>
+
+## Query matching
+
+When a user runs a query, Lightdash checks whether a pre-aggregate can serve it first. A pre-aggregate matches when the query fits inside it on each axis:
+
+- **Fields are available** — every dimension, metric, and filter dimension in the query exists somewhere in the pre-aggregate.
+- **Grain is reachable** — if the query uses a time dimension, its granularity is **equal or coarser** than the pre-aggregate's, so the rows can be rolled up. Month is a coarser grain than day. Day is a coarser grain than hour.
+- **Scope is compatible** — if the pre-aggregate defines its own `filters`, the query includes an **equal or narrower** filter, so the subset can be filtered from the pre-aggregate base.
+- **Metrics re-aggregate cleanly** — all metrics are [supported types](#supported-metric-types). Non-additive metrics like `count_distinct`, `median`, and `percentile` can't be faithfully re-computed from stored rows, so they only match on an [exact match](#exact-match-queries) of the pre-aggregate. Anything resolved at runtime — raw SQL table calculations, [`sql_filter`](/semantic-layer/tables#sql-filter-row-level-security) metrics, or SQL dependent on [Parameters](/semantic-layer/parameters) and [user attributes](/workspace-admin/user-attributes) — is never eligible.
+
+<Tip>
+  A **day** pre-aggregate serves `day`, `week`, `month`, `quarter`, and `year` queries. A **month** pre-aggregate serves `month`, `quarter`, and `year` — but **not** `day` or `week`, since those need finer-grained data.
+</Tip>
+
+When multiple pre-aggregates match a query, Lightdash picks the smallest one (fewest dimensions, then fewest metrics as tiebreaker).
+
+### Exact match queries
+
+A query is an **exact match** of a pre-aggregate when its selected dimensions are set-equal to the pre-aggregate's dimensions and its time dimension is at exactly the pre-aggregate's granularity. On an exact match, each result row is served from a single materialization row without any re-aggregation. This unlocks metric types that can't otherwise be re-aggregated — see [Non-additive metrics on exact matches](#non-additive-metrics-on-exact-matches).
+
+For a query to count as an exact match:
+
+- Every pre-aggregate dimension must appear in the query's selected dimensions, and vice versa.
+- The time dimension must be selected at exactly the pre-aggregate's granularity — not coarser, not finer.
+- Filters on selected dimensions are allowed. They only subset the stored rows, so the match still holds.
+- A pre-aggregate dimension referenced **only** by a query filter does not count as selected, and the query is no longer an exact match.
+- A dimension reached through a [custom bin](/explore/create-custom-fields#bin) does not count as selected either — bins collapse groups and break the one-row-per-result guarantee.
+
+Selecting a subset of the pre-aggregate's metrics is still an exact match, as long as the dimension set matches.
+
+### Filtered pre-aggregates
+
+A pre-aggregate can define static `filters` so it materializes only a slice of the source data for a common query pattern, such as `status = completed` or a rolling `order_date: inThePast 52 weeks` window. A query then matches it only when it carries the same filter or a narrower one — the scope-compatibility rule above — expressed with the same filter operator.
+
+See [Filtered pre-aggregates](/semantic-layer/pre-aggregates#filtered-pre-aggregates) for the definition syntax and a worked matching example.
+
+### Dimensions from joined tables
+
+Pre-aggregates support dimensions from joined tables. Reference them by their full name (for example, `customers.first_name`) in the `dimensions` list.
+
+## Filtered pre-aggregates
+
+Use `filters` when you want a pre-aggregate to materialize only a subset of the source data.
+
+For example, this pre-aggregate only stores data for the last 52 weeks:
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
+        meta:
+          pre_aggregates:
+            - name: recent_orders_daily
+              dimensions:
+                - status
+              metrics:
+                - total_order_amount
+                - order_count
+              filters:
+                - order_date: inThePast 52 weeks
+              time_dimension: order_date
+              granularity: day
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: orders
+        config:
+          meta:
+            pre_aggregates:
+              - name: recent_orders_daily
+                dimensions:
+                  - status
+                metrics:
+                  - total_order_amount
+                  - order_count
+                filters:
+                  - order_date: inThePast 52 weeks
+                time_dimension: order_date
+                granularity: day
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    pre_aggregates:
+      - name: recent_orders_daily
+        dimensions:
+          - status
+        metrics:
+          - total_order_amount
+          - order_count
+        filters:
+          - order_date: inThePast 52 weeks
+        time_dimension: order_date
+        granularity: day
+    ```
+  </Tab>
+</Tabs>
+
+This is useful when a rolling time window is queried frequently and deserves its own smaller materialization.
+
+### How query matching works with filters
+
+Filtered pre-aggregates are only used when the query filters are compatible with the pre-aggregate definition:
+
+- A query with the same or narrower filter can use the pre-aggregate
+- A query without the filter, or with a broader or incompatible filter, falls back to another pre-aggregate or the warehouse
+
+For the example above:
+
+- `order_date inThePast 12 weeks` can use the pre-aggregate
+- `order_date inThePast 52 weeks` can use the pre-aggregate
+- `order_date inThePast 104 weeks` cannot use the pre-aggregate
+- `order_date is 2026-01-15` cannot use the pre-aggregate, even though the date falls inside the last 52 weeks (see the operator-matching note below)
+- no `order_date` filter: cannot use the pre-aggregate
+
+<Tip>
+  If a field is only used for filtering, you should still include it in the pre-aggregate's `dimensions` list so Lightdash can match and re-aggregate queries correctly.
+</Tip>
+
+<Warning>
+  Filter compatibility is only checked when the query filter and the pre-aggregate filter use the **same operator** — relative-to-relative (for example, `inThePast` compared against `inThePast`), or absolute-to-absolute (for example, `equals` compared against `equals`).
+
+  Lightdash does not resolve a relative filter into a concrete date range at match time, so an absolute date filter like `order_date is 2026-01-15` will not match a pre-aggregate filter like `order_date inThePast 52 weeks`, even when the selected date falls inside that window. The reverse is also true.
+
+  If a rolling window is what you're after, filter the query with the same relative operator to hit the pre-aggregate.
+</Warning>
+
+## Required filters and pre-aggregates
+
+Models can declare [`required_filters`](/semantic-layer/tables#default-filters) that every query on the explore must apply. Pre-aggregates coexist with required filters, with a few rules on both sides.
+
+### How required filters are applied
+
+Required filters are applied when a query reads from the pre-aggregate, not baked permanently into the materialized table. The materialization stores rows across every value of the required-filter field, and Lightdash re-applies the filter each time a query hits the rollup. This lets users override the required filter's default value (where the model allows it) and still be served from the pre-aggregate — they don't silently get an incomplete result from a materialization that only holds one value.
+
+### Every required-filter field must be a pre-aggregate dimension
+
+Because the filter is applied at query time, its target field has to exist as a column in the materialization. If any `required_filters` target on the model isn't listed in the pre-aggregate's `dimensions`, the pre-aggregate is ineligible for that explore and Lightdash queries the warehouse instead. This applies to fields on the base table and on joined tables. Sibling time-dimension grains (for example, a required filter on `created_at_week` when the pre-aggregate's time dimension is `created_at` at day grain) also need the underlying dimension in the pre-aggregate.
+
+Only filters actually marked `required: true` count. Model filters marked as not required don't need to be in the pre-aggregate.
+
+<Tip>
+  If a field only exists on the model to satisfy a required filter, add it to the pre-aggregate's `dimensions` list even if you never group by it.
+</Tip>
+
+### Don't duplicate required-filter targets in `filters`
+
+The pre-aggregate's own [`filters`](#filtered-pre-aggregates) narrow the materialization at build time and can't be overridden at query time. Setting an explicit pre-aggregate `filter` on the same field as a `required_filters` target creates a conflict — the required filter is meant to be overridable by the user, but the pre-aggregate filter isn't. Lightdash treats these queries as a miss (`pre_aggregate_filter_not_satisfied`) rather than silently returning partial results.
+
+Keep required-filter fields out of the pre-aggregate's `filters` block. If you need to narrow the materialization on a required-filter field, split it into a separate pre-aggregate that doesn't overlap.
+
+## Multiple pre-aggregates per model
+
+You can define multiple pre-aggregates on the same model, each targeting different query patterns. It is better to have **multiple small, focused pre-aggregates** rather than a single one containing all metrics and dimensions. Including too many dimensions increases the number of unique combinations, which generates large materialization files — this defeats the purpose of pre-aggregates, since they are meant to be smaller and faster than querying the warehouse directly.
+
+For example, you might want a fine-grained daily pre-aggregate for detailed dashboards and a coarser monthly one for summary views:
+
+```yaml
+models:
+  - name: orders
+    config:
+      meta:
+        pre_aggregates:
+          - name: orders_daily_by_status
+            dimensions:
+              - status
+            metrics:
+              - total_order_amount
+              - order_count
+            time_dimension: order_date
+            granularity: day
+          - name: orders_monthly_summary
+            dimensions:
+              - status
+            metrics:
+              - total_order_amount
+            time_dimension: order_date
+            granularity: month
+            max_rows: 1000000
+```
+
+When a query matches multiple pre-aggregates, Lightdash picks the smallest one.
+
+## Scheduling refreshes
+
+By default, pre-aggregates are materialized when your dbt project compiles. You can also schedule automatic refreshes using cron expressions, using your project's configured timezone (defaults to UTC):
+
+```yaml
+pre_aggregates:
+  - name: orders_daily_by_status
+    dimensions:
+      - status
+    metrics:
+      - total_order_amount
+    time_dimension: order_date
+    granularity: day
+    refresh:
+      cron: "0 6 * * *"  # Every day at 6:00 AM UTC
+```
+
+### Materialization triggers
+
+Pre-aggregates can be materialized through four different triggers:
+
+| Trigger | When it happens |
+|---|---|
+| **Compile** | Automatically when your dbt project is compiled |
+| **Cron** | On the schedule you define in `refresh.cron` |
+| **Manual** | When you trigger a refresh from the Lightdash UI |
+
+## Row limits
+
+You can set `max_rows` to cap the size of a materialization. If the aggregation produces more rows than the limit, the result is truncated.
+
+<Warning>
+  When `max_rows` is applied, some data is excluded from the materialization. Queries that match the pre-aggregate may return incomplete results. Use this setting carefully and monitor for the "max rows applied" warning in the [monitoring UI](/semantic-layer/pre-aggregates/monitoring).
+</Warning>
+
+## Materialization sort order
+
+Use `sorts` to control the order rows are written in the materialized table. Sorting the materialization on the dimensions you filter and group by most often can make downstream reads faster.
+
+`sorts` is a list of entries. Each entry has:
+
+- `fieldId` — the canonical field ID of a dimension included in the pre-aggregate. Joined-table fields use the `table.field` form.
+- `descending` — boolean, required. `true` sorts high to low, `false` sorts low to high.
+
+```yaml
+pre_aggregates:
+  - name: orders_daily_by_status
+    dimensions:
+      - status
+    metrics:
+      - total_order_amount
+    time_dimension: order_date
+    granularity: day
+    sorts:
+      - fieldId: orders_order_date_day
+        descending: true
+      - fieldId: orders_status
+        descending: false
+```
+
+The `sorts` key accepts four shapes, each with a different meaning:
+
+| Value                   | Behavior                                                                                           |
+| ----------------------- | -------------------------------------------------------------------------------------------------- |
+| Key omitted             | Lightdash picks a default sort order that covers every dimension in the pre-aggregate.             |
+| Explicit list of fields | Lightdash sorts the materialization only by the fields you list, in the order you list them.       |
+| `[]` (empty list)       | Materialization is written without an `ORDER BY`.                                                   |
+| `false`                 | Same as `[]` — materialization is written without an `ORDER BY`.                                    |
+
+<Note>
+  Every `fieldId` in `sorts` must also appear in the pre-aggregate's `dimensions` list. Metrics and time dimensions expanded from `time_dimension` + `granularity` use their canonical IDs (for example, `orders_order_date_day`).
+</Note>
+
+## Materialization role
+
+`materialization_role` is useful when access to the model depends on [`required_attributes`](/semantic-layer/tables#required-attributes) or [`any_attributes`](/semantic-layer/tables#any-attributes).
+
+For example, if a joined table is only available to users with `region_access: emea`, then materializing a pre-aggregate without a fixed access context could produce different results depending on who triggered the build.
+
+Use `materialization_role` to make materialization run with a stable set of [user attributes](/workspace-admin/user-attributes).
+
+This is intended for access control fields such as:
+
+- [`required_attributes`](/semantic-layer/tables#required-attributes)
+- [`any_attributes`](/semantic-layer/tables#any-attributes)
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
+        meta:
+          joins:
+            - join: customers
+              sql_on: ${customers.customer_id} = ${orders.customer_id}
+          pre_aggregates:
+            - name: orders_daily_by_region
+              dimensions:
+                - customers.region
+              metrics:
+                - total_order_amount
+              time_dimension: order_date
+              granularity: day
+              materialization_role:
+                email: materialize@acme.com
+                attributes:
+                  region_access: emea
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: orders
+        config:
+          meta:
+            joins:
+              - join: customers
+                sql_on: ${customers.customer_id} = ${orders.customer_id}
+            pre_aggregates:
+              - name: orders_daily_by_region
+                dimensions:
+                  - customers.region
+                metrics:
+                  - total_order_amount
+                time_dimension: order_date
+                granularity: day
+                materialization_role:
+                  email: materialize@acme.com
+                  attributes:
+                    region_access: emea
+    ```
+  </Tab>
+</Tabs>
+
+## Supported metric types
+
+Pre-aggregates support two kinds of metrics.
+
+**Re-aggregatable metrics** work for any matching query, including ones at a coarser grain or on a subset of the pre-aggregate's dimensions:
+
+- `sum`
+- `count`
+- `min`
+- `max`
+- `average`
+
+**Exact-only metrics** are non-additive and only match on an [exact-match query](#exact-match-queries):
+
+- `count_distinct`
+- `sum_distinct`
+- `average_distinct`
+- `median`
+- `percentile`
+
+You can add exact-only metrics to any pre-aggregate. They are materialized (or expected in the [external table's column contract](/semantic-layer/pre-aggregates/external#2-get-the-column-contract)) and served whenever a query matches the pre-aggregate exactly. Non-exact queries that include an exact-only metric miss with the reason **`non_additive_metric_requires_exact_match`** — the fix is to select exactly the pre-aggregate's dimensions at exactly its granularity.
+
+### Non-additive metrics on exact matches
+
+Non-additive metrics like `count_distinct`, `sum_distinct`, `average_distinct`, `median`, and `percentile` normally can't be re-aggregated from a rollup, because combining group-level values produces the wrong answer (see [Metrics that need re-aggregation to combine](#metrics-that-need-re-aggregation-to-combine)). But on an exact match there is nothing to re-aggregate: each result row corresponds to exactly one materialization row, so the stored value is already the correct answer.
+
+This is useful when a `count_distinct` (or another non-additive metric) is the slowest part of a query. Define a pre-aggregate whose dimensions and time-dimension granularity match how the metric is queried, and Lightdash serves those queries from the materialization instead of hitting the warehouse.
+
+## Current limitations
+
+Pre-aggregates support a narrower subset of the Lightdash semantic layer than regular warehouse queries.
+
+### Not supported
+
+Pre-aggregates do not support:
+
+- [Personal warehouse connections](/personal-settings/personal-warehouse-connections). Materialization always runs under a single user's credentials, so warehouse-level access rules are not applied per viewer. If you rely on personal warehouse connections to enforce data access, use [results caching](/semantic-layer/caching) instead.
+- [Parameters](/semantic-layer/parameters) — parameter values are picked at query time, so they cannot be resolved during materialization. Queries that use parameters fall back to the warehouse.
+- [User attributes](/workspace-admin/user-attributes) when referenced from SQL. [`required_attributes`](/semantic-layer/tables#required-attributes) and [`any_attributes`](/semantic-layer/tables#any-attributes) are still supported through [`materialization_role`](/semantic-layer/pre-aggregates#materialization-role).
+- [Custom metrics](/explore/create-custom-fields#custom-metrics) created in the Explorer
+- [Custom SQL dimensions](/explore/create-custom-fields#custom-sql) created in the Explorer ([Custom bin dimensions](/explore/create-custom-fields#bin) are supported)
+- SQL table calculations ([Formula table calculations](/explore/table-calculations/formulas) are supported)
+
+### SQL compatibility
+
+[`sql_filter`](/semantic-layer/tables#sql-filter-row-level-security) (and its alias `sql_where`) runs both at materialization time and at query time on top of the materialized data.
+
+- **At materialization time**, the filter is evaluated against your warehouse. If the SQL references [Parameters](/semantic-layer/parameters) or [user attributes](/workspace-admin/user-attributes), the values injected come from the materialization context — you can pin this to a fixed identity or attribute set with [`materialization_role`](/semantic-layer/pre-aggregates#materialization-role) so the materialization captures the rows you need.
+- **At query time**, the same filter is re-applied against the materialized data, which is served by DuckDB. If the `sql_filter` SQL uses warehouse-specific syntax that DuckDB doesn't understand, the query will fail to run against the pre-aggregate and fall back to the warehouse.
+
+### Metrics that need re-aggregation to combine
+
+Pre-aggregates do not support metric types that cannot be re-aggregated from pre-computed results.
+
+For example, consider `count_distinct` on a daily pre-aggregate. If the pre-aggregate stores "2 distinct customers on 2024-01-15" and "1 distinct customer on 2024-01-16", you cannot sum those daily values to get the monthly distinct count, because the same customer can appear on multiple days.
+
+| order_date_day | status  | distinct_customers |
+|---|---|---|
+| 2024-01-15     | shipped | 2 (Alice, Bob)     |
+| 2024-01-16     | shipped | 1 (Alice)          |
+
+Re-aggregating gives `2 + 1 = 3`, but the correct monthly answer is `2` (`Alice`, `Bob`). The pre-aggregate no longer knows which customers were counted.
+
+We're investigating supporting `count_distinct` through approximation algorithms. [Follow this issue](https://github.com/lightdash/lightdash/issues/21536) for updates.
+
+For similar reasons, the following metric types are also not supported:
+
+- `sum_distinct`, `average_distinct`
+- `median`, `percentile`
+- `percent_of_total`, `percent_of_previous`
+- `running_total`
+- Custom SQL / post-calculation metrics (including many `number` metrics) — [Follow this issue](https://github.com/lightdash/lightdash/issues/21537)
+- `number`, `string`, `date`, `timestamp`, `boolean`
+
+For metrics that can't be pre-aggregated, consider using [caching](/semantic-layer/caching) instead.
+
+## Pre-aggregates vs results caching
+
+Pre-aggregates and [results caching](/semantic-layer/caching) are independent systems that speed up queries in different ways, and they work best together: pre-aggregates serve matching queries from materialized summary tables — no warehouse hit, even on the first query — while results caching stores the exact result of any query shape after its first run. A query that hits a pre-aggregate can also have its result cached, layering the two.
+
+For the full comparison — a feature-by-feature table and guidance on when to use each — see [Results caching vs pre-aggregates](/semantic-layer/caching#results-caching-vs-pre-aggregates).
+
+## Complete example
+
+Here's a full model definition with a pre-aggregate, including joins, scheduling, and row limits:
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
+        meta:
+          joins:
+            - join: customers
+              sql_on: ${customers.customer_id} = ${orders.customer_id}
+          pre_aggregates:
+            - name: orders_daily_by_status
+              dimensions:
+                - status
+                - customers.country
+              metrics:
+                - total_order_amount
+                - average_order_size
+              filters:
+                - status: completed
+              time_dimension: order_date
+              granularity: day
+              max_rows: 5000000
+              refresh:
+                cron: "0 6 * * *"
+        columns:
+          - name: order_date
+            meta:
+              dimension:
+                type: date
+          - name: status
+            meta:
+              dimension:
+                type: string
+          - name: amount
+            meta:
+              metrics:
+                total_order_amount:
+                  type: sum
+                average_order_size:
+                  type: average
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    models:
+      - name: orders
+        config:
+          meta:
+            joins:
+              - join: customers
+                sql_on: ${customers.customer_id} = ${orders.customer_id}
+            pre_aggregates:
+              - name: orders_daily_by_status
+                dimensions:
+                  - status
+                  - customers.country
+                metrics:
+                  - total_order_amount
+                  - average_order_size
+                filters:
+                  - status: completed
+                time_dimension: order_date
+                granularity: day
+                max_rows: 5000000
+                refresh:
+                  cron: "0 6 * * *"
+        columns:
+          - name: order_date
+            config:
+              meta:
+                dimension:
+                  type: date
+          - name: status
+            config:
+              meta:
+                dimension:
+                  type: string
+          - name: amount
+            config:
+              meta:
+                metrics:
+                  total_order_amount:
+                    type: sum
+                  average_order_size:
+                    type: average
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    joins:
+      - join: customers
+        sql_on: ${customers.customer_id} = ${orders.customer_id}
+
+    pre_aggregates:
+      - name: orders_daily_by_status
+        dimensions:
+          - status
+          - customers.country
+        metrics:
+          - total_order_amount
+          - average_order_size
+        filters:
+          - status: completed
+        time_dimension: order_date
+        granularity: day
+        max_rows: 5000000
+        refresh:
+          cron: "0 6 * * *"
+
+    dimensions:
+      - name: order_date
+        type: date
+      - name: status
+        type: string
+
+    metrics:
+      total_order_amount:
+        type: sum
+        sql: ${TABLE}.amount
+      average_order_size:
+        type: average
+        sql: ${TABLE}.amount
+    ```
+  </Tab>
+</Tabs>
+
+With this pre-aggregate, the following queries would be served from materialized data:
+
+- Total order amount by status, grouped by day, week, month, or year
+- Average order size by status, grouped by month
+- Total order amount filtered to completed orders
+- Order amount by customer country, grouped by quarter
+
+These queries would **not** match and would query the warehouse directly:
+
+- Queries grouped by a dimension not in the pre-aggregate (for example, `customer_id`)
+- Queries with hourly granularity (finer than the pre-aggregate's `day`)
+- Queries without `status = completed` or with a broader `status` filter
+- Queries with [Parameters](/semantic-layer/parameters), [user attributes](/workspace-admin/user-attributes) inside SQL, or [`sql_filter`](/semantic-layer/tables#sql-filter-row-level-security)
+- Queries including a non-additive metric like `count_distinct` unless they select exactly the pre-aggregate's dimensions at exactly its granularity (see [Exact match queries](#exact-match-queries))
+- Queries with raw SQL table calculations

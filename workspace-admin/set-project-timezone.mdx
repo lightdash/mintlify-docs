@@ -1,0 +1,216 @@
+---
+title: "Set up timezones"
+description: "Model your warehouse data and configure your project so timezones behave predictably"
+sidebarTitle: "Timezones"
+doc-type: tutorial
+---
+
+<Info>
+  **tl;dr:** store timestamps as timezone-aware types, use `DATE` for calendar values, and set your [project timezone](#configure-your-project-timezone) to the zone you report in.
+</Info>
+
+## Timezone conversion
+
+Lightdash converts the timezones of your data from their **source timezone** to a **report timezone**:
+
+- [**Source timezone**](#configure-your-connection) is the timezone of the raw data. It is defined in your warehouse, data types, modelling, and connection settings.
+- [Report timezone](#configure-your-project-timezone) is the timezone you want to see in your results. It is defined by the project/user preferences, and specific chart/dashboard configuration.
+
+## Pick the right column types in your warehouse
+
+Store your event timestamps as **timezone-aware types**. They unambiguously identify a moment in time and require no extra configuration. If you choose a naive timestamp it's timezone will be assumed to be in UTC unless you have configured the [default data timezone](#configure-your-connection).
+
+|  | ✅ Use this (timezone-aware) | ❌ Avoid this (timezone naive) |
+| :-- | :-- | :-- |
+| Warehouse type | `TIMESTAMPTZ, TIMESTAMP WITH TIME ZONE, `<br />`TIMESTAMP_LTZ, TIMESTAMP_TZ` | `TIMESTAMP_NTZ, TIMESTAMP WITHOUT TIME ZONE,`<br />`DATETIME` |
+| Timezone | Timezone baked into each timestamp | Timezone assumed from default data timezone (default UTC) |
+
+### Use `DATE` only for calendar values
+
+If a column represents a calendar date rather than a moment in time, store it as `DATE`. Lightdash treats `DATE` columns as fixed calendar dates and never shifts them: `2024-03-15` stays `2024-03-15` regardless of the project timezone.
+
+Use `DATE` for values like:
+
+- A user's date of birth
+- A subscription start date
+- An anniversary
+- A fiscal-period boundary
+
+`DATE` is **not** what you want for event timestamps.
+
+Don't store dates as strings. A value like `'2024-03-15'` in a `VARCHAR` column is opaque to both the warehouse and Lightdash: sorting and range filters break, and every operation needs a cast. Convert string dates to a proper `DATE` or `TIMESTAMP` type in your dbt model.
+
+## Configure your connection
+
+For timestamps without timezones (naive timestamps), we assume they follow the default data timezone. You can configure this in your warehouse connection settings:
+
+<Frame>
+  <img
+    alt="Data timezone field in warehouse connection advanced settings"
+    className="block dark:hidden"
+    src="/images/workspace-admin/set-project-timezone/data-timezone-setting-light.png"
+  />
+  <img
+    alt="Data timezone field in warehouse connection advanced settings"
+    className="hidden dark:block"
+    src="/images/workspace-admin/set-project-timezone/data-timezone-setting-dark.png"
+  />
+</Frame>
+
+- **If all your naive timestamps are in UTC** (very common, since most ELT pipelines normalize to UTC): leave it as UTC.
+- **If your naive timestamps are in a single non-UTC zone** (e.g. an on-prem system that logs in local time): set the data timezone to that zone. Lightdash will interpret naive values as being in that zone.
+- **If your naive timestamps have a mix of timezones** - we currently don't support overriding the timezone on a per-column level. Reach out to the team if you have a use case. If it's an option, consider re-modelling your data in a timezone-aware type.
+
+## Configure your project timezone
+
+In **Project settings** → **Timezone**, pick the zone you want reports to use. Lightdash will convert all reports from the raw data timezone into the project timezone. This is the zone in which:
+
+- Timestamps are displayed in tables, on chart axes, and in exports.
+- "Today" and "yesterday" are computed in relative date filters.
+- Data is bucketed in a per-day grouped bar chart.
+
+<Frame>
+  <img
+    alt="Project query timezone field in Project Settings"
+    className="block dark:hidden"
+    src="/images/workspace-admin/set-project-timezone/project-query-timezone-setting-light.png"
+  />
+  <img
+    alt="Project query timezone field in Project Settings"
+    className="hidden dark:block"
+    src="/images/workspace-admin/set-project-timezone/project-query-timezone-setting-dark.png"
+  />
+</Frame>
+
+By default the project timezone is UTC, which means all reports in Lightdash default to showing results in UTC. The project timezone can be [customised per chart or user](/personal-settings/timezone#report-timezone-resolution).
+
+## Opt a column out of timezone conversion
+
+Most columns don't need annotations. The main exception is system or audit columns where you want the raw stored value displayed, with no shift to the project timezone:
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: created_at_utc
+        meta:
+          dimension:
+            type: timestamp
+            convert_timezone: false
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    columns:
+      - name: created_at_utc
+        config:
+          meta:
+            dimension:
+              type: timestamp
+              convert_timezone: false
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: created_at_utc
+        type: timestamp
+        convert_timezone: false
+    ```
+  </Tab>
+</Tabs>
+
+Use cases: audit logs, system timestamps, pre-converted values. The column renders exactly what the warehouse stores.
+
+`DATE` columns need no annotation. If you declare a column as `type: date`, Lightdash treats it as a calendar value with no timezone applied, and renders it as-is.
+
+## Override a column timestamp domain
+
+Lightdash reads whether a timestamp column is timezone-aware or naive from your warehouse catalog, so you don't usually need to set this. Override it when the warehouse type doesn't match how the data is stored, for example a `TIMESTAMP_NTZ` column that already holds UTC instants.
+
+Set `timestamp_domain` to `aware` or `naive`:
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    columns:
+      - name: created_at
+        meta:
+          dimension:
+            type: timestamp
+            timestamp_domain: aware
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+ and Fusion">
+    ```yaml
+    columns:
+      - name: created_at
+        config:
+          meta:
+            dimension:
+              type: timestamp
+              timestamp_domain: aware
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    dimensions:
+      - name: created_at
+        type: timestamp
+        timestamp_domain: aware
+    ```
+  </Tab>
+</Tabs>
+
+The YAML value wins over the catalog. It's ignored on dimensions with custom `sql` and on additional dimensions, since the expression may change the domain. Interval children (`_day`, `_month`, ...) inherit from their base.
+
+## Naming conventions
+
+Lightdash doesn't enforce naming, but consistent suffixes make a model easier to read:
+
+- `..._at` for timezone-aware timestamps (e.g., `created_at`, `purchased_at`).
+- `..._date` for calendar `DATE` columns (e.g., `signup_date`, `effective_date`).
+- `..._at_utc` for columns you've explicitly marked `convert_timezone: false`.
+
+## Calendar dates vs timestamps: what shifts
+
+Whether a column moves with the chart's timezone depends on its type, not its name:
+
+- **`TIMESTAMP`** columns identify a moment in time, so they shift into the resolved timezone.
+- **`DATE`** columns are calendar values with no clock, so they never shift. `2024-03-15` stays `2024-03-15` for every viewer.
+
+The same rule applies to a time interval built from a column. A day, week, or month grouping of a timestamp produces a calendar value, so its buckets move with the timezone. An hour-or-finer grouping stays a timestamp.
+
+You can see which is which before you build. The dimension list shows an indicator next to each date and time dimension. Hover it for the detail:
+
+| Dimension | Indicator | What it means |
+| --- | --- | --- |
+| Timestamp | Default icon, "Timestamp, shifts with the chart's timezone" | Renders in the resolved timezone. |
+| Day-or-coarser interval of a timestamp | Default icon, "Calendar date, shifts with the chart's timezone" | Bucket boundaries move with the timezone. |
+| `DATE` column | Calendar pin, "Calendar date, not affected by the chart's timezone" | Never shifts. |
+| Timestamp with `convert_timezone: false` | Clock pin, "Timestamp shown as stored, not affected by the chart's timezone" | Shown exactly as stored. |
+
+<Frame>
+  <img
+    alt="Timezone indicator in the dimension list: hovering a date dimension shows 'Calendar date, not affected by the chart's timezone'"
+    className="block dark:hidden"
+    src="/images/workspace-admin/set-project-timezone/dimension-tz-indicator-light.png"
+  />
+  <img
+    alt="Timezone indicator in the dimension list: hovering a date dimension shows 'Calendar date, not affected by the chart's timezone'"
+    className="hidden dark:block"
+    src="/images/workspace-admin/set-project-timezone/dimension-tz-indicator-dark.png"
+  />
+</Frame>
+
+## Verify your setup
+
+Before building dashboards, run a quick smoke test:
+
+1. Open Explore on a model with a known timestamp column.
+2. Group by that dimension at **Day** granularity.
+3. Compare a few rows against the raw warehouse data.
+
+If the dates match what you'd expect for your project timezone, you're set. If they're off by a fixed amount, the connection's data timezone is the first thing to check.
+
+Once your data and project are configured, [Timezones in daily use](/personal-settings/timezone) covers how each chart resolves its timezone and how filters, dashboards, and scheduled deliveries behave.

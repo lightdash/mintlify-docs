@@ -1,11 +1,13 @@
 ---
 title: "Configure Lightdash to use an external database"
 sidebarTitle: Use External Database
+description: "Point Lightdash at a managed PostgreSQL database, with the extensions and production settings it needs"
 boost: 0.001
+doc-type: tutorial
 ---
 
 <Note>
-🛠 This page is for engineering teams self-hosting their own Lightdash instance. If you want to connect your data warehouse, go to the [Connect a project](/get-started/setup-lightdash/connect-project) guide.
+🛠 This page is for engineering teams self-hosting their own Lightdash instance. If you want to connect your data warehouse, go to the [Connect a project](/get-started/quickstart/connect-project) guide.
 </Note>
 
 <Info>
@@ -40,22 +42,29 @@ Optionally you can pass any of the [PostgreSQL Environment Variables](https://ww
 
 Lightdash requires the following extensions to be installed on the database:
 
-* `uuid-ossp` \- used for generating unique IDs
-* `pgvector` \- **required if you use an [enterprise license key](/self-host/customize-deployment/enterprise-license-keys)**. Lightdash uses `pgvector` to store embeddings that power enterprise AI features (AI Analyst, AI agents, and related capabilities). Install it on your Postgres database before starting a licensed Lightdash instance — on managed services like AWS RDS, Google Cloud SQL, and Azure Database for PostgreSQL, enable the `vector` extension in your instance's configuration, then run `CREATE EXTENSION IF NOT EXISTS vector;` in the Lightdash database.
+* `uuid-ossp` — used for generating unique IDs
+* `pgvector` — **required for Enterprise AI features** (AI Analyst embeddings and verified answers). On managed services such as AWS RDS, Google Cloud SQL, and Azure Database for PostgreSQL, enable the `vector` extension in the instance's configuration first, then run `CREATE EXTENSION IF NOT EXISTS vector;` in the Lightdash database.
+
+## Running Postgres in production
+
+Beyond the connection settings above, this is what to run on the database side to match Lightdash Cloud:
+
+- **Managed Postgres** (Cloud SQL / RDS / Azure Database) — version **14+** recommended (12 is the documented minimum).
+- **High availability:** a regional / multi-AZ primary, with a **cross-region replica for disaster recovery**.
+- **Backups:** daily automated backups with **point-in-time recovery enabled**, ≥ 7 days of transaction logs, and 7–31 retained backups.
+- **SSD storage** with auto-resize.
+- **Sizing:** 2 vCPU / 8 GB RAM is a solid single-org baseline; 4 vCPU / 16 GB+ for large orgs or heavy scheduler usage.
+- **Connection budget:** every backend and worker pod opens its own pool. Set `PGMAXCONNECTIONS: "50"` and `PGMINCONNECTIONS: "0"` in `configMap`, then make sure Postgres `max_connections` covers `pods × PGMAXCONNECTIONS` with headroom.
+- **Query insights / slow-query logging** enabled on the database side.
+- **TLS to the database** via the chart's `ssl` block, which injects `PGSSLMODE=verify-full` and `NODE_EXTRA_CA_CERTS`:
+
+```yaml
+ssl:
+  enabled: true
+  configMapName: lightdash-db-ca   # your CA cert
+  certFileName: ca.pem
+```
 
 ## Migrations
 
-Migrations are ran automatically on starting the Lightdash server or workers. When upgrading Lightdash, migrations will be ran automatically.
-
-If a migration gets stuck — for example after an interrupted deploy:
-
-- **On Lightdash `1.123.0` and later**, an interrupted migration's lock expires on its own and another process takes over automatically. To inspect migration state, or release a lock that is genuinely stuck, run the built-in `migrate` command inside a Lightdash container (`kubectl exec` / `docker compose exec`):
-
-  ```bash
-  pnpm -F backend migrate-production status
-  pnpm -F backend migrate-production unlock --actor "<your identity>"
-  ```
-
-  Do **not** edit the `knex_migrations_lock` table manually on these versions — it can release a lock that a live migration legitimately holds. The [upgrade runbook](/self-host/upgrade-runbook#recovery) covers how to read `status`, when `unlock` refuses, and what resumes on its own afterwards.
-
-- **On versions before `1.123.0`**, if migrations fail due to a pg\_lock error, check for a table called `knex_migrations_lock` to manually release the lock.
+Migrations run automatically when the Lightdash server or workers start, including on upgrade. Do not clear the `knex_migrations_lock` table by hand on `1.123.0` and later — use `migrate status` to inspect a stuck migration and `migrate unlock --actor` to release its lease. For multi-replica deployments, enable the migration job so replicas don't race. Both are covered in the [upgrade runbook](/self-host/upgrade-runbook).

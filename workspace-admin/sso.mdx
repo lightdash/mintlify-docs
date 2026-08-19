@@ -1,0 +1,125 @@
+---
+title: SSO providers
+description: Overview of supported Single Sign-On providers across Lightdash plans
+doc-type: reference
+---
+
+Lightdash supports multiple SSO providers for secure authentication. This page provides an overview of which providers are available on each plan.
+
+## Setup for Lightdash Cloud vs self-hosted
+
+<Tabs>
+  <Tab title="Lightdash Cloud">
+    If you're on **Lightdash Cloud**, organization admins configure SSO directly from **Organization settings → Single Sign-On** — no environment variables, and no need to involve the Lightdash team. See [Configure SSO](/workspace-admin/sso/setup) for the full self-serve setup.
+
+    <Warning>
+      Saving provider credentials is not enough to make SSO available during sign-in. Your organization must also have at least one [verified domain](/workspace-admin/sso/verified-domains); otherwise users on that domain will keep seeing the default login options.
+    </Warning>
+
+    <Note>
+      When following the provider setup guides below, you can skip any steps about setting environment variables — those only apply to self-hosted instances. Focus on the provider-side configuration (creating the OAuth app, redirect URIs, etc.), then enter the resulting values in **Organization settings → Single Sign-On**.
+    </Note>
+  </Tab>
+  <Tab title="Self-hosted">
+    If you're **self-hosting** Lightdash, you configure SSO by setting environment variables directly in your deployment. Follow the [self-hosted SSO configuration guide](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash) for full instructions.
+  </Tab>
+</Tabs>
+
+## SSO providers by plan
+
+| Provider | Cloud Pro | Enterprise | Self-hosted |
+| :--- | :---: | :---: | :---: |
+| Google | <Icon icon="check" /> | <Icon icon="check" /> | <Icon icon="check" /> |
+| Okta |  | <Icon icon="check" /> | <Icon icon="check" /> |
+| Azure AD | | <Icon icon="check" /> | <Icon icon="check" /> |
+| OneLogin | | <Icon icon="check" /> | <Icon icon="check" /> |
+| Generic OIDC | | <Icon icon="check" /> | <Icon icon="check" /> |
+
+<Note>
+  Self-hosted instances can configure any supported SSO provider by setting environment variables directly. See the [self-hosted SSO configuration guide](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash) for setup instructions. Lightdash Cloud customers configure SSO from **Organization settings → Single Sign-On** — see [Configure SSO](/workspace-admin/sso/setup).
+</Note>
+
+## URL requirements for organization-managed SSO
+
+When an organization admin saves a per-organization SSO configuration, Lightdash validates that any provider URL it has to fetch resolves to a **public `https://` address**. This protects against server-side request forgery (SSRF) since the URL is requested by the Lightdash backend during issuer discovery.
+
+The following fields are validated at save time:
+
+| Provider | Validated field | What gets checked |
+| :--- | :--- | :--- |
+| Okta | `oktaDomain` | The domain is used to build `https://<oktaDomain>` — it must resolve to a public host. |
+| Generic OIDC | `metadataDocumentEndpoint` | The OIDC discovery document URL must use `https://` and resolve to a public host. |
+
+URLs that point to `localhost`, loopback addresses, private networks, or other internal/non-routable addresses are rejected with a `ParameterError`. Azure AD is not affected because its endpoints are templated from the tenant ID.
+
+<Note>
+  This check runs only when configuration is **saved through the API or admin UI**. Existing stored configurations and environment-variable-based self-hosted configurations are not re-validated.
+</Note>
+
+Example error returned when saving an invalid value:
+
+```json
+{
+  "error": {
+    "name": "ParameterError",
+    "message": "OIDC discovery document URL must be a valid public https URL — localhost, private and internal network addresses are not allowed."
+  }
+}
+```
+
+## Provider details
+
+### Google
+
+OAuth 2.0-based authentication using Google accounts. Ideal for organizations using Google Workspace.
+
+- **Included in**: Cloud Pro, Enterprise, Self-hosted
+- **Setup guide**: [Google SSO configuration](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash#google)
+
+### Okta
+
+OpenID Connect (OIDC) integration with Okta. Supports group synchronization and SCIM provisioning.
+
+- **Included in**: Cloud Pro, Enterprise, Self-hosted
+- **Features**: Group sync, JIT provisioning, custom authorization servers
+- **Setup guide**: [Okta SSO configuration](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash#okta)
+
+### Azure Active Directory
+
+OpenID Connect integration with Microsoft Azure AD. Supports both client secret and private key JWT authentication.
+
+- **Included in**: Enterprise, Self-hosted
+- **Features**: Multiple authentication methods, tenant isolation
+- **Setup guide**: [Azure AD configuration](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash#azure-active-directory)
+
+### OneLogin
+
+OpenID Connect integration with OneLogin identity platform.
+
+- **Included in**: Enterprise, Self-hosted
+- **Setup guide**: [OneLogin configuration](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash#one-login)
+
+### Generic OIDC
+
+Connect any OpenID Connect-compliant identity provider (Keycloak, Auth0, PingIdentity, etc.).
+
+- **Included in**: Enterprise, Self-hosted
+- **Features**: Flexible configuration, supports private_key_jwt authentication
+- **Setup guide**: [Generic OIDC configuration](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash#openid-connect)
+
+Once SSO is in place, [SCIM](/workspace-admin/sso/scim) can provision users and [groups](/workspace-admin/manage-groups) from your identity provider automatically.
+
+## Additional authentication options
+
+### Password authentication
+
+Email/password authentication is available on all plans and enabled by default. Organizations using SSO can disable password authentication to enforce SSO-only login.
+
+### Warehouse SSO (Enterprise only)
+
+Enterprise customers can also configure SSO for data warehouse connections:
+
+- **Snowflake OAuth** - Users authenticate with Snowflake using their corporate identity
+- **Databricks OAuth** - User-to-Machine (U2M) OAuth flow for Databricks
+
+These create per-user warehouse credentials rather than shared project credentials.

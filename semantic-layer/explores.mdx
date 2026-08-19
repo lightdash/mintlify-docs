@@ -1,0 +1,273 @@
+---
+title: "Explores"
+sidebarTitle: "Explores"
+description: Curate multiple ways to query the same table for different audiences
+doc-type: reference
+---
+
+
+## What this guide covers
+
+You'll learn how to use the `explores` config in Lightdash to define **multiple curated table experiences** from a single dbt model.
+
+Each explore appears as its own table in the **Query from tables** list in Lightdash.
+
+---
+
+## When to use explores
+
+Use the explores config when you want to create tailored versions of the same table for different teams or use cases. For example:
+
+- Show different columns or joins depending on the audience (e.g. Users + CRM for Sales, Users + product usage for PMs)
+- Customize each version of the table to match a specific workflow or department
+- Restrict access to certain versions or fields using user attributes (e.g. exec-only views, region-based filters, or hiding PII)
+
+---
+
+## Quickstart
+
+
+<Steps>
+  <Step title="Start with your base model">
+    This is your regular dbt model, for example, `deals`.
+
+    <Tabs>
+      <Tab title="dbt v1.9 and earlier">
+        ```yaml
+        models:
+          - name: deals
+            meta:
+              primary_key: deal_id
+        ```
+      </Tab>
+      <Tab title="dbt v1.10+">
+        ```yaml
+        models:
+          - name: deals
+            config:
+              meta:
+                primary_key: deal_id
+        ```
+      </Tab>
+      <Tab title="Lightdash YAML">
+        ```yaml
+        type: model
+        name: deals
+
+        primary_key: deal_id
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+  <Step title="Add an explores section under meta">
+
+    Use the `explores` config to define multiple versions of the table. Each explore has its own `label`, `joins`, joined fields, and access rules.
+
+    <Tabs>
+      <Tab title="dbt v1.9 and earlier">
+        ```yaml
+        models:
+          - name: deals
+            meta:
+              primary_key: deal_id
+              label: Deals (Basic)
+              description: Basic deals table with no joins
+              explores:
+                deals_accounts:
+                  label: Deals w/Accounts
+                  description: Deals table with accounts joined in, limited acount fields included
+                  joins:
+                    - join: accounts
+                      relationship: many-to-one
+                      sql_on: ${deals.account_id} = ${accounts.account_id}
+                      fields: [industry, segment, count_accounts]
+                deals_exec_view:
+                  label: Deals (Exec View)
+                  description: Deals table with account info, for execs only, all acount fields included
+                  required_attributes:
+                    is_exec: "true"
+                  joins:
+                    - join: accounts
+                      relationship: many-to-one
+                      sql_on: ${deals.account_id} = ${accounts.account_id}
+        ```
+      </Tab>
+      <Tab title="dbt v1.10+">
+        ```yaml
+        models:
+          - name: deals
+            config:
+              meta:
+                primary_key: deal_id
+                label: Deals (Basic)
+                description: Basic deals table with no joins
+                explores:
+                  deals_accounts:
+                    label: Deals w/Accounts
+                    description: Deals table with accounts joined in, limited acount fields included
+                    joins:
+                      - join: accounts
+                        relationship: many-to-one
+                        sql_on: ${deals.account_id} = ${accounts.account_id}
+                        fields: [industry, segment, count_accounts]
+                  deals_exec_view:
+                    label: Deals (Exec View)
+                    description: Deals table with account info, for execs only, all acount fields included
+                    required_attributes:
+                      is_exec: "true"
+                    joins:
+                      - join: accounts
+                        relationship: many-to-one
+                        sql_on: ${deals.account_id} = ${accounts.account_id}
+        ```
+      </Tab>
+      <Tab title="Lightdash YAML">
+        ```yaml
+        type: model
+        name: deals
+
+        primary_key: deal_id
+        label: Deals (Basic)
+        description: Basic deals table with no joins
+
+        explores:
+          deals_accounts:
+            label: Deals w/Accounts
+            description: Deals table with accounts joined in, limited acount fields included
+            joins:
+              - join: accounts
+                relationship: many-to-one
+                sql_on: ${deals.account_id} = ${accounts.account_id}
+                fields: [industry, segment, count_accounts]
+          deals_exec_view:
+            label: Deals (Exec View)
+            description: Deals table with account info, for execs only, all acount fields included
+            required_attributes:
+              is_exec: "true"
+            joins:
+              - join: accounts
+                relationship: many-to-one
+                sql_on: ${deals.account_id} = ${accounts.account_id}
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+  <Step title="Preview the result in Lightdash">
+    Once you commit and deploy your dbt changes:
+
+    - Go to Query from tables in Lightdash
+    - You'll now see:
+      - **Deals (Basic)**
+      - **Deals w/Accounts**
+      - **Deals (Exec View)** (only visible to users with the required attribute)
+
+    Each shows up as its own table in the UI, but all use the same `deals` model.
+  </Step>
+</Steps>
+
+
+## Table config options you can use
+
+Inside each explore definition, you can use any of the existing table config options, including:
+
+- `label`
+- `joins`
+- `sql_filter`
+- `description`
+- `default_filters`
+- `required_attributes`
+- `additional_dimensions`
+
+[📚 Read the Tables reference docs for all configuration options](/semantic-layer/tables#table-properties)
+
+---
+
+## Adding custom dimensions to an explore
+
+Use `additional_dimensions` to define dimensions that are scoped only to a specific explore. This is useful when you need custom dimensions that reference joined tables, which wouldn't make sense at the model level.
+
+### When to use explore-scoped dimensions
+
+- You have multiple explores from the same model with different joins
+- You need dimensions that combine fields from the base model and joined tables
+- You want to keep explore-specific logic out of the base model
+
+### Example
+
+<Tabs>
+  <Tab title="dbt v1.9 and earlier">
+    ```yaml
+    models:
+      - name: orders
+        meta:
+          primary_key: order_id
+          explores:
+            orders_with_custom_dims:
+              label: Orders with Custom Dimensions
+              joins:
+                - join: customers
+                  sql_on: ${orders.customer_id} = ${customers.customer_id}
+              additional_dimensions:
+                full_name:
+                  type: string
+                  sql: "CONCAT(${customers.first_name}, ' ', ${customers.last_name})"
+                  label: Customer Full Name
+    ```
+  </Tab>
+  <Tab title="dbt v1.10+">
+    ```yaml
+    models:
+      - name: orders
+        config:
+          meta:
+            primary_key: order_id
+            explores:
+              orders_with_custom_dims:
+                label: Orders with Custom Dimensions
+                joins:
+                  - join: customers
+                    sql_on: ${orders.customer_id} = ${customers.customer_id}
+                additional_dimensions:
+                  full_name:
+                    type: string
+                    sql: "CONCAT(${customers.first_name}, ' ', ${customers.last_name})"
+                    label: Customer Full Name
+    ```
+  </Tab>
+  <Tab title="Lightdash YAML">
+    ```yaml
+    type: model
+    name: orders
+
+    primary_key: order_id
+
+    explores:
+      orders_with_custom_dims:
+        label: Orders with Custom Dimensions
+        joins:
+          - join: customers
+            sql_on: ${orders.customer_id} = ${customers.customer_id}
+        additional_dimensions:
+          full_name:
+            type: string
+            sql: "CONCAT(${customers.first_name}, ' ', ${customers.last_name})"
+            label: Customer Full Name
+    ```
+  </Tab>
+</Tabs>
+
+### Available properties
+
+Explore-scoped `additional_dimensions` support the same properties as [column-level additional dimensions](/semantic-layer/dimensions#additional-dimensions):
+
+| Property | Required | Description |
+| :------- | :------- | :---------- |
+| type | Yes | Dimension type: `string`, `number`, `date`, `timestamp`, or `boolean` |
+| sql | Yes | SQL expression for the dimension. Can reference fields from the base model and joined tables using `${table.field}` syntax |
+| label | No | Display name in Lightdash |
+| description | No | Description shown on hover |
+| hidden | No | Set to `true` to hide from the UI |
+| format | No | Spreadsheet-style format expression |
+| time_intervals | No | For date/timestamp types, specify which intervals to generate |
+| groups | No | Group the dimension in the sidebar |
+| required_attributes | No | Limit access based on user attributes |

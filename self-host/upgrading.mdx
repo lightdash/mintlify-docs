@@ -1,0 +1,72 @@
+---
+title: "Upgrading Lightdash"
+sidebarTitle: "Upgrading"
+description: "How Lightdash versioning works, when to upgrade a self-hosted deployment, and how to plan a safe rollout"
+doc-type: reference
+---
+
+<Note>
+🛠 This page is for engineering teams self-hosting their own Lightdash instance. If you're on Lightdash Cloud, upgrades are handled for you automatically.
+</Note>
+
+Lightdash uses semantic versioning in the form `major.minor.patch`. Each segment signals how significant the changes are and how much care to take when upgrading.
+
+## How Lightdash versioning works
+
+- **Patch versions** (`x.x.PATCH`) are small fixes. Safe to pick up as part of routine upgrades.
+- **Minor versions** (`x.MINOR.x`) introduce new features or larger changes that can be backwards incompatible. Review the release notes before upgrading.
+- **Major versions** (`MAJOR.x.x`) introduce breaking changes to the API or the self-hosted architecture. Expect to make configuration, infrastructure, or integration changes, and read the release notes before upgrading.
+
+Lightdash ships continuously and does **not** publish an LTS or "stable" tag. Pin `image.tag` to a specific [version](https://hub.docker.com/r/lightdash/lightdash/tags) in production and upgrade deliberately — pinning makes deployments repeatable and avoids unexpected changes. Using `latest` is fine for a local laptop instance.
+
+## Upgrade cadence
+
+Upgrade at least **monthly**. Falling many minor versions behind makes the eventual migration jump riskier. Treat every upgrade as a controlled rollout: upgrade UAT / pre-production first, run your validation (SSO, warehouse connections, dbt refreshes, scheduled jobs, embeds, critical dashboards), then roll out to production.
+
+Your UAT environment should mirror production closely enough that upgrade testing is meaningful:
+
+- **The same configuration and environment variables as production** — feature flags, SSO, SMTP, object storage, license key, scheduler and headless browser config. Differences here are the most common reason an upgrade passes pre-production but fails in production.
+- **A replica of the production Lightdash database** (including `pgvector`), not an empty or hand-seeded one. Real data volume, migrations, and project/role/embed state are what surface upgrade regressions. Refresh the replica from production before each round of testing.
+
+## Monitor security advisories
+
+[GitHub Security Advisories](https://github.com/lightdash/lightdash/security/advisories) are the canonical source for published Lightdash vulnerabilities. Docker Hub and Docker Scout can provide supplemental findings, but pulling an image does not subscribe your team to security notifications and existing containers do not update automatically.
+
+Opt in to automated monitoring by polling GitHub's public repository-advisories API every six hours:
+
+```text
+GET https://api.github.com/repos/lightdash/lightdash/security-advisories?state=published&sort=updated&direction=desc&per_page=100
+Accept: application/vnd.github+json
+X-GitHub-Api-Version: 2026-03-10
+```
+
+The endpoint does not require authentication. Follow the `Link` response header when it is present and use `ETag` with `If-None-Match` to avoid downloading unchanged results. Persist each advisory's `ghsa_id`, `updated_at`, and a hash of its normalized content, then alert when an advisory is new or either value changes. The content hash is necessary because GitHub can update affected-product metadata without advancing `updated_at`. A non-null `withdrawn_at` means the advisory was withdrawn.
+
+Compare your deployed version against each applicable `vulnerabilities[].vulnerable_version_range` with a SemVer library. Treat an advisory without `patched_versions` as affected until the advisory says otherwise. The advisory's `html_url` is the canonical remediation guide.
+
+Read the running version from the unauthenticated health endpoint, or from the version your deployment manifest pins:
+
+```bash
+curl --fail --silent https://lightdash.example.com/api/v1/health |
+  jq --raw-output '.results.version'
+```
+
+See the [Lightdash security policy](https://github.com/lightdash/lightdash/security/policy) for a cache-aware polling example and the complete operator contract.
+
+## Running an upgrade
+
+Start with the [release-safety signal](/self-host/upgrade-safety) for your upgrade span: it tells you whether a rolling update is advised and whether there are required stops on the way. Then follow the [upgrade runbook](/self-host/upgrade-runbook) for the sequence itself — Kubernetes, docker compose, or automation — plus the `migrate` command reference, the recovery paths, and [rollback](/self-host/upgrade-runbook#rolling-back).
+
+If you're running Lightdash on your own laptop with Docker, none of that applies: pull the latest image and restart.
+
+```bash
+docker pull lightdash/lightdash
+```
+
+For a security update, pull the advisory's fixed version explicitly and verify the container was replaced.
+
+If the upgrade goes wrong, [recovery](/self-host/upgrade-runbook#recovery) covers reading a failed migration Job and running the `migrate` commands inside a pod to see what state the schema is actually in.
+
+## Update the Lightdash CLI
+
+Your CLI version should match the version your instance runs, so after upgrading a deployment, everyone using the CLI should [update it to match](/workflow/cli/install#updating-the-lightdash-cli).

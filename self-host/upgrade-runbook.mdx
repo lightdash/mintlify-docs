@@ -1,12 +1,12 @@
 ---
 title: "Upgrade runbook"
-sidebarTitle: "Upgrade runbook"
-description: "Step-by-step sequences for upgrading a self-hosted Lightdash deployment on Kubernetes, docker compose, or automation, plus the migration command reference and recovery paths."
+description: "Step-by-step sequences for upgrading a self-hosted deployment on Kubernetes, docker compose, or automation"
 tag: "Beta"
+doc-type: reference
 ---
 
 <Info>
-  **Safety-gated upgrades are in [Beta](/references/workspace/feature-maturity-levels).** Every command on this page ships in a released image and the recovery paths are supported, but we're still refining the workflow on our own instances, so some sequences and outputs will change.
+  **Safety-gated upgrades are in [Beta](/support/feature-maturity-levels).** Every command on this page ships in a released image and the recovery paths are supported, but we're still refining the workflow on our own instances, so some sequences and outputs will change.
 
   Feedback shapes where this goes next. [Open an issue](https://github.com/lightdash/lightdash/issues) if a step doesn't fit your deployment.
 </Info>
@@ -162,7 +162,7 @@ docker compose run --rm --entrypoint pnpm lightdash \
 
 Preflight probes the live database and reports one line per check, then a decision:
 
-```
+```text
 [RED PASS] version-path: The migration ledger structurally matches the target artifact direct-predecessor or up-to-date path
 [RED PASS] postgres-version: ...
 [RED PASS] migration-privileges: ...
@@ -259,7 +259,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://lightdash.example.com/api/v1/r
 
 A `503` carries a `reason`: `schema_pending` (migrations still outstanding), `migration_parked` (a migration failed and stopped), `migration_ledger_unavailable`, or `db_unavailable`. `/api/v1/livez` answers without touching the database, which is why it is the right liveness probe and the wrong readiness signal.
 
-Confirm the version too, then upgrade the [Lightdash CLI](/guides/cli/how-to-upgrade-cli) to match.
+Confirm the version too, then upgrade the [Lightdash CLI](/workflow/cli/install#updating-the-lightdash-cli) to match.
 </Step>
 
 <Step title="If the release is bad">
@@ -413,6 +413,14 @@ kubectl exec deploy/lightdash-backend -- \
 | Kubernetes, pods migrating at startup | Self-resumes. The waiting followers re-race for the freed lease and one of them takes over |
 | Kubernetes with `migrationJob.enabled` | May need re-triggering. If the hook Job exhausted its `backoffLimit`, nothing is left to claim the lease. Re-run `helm upgrade` to recreate the hook Job |
 | docker compose | Needs a container restart: `docker compose restart lightdash` |
+
+### Rebuilding an instance from scratch
+
+Three things are needed to stand an instance back up, so keep all three recoverable:
+
+- the Postgres backup,
+- the `LIGHTDASH_SECRET` (it decrypts data at rest — losing it means losing access to encrypted data), and
+- your Helm values.
 
 ## Rolling back
 

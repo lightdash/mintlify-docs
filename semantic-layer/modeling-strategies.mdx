@@ -1,0 +1,193 @@
+---
+title: dbt modeling strategies for Lightdash
+sidebarTitle: Modeling strategies
+description: How to structure your dbt models so they explore well in Lightdash
+doc-type: guide
+---
+
+When building your dbt models for Lightdash, these strategies will help you create a better experience for your end users and improve query performance.
+
+## Choosing your data modeling approach
+
+When deciding between wide materialized tables and smaller normalized tables that require multiple joins, you're balancing trade-offs across three dimensions: **performance**, **self-serve usability**, and **analytical depth**.
+
+There's no one-size-fits-all answer. The right approach depends on your team's needs and how you want to empower your users.
+
+### Wide tables vs. multi-join models
+
+| Factor | Wide tables | Multi-join models |
+|--------|-------------|-------------------|
+| **Performance** | Generally faster since they're materialized at the grain you need for specific analyses | Joins computed at query time, though mitigated by fanout protection |
+| **Self-serve usability** | Easier for business users with all fields in one place, less overwhelming | Can be intimidating since 10 joined tables on one page is a lot for most users |
+| **Analytical depth** | May require multiple wide tables for different use cases | More flexible for complex analyses across multiple dimensions |
+
+### When wide tables work best
+
+Wide tables are ideal when you want to **empower self-serve analytics**. Business users can navigate the "New chart" page without confusion, and all related fields appear together in the Lightdash sidebar.
+
+Wide tables offer several advantages:
+
+- **Faster query performance**: Fewer joins mean faster queries at runtime
+- **Better user experience**: All related fields appear together in a single section in the Lightdash sidebar, making it easier for business users to find what they need
+- **Simpler to understand**: End users don't need to understand complex relationships between multiple tables
+- **More accurate [AI agents](/agents)**: AI agents have more context when working with wide tables, so they provide more accurate answers
+
+Modern columnar data warehouses (like Snowflake, BigQuery, and Redshift) are optimized for wide table formats. The star schema was initially introduced to optimize performance for row-based data warehouses, but with today's columnar warehouses, wide and flat often performs better.
+
+### When multi-join models are necessary
+
+Some analyses genuinely require multiple joins. For example, analyzing Bookings while filtering by an upstream dimension (like organic SEO traffic source) and breaking down by a downstream dimension (like a specific location) will likely require joins to be correct.
+
+Lightdash handles multi-join explores well technically, and [fanout protection](/semantic-layer/joins#sql-fanouts) ensures accuracy. However, looking at a page with many joined tables can be overwhelming for business users who aren't familiar with the data model.
+
+### Common approaches
+
+Most Lightdash customers land on one of these patterns:
+
+- **Wide tables for self-serve**: Build wide, materialized tables for common business use cases. This is the most popular approach when the goal is enabling business users to explore data independently.
+
+- **Both pathways**: Maintain both wide tables (for business users) and complex multi-join explores (for power users or the data team). You can [hide the complex version](/workspace-admin/user-attributes) from business users to reduce confusion.
+
+- **Multi-join only**: Some teams use only the normalized, multi-join approach. This works well technically, but means the data team (or AI agents) often remain a bottleneck since the ad hoc query page can be intimidating for business users. AI agents are getting better at handling multi-join explores, so this may become less of a concern over time.
+
+### How to implement wide tables
+
+If your data is already modeled in a star schema upstream, you can maintain that structure in your transformation layer, then combine the models into wide tables that you surface in the BI layer.
+
+Build these wider tables for key business areas where you might want specialized analysis or [AI agents](/agents) capabilities, such as:
+
+- Revenue and sales
+- Marketing and campaigns  
+- Operations and logistics
+- Customer behavior
+
+For example, instead of having separate `orders`, `customers`, and `products` tables that need to be joined, create a wide `orders_enriched` table that includes all the relevant customer and product information alongside the order data.
+
+## One schema.yml file per dbt model
+
+We recommend structuring your dbt project with **one `.yml` file per model** (or `.sql` file).
+
+This approach makes it easier to:
+
+- Navigate through your YAML files as your project grows
+- Manage and maintain individual models
+- Avoid cluttered shared schema files
+- Keep related configuration together
+
+Here's an example structure:
+
+```
+models/
+  orders.sql
+  orders.yml
+  customers.sql
+  customers.yml
+  products.sql
+  products.yml
+```
+
+While Lightdash supports having all model definitions in a single `schema.yml` file at the directory level, we've found that separate files per model scales better as your project grows.
+
+
+
+## Optimizing query performance and warehouse costs
+
+All Lightdash queries run against your data warehouse. These strategies help improve performance and reduce costs.
+
+| Strategy | Performance impact | Cost impact |
+|----------|-------------------|-------------|
+| [Materialize as tables](#materialize-models-as-tables) | High | High |
+| [Index and partition data](#index-and-partition-your-data) | High | High |
+| [Use pre-aggregates](#use-pre-aggregates) | High | High |
+| [Enable caching](#leverage-caching) | Medium | High |
+| [Limit exposed models](#limit-models-exposed-to-the-bi-layer) | Low | Medium |
+| [Monitor usage](#monitor-query-usage) | — | Visibility |
+
+### Materialize models as tables
+
+Views re-execute SQL on every query. [Tables](https://docs.getdbt.com/docs/build/materializations#table) store pre-computed results.
+
+```yaml
+# Recommended for frequently queried models
+{{ config(materialized='table') }}
+
+# For large datasets with append-only updates
+{{ config(materialized='incremental') }}
+```
+
+Schedule dbt runs (daily/hourly) to keep tables fresh while avoiding on-demand computation. For large datasets with append-only updates, consider [incremental models](https://docs.getdbt.com/docs/build/incremental-models).
+
+### Index and partition your data
+
+Proper indexing and partitioning in your data warehouse can dramatically improve query performance and reduce costs. These optimizations happen at the warehouse level and benefit all queries, including those from Lightdash.
+
+**Partitioning** divides large tables into smaller segments based on a column (typically a date). Queries that filter on the partition column only scan relevant partitions instead of the entire table.
+
+**Clustering/indexing** organizes data within partitions to speed up filtering and sorting on frequently queried columns.
+
+| Warehouse | Partitioning | Clustering/Indexing |
+|-----------|--------------|---------------------|
+| BigQuery | `partition_by` | `cluster_by` |
+| Snowflake | Automatic micro-partitions | `cluster_by` |
+| Redshift | `dist` and `sort` keys | `sort` keys |
+| Databricks | `partition_by` | `zorder` |
+
+Example dbt configuration for BigQuery:
+
+```yaml
+{{ config(
+    materialized='table',
+    partition_by={
+      "field": "created_at",
+      "data_type": "date",
+      "granularity": "day"
+    },
+    cluster_by=["customer_id", "status"]
+) }}
+```
+
+Best practices:
+- Partition by date columns used in time-based filters (e.g., `created_at`, `order_date`)
+- Cluster by columns frequently used in `WHERE` clauses or `GROUP BY`
+- Review your warehouse's query history to identify high-cost queries that could benefit from partitioning
+
+### Use pre-aggregates
+
+Pre-aggregates are summary tables that compute metrics at a coarser grain ahead of time. They're separate from the wide-vs-normalized architecture decision, but they can provide significant performance improvements regardless of which modeling approach you choose.
+
+For example, if users frequently query daily revenue by region, a pre-aggregated `daily_revenue_by_region` table will be much faster than computing it from raw transaction data at query time.
+
+Pre-aggregates are especially useful for:
+- Dashboard queries that aggregate large datasets
+- Commonly used metric combinations
+- Time-series data at standard intervals (daily, weekly, monthly)
+
+You can implement pre-aggregates in two ways:
+- **In Lightdash**: Use [Lightdash pre-aggregates](/semantic-layer/pre-aggregates) to automatically cache aggregated results
+- **In dbt or your warehouse**: Pre-join and materialize tables directly as dbt models or warehouse tables if you prefer to manage them outside of Lightdash
+
+The trade-off is maintenance overhead. You need to keep pre-aggregates in sync with your source data and ensure users understand when to use them vs. the detailed tables.
+
+### Leverage caching
+
+[Caching](/semantic-layer/caching) stores query results so repeat visits skip the warehouse entirely. Most effective for:
+
+- Frequently accessed dashboards
+- Charts without dynamic time filters
+- Scheduled deliveries
+
+### Limit models exposed to the BI layer
+
+Only expose production-ready, optimized models to your users in Lightdash. Staging models, intermediate transformations, work-in-progress and tables that are not yet optimized for query performance should remain hidden from end users to avoid confusion and ensure they're working with reliable, performant data.
+
+- **[dbt tags](/semantic-layer/tables#limiting-tables-with-dbt-tags)**: Control which models appear in Lightdash
+- **[User attributes](/workspace-admin/user-attributes)**: Restrict model access by role
+
+### Monitor query usage
+
+[Query tags](/workspace-admin/usage-analytics#query-tags) help you identify optimization opportunities:
+
+- Tables that need materialization or indexing
+- Expensive queries to optimize
+- Usage patterns for caching decisions
+- Cost attribution by dashboard, chart, or user
