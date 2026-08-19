@@ -253,7 +253,7 @@ node scripts/check-external-links.js
 - **validate-docs.js** - Enforces internal links, image locations, page frontmatter, navigation reachability, and redirect integrity. Pass `--output <file>` for structured JSON findings.
 - **check-external-links.js** - Records unavailable third-party links as advisory JSON findings without blocking content changes.
 
-**Automated checks:** Pull requests block only on findings in changed files. The validation workflow updates one PR comment and publishes the complete JSON report as an artifact. Full-site and external-link audits run on a schedule.
+**Automated checks:** Pull requests block only on findings in changed files. The validation workflow adds inline annotations, updates one PR comment, and publishes the complete JSON report as an artifact. Full-site and external-link audits run on a schedule.
 
 #### Auto-fixing Image Location Issues
 

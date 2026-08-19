@@ -5,7 +5,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const test = require('node:test');
 
-const { checkExternalLinks, validateDocs } = require('../scripts/docs-validation');
+const { buildWorkflowAnnotations, checkExternalLinks, validateDocs } = require('../scripts/docs-validation');
 
 function fixture(files) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'docs-validation-'));
@@ -134,4 +134,23 @@ test('leaves OpenAPI-generated routes to Mintlify validation', async (t) => {
   const report = await validateDocs({ root });
 
   assert.equal(report.status, 'passed');
+});
+
+test('builds escaped annotations within GitHub step limits', () => {
+  const findings = Array.from({ length: 12 }, (_, index) => ({
+    severity: 'error',
+    file: `guide,file:${index}.mdx`,
+    line: index + 1,
+    rule: 'link:broken-internal',
+    message: 'Broken 100%\nnext line',
+  }));
+
+  const annotations = buildWorkflowAnnotations(findings);
+
+  assert.equal(annotations.commands.length, 10);
+  assert.equal(annotations.omitted, 2);
+  assert.equal(
+    annotations.commands[0],
+    '::error file=guide%2Cfile%3A0.mdx,line=1,title=link%3Abroken-internal::Broken 100%25%0Anext line',
+  );
 });

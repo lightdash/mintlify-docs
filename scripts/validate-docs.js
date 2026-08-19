@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { validateDocs } = require('./docs-validation');
+const { buildWorkflowAnnotations, validateDocs } = require('./docs-validation');
 
 function argument(name) {
   const index = process.argv.indexOf(name);
@@ -21,6 +21,11 @@ async function main() {
     if (output) {
       fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
       fs.writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
+    }
+    if (process.env.GITHUB_ACTIONS === 'true') {
+      const annotations = buildWorkflowAnnotations(report.findings);
+      annotations.commands.forEach((command) => console.log(command));
+      if (annotations.omitted) console.log(`${annotations.omitted} finding(s) omitted from annotations; see the JSON artifact.`);
     }
     console.log(`${report.status.toUpperCase()}: ${report.summary.errors} error(s), ${report.summary.autoFixable} auto-fixable`);
     for (const item of report.findings) console.log(`${item.file}:${item.line} [${item.rule}] ${item.message}`);
