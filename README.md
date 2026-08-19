@@ -241,35 +241,23 @@ mintlify dev
 Before submitting your PR, run these validation scripts to catch common issues:
 
 ```bash
-# Check for broken internal links and orphaned pages
-node scripts/check-links.js
+# Check links, images, frontmatter, navigation, and redirects
+node scripts/validate-docs.js
 
-# Check for broken external links (optional, slower)
-node scripts/check-links.js --external
-
-# Validate that images are in the correct locations
-node scripts/check-image-locations.js
+# Audit external links separately (optional, slower, and advisory)
+node scripts/check-external-links.js
 ```
 
 **What these scripts check:**
 
-- **check-links.js** - Validates all internal markdown and JSX links, verifies linked files exist, and identifies orphaned pages (not in `docs.json`)
-- **check-image-locations.js** - Ensures images mirror page structure (e.g., `explore/dashboard.mdx` → `images/explore/dashboard/`), checks for missing images, and validates file extensions
+- **validate-docs.js** - Enforces internal links, image locations, page frontmatter, navigation reachability, and redirect integrity. Pass `--output <file>` for structured JSON findings.
+- **check-external-links.js** - Records unavailable third-party links as advisory JSON findings without blocking content changes.
 
-**Automated checks:** These scripts run automatically on all PRs via GitHub Actions. The validation workflow will comment on your PR with any issues found (but won't block merging).
+**Automated checks:** Pull requests block only on findings in changed files. The validation workflow updates one PR comment and publishes the complete JSON report as an artifact. Full-site and external-link audits run on a schedule.
 
 #### Auto-fixing Image Location Issues
 
-**The bot automatically fixes image location issues!** When you create a PR, the Documentation Bot will:
-- Detect misplaced images
-- Automatically move them to the correct directory structure
-- Update all MDX file references
-- Commit the fixes directly to your PR branch
-
-You'll see a comment like: "✅ Fixed 2 misplaced images"
-
-**Manual fixing (optional):**
-You can also run the fix script locally:
+The validator identifies auto-fixable image placement findings without writing to PR branches. Run the fix script locally:
 
 ```bash
 # Preview what would be changed
