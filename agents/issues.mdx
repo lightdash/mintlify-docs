@@ -117,59 +117,7 @@ For manual issues, the **Related explores** you picked when filing are passed in
 | **Semantic layer** | A field, metric, or description is missing, ambiguous, or wrong in your dbt project. | Run writeback to open a pull request against your dbt repository. |
 | **Project context** | Your agents are missing background knowledge to answer reliably (e.g. which table to use for "active customers"). | Run writeback to add a note your agents read before answering. |
 
-## The `lightdash.project_context.yml` file
-
-Project context fixes don't touch your dbt models. Instead, they write to a separate file — `lightdash.project_context.yml` — that lives next to `lightdash.config.yml` inside your dbt project directory. Your AI agents read it before they answer, so notes you add here change future behavior without changing the semantic layer.
-
-The file is committed to your dbt repo and travels with the rest of your project metadata. The first time a project context fix runs, it creates the file (with a header explaining what it's for) and opens a pull request. Subsequent fixes add or update entries in the same file.
-
-The full JSON Schema is published at [`lightdash-project-context-1.0.json`](https://github.com/lightdash/lightdash/blob/main/packages/common/src/schemas/json/lightdash-project-context-1.0.json) — point your editor at it for autocomplete and validation.
-
-### File shape
-
-```yaml lightdash.project_context.yml
-version: 1
-entries:
-  - id: aov
-    kind: definition
-    content: "AOV means average order value — total revenue divided by number of orders in the period."
-    terms: ["AOV", "average order value"]
-    objects: []
-  - id: active-customers-table
-    kind: context
-    content: "Use `fct_customer_activity` for active-customer questions; `dim_customers` is a slowly-changing dimension and double-counts churned customers."
-    terms: ["active customers"]
-    objects: ["fct_customer_activity", "dim_customers"]
-```
-
-The top-level document is `{ version, entries }`. A bare array of entries is also accepted for backward compatibility, but new files are written in the canonical shape.
-
-### Top-level properties
-
-| Property | Type | Required | Description |
-| --- | --- | --- | --- |
-| `version` | number | yes | Schema version. Currently always `1`. Bumping this is the escape hatch for a future breaking change. |
-| `entries` | array | yes | The list of context entries. May be empty. |
-
-### Entry properties
-
-Each item in `entries` is a single self-contained fact your agents should know.
-
-| Property | Type | Required | Description |
-| --- | --- | --- | --- |
-| `kind` | `"definition"` \| `"context"` | yes | How the entry is retrieved. Use `definition` for term-triggered facts (acronyms, vocabulary, "X means Y"). Use `context` for object-scoped guidance (routing rules, join rules, durable facts about a model). |
-| `content` | string | yes | One self-contained sentence. This is what the agent reads. Keep it short and unambiguous. |
-| `id` | string | no | Stable identifier used to update the entry later. Optional — Lightdash derives one from `terms[0]` (or `content`) at ingest if you omit it, suffixing on collision. Provide an explicit id if you want to hand-edit later without worrying about churn. |
-| `terms` | string[] | no | Prompt-facing trigger words and phrases. Used to surface `definition` entries when a user's question mentions one of them. Defaults to `[]`. |
-| `objects` | string[] | no | Semantic objects (models, fields, joins) this entry concerns. Used to surface `context` entries when the agent is reasoning about one of these objects. Defaults to `[]`. |
-
-Unknown keys on an entry are preserved on round-trip, so a field a newer Lightdash version adds won't be silently dropped if you edit the file by hand.
-
-### Editing the file
-
-You can edit `lightdash.project_context.yml` directly — it's a normal file in your dbt repo. The Issues flow is designed to coexist with manual edits: writeback uses the GitHub API to merge a single entry at a time, preserving comments, quoting, and key order in the rest of the file, so the resulting diff is just the changed entry.
-
-If you do edit by hand, the same validation rules apply: invalid files surface schema-backed errors at ingest time.
+Project context fixes write to a shared file — `lightdash.project_context.yml` — that lives next to `lightdash.config.yml` in your dbt repo. See [Agent context](/agents/agent-context) for the file shape, entry schema, and how to edit it by hand.
 
 ## Project context vs. semantic layer fixes
 
@@ -193,6 +141,7 @@ A rule of thumb: if a new analyst joining the team would also benefit from the c
 
 ## Related
 
+- [Agent context](/agents/agent-context) — the shared `lightdash.project_context.yml` file project context fixes write to.
 - [Agent visibility](/agents/visibility) — where Issues fits into admin visibility overall.
 - [Evaluations](/agents/create-evaluation-suites) — run a fixed set of prompts against your agent and grade the answers.
 - [AI writeback](/agents/ai-writeback) — let an agent open a dbt pull request from chat.
