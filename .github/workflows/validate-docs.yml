@@ -11,6 +11,9 @@ on:
       - 'images/**'
       - 'scripts/**'
       - 'test/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
       - '.github/workflows/**'
   schedule:
     - cron: '17 8 * * 1'
@@ -41,6 +44,16 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '24'
+          cache: npm
+
+      - name: Install utility dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Type-check and test utilities
+        run: npm run check
+
+      - name: Check documentation IA map
+        run: node scripts/docs/render-ia-map.ts --check
 
       - name: List changed files
         if: github.event_name == 'pull_request'
@@ -60,7 +73,7 @@ jobs:
           fi
 
           set +e
-          node scripts/validate-docs.js "${arguments[@]}"
+          node scripts/docs/validate.ts "${arguments[@]}"
           exit_code=$?
           set -e
           if [[ ! -f docs-validation.json ]]; then
@@ -119,7 +132,7 @@ jobs:
         id: external
         run: |
           set +e
-          node scripts/check-external-links.js --output external-links.json
+          node scripts/docs/audit-external-links.ts --output external-links.json
           exit_code=$?
           set -e
           if [[ ! -f external-links.json ]]; then

@@ -54,14 +54,14 @@ Every area and section carries a placement annotation: what it is **for**, and w
 contested, what it is **not** for and where that goes instead. Read the map as a walkable tree:
 
 ```bash
-node scripts/ia-map.js
+node scripts/docs/render-ia-map.ts
 ```
 
 The tree itself is derived from `docs.json` at read time, so it cannot drift from the real structure.
 Only the annotations are hand-maintained, in `.mintlify/ia-map.yml`.
 
 **Update the annotations when you change the tree** — adding, renaming, moving, or dissolving an area
-or section. Adding a page does not touch them. `node scripts/ia-map.js --check` reports both failure
+or section. Adding a page does not touch them. `node scripts/docs/render-ia-map.ts --check` reports both failure
 modes and exits non-zero: a node with no annotation, and an annotation whose node no longer exists.
 
 If you cannot write a one-line `for:` that distinguishes a new node from its siblings, it should not
