@@ -134,10 +134,30 @@ PGWIRE_SSL_CERT_PATH=/path/to/tls.crt   # server certificate (leaf first, then c
 PGWIRE_SSL_KEY_PATH=/path/to/tls.key    # private key
 ```
 
+If `PGWIRE_PORT` is set without certificate paths and without `PGWIRE_SSL_MODE=disabled`, Lightdash fails fast at boot with a config error — this is intentional, so a misconfigured deployment can't accidentally accept Lightdash tokens in plaintext.
+
 - If your certificate is from a public CA (e.g. Let's Encrypt), clients can use `sslmode=require` or `verify-full`.
 - If you use a private CA or a self-signed certificate, clients either pass the CA with `sslrootcert=/path/to/ca.pem` for verification, or use `sslmode=require` (encrypted, but the server identity isn't verified).
 
+The certificate and key files are watched by modification time and reloaded on change, so `cert-manager` renewals apply without a restart. A failed reload keeps the previously loaded certificate in place and logs an error.
+
 The server starts a separate TCP listener on that port, so you'll also need to expose it through your load balancer or network configuration alongside the main Lightdash port. It requires a valid `LIGHTDASH_LICENSE_KEY` — see [Enterprise License Keys](/self-host/customize-deployment/enterprise-license-keys).
+
+<Warning>
+  The Postgres wire protocol handshake is StartTLS-style — the client sends a plaintext `SSLRequest` before upgrading — so **a generic TLS-terminating load balancer (e.g. an L7 HTTPS proxy) cannot front this endpoint.** Terminate TLS at Lightdash by giving the backend the cert and key. If you must front it, use a Postgres-aware proxy (e.g. PgBouncer, HAProxy in `mode tcp`) and set `PGWIRE_SSL_MODE=disabled` on the Lightdash side so it accepts plaintext from the proxy on a trusted network.
+</Warning>
+
+### Rejecting plaintext clients
+
+With TLS required (the default), a client that connects with `sslmode=disable` is rejected before authentication — no password is ever prompted for, so Lightdash tokens cannot be leaked over cleartext:
+
+```text
+psql: error: connection to server ... failed:
+ERROR:  connection requires TLS
+SQLSTATE: 28000
+```
+
+Update client connection strings to `sslmode=require` (or stronger) to fix this.
 
 ## Limitations
 
