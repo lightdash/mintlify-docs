@@ -308,6 +308,44 @@ With this setup, the user can browse production read-only, spin up a preview fro
   Promoting content from a preview back to production still requires promote (or editor) rights on the destination project. The preview-edit scopes do not grant promotion. These scopes are designed to be used in tandem with an "approve and promote" role. 
 </Tip>
 
+### Data app scopes
+
+Three scopes control [data app](/data-apps/download-data-apps-as-code) creation and iteration. They cover both the in-product app builder and `lightdash upload --apps` from the CLI — the check is the same in both surfaces.
+
+**Create data apps** (`create:DataApp`) lets a user create new data apps in any project the role applies to, including production. This is the scope built-in **Editors**, **Developers**, and **Admins** hold. It also grants the "own personal apps" rights (`view:DataApp@self`, `manage:DataApp@self`) so users can iterate on apps they created.
+
+**Create data apps in own previews** (`create:DataApp@preview`) is the preview-only counterpart. It lets a user create data apps **only inside [preview projects](/workflow/preview-projects) they created themselves** — not in production, and not in previews created by teammates. Pair it with `create:Project@preview` so the user can spin up the preview in the first place, and with `manage:DataApp@preview` so they can iterate on the apps they uploaded.
+
+**Manage data apps in own previews** (`manage:DataApp@preview`) lets a user edit and delete data apps inside preview projects they created themselves. Included alongside `create:DataApp@preview` in the built-in Developer role.
+
+Without the `@preview` modifier, granting `create:DataApp` also grants app creation in production. With `@preview`, the rule only takes effect when both conditions hold:
+
+- The project is a preview project.
+- The current user is the user who created that preview.
+
+In any other project — production, a teammate's preview, an org-level role assignment with no project context — the scope contributes nothing. A user with only `create:DataApp@preview` attempting `lightdash upload --apps` against production (or a colleague's preview) receives a `403`.
+
+#### Restrict data app uploads to previews (agentic development workflow)
+
+To let developers build and iterate on data apps in their own previews via the CLI without allowing direct `lightdash upload --apps` to production:
+
+1. **Clone the built-in Developer role** to create a custom role (for example, `Developer (no prod data app upload)`).
+2. **Remove** the **Create data apps** (`create:DataApp`) scope from the cloned role.
+3. **Keep** the **Create data apps in own previews** (`create:DataApp@preview`) and **Manage data apps in own previews** (`manage:DataApp@preview`) scopes — the built-in Developer role already includes them.
+4. **Assign the custom role to the user at the project level** on the production project.
+
+<Warning>
+  Custom project roles can only narrow scopes the user would otherwise inherit. If the user is an **Organization Admin**, **Organization Developer**, or **Organization Editor**, they will inherit `create:DataApp` from their org role and the project-level custom role will not block them. For this pattern to work, the user's organization role must be **Viewer**, **Interactive Viewer**, or **Member**.
+</Warning>
+
+With this setup, the user can:
+
+- Run `lightdash preview` to spin up their own preview from production.
+- Run `lightdash upload --apps` against their own preview to iterate on data apps.
+- Receive a `403` when attempting `lightdash upload --apps` against the production project or a teammate's preview — production data app changes must go through the promotion pipeline.
+
+Combine this with the [content-as-code preview restriction](#restrict-developers-to-preview-uploads-agentic-development-workflow) to lock down both charts/dashboards and data apps for the same user.
+
 ### SQL-related scopes
 
 Three scopes control different SQL-authoring features. They are independent — granting one does not grant the others.
