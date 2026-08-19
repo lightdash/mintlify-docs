@@ -15,12 +15,16 @@ Your explores are exposed as tables, and their dimensions and metrics as columns
   For more information on our plans, visit our [pricing page](https://www.lightdash.com/pricing).
 </Info>
 
+## Enable it for your organization
+
+Once the endpoint is available on your instance, an organization admin turns it on from **Project settings → Semantic Layer API** by toggling **Semantic layer Postgres connection**. The same page then shows the connection details, an inline **Generate token** button for creating a scoped service account token, and ready-to-copy client snippets. Non-admins see the tab but not the connection details.
+
 ## Connect
 
 You can find copy-paste connection details in your project settings under **Semantic Layer API**. Connect with any Postgres-compatible client using:
 
 | Field | Value |
-|---|---|
+| --- | --- |
 | Host | `pg.<your_instance_name>.lightdash.cloud` |
 | Port | `5432` |
 | Database | Your project UUID. The slugified project name also works, but changes if the project is renamed — the UUID is stable. You can find it in the Lightdash URL when viewing a project (`/projects/<projectUuid>/...`) |
@@ -124,17 +128,28 @@ df = pd.read_sql(
   If a query isn't valid, error messages include hints — an unknown column error lists the available fields, and using an aggregate function suggests the matching metric instead.
 </Tip>
 
+## Errors
+
+Errors are returned as standard Postgres `ErrorResponse` messages, so your client's error handling behaves normally.
+
+| SQLSTATE | Meaning |
+| --- | --- |
+| `28P01` | Authentication failed — the password is not a valid `ldsvc_` or `ldpat_` token, or the token belongs to a SCIM-only service account. |
+| `3D000` | The database name is unknown or ambiguous. Use a project UUID, or one of the slugs listed in the error message. |
+| `0A000` | The client tried to use an unsupported feature — for example, the extended query protocol, `pg_catalog`, or an operator that isn't allowed on `information_schema`. |
+
 ## Self-hosting
 
 If you self-host Lightdash, the Metrics SQL API server is disabled until you set the `PGWIRE_PORT` [environment variable](/self-host/customize-deployment/environment-variables#metrics-sql-api). TLS is required by default, so you also need to provide a certificate and key (PEM format) for the hostname clients connect to:
 
 ```bash
 PGWIRE_PORT=5432
+PGWIRE_HOST=pg.analytics.example.com    # optional: hostname shown to admins in project settings
 PGWIRE_SSL_CERT_PATH=/path/to/tls.crt   # server certificate (leaf first, then chain)
 PGWIRE_SSL_KEY_PATH=/path/to/tls.key    # private key
 ```
 
-If `PGWIRE_PORT` is set without certificate paths and without `PGWIRE_SSL_MODE=disabled`, Lightdash fails fast at boot with a config error — this is intentional, so a misconfigured deployment can't accidentally accept Lightdash tokens in plaintext.
+If `PGWIRE_PORT` is set without certificate paths and without `PGWIRE_SSL_MODE=disabled`, Lightdash fails fast at boot with a config error — this is intentional, so a misconfigured deployment can't accidentally accept Lightdash tokens in plaintext. `PGWIRE_HOST` is optional. If unset, the project settings page shows an empty host and admins will need to fill it in themselves.
 
 - If your certificate is from a public CA (e.g. Let's Encrypt), clients can use `sslmode=require` or `verify-full`.
 - If you use a private CA or a self-signed certificate, clients either pass the CA with `sslrootcert=/path/to/ca.pem` for verification, or use `sslmode=require` (encrypted, but the server identity isn't verified).
@@ -170,9 +185,9 @@ Update client connection strings to `sslmode=require` (or stronger) to fix this.
 <Accordion title="Using sslmode=verify-full">
   `sslmode=require` encrypts the connection; `verify-full` additionally verifies the server's certificate and hostname, protecting against impersonation. On Lightdash Cloud the certificate is publicly trusted (Let's Encrypt), but some Postgres clients don't check the system trust store by default:
 
-  - **psql / psycopg (libpq 16+)**: add `sslrootcert=system` to use the OS trust store. On older libpq, point `sslrootcert` at your system CA bundle (e.g. `/etc/ssl/certs/ca-certificates.crt`).
-  - **JDBC (DBeaver, DataGrip)**: add `sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory` to use Java's built-in trust store.
-  - **node-postgres, Go, Rust, .NET**: use the runtime's trust store natively — no extra configuration.
+- **psql / psycopg (libpq 16+)**: add `sslrootcert=system` to use the OS trust store. On older libpq, point `sslrootcert` at your system CA bundle (e.g. `/etc/ssl/certs/ca-certificates.crt`).
+- **JDBC (DBeaver, DataGrip)**: add `sslfactory=org.postgresql.ssl.DefaultJavaSSLFactory` to use Java's built-in trust store.
+- **node-postgres, Go, Rust, .NET**: use the runtime's trust store natively — no extra configuration.
 
   Validate via the CA chain as above — don't pin the certificate itself, as it's rotated automatically every ~60 days.
 </Accordion>
