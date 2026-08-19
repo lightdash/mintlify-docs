@@ -11,7 +11,7 @@ These rules govern every change. The full system — doc-type contracts and the 
 
 ## Placement and naming
 
-- **Deciding where something goes?** Run `node scripts/ia-map.js` for the annotated area tree, and see Placement in [`ia-rules.md`](.mintlify/ia-rules.md) for edge cases and new topics.
+- **Deciding where something goes?** Run `node scripts/docs/render-ia-map.ts` for the annotated area tree, and see Placement in [`ia-rules.md`](.mintlify/ia-rules.md) for edge cases and new topics.
 - **Directories are product areas, never doc types:** `get-started`, `explore`, `semantic-layer`, `workflow` (incl. `workflow/cli`), `agents`, `data-apps`, `embed`, `integrations`, `workspace-admin`, `personal-settings`, `self-host`, `api-reference`, `support`. Place a page by which part of the product it serves. Never make a directory named for a content type.
 - **One name per feature.** Slug ≈ title ≈ sidebarTitle; the sidebar may shorten the title, never diverge from it. "Best practices" never appears in a title or slug — that content is a Guide with a real name.
 - **Add the nav entry in `docs.json` in the same change.** For navigation structure — tabs vs groups, root pages, sidebar rendering and density — read [`navigation.md`](.mintlify/navigation.md).
@@ -49,6 +49,6 @@ Frontmatter is complete, the page is reachable from nav, and `mint broken-links`
 - [`ia-rules.md`](.mintlify/ia-rules.md) — doc-type contracts, placement, the patch and cleanup profiles
 - [`navigation.md`](.mintlify/navigation.md) — docs.json navigation primitives and mapping rules
 - [`sidebar-rendering.md`](.mintlify/sidebar-rendering.md) — mint-theme sidebar DOM internals behind the `styles.css` override
-- `ia-map.yml` — the area tree `node scripts/ia-map.js` renders
+- `ia-map.yml` — the area tree `node scripts/docs/render-ia-map.ts` renders
 
 Internal guidance goes here, never in `.mintlify/skills/`. That directory publishes to `docs.lightdash.com/skill.md` for external agents, so it describes Lightdash product capabilities — never how to write these docs.

@@ -6,7 +6,7 @@ Welcome to the Lightdash documentation repository! This repo contains all docume
 
 ### Prerequisites
 
-- Node.js 18+ installed
+- Node.js 24+ installed
 - Familiarity with Markdown/MDX
 
 ### Local Development
@@ -241,17 +241,23 @@ mintlify dev
 Before submitting your PR, run these validation scripts to catch common issues:
 
 ```bash
+# Install the utility type-checker and test dependencies
+npm ci
+
+# Type-check and test the utilities
+npm run check
+
 # Check links, images, frontmatter, navigation, and redirects
-node scripts/validate-docs.js
+node scripts/docs/validate.ts
 
 # Audit external links separately (optional, slower, and advisory)
-node scripts/check-external-links.js
+node scripts/docs/audit-external-links.ts
 ```
 
 **What these scripts check:**
 
-- **validate-docs.js** - Enforces internal links, image locations, page frontmatter, navigation reachability, and redirect integrity. Pass `--output <file>` for structured JSON findings.
-- **check-external-links.js** - Records unavailable third-party links as advisory JSON findings without blocking content changes.
+- **validate.ts** - Enforces internal links, image locations, page frontmatter, navigation reachability, and redirect integrity. Pass `--output <file>` for structured JSON findings.
+- **audit-external-links.ts** - Records unavailable third-party links as advisory JSON findings without blocking content changes.
 
 **Automated checks:** Pull requests block only on findings in changed files. The validation workflow adds inline annotations, updates one PR comment, and publishes the complete JSON report as an artifact. Full-site and external-link audits run on a schedule.
 
@@ -261,16 +267,16 @@ The validator identifies auto-fixable image placement findings without writing t
 
 ```bash
 # Preview what would be changed
-node scripts/fix-image-locations.js --dry-run
+node scripts/docs/fix-image-locations.ts --dry-run
 
 # Apply the fixes
-node scripts/fix-image-locations.js
+node scripts/docs/fix-image-locations.ts
 ```
 
 **Troubleshooting common issues:**
 
 - **Broken links:** Use absolute paths from root (`/explore/spaces` not `../explore/spaces`) and omit file extensions in links
-- **Misplaced images:** Run `node scripts/fix-image-locations.js` to automatically fix
+- **Misplaced images:** Run `node scripts/docs/fix-image-locations.ts` to automatically fix
 - **Shared images:** Can be placed in the nearest common parent directory
 
 ### 4. Commit Your Changes
