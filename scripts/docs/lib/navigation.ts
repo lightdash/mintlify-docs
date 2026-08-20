@@ -50,3 +50,43 @@ export function redirectsFrom(docs: Record<string, unknown>): Redirect[] {
     };
   });
 }
+
+export interface GroupIcon {
+  group: string;
+  icon: string;
+  depth: number;
+}
+
+/**
+ * Every group in the navigation tree that carries an icon, with its depth.
+ * Depth 0 is a tab's own groups — the top-level product areas.
+ */
+export function groupIcons(docs: Record<string, unknown>): GroupIcon[] {
+  const icons: GroupIcon[] = [];
+
+  function visit(value: unknown, depth: number): void {
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, depth);
+      return;
+    }
+    if (value === null || typeof value !== 'object') return;
+    const record = value as Record<string, unknown>;
+
+    if (typeof record.tab === 'string') {
+      visit(record.pages, 0);
+      visit(record.groups, 0);
+      return;
+    }
+    if (typeof record.group === 'string') {
+      if (typeof record.icon === 'string') {
+        icons.push({ group: record.group, icon: record.icon, depth });
+      }
+      visit(record.pages, depth + 1);
+      return;
+    }
+    for (const child of Object.values(record)) visit(child, depth);
+  }
+
+  visit(docs.navigation, 0);
+  return icons;
+}

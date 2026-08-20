@@ -3,7 +3,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { auditComponents } from './audit-components.ts';
 import { argument, errorMessage, isDirectRun, writeJsonReport } from './lib/command.ts';
+import { BLOCKING_RULES } from './lib/components.ts';
 import { findPages, normalizePath, pageFile, pageSlug, readMintignore } from './lib/discovery.ts';
 import { buildWorkflowAnnotations, createFinding } from './lib/findings.ts';
 import { parseFrontmatter } from './lib/frontmatter.ts';
@@ -168,6 +170,14 @@ export async function validateDocs({
         ));
       }
     }
+  }
+
+  // Component rules clean enough to block. Scoped like every other finding, so
+  // a pull request answers only for the files it touched.
+  for (const finding of auditComponents({ root }).findings) {
+    if (!BLOCKING_RULES.has(finding.rule)) continue;
+    if (changed !== undefined && !changed.has(finding.file)) continue;
+    findings.push({ ...finding, severity: 'error' });
   }
 
   findings.sort((left, right) => (

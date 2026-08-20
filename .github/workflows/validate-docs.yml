@@ -82,6 +82,30 @@ jobs:
           fi
           echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
 
+      - name: Check the component baseline
+        id: components
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          arguments=(--baseline --output component-audit.json)
+          if [[ "$EVENT_NAME" == 'pull_request' ]]; then
+            arguments+=(--changed-files changed-files.txt)
+          fi
+
+          set +e
+          node scripts/docs/audit-components.ts "${arguments[@]}"
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          set -e
+
+      - name: Upload component findings
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: component-audit
+          path: component-audit.json
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload structured findings
         if: always()
         uses: actions/upload-artifact@v7
@@ -103,13 +127,30 @@ jobs:
           } else {
             console.log(`${report.summary.errors} blocking finding(s), ${report.summary.autoFixable} auto-fixable.`);
           }
+          const fs = require('node:fs');
+          if (fs.existsSync('./component-audit.json')) {
+            const components = require('./component-audit.json');
+            const baseline = require('./scripts/docs/component-baseline.json');
+            const grown = Object.entries(components.summary.byRule || {})
+              .filter(([rule, count]) => count > (baseline.rules[rule] ?? 0));
+            console.log('');
+            console.log('## Component system');
+            console.log('');
+            console.log(`${components.summary.warnings} finding(s) against a baseline of ${Object.values(baseline.rules).reduce((a, b) => a + b, 0)}.`);
+            for (const [rule, count] of grown) {
+              console.log(`- \`${rule}\` rose to ${count} from ${baseline.rules[rule] ?? 0}`);
+            }
+          }
           NODE
 
       - name: Set validation result
         if: always()
         env:
           EXIT_CODE: ${{ steps.validation.outputs.exit_code }}
-        run: exit "${EXIT_CODE:-2}"
+          COMPONENT_EXIT_CODE: ${{ steps.components.outputs.exit_code }}
+        run: |
+          if [[ "${EXIT_CODE:-2}" != '0' ]]; then exit "${EXIT_CODE:-2}"; fi
+          exit "${COMPONENT_EXIT_CODE:-2}"
 
   external-links:
     name: Audit external links

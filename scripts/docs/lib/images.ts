@@ -21,10 +21,15 @@ export function extractImages(content: string): ImageReference[] {
       images.push({ url: match[2], line: lineOf(clean, match.index), alt: match[1], type: 'markdown' });
     }
   }
-  for (const match of clean.matchAll(/<img[^>]+src=["']([^"']+)["']/g)) {
-    if (match[1] !== undefined && match.index !== undefined && !/^(https?:)?\/\//.test(match[1])) {
-      images.push({ url: match[1], line: lineOf(clean, match.index), type: 'jsx' });
-    }
+  for (const match of clean.matchAll(/<img[^>]+>/g)) {
+    const url = match[0].match(/\ssrc=["']([^"']*)["']/)?.[1];
+    if (url === undefined || match.index === undefined || /^(https?:)?\/\//.test(url)) continue;
+    images.push({
+      url,
+      line: lineOf(clean, match.index),
+      alt: match[0].match(/\salt=["']([^"']*)["']/)?.[1],
+      type: 'jsx',
+    });
   }
 
   return images;
