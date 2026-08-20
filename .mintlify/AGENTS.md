@@ -32,6 +32,17 @@ Doc-type pills are suppressed in the sidebar for now, so `tag` carries lifecycle
 - **Frontmatter** carries `title` and `description` on every page.
 - **Fenced code blocks** always declare a language (`text` for output, trees, or ASCII).
 
+## Components
+
+Pick a component by the job it does for the reader, never by how it looks. The full system — callout semantics, lifecycle badges, media, tabs vs code groups, icons, and the colour tokens — is [`components.md`](.mintlify/components.md). The rules you'll hit on almost every change:
+
+- **`<Note>` is the default callout.** `<Info>` is a scope gate (plan, deployment, version) and goes first on the page; `<Warning>` means a real cost for ignoring it. Never two callouts back to back.
+- **Lifecycle is a badge, never bold text.** `tag: "Beta"` in frontmatter for a whole page, `<Badge>` for a section. Experimental, Beta, and GA are the only levels.
+- **Every image, video, and iframe is wrapped in `<Frame>`**, with a root-relative `/images/…` path and descriptive `alt`.
+- **Code-only alternatives are a `<CodeGroup>`;** `<Tabs>` is for alternatives with prose in them. Labels sync across the page on exact match, so use the canonical strings.
+- **Icons are Tabler**, set in `docs.json` and in page frontmatter; in prose they only ever mark yes/no cells in a support matrix.
+- **Never pick a colour.** Typed components carry their own; hex appears only in mermaid diagrams and two sanctioned custom callouts.
+
 ## Moving, renaming, or merging
 
 Ship the redirect in the same change (principle 7):
@@ -47,6 +58,8 @@ Frontmatter is complete, the page is reachable from nav, and `mint broken-links`
 ## Reference docs
 
 - [`ia-rules.md`](.mintlify/ia-rules.md) — doc-type contracts, placement, the patch and cleanup profiles
+- [`components.md`](.mintlify/components.md) — which component does which job, lifecycle badges, media, icons, colour tokens
+- [`component-reference.md`](.mintlify/component-reference.md) — Mintlify's component surface and prop lists
 - [`navigation.md`](.mintlify/navigation.md) — docs.json navigation primitives and mapping rules
 - [`sidebar-rendering.md`](.mintlify/sidebar-rendering.md) — mint-theme sidebar DOM internals behind the `styles.css` override
 - `ia-map.yml` — the area tree `node scripts/docs/render-ia-map.ts` renders

@@ -18,62 +18,58 @@ In Lightdash, metrics are used to summarize dimensions or, sometimes, other metr
 
 To add a metric to Lightdash using the `meta` tag, you define it in your dbt project under the dimension name you're trying to describe/summarize.
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: orders_model
-        columns:
-          - name: user_id # dimension your metric is aggregating
-            meta:
-              metrics:
-                distinct_user_ids: # name of your metric
-                  type: count_distinct # metric type
-          - name: revenue # dimension your metric is aggregating
-            meta:
-              metrics:
-                sum_revenue: # name of your metric
-                  type: sum # metric type
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    models:
-      - name: orders_model
-        columns:
-          - name: user_id # dimension your metric is aggregating
-            config:
-              meta:
-                metrics:
-                  distinct_user_ids: # name of your metric
-                    type: count_distinct # metric type
-          - name: revenue # dimension your metric is aggregating
-            config:
-              meta:
-                metrics:
-                  sum_revenue: # name of your metric
-                    type: sum # metric type
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: orders_model
-
-    dimensions:
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: orders_model
+    columns:
       - name: user_id # dimension your metric is aggregating
+        config:
+          meta:
+            metrics:
+              distinct_user_ids: # name of your metric
+                type: count_distinct # metric type
       - name: revenue # dimension your metric is aggregating
+        config:
+          meta:
+            metrics:
+              sum_revenue: # name of your metric
+                type: sum # metric type
+```
 
-    metrics:
-      distinct_user_ids: # name of your metric
-        type: count_distinct # metric type
-        sql: ${TABLE}.user_id
-      sum_revenue: # name of your metric
-        type: sum # metric type
-        sql: ${TABLE}.revenue
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: orders_model
+    columns:
+      - name: user_id # dimension your metric is aggregating
+        meta:
+          metrics:
+            distinct_user_ids: # name of your metric
+              type: count_distinct # metric type
+      - name: revenue # dimension your metric is aggregating
+        meta:
+          metrics:
+            sum_revenue: # name of your metric
+              type: sum # metric type
+```
+
+```yaml Lightdash YAML
+type: model
+name: orders_model
+
+dimensions:
+  - name: user_id # dimension your metric is aggregating
+  - name: revenue # dimension your metric is aggregating
+
+metrics:
+  distinct_user_ids: # name of your metric
+    type: count_distinct # metric type
+    sql: ${TABLE}.user_id
+  sum_revenue: # name of your metric
+    type: sum # metric type
+    sql: ${TABLE}.revenue
+```
+</CodeGroup>
 
 Once you've got the hang of what these metrics look like, read more about the [metric types you can use below.](#metric-types)
 
@@ -85,51 +81,47 @@ Once you've got the hang of what these metrics look like, read more about the [m
 
 Sometimes a metric references multiple columns, in these cases you can define the metric at the model level:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: orders_model
-        meta:
-          metrics:
-            revenue_per_user:
-              type: number
-              sql: ${sum_revenue} / ${distinct_user_ids}
-            sum_total_paid:
-              type: sum
-              sql: ${revenue} + ${taxes_paid}
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    models:
-      - name: orders_model
-        config:
-          meta:
-            metrics:
-              revenue_per_user:
-                type: number
-                sql: ${sum_revenue} / ${distinct_user_ids}
-              sum_total_paid:
-                type: sum
-                sql: ${revenue} + ${taxes_paid}
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: orders_model
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: orders_model
+    config:
+      meta:
+        metrics:
+          revenue_per_user:
+            type: number
+            sql: ${sum_revenue} / ${distinct_user_ids}
+          sum_total_paid:
+            type: sum
+            sql: ${revenue} + ${taxes_paid}
+```
 
-    metrics:
-      revenue_per_user:
-        type: number
-        sql: ${sum_revenue} / ${distinct_user_ids}
-      sum_total_paid:
-        type: sum
-        sql: ${revenue} + ${taxes_paid}
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: orders_model
+    meta:
+      metrics:
+        revenue_per_user:
+          type: number
+          sql: ${sum_revenue} / ${distinct_user_ids}
+        sum_total_paid:
+          type: sum
+          sql: ${revenue} + ${taxes_paid}
+```
+
+```yaml Lightdash YAML
+type: model
+name: orders_model
+
+metrics:
+  revenue_per_user:
+    type: number
+    sql: ${sum_revenue} / ${distinct_user_ids}
+  sum_total_paid:
+    type: sum
+    sql: ${revenue} + ${taxes_paid}
+```
+</CodeGroup>
 
 <Warning>
   **Non-aggregate metrics** (`number`, `boolean`, etc.) can only reference other metrics in `sql:` since they are inserted directly into the generated SQL query without being wrapped in an aggregate function.
@@ -161,7 +153,7 @@ Numbers and booleans are examples of non-aggregate metrics. These metric types p
 
 Non-aggregate metrics cannot use window functions in their `sql`. Their SQL is inserted alongside the aggregate metrics in the same `SELECT`, which runs in the same step as the `GROUP BY`, so window functions — which must run after aggregation — are not allowed. See [post calculation metrics](#post-calculation-metrics) for the window operations Lightdash does support and what to do instead.
 
-### Post calculation metrics
+### Post calculation metrics <Badge icon="test-pipe-2" color="orange" size="sm" shape="pill">Experimental</Badge>
 
 Post calculation metrics are computed after aggregate and non-aggregate metrics in the query. Because they run after the main aggregations, Lightdash wraps the aggregated results in an outer `SELECT` and evaluates the post calculation metric's SQL there, where window functions (`OVER (...)`) are valid.
 
@@ -173,128 +165,122 @@ Post calculation metrics:
 - Can be referenced in table calculations like any other metric
 - Do not support the `filters` YML property
 
-<Info>
-  **Experimental:** Post calculation metrics are currently in the Experimental phase. Learn what this means in our Feature Maturity Levels guide: [Feature Maturity Levels](/support/feature-maturity-levels).
-</Info>
+Post calculation metrics are [Experimental](/support/feature-maturity-levels).
 
 ## Metric configuration
 
 You can customize your metrics in your dbt model's YAML file. Here's an example of the properties used in defining a metric:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: sales_stats
-        meta:
-          joins:
-            - join: web_sessions
-              sql_on: ${web_sessions.date} = ${sales_stats.date}
-          group_details:
-            product_details:
-              label: Product Details
-              description: 'Fields that have information about the products in the basket.'
-            item_details:
-              label: Item Details
-              description: 'Fields that have information about the items in the basket.'
-        columns:
-          - name: revenue
-            description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
-            meta:
-              metrics:
-                total_revenue:
-                  label: 'Total revenue GBP'
-                  type: SUM
-                  description: 'Total revenue in GBP'
-                  sql: 'IF(${revenue} IS NULL, 10, ${revenue})'
-                  groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
-                  hidden: false
-                  format: '[$£]#,##0.00' # GBP rounded to two decimal points
-                  show_underlying_values:
-                    - revenue
-                    - forecast_date
-                    - web_sessions.session_id # field from joined table
-                  filters:
-                    - is_adjusted: true
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    models:
-      - name: sales_stats
-        config:
-          meta:
-            joins:
-              - join: web_sessions
-                sql_on: ${web_sessions.date} = ${sales_stats.date}
-            group_details:
-              product_details:
-                label: Product Details
-                description: 'Fields that have information about the products in the basket.'
-              item_details:
-                label: Item Details
-                description: 'Fields that have information about the items in the basket.'
-        columns:
-          - name: revenue
-            description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
-            config:
-              meta:
-                metrics:
-                  total_revenue:
-                    label: 'Total revenue GBP'
-                    type: SUM
-                    description: 'Total revenue in GBP'
-                    sql: 'IF(${revenue} IS NULL, 10, ${revenue})'
-                    groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
-                    hidden: false
-                    format: '[$£]#,##0.00' # GBP rounded to two decimal points
-                    show_underlying_values:
-                      - revenue
-                      - forecast_date
-                      - web_sessions.session_id # field from joined table
-                    filters:
-                      - is_adjusted: true
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: sales_stats
-
-    joins:
-      - join: web_sessions
-        sql_on: ${web_sessions.date} = ${sales_stats.date}
-
-    group_details:
-      product_details:
-        label: Product Details
-        description: 'Fields that have information about the products in the basket.'
-      item_details:
-        label: Item Details
-        description: 'Fields that have information about the items in the basket.'
-
-    dimensions:
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: sales_stats
+    config:
+      meta:
+        joins:
+          - join: web_sessions
+            sql_on: ${web_sessions.date} = ${sales_stats.date}
+        group_details:
+          product_details:
+            label: Product Details
+            description: 'Fields that have information about the products in the basket.'
+          item_details:
+            label: Item Details
+            description: 'Fields that have information about the items in the basket.'
+    columns:
       - name: revenue
         description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
+        config:
+          meta:
+            metrics:
+              total_revenue:
+                label: 'Total revenue GBP'
+                type: SUM
+                description: 'Total revenue in GBP'
+                sql: 'IF(${revenue} IS NULL, 10, ${revenue})'
+                groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
+                hidden: false
+                format: '[$£]#,##0.00' # GBP rounded to two decimal points
+                show_underlying_values:
+                  - revenue
+                  - forecast_date
+                  - web_sessions.session_id # field from joined table
+                filters:
+                  - is_adjusted: true
+```
 
-    metrics:
-      total_revenue:
-        label: 'Total revenue GBP'
-        type: SUM
-        description: 'Total revenue in GBP'
-        sql: 'IF(${revenue} IS NULL, 10, ${revenue})'
-        groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
-        hidden: false
-        format: '[$£]#,##0.00' # GBP rounded to two decimal points
-        show_underlying_values:
-          - revenue
-          - forecast_date
-          - web_sessions.session_id # field from joined table
-        filters:
-          - is_adjusted: true
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: sales_stats
+    meta:
+      joins:
+        - join: web_sessions
+          sql_on: ${web_sessions.date} = ${sales_stats.date}
+      group_details:
+        product_details:
+          label: Product Details
+          description: 'Fields that have information about the products in the basket.'
+        item_details:
+          label: Item Details
+          description: 'Fields that have information about the items in the basket.'
+    columns:
+      - name: revenue
+        description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
+        meta:
+          metrics:
+            total_revenue:
+              label: 'Total revenue GBP'
+              type: SUM
+              description: 'Total revenue in GBP'
+              sql: 'IF(${revenue} IS NULL, 10, ${revenue})'
+              groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
+              hidden: false
+              format: '[$£]#,##0.00' # GBP rounded to two decimal points
+              show_underlying_values:
+                - revenue
+                - forecast_date
+                - web_sessions.session_id # field from joined table
+              filters:
+                - is_adjusted: true
+```
+
+```yaml Lightdash YAML
+type: model
+name: sales_stats
+
+joins:
+  - join: web_sessions
+    sql_on: ${web_sessions.date} = ${sales_stats.date}
+
+group_details:
+  product_details:
+    label: Product Details
+    description: 'Fields that have information about the products in the basket.'
+  item_details:
+    label: Item Details
+    description: 'Fields that have information about the items in the basket.'
+
+dimensions:
+  - name: revenue
+    description: 'Total estimated revenue in GBP based on forecasting done by the finance team.'
+
+metrics:
+  total_revenue:
+    label: 'Total revenue GBP'
+    type: SUM
+    description: 'Total revenue in GBP'
+    sql: 'IF(${revenue} IS NULL, 10, ${revenue})'
+    groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
+    hidden: false
+    format: '[$£]#,##0.00' # GBP rounded to two decimal points
+    show_underlying_values:
+      - revenue
+      - forecast_date
+      - web_sessions.session_id # field from joined table
+    filters:
+      - is_adjusted: true
+```
+</CodeGroup>
 
 Here are all of the properties you can customize:
 
@@ -345,46 +331,42 @@ The `percentile` metric can be used on any numeric dimension or, [for custom SQL
 
 For example, this creates a metric `median_price` by taking the 50% percentile of the `item_price` dimension:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: item_price
-        meta:
-          metrics:
-            median_price:
-              type: percentile
-              percentile: 50
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    columns:
-      - name: item_price
-        config:
-          meta:
-            metrics:
-              median_price:
-                type: percentile
-                percentile: 50
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: my_model
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: item_price
+    config:
+      meta:
+        metrics:
+          median_price:
+            type: percentile
+            percentile: 50
+```
 
-    dimensions:
-      - name: item_price
+```yaml dbt v1.9 and earlier
+columns:
+  - name: item_price
+    meta:
+      metrics:
+        median_price:
+          type: percentile
+          percentile: 50
+```
 
-    metrics:
-      median_price:
-        type: percentile
-        percentile: 50
-        sql: ${TABLE}.item_price
-    ```
-  </Tab>
-</Tabs>
+```yaml Lightdash YAML
+type: model
+name: my_model
+
+dimensions:
+  - name: item_price
+
+metrics:
+  median_price:
+    type: percentile
+    percentile: 50
+    sql: ${TABLE}.item_price
+```
+</CodeGroup>
 
 ### median
 
@@ -394,43 +376,39 @@ The `median` metric can be used on any numeric dimension or, [for custom SQL](#u
 
 For example, this creates a metric `median_price` by taking the 50% percentile of the `item_price` dimension:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: item_price
-        meta:
-          metrics:
-            median_price:
-              type: median
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    columns:
-      - name: item_price
-        config:
-          meta:
-            metrics:
-              median_price:
-                type: median
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: my_model
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: item_price
+    config:
+      meta:
+        metrics:
+          median_price:
+            type: median
+```
 
-    dimensions:
-      - name: item_price
+```yaml dbt v1.9 and earlier
+columns:
+  - name: item_price
+    meta:
+      metrics:
+        median_price:
+          type: median
+```
 
-    metrics:
-      median_price:
-        type: median
-        sql: ${TABLE}.item_price
-    ```
-  </Tab>
-</Tabs>
+```yaml Lightdash YAML
+type: model
+name: my_model
+
+dimensions:
+  - name: item_price
+
+metrics:
+  median_price:
+    type: median
+    sql: ${TABLE}.item_price
+```
+</CodeGroup>
 
 ### average
 
@@ -440,43 +418,39 @@ The `average` metric can be used on any numeric dimension or, [for custom SQL](#
 
 For example, this creates a metric `avg_price` by taking the average of the `item_price` dimension:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: item_price
-        meta:
-          metrics:
-            avg_price:
-              type: average
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    columns:
-      - name: item_price
-        config:
-          meta:
-            metrics:
-              avg_price:
-                type: average
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: my_model
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: item_price
+    config:
+      meta:
+        metrics:
+          avg_price:
+            type: average
+```
 
-    dimensions:
-      - name: item_price
+```yaml dbt v1.9 and earlier
+columns:
+  - name: item_price
+    meta:
+      metrics:
+        avg_price:
+          type: average
+```
 
-    metrics:
-      avg_price:
-        type: average
-        sql: ${TABLE}.item_price
-    ```
-  </Tab>
-</Tabs>
+```yaml Lightdash YAML
+type: model
+name: my_model
+
+dimensions:
+  - name: item_price
+
+metrics:
+  avg_price:
+    type: average
+    sql: ${TABLE}.item_price
+```
+</CodeGroup>
 
 ### boolean
 
@@ -488,52 +462,48 @@ The `boolean` metric can be used on any valid SQL expression that gives you a `T
 
 For example, the `avg_price` metric below is an average of all of the `item_price` values in our product table. A second metric called `is_avg_price_above_20` is a `boolean` type metric. The `is_avg_price_above_20` metric has a custom SQL expression that tells us whether the `avg_price` value is greater than 20.
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: item_price
-        meta:
-          metrics:
-            avg_price:
-              type: average
-            is_avg_price_above_20:
-              type: boolean
-              sql: 'IF(${avg_price} > 20, TRUE, FALSE)'
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    columns:
-      - name: item_price
-        config:
-          meta:
-            metrics:
-              avg_price:
-                type: average
-              is_avg_price_above_20:
-                type: boolean
-                sql: 'IF(${avg_price} > 20, TRUE, FALSE)'
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: my_model
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: item_price
+    config:
+      meta:
+        metrics:
+          avg_price:
+            type: average
+          is_avg_price_above_20:
+            type: boolean
+            sql: 'IF(${avg_price} > 20, TRUE, FALSE)'
+```
 
-    dimensions:
-      - name: item_price
+```yaml dbt v1.9 and earlier
+columns:
+  - name: item_price
+    meta:
+      metrics:
+        avg_price:
+          type: average
+        is_avg_price_above_20:
+          type: boolean
+          sql: 'IF(${avg_price} > 20, TRUE, FALSE)'
+```
 
-    metrics:
-      avg_price:
-        type: average
-        sql: ${TABLE}.item_price
-      is_avg_price_above_20:
-        type: boolean
-        sql: 'IF(${avg_price} > 20, TRUE, FALSE)'
-    ```
-  </Tab>
-</Tabs>
+```yaml Lightdash YAML
+type: model
+name: my_model
+
+dimensions:
+  - name: item_price
+
+metrics:
+  avg_price:
+    type: average
+    sql: ${TABLE}.item_price
+  is_avg_price_above_20:
+    type: boolean
+    sql: 'IF(${avg_price} > 20, TRUE, FALSE)'
+```
+</CodeGroup>
 
 ### count
 
@@ -543,43 +513,39 @@ The `count` metric can be used on any dimension or, [for custom SQL](#using-cust
 
 For example, this creates a metric `number_of_users` by counting the number of `user_id` values in the table:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: user_id
-        meta:
-          metrics:
-            number_of_users:
-              type: count
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    columns:
-      - name: user_id
-        config:
-          meta:
-            metrics:
-              number_of_users:
-                type: count
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: my_model
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: user_id
+    config:
+      meta:
+        metrics:
+          number_of_users:
+            type: count
+```
 
-    dimensions:
-      - name: user_id
+```yaml dbt v1.9 and earlier
+columns:
+  - name: user_id
+    meta:
+      metrics:
+        number_of_users:
+          type: count
+```
 
-    metrics:
-      number_of_users:
-        type: count
-        sql: ${TABLE}.user_id
-    ```
-  </Tab>
-</Tabs>
+```yaml Lightdash YAML
+type: model
+name: my_model
+
+dimensions:
+  - name: user_id
+
+metrics:
+  number_of_users:
+    type: count
+    sql: ${TABLE}.user_id
+```
+</CodeGroup>
 
 ### count_distinct
 
@@ -589,43 +555,39 @@ The `count_distinct` metric can be used on any dimension or, [for custom SQL](#u
 
 For example, this creates a metric `number_of_unique_users` by counting the number of unique `user_id` values in the table:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: user_id
-        meta:
-          metrics:
-            number_of_unique_users:
-              type: count_distinct
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    columns:
-      - name: user_id
-        config:
-          meta:
-            metrics:
-              number_of_unique_users:
-                type: count_distinct
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: my_model
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: user_id
+    config:
+      meta:
+        metrics:
+          number_of_unique_users:
+            type: count_distinct
+```
 
-    dimensions:
-      - name: user_id
+```yaml dbt v1.9 and earlier
+columns:
+  - name: user_id
+    meta:
+      metrics:
+        number_of_unique_users:
+          type: count_distinct
+```
 
-    metrics:
-      number_of_unique_users:
-        type: count_distinct
-        sql: ${TABLE}.user_id
-    ```
-  </Tab>
-</Tabs>
+```yaml Lightdash YAML
+type: model
+name: my_model
+
+dimensions:
+  - name: user_id
+
+metrics:
+  number_of_unique_users:
+    type: count_distinct
+    sql: ${TABLE}.user_id
+```
+</CodeGroup>
 
 ### date
 
@@ -637,50 +599,46 @@ The `date` metric can be used on any valid SQL expression that gives you a date 
 
 If you want to create a metric of a maximum or minimum date, you can't use `type: max` or of `type: min` metrics because these are only compatible with numeric type fields. Instead, you can calculate a maximum or minimum date by defining a metric of `type: date` and using some custom sql, like this:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: created_at_date
-        meta:
-          dimension:
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: created_at_date
+    config:
+      meta:
+        dimension:
+          type: date
+        metrics:
+          max_created_at_date:
             type: date
-          metrics:
-            max_created_at_date:
-              type: date
-              sql: MAX(${TABLE}.created_at_date)
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    columns:
-      - name: created_at_date
-        config:
-          meta:
-            dimension:
-              type: date
-            metrics:
-              max_created_at_date:
-                type: date
-                sql: MAX(${TABLE}.created_at_date)
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: my_model
+            sql: MAX(${TABLE}.created_at_date)
+```
 
-    dimensions:
-      - name: created_at_date
+```yaml dbt v1.9 and earlier
+columns:
+  - name: created_at_date
+    meta:
+      dimension:
         type: date
+      metrics:
+        max_created_at_date:
+          type: date
+          sql: MAX(${TABLE}.created_at_date)
+```
 
-    metrics:
-      max_created_at_date:
-        type: date
-        sql: MAX(${TABLE}.created_at_date)
-    ```
-  </Tab>
-</Tabs>
+```yaml Lightdash YAML
+type: model
+name: my_model
+
+dimensions:
+  - name: created_at_date
+    type: date
+
+metrics:
+  max_created_at_date:
+    type: date
+    sql: MAX(${TABLE}.created_at_date)
+```
+</CodeGroup>
 
 
 ### max
@@ -693,43 +651,39 @@ Because `type: max` metrics only work with numerical fields, you can't use them 
 
 For example, this creates a metric `max_delivery_cost` by looking at the `delivery_cost` dimension and taking the largest value it finds:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: delivery_cost
-        meta:
-          metrics:
-            max_delivery_cost:
-              type: max
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    columns:
-      - name: delivery_cost
-        config:
-          meta:
-            metrics:
-              max_delivery_cost:
-                type: max
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: my_model
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: delivery_cost
+    config:
+      meta:
+        metrics:
+          max_delivery_cost:
+            type: max
+```
 
-    dimensions:
-      - name: delivery_cost
+```yaml dbt v1.9 and earlier
+columns:
+  - name: delivery_cost
+    meta:
+      metrics:
+        max_delivery_cost:
+          type: max
+```
 
-    metrics:
-      max_delivery_cost:
-        type: max
-        sql: ${TABLE}.delivery_cost
-    ```
-  </Tab>
-</Tabs>
+```yaml Lightdash YAML
+type: model
+name: my_model
+
+dimensions:
+  - name: delivery_cost
+
+metrics:
+  max_delivery_cost:
+    type: max
+    sql: ${TABLE}.delivery_cost
+```
+</CodeGroup>
 
 ### min
 
@@ -741,43 +695,39 @@ Because `type: min` metrics only work with numerical fields, you can't use them 
 
 For example, this creates a metric `min_delivery_cost` by looking at the `delivery_cost` dimension and taking the smallest value it finds:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: delivery_cost
-        meta:
-          metrics:
-            min_delivery_cost:
-              type: min
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    columns:
-      - name: delivery_cost
-        config:
-          meta:
-            metrics:
-              min_delivery_cost:
-                type: min
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: my_model
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: delivery_cost
+    config:
+      meta:
+        metrics:
+          min_delivery_cost:
+            type: min
+```
 
-    dimensions:
-      - name: delivery_cost
+```yaml dbt v1.9 and earlier
+columns:
+  - name: delivery_cost
+    meta:
+      metrics:
+        min_delivery_cost:
+          type: min
+```
 
-    metrics:
-      min_delivery_cost:
-        type: min
-        sql: ${TABLE}.delivery_cost
-    ```
-  </Tab>
-</Tabs>
+```yaml Lightdash YAML
+type: model
+name: my_model
+
+dimensions:
+  - name: delivery_cost
+
+metrics:
+  min_delivery_cost:
+    type: min
+    sql: ${TABLE}.delivery_cost
+```
+</CodeGroup>
 
 ### number
 
@@ -787,67 +737,63 @@ The `number` metric can be used on any valid SQL expression that gives you a num
 
 For example, this creates a metric called `total_gross_profit_margin_percentage` based on the `total_sale_price` and `total_gross_profit_margin` aggregate metrics:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: sale_price
-        meta:
-          metrics:
-            total_sale_price:
-              type: sum
-      - name: gross_profit_margin
-        meta:
-          metrics:
-            total_gross_profit_margin:
-              type: sum
-            total_gross_profit_margin_percentage:
-              type: number
-              sql: '(${total_gross_profit_margin}/ NULLIF(${total_sale_price},0))'
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    columns:
-      - name: sale_price
-        config:
-          meta:
-            metrics:
-              total_sale_price:
-                type: sum
-      - name: gross_profit_margin
-        config:
-          meta:
-            metrics:
-              total_gross_profit_margin:
-                type: sum
-              total_gross_profit_margin_percentage:
-                type: number
-                sql: '(${total_gross_profit_margin}/ NULLIF(${total_sale_price},0))'
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: my_model
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: sale_price
+    config:
+      meta:
+        metrics:
+          total_sale_price:
+            type: sum
+  - name: gross_profit_margin
+    config:
+      meta:
+        metrics:
+          total_gross_profit_margin:
+            type: sum
+          total_gross_profit_margin_percentage:
+            type: number
+            sql: '(${total_gross_profit_margin}/ NULLIF(${total_sale_price},0))'
+```
 
-    dimensions:
-      - name: sale_price
-      - name: gross_profit_margin
+```yaml dbt v1.9 and earlier
+columns:
+  - name: sale_price
+    meta:
+      metrics:
+        total_sale_price:
+          type: sum
+  - name: gross_profit_margin
+    meta:
+      metrics:
+        total_gross_profit_margin:
+          type: sum
+        total_gross_profit_margin_percentage:
+          type: number
+          sql: '(${total_gross_profit_margin}/ NULLIF(${total_sale_price},0))'
+```
 
-    metrics:
-      total_sale_price:
-        type: sum
-        sql: ${TABLE}.sale_price
-      total_gross_profit_margin:
-        type: sum
-        sql: ${TABLE}.gross_profit_margin
-      total_gross_profit_margin_percentage:
-        type: number
-        sql: '(${total_gross_profit_margin}/ NULLIF(${total_sale_price},0))'
-    ```
-  </Tab>
-</Tabs>
+```yaml Lightdash YAML
+type: model
+name: my_model
+
+dimensions:
+  - name: sale_price
+  - name: gross_profit_margin
+
+metrics:
+  total_sale_price:
+    type: sum
+    sql: ${TABLE}.sale_price
+  total_gross_profit_margin:
+    type: sum
+    sql: ${TABLE}.gross_profit_margin
+  total_gross_profit_margin_percentage:
+    type: number
+    sql: '(${total_gross_profit_margin}/ NULLIF(${total_sale_price},0))'
+```
+</CodeGroup>
 
 The example above also uses the NULLIF() SQL function to avoid division-by-zero errors.
 
@@ -859,49 +805,43 @@ The `sum` metric can be used on any numeric dimension or, [for custom SQL](#usin
 
 For example, this creates a metric `total_revenue` by adding up the values in the `revenue` dimension:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: revenue
-        meta:
-          metrics:
-            total_revenue:
-              type: sum
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    columns:
-      - name: revenue
-        config:
-          meta:
-            metrics:
-              total_revenue:
-                type: sum
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: my_model
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: revenue
+    config:
+      meta:
+        metrics:
+          total_revenue:
+            type: sum
+```
 
-    dimensions:
-      - name: revenue
+```yaml dbt v1.9 and earlier
+columns:
+  - name: revenue
+    meta:
+      metrics:
+        total_revenue:
+          type: sum
+```
 
-    metrics:
-      total_revenue:
-        type: sum
-        sql: ${TABLE}.revenue
-    ```
-  </Tab>
-</Tabs>
+```yaml Lightdash YAML
+type: model
+name: my_model
 
-### sum_distinct
+dimensions:
+  - name: revenue
 
-<Warning>
-  **Beta:** `sum_distinct` is currently in Beta. Learn what this means in our Feature Maturity Levels guide: [Feature Maturity Levels](/support/feature-maturity-levels).
-</Warning>
+metrics:
+  total_revenue:
+    type: sum
+    sql: ${TABLE}.revenue
+```
+</CodeGroup>
+
+### sum_distinct <Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge>
+
+`sum_distinct` is in [Beta](/support/feature-maturity-levels).
 
 Adds up the values in a given field while deduplicating data based on one or more specified distinct keys. This is useful when you have wide tables where values are repeated across rows and you need to sum unique values only.
 
@@ -940,60 +880,56 @@ To sum shipping costs for all orders, you need to deduplicate by `order_id`:
 If the value you are aggregating is truly distinct based on the distinct key (e.g., each order has only one shipping cost), this won't be a problem. However, if there are multiple different values for the same distinct key, only the first value in ascending order will be used.
 </Note>
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: order_line_items
-        meta:
-          metrics:
-            total_shipping_cost:
-              type: sum_distinct
-              sql: ${order_shipping_cost}
-              distinct_keys: [order_id]
-              description: >
-                Total shipping cost correctly deduped. Each order's shipping cost is
-                summed once, regardless of how many line items the order has.
-              format: usd
-              round: 2
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    models:
-      - name: order_line_items
-        config:
-          meta:
-            metrics:
-              total_shipping_cost:
-                type: sum_distinct
-                sql: ${order_shipping_cost}
-                distinct_keys: [order_id]
-                description: >
-                  Total shipping cost correctly deduped. Each order's shipping cost is
-                  summed once, regardless of how many line items the order has.
-                format: usd
-                round: 2
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: order_line_items
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: order_line_items
+    config:
+      meta:
+        metrics:
+          total_shipping_cost:
+            type: sum_distinct
+            sql: ${order_shipping_cost}
+            distinct_keys: [order_id]
+            description: >
+              Total shipping cost correctly deduped. Each order's shipping cost is
+              summed once, regardless of how many line items the order has.
+            format: usd
+            round: 2
+```
 
-    metrics:
-      total_shipping_cost:
-        type: sum_distinct
-        sql: ${TABLE}.order_shipping_cost
-        distinct_keys: [order_id]
-        description: >
-          Total shipping cost correctly deduped. Each order's shipping cost is
-          summed once, regardless of how many line items the order has.
-        format: usd
-        round: 2
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: order_line_items
+    meta:
+      metrics:
+        total_shipping_cost:
+          type: sum_distinct
+          sql: ${order_shipping_cost}
+          distinct_keys: [order_id]
+          description: >
+            Total shipping cost correctly deduped. Each order's shipping cost is
+            summed once, regardless of how many line items the order has.
+          format: usd
+          round: 2
+```
+
+```yaml Lightdash YAML
+type: model
+name: order_line_items
+
+metrics:
+  total_shipping_cost:
+    type: sum_distinct
+    sql: ${TABLE}.order_shipping_cost
+    distinct_keys: [order_id]
+    description: >
+      Total shipping cost correctly deduped. Each order's shipping cost is
+      summed once, regardless of how many line items the order has.
+    format: usd
+    round: 2
+```
+</CodeGroup>
 
 **Using multiple distinct keys**
 
@@ -1015,61 +951,57 @@ With `distinct_keys: [order_id, item_warehouse_location]`:
 - Order 2 🟩: Three unique warehouses (US, Canada, UK) → 2.5 + 3.0 + 4.0 = 9.5
 - **Total: 12.0**
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: warehouse_processing_fee_per_order
-        description: warehouse processing fee per order
-        meta:
-          dimension:
-            type: number
-          metrics:
-            total_processing_fee:
-              type: sum_distinct
-              distinct_keys: [order_id, item_warehouse_location]
-              description: >
-                Processing fees are charged per warehouse per order.
-                If there are two items from the same warehouse the fee
-                should not be counted twice.
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    columns:
-      - name: warehouse_processing_fee_per_order
-        description: warehouse processing fee per order
-        config:
-          meta:
-            dimension:
-              type: number
-            metrics:
-              total_processing_fee:
-                type: sum_distinct
-                distinct_keys: [order_id, item_warehouse_location]
-                description: >
-                  Processing fees are charged per warehouse per order.
-                  If there are two items from the same warehouse the fee
-                  should not be counted twice.
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: order_line_items
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: warehouse_processing_fee_per_order
+    description: warehouse processing fee per order
+    config:
+      meta:
+        dimension:
+          type: number
+        metrics:
+          total_processing_fee:
+            type: sum_distinct
+            distinct_keys: [order_id, item_warehouse_location]
+            description: >
+              Processing fees are charged per warehouse per order.
+              If there are two items from the same warehouse the fee
+              should not be counted twice.
+```
 
-    metrics:
-      total_processing_fee:
-        type: sum_distinct
-        sql: ${TABLE}.warehouse_processing_fee_per_order
-        distinct_keys: [order_id, item_warehouse_location]
-        description: >
-          Processing fees are charged per warehouse per order.
-          If there are two items from the same warehouse the fee
-          should not be counted twice.
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+columns:
+  - name: warehouse_processing_fee_per_order
+    description: warehouse processing fee per order
+    meta:
+      dimension:
+        type: number
+      metrics:
+        total_processing_fee:
+          type: sum_distinct
+          distinct_keys: [order_id, item_warehouse_location]
+          description: >
+            Processing fees are charged per warehouse per order.
+            If there are two items from the same warehouse the fee
+            should not be counted twice.
+```
+
+```yaml Lightdash YAML
+type: model
+name: order_line_items
+
+metrics:
+  total_processing_fee:
+    type: sum_distinct
+    sql: ${TABLE}.warehouse_processing_fee_per_order
+    distinct_keys: [order_id, item_warehouse_location]
+    description: >
+      Processing fees are charged per warehouse per order.
+      If there are two items from the same warehouse the fee
+      should not be counted twice.
+```
+</CodeGroup>
 
 **How selected dimensions interact with `distinct_keys`**
 
@@ -1085,11 +1017,9 @@ For example, with `distinct_keys: [order_id]`:
 
 If you want a per-group total that varies with an unrelated dimension, add that dimension to `distinct_keys` so it becomes part of the dedup grain.
 
-### average_distinct
+### average_distinct <Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge>
 
-<Warning>
-  **Beta:** `average_distinct` is currently in Beta. Learn what this means in our Feature Maturity Levels guide: [Feature Maturity Levels](/support/feature-maturity-levels).
-</Warning>
+`average_distinct` is in [Beta](/support/feature-maturity-levels).
 
 Calculates the average of values in a given field while deduplicating data based on one or more specified distinct keys. This works the same way as [`sum_distinct`](#sum_distinct), but computes an average instead of a sum.
 
@@ -1130,63 +1060,59 @@ Without `average_distinct`, a naive `AVG` on this table would give `(10 + 10 + 2
 If the value you are aggregating is truly distinct based on the distinct key (e.g., each order has only one shipping cost), this won't be a problem. However, if there are multiple different values for the same distinct key, only the first value in ascending order will be used.
 </Note>
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: order_line_items
-        meta:
-          metrics:
-            avg_shipping_cost:
-              type: average_distinct
-              sql: ${order_shipping_cost}
-              distinct_keys: [order_id]
-              description: >
-                Average shipping cost per order, correctly deduped. Each order's
-                shipping cost is counted once, regardless of how many line items
-                the order has.
-              format: usd
-              round: 2
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    models:
-      - name: order_line_items
-        config:
-          meta:
-            metrics:
-              avg_shipping_cost:
-                type: average_distinct
-                sql: ${order_shipping_cost}
-                distinct_keys: [order_id]
-                description: >
-                  Average shipping cost per order, correctly deduped. Each order's
-                  shipping cost is counted once, regardless of how many line items
-                  the order has.
-                format: usd
-                round: 2
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: order_line_items
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: order_line_items
+    config:
+      meta:
+        metrics:
+          avg_shipping_cost:
+            type: average_distinct
+            sql: ${order_shipping_cost}
+            distinct_keys: [order_id]
+            description: >
+              Average shipping cost per order, correctly deduped. Each order's
+              shipping cost is counted once, regardless of how many line items
+              the order has.
+            format: usd
+            round: 2
+```
 
-    metrics:
-      avg_shipping_cost:
-        type: average_distinct
-        sql: ${TABLE}.order_shipping_cost
-        distinct_keys: [order_id]
-        description: >
-          Average shipping cost per order, correctly deduped. Each order's
-          shipping cost is counted once, regardless of how many line items
-          the order has.
-        format: usd
-        round: 2
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: order_line_items
+    meta:
+      metrics:
+        avg_shipping_cost:
+          type: average_distinct
+          sql: ${order_shipping_cost}
+          distinct_keys: [order_id]
+          description: >
+            Average shipping cost per order, correctly deduped. Each order's
+            shipping cost is counted once, regardless of how many line items
+            the order has.
+          format: usd
+          round: 2
+```
+
+```yaml Lightdash YAML
+type: model
+name: order_line_items
+
+metrics:
+  avg_shipping_cost:
+    type: average_distinct
+    sql: ${TABLE}.order_shipping_cost
+    distinct_keys: [order_id]
+    description: >
+      Average shipping cost per order, correctly deduped. Each order's
+      shipping cost is counted once, regardless of how many line items
+      the order has.
+    format: usd
+    round: 2
+```
+</CodeGroup>
 
 **Using multiple distinct keys**
 
@@ -1210,58 +1136,54 @@ With `distinct_keys: [order_id, item_warehouse_location]`:
 - Order 2 🟩, UK → 4.0
 - **Average: (2.5 + 2.5 + 3.0 + 4.0) / 4 = 3.0**
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: warehouse_processing_fee_per_order
-        description: warehouse processing fee per order
-        meta:
-          dimension:
-            type: number
-          metrics:
-            avg_processing_fee:
-              type: average_distinct
-              distinct_keys: [order_id, item_warehouse_location]
-              description: >
-                Average processing fee per warehouse-order combination.
-                Deduplicates so each warehouse-order pair is counted once.
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    columns:
-      - name: warehouse_processing_fee_per_order
-        description: warehouse processing fee per order
-        config:
-          meta:
-            dimension:
-              type: number
-            metrics:
-              avg_processing_fee:
-                type: average_distinct
-                distinct_keys: [order_id, item_warehouse_location]
-                description: >
-                  Average processing fee per warehouse-order combination.
-                  Deduplicates so each warehouse-order pair is counted once.
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: order_line_items
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: warehouse_processing_fee_per_order
+    description: warehouse processing fee per order
+    config:
+      meta:
+        dimension:
+          type: number
+        metrics:
+          avg_processing_fee:
+            type: average_distinct
+            distinct_keys: [order_id, item_warehouse_location]
+            description: >
+              Average processing fee per warehouse-order combination.
+              Deduplicates so each warehouse-order pair is counted once.
+```
 
-    metrics:
-      avg_processing_fee:
-        type: average_distinct
-        sql: ${TABLE}.warehouse_processing_fee_per_order
-        distinct_keys: [order_id, item_warehouse_location]
-        description: >
-          Average processing fee per warehouse-order combination.
-          Deduplicates so each warehouse-order pair is counted once.
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+columns:
+  - name: warehouse_processing_fee_per_order
+    description: warehouse processing fee per order
+    meta:
+      dimension:
+        type: number
+      metrics:
+        avg_processing_fee:
+          type: average_distinct
+          distinct_keys: [order_id, item_warehouse_location]
+          description: >
+            Average processing fee per warehouse-order combination.
+            Deduplicates so each warehouse-order pair is counted once.
+```
+
+```yaml Lightdash YAML
+type: model
+name: order_line_items
+
+metrics:
+  avg_processing_fee:
+    type: average_distinct
+    sql: ${TABLE}.warehouse_processing_fee_per_order
+    distinct_keys: [order_id, item_warehouse_location]
+    description: >
+      Average processing fee per warehouse-order combination.
+      Deduplicates so each warehouse-order pair is counted once.
+```
+</CodeGroup>
 
 `average_distinct` follows the same rules as `sum_distinct` for how selected dimensions interact with `distinct_keys`. See [How selected dimensions interact with `distinct_keys`](#sum_distinct) for details.
 
@@ -1275,45 +1197,41 @@ The `string` metric can be used on any valid SQL expression that gives you a str
 
 For example, this creates a metric `product_name_group` by combining the unique values of a dimension called `product_name`:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: product_name
-        meta:
-          metrics:
-            product_name_group:
-              type: string
-              sql: 'GROUP_CONCAT(${TABLE}.product_name)'
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    columns:
-      - name: product_name
-        config:
-          meta:
-            metrics:
-              product_name_group:
-                type: string
-                sql: 'GROUP_CONCAT(${TABLE}.product_name)'
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: my_model
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: product_name
+    config:
+      meta:
+        metrics:
+          product_name_group:
+            type: string
+            sql: 'GROUP_CONCAT(${TABLE}.product_name)'
+```
 
-    dimensions:
-      - name: product_name
+```yaml dbt v1.9 and earlier
+columns:
+  - name: product_name
+    meta:
+      metrics:
+        product_name_group:
+          type: string
+          sql: 'GROUP_CONCAT(${TABLE}.product_name)'
+```
 
-    metrics:
-      product_name_group:
-        type: string
-        sql: 'GROUP_CONCAT(${TABLE}.product_name)'
-    ```
-  </Tab>
-</Tabs>
+```yaml Lightdash YAML
+type: model
+name: my_model
+
+dimensions:
+  - name: product_name
+
+metrics:
+  product_name_group:
+    type: string
+    sql: 'GROUP_CONCAT(${TABLE}.product_name)'
+```
+</CodeGroup>
 
 ### percent_of_previous
 
@@ -1321,52 +1239,48 @@ Returns the current value as a percentage of the previous row's value for a refe
 
 For example, to calculate the percent of the previous value of total revenue:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: orders_model
-        meta:
-          metrics:
-            total_revenue:
-              type: sum
-            revenue_percent_of_previous:
-              type: percent_of_previous
-              sql: ${total_revenue}
-              format: '0.00%'
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    models:
-      - name: orders_model
-        config:
-          meta:
-            metrics:
-              total_revenue:
-                type: sum
-              revenue_percent_of_previous:
-                type: percent_of_previous
-                sql: ${total_revenue}
-                format: '0.00%'
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: orders_model
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: orders_model
+    config:
+      meta:
+        metrics:
+          total_revenue:
+            type: sum
+          revenue_percent_of_previous:
+            type: percent_of_previous
+            sql: ${total_revenue}
+            format: '0.00%'
+```
 
-    metrics:
-      total_revenue:
-        type: sum
-        sql: ${TABLE}.revenue
-      revenue_percent_of_previous:
-        type: percent_of_previous
-        sql: ${total_revenue}
-        format: '0.00%'
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: orders_model
+    meta:
+      metrics:
+        total_revenue:
+          type: sum
+        revenue_percent_of_previous:
+          type: percent_of_previous
+          sql: ${total_revenue}
+          format: '0.00%'
+```
+
+```yaml Lightdash YAML
+type: model
+name: orders_model
+
+metrics:
+  total_revenue:
+    type: sum
+    sql: ${TABLE}.revenue
+  revenue_percent_of_previous:
+    type: percent_of_previous
+    sql: ${total_revenue}
+    format: '0.00%'
+```
+</CodeGroup>
 
 Note: If the previous value is 0 or NULL, the result will be NULL to avoid division-by-zero.
 <Warning>
@@ -1379,52 +1293,48 @@ Returns the current value as a percentage of the total across the result set (or
 
 For example, to calculate each row's percent of total revenue:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: orders_model
-        meta:
-          metrics:
-            total_revenue:
-              type: sum
-            revenue_percent_of_total:
-              type: percent_of_total
-              sql: ${total_revenue}
-              format: '0.00%'
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    models:
-      - name: orders_model
-        config:
-          meta:
-            metrics:
-              total_revenue:
-                type: sum
-              revenue_percent_of_total:
-                type: percent_of_total
-                sql: ${total_revenue}
-                format: '0.00%'
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: orders_model
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: orders_model
+    config:
+      meta:
+        metrics:
+          total_revenue:
+            type: sum
+          revenue_percent_of_total:
+            type: percent_of_total
+            sql: ${total_revenue}
+            format: '0.00%'
+```
 
-    metrics:
-      total_revenue:
-        type: sum
-        sql: ${TABLE}.revenue
-      revenue_percent_of_total:
-        type: percent_of_total
-        sql: ${total_revenue}
-        format: '0.00%'
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: orders_model
+    meta:
+      metrics:
+        total_revenue:
+          type: sum
+        revenue_percent_of_total:
+          type: percent_of_total
+          sql: ${total_revenue}
+          format: '0.00%'
+```
+
+```yaml Lightdash YAML
+type: model
+name: orders_model
+
+metrics:
+  total_revenue:
+    type: sum
+    sql: ${TABLE}.revenue
+  revenue_percent_of_total:
+    type: percent_of_total
+    sql: ${total_revenue}
+    format: '0.00%'
+```
+</CodeGroup>
 
 <Warning>
 **This is a post calculation metric** which is computed after other metrics. It can only reference aggregate and non-aggregate metrics (and cannot reference dimensions or other post calculation metrics).
@@ -1436,49 +1346,45 @@ Returns the cumulative total of a referenced metric according to the query's gro
 
 For example, to calculate a running total of revenue:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: orders_model
-        meta:
-          metrics:
-            total_revenue:
-              type: sum
-            running_total_revenue:
-              type: running_total
-              sql: ${total_revenue}
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    models:
-      - name: orders_model
-        config:
-          meta:
-            metrics:
-              total_revenue:
-                type: sum
-              running_total_revenue:
-                type: running_total
-                sql: ${total_revenue}
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: orders_model
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: orders_model
+    config:
+      meta:
+        metrics:
+          total_revenue:
+            type: sum
+          running_total_revenue:
+            type: running_total
+            sql: ${total_revenue}
+```
 
-    metrics:
-      total_revenue:
-        type: sum
-        sql: ${TABLE}.revenue
-      running_total_revenue:
-        type: running_total
-        sql: ${total_revenue}
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: orders_model
+    meta:
+      metrics:
+        total_revenue:
+          type: sum
+        running_total_revenue:
+          type: running_total
+          sql: ${total_revenue}
+```
+
+```yaml Lightdash YAML
+type: model
+name: orders_model
+
+metrics:
+  total_revenue:
+    type: sum
+    sql: ${TABLE}.revenue
+  running_total_revenue:
+    type: running_total
+    sql: ${total_revenue}
+```
+</CodeGroup>
 <Warning>
 **This is a post calculation metric** which is computed after other metrics. It can only reference aggregate and non-aggregate metrics (and cannot reference dimensions or other post calculation metrics).
 </Warning>
@@ -1549,17 +1455,15 @@ metrics:
 By default, we show all of the dimensions from the Table when you click `View underlying data`. If you have fields from a joined table included in your results table, then we'll also show you all of the fields from the joined Table.
 
 <Frame>
-  ![](../images/underlying-data-ec265ef84085672491f477d180d173bc.jpg)
+  ![Opening "View underlying data" from a bar chart and a results row, showing the raw rows behind that value in a modal](/images/underlying-data-ec265ef84085672491f477d180d173bc.jpg)
 </Frame>
 
 You can limit which dimensions are shown, as well as add metrics to be included, for a field when a user clicks `View underlying data` by adding the list of dimensions and/or metrics to your `.yml` files.
 
 <Note>
 When `show_underlying_values` is not explicitly defined for a metric, `View underlying data` is capped at the first 50 dimensions from the Table (including joined tables). To show more than 50 dimensions, or to control exactly which fields appear, specify the fields explicitly in `show_underlying_values` (or [`default_show_underlying_values`](#default-show-underlying-values) at the model level) in your `.yml`.
-</Note>
 
-<Note>
-Hidden dimensions (with `hidden: true`) cannot be included in drilldowns. If you need a dimension to appear in drilldowns but not in the Explore sidebar, consider using [groups](/semantic-layer/dimensions#groups) to organize dimensions instead.
+Hidden dimensions (with `hidden: true`) cannot be included in drilldowns. If you need a dimension to appear in drilldowns but not in the Explore sidebar, use [groups](/semantic-layer/dimensions#groups) to organize dimensions instead.
 </Note>
 
 ```yaml
@@ -1614,114 +1518,110 @@ You can group your dimensions and metrics in the sidebar using the `groups` para
 
 To do this, you need to set up `group_details` in the model's configuration. Then, you can use these groups to organize metrics and dimensions. You can create nested groups up to 2 levels.
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: baskets
-        meta:
-          group_details:
-            product_details:
-              label: Product Details
-              description: 'Fields that have information about the products in the basket.'
-            item_details:
-              label: Item Details
-              description: 'Fields that have information about the items in the basket.'
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: baskets
+    config:
+      meta:
+        group_details:
+          product_details:
+            label: Product Details
+            description: 'Fields that have information about the products in the basket.'
+          item_details:
+            label: Item Details
+            description: 'Fields that have information about the items in the basket.'
 
-        columns:
-          - name: basket_item_id
-            description: 'ID for the product item within the basket.'
-            meta:
-              dimension:
-                groups: ['product_details', 'item_details'] # this would add the dimension to a nested group: `product details` --> `item details`
-              metrics:
-                count_total_basket_items:
-                  type: count_distinct
-                  groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
-          - name: product_name
-            description: 'Full name of the product.'
-            meta:
-              dimension:
-                label: 'Product name'
-                groups: ['product_details'] # this would add the dimension under the group label: `product_details`
-              metrics:
-                count_total_product_types:
-                  type: count_distinct
-                  groups: ['product_details'] # this would add the metric under the group label: `product_details`
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    models:
-      - name: baskets
-        config:
-          meta:
-            group_details:
-              product_details:
-                label: Product Details
-                description: 'Fields that have information about the products in the basket.'
-              item_details:
-                label: Item Details
-                description: 'Fields that have information about the items in the basket.'
-
-        columns:
-          - name: basket_item_id
-            description: 'ID for the product item within the basket.'
-            config:
-              meta:
-                dimension:
-                  groups: ['product_details', 'item_details'] # this would add the dimension to a nested group: `product details` --> `item details`
-                metrics:
-                  count_total_basket_items:
-                    type: count_distinct
-                    groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
-          - name: product_name
-            description: 'Full name of the product.'
-            config:
-              meta:
-                dimension:
-                  label: 'Product name'
-                  groups: ['product_details'] # this would add the dimension under the group label: `product_details`
-                metrics:
-                  count_total_product_types:
-                    type: count_distinct
-                    groups: ['product_details'] # this would add the metric under the group label: `product_details`
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: baskets
-
-    group_details:
-      product_details:
-        label: Product Details
-        description: 'Fields that have information about the products in the basket.'
-      item_details:
-        label: Item Details
-        description: 'Fields that have information about the items in the basket.'
-
-    dimensions:
+    columns:
       - name: basket_item_id
         description: 'ID for the product item within the basket.'
-        groups: ['product_details', 'item_details'] # this would add the dimension to a nested group: `product details` --> `item details`
+        config:
+          meta:
+            dimension:
+              groups: ['product_details', 'item_details'] # this would add the dimension to a nested group: `product details` --> `item details`
+            metrics:
+              count_total_basket_items:
+                type: count_distinct
+                groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
       - name: product_name
         description: 'Full name of the product.'
-        label: 'Product name'
-        groups: ['product_details'] # this would add the dimension under the group label: `product_details`
+        config:
+          meta:
+            dimension:
+              label: 'Product name'
+              groups: ['product_details'] # this would add the dimension under the group label: `product_details`
+            metrics:
+              count_total_product_types:
+                type: count_distinct
+                groups: ['product_details'] # this would add the metric under the group label: `product_details`
+```
 
-    metrics:
-      count_total_basket_items:
-        type: count_distinct
-        sql: ${TABLE}.basket_item_id
-        groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
-      count_total_product_types:
-        type: count_distinct
-        sql: ${TABLE}.product_name
-        groups: ['product_details'] # this would add the metric under the group label: `product_details`
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: baskets
+    meta:
+      group_details:
+        product_details:
+          label: Product Details
+          description: 'Fields that have information about the products in the basket.'
+        item_details:
+          label: Item Details
+          description: 'Fields that have information about the items in the basket.'
+
+    columns:
+      - name: basket_item_id
+        description: 'ID for the product item within the basket.'
+        meta:
+          dimension:
+            groups: ['product_details', 'item_details'] # this would add the dimension to a nested group: `product details` --> `item details`
+          metrics:
+            count_total_basket_items:
+              type: count_distinct
+              groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
+      - name: product_name
+        description: 'Full name of the product.'
+        meta:
+          dimension:
+            label: 'Product name'
+            groups: ['product_details'] # this would add the dimension under the group label: `product_details`
+          metrics:
+            count_total_product_types:
+              type: count_distinct
+              groups: ['product_details'] # this would add the metric under the group label: `product_details`
+```
+
+```yaml Lightdash YAML
+type: model
+name: baskets
+
+group_details:
+  product_details:
+    label: Product Details
+    description: 'Fields that have information about the products in the basket.'
+  item_details:
+    label: Item Details
+    description: 'Fields that have information about the items in the basket.'
+
+dimensions:
+  - name: basket_item_id
+    description: 'ID for the product item within the basket.'
+    groups: ['product_details', 'item_details'] # this would add the dimension to a nested group: `product details` --> `item details`
+  - name: product_name
+    description: 'Full name of the product.'
+    label: 'Product name'
+    groups: ['product_details'] # this would add the dimension under the group label: `product_details`
+
+metrics:
+  count_total_basket_items:
+    type: count_distinct
+    sql: ${TABLE}.basket_item_id
+    groups: ['product_details', 'item_details'] # this would add the metric to a nested group: `product details` --> `item details`
+  count_total_product_types:
+    type: count_distinct
+    sql: ${TABLE}.product_name
+    groups: ['product_details'] # this would add the metric under the group label: `product_details`
+```
+</CodeGroup>
 
 ## Rich text
 
@@ -1735,70 +1635,66 @@ Rich text only affects UI display in table cells. It has no impact on value form
 
 Use Liquid control flow tags for conditional display based on metric values:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: customer_lifetime_value
-        meta:
-          metrics:
-            average_clv:
-              type: average
-              richText: |
-                {% raw %}{% if value.raw >= 100 %}
-                ### 📈 ${ value.formatted }
-                **Excellent** Average CLV
-                {% elsif value.raw >= 50 %}
-                ### 📊 ${ value.formatted }
-                **Good** Average CLV
-                {% else %}
-                ### ⚠️ ${ value.formatted }
-                **Low** Average CLV
-                {% endif %}{% endraw %}
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    columns:
-      - name: customer_lifetime_value
-        config:
-          meta:
-            metrics:
-              average_clv:
-                type: average
-                richText: |
-                  {% raw %}{% if value.raw >= 100 %}
-                  ### 📈 ${ value.formatted }
-                  **Excellent** Average CLV
-                  {% elsif value.raw >= 50 %}
-                  ### 📊 ${ value.formatted }
-                  **Good** Average CLV
-                  {% else %}
-                  ### ⚠️ ${ value.formatted }
-                  **Low** Average CLV
-                  {% endif %}{% endraw %}
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    metrics:
-      average_clv:
-        type: average
-        sql: ${TABLE}.customer_lifetime_value
-        richText: |
-          {% raw %}{% if value.raw >= 100 %}
-          ### 📈 ${ value.formatted }
-          **Excellent** Average CLV
-          {% elsif value.raw >= 50 %}
-          ### 📊 ${ value.formatted }
-          **Good** Average CLV
-          {% else %}
-          ### ⚠️ ${ value.formatted }
-          **Low** Average CLV
-          {% endif %}{% endraw %}
-    ```
-  </Tab>
-</Tabs>
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: customer_lifetime_value
+    config:
+      meta:
+        metrics:
+          average_clv:
+            type: average
+            richText: |
+              {% raw %}{% if value.raw >= 100 %}
+              ### 📈 ${ value.formatted }
+              **Excellent** Average CLV
+              {% elsif value.raw >= 50 %}
+              ### 📊 ${ value.formatted }
+              **Good** Average CLV
+              {% else %}
+              ### ⚠️ ${ value.formatted }
+              **Low** Average CLV
+              {% endif %}{% endraw %}
+```
+
+```yaml dbt v1.9 and earlier
+columns:
+  - name: customer_lifetime_value
+    meta:
+      metrics:
+        average_clv:
+          type: average
+          richText: |
+            {% raw %}{% if value.raw >= 100 %}
+            ### 📈 ${ value.formatted }
+            **Excellent** Average CLV
+            {% elsif value.raw >= 50 %}
+            ### 📊 ${ value.formatted }
+            **Good** Average CLV
+            {% else %}
+            ### ⚠️ ${ value.formatted }
+            **Low** Average CLV
+            {% endif %}{% endraw %}
+```
+
+```yaml Lightdash YAML
+metrics:
+  average_clv:
+    type: average
+    sql: ${TABLE}.customer_lifetime_value
+    richText: |
+      {% raw %}{% if value.raw >= 100 %}
+      ### 📈 ${ value.formatted }
+      **Excellent** Average CLV
+      {% elsif value.raw >= 50 %}
+      ### 📊 ${ value.formatted }
+      **Good** Average CLV
+      {% else %}
+      ### ⚠️ ${ value.formatted }
+      **Low** Average CLV
+      {% endif %}{% endraw %}
+```
+</CodeGroup>
 
 ### Liquid templating in rich text
 
@@ -1811,61 +1707,57 @@ Filters are applied to metrics any time that metric is used in Lightdash. Filter
 
 For example, we could add a filter to our users count to make sure it didn't include user IDs with closed accounts, like this:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: sales_stats
-        columns:
-          - name: user_id
-            description: 'Unique ID for users.'
-            meta:
-              dimension:
-                type: string
-              metrics:
-                count_users:
-                  type: count_distinct
-                  filters:
-                    - is_closed_account: false
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    models:
-      - name: sales_stats
-        columns:
-          - name: user_id
-            description: 'Unique ID for users.'
-            config:
-              meta:
-                dimension:
-                  type: string
-                metrics:
-                  count_users:
-                    type: count_distinct
-                    filters:
-                      - is_closed_account: false
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: sales_stats
-
-    dimensions:
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: sales_stats
+    columns:
       - name: user_id
         description: 'Unique ID for users.'
-        type: string
+        config:
+          meta:
+            dimension:
+              type: string
+            metrics:
+              count_users:
+                type: count_distinct
+                filters:
+                  - is_closed_account: false
+```
 
-    metrics:
-      count_users:
-        type: count_distinct
-        sql: ${TABLE}.user_id
-        filters:
-          - is_closed_account: false
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: sales_stats
+    columns:
+      - name: user_id
+        description: 'Unique ID for users.'
+        meta:
+          dimension:
+            type: string
+          metrics:
+            count_users:
+              type: count_distinct
+              filters:
+                - is_closed_account: false
+```
+
+```yaml Lightdash YAML
+type: model
+name: sales_stats
+
+dimensions:
+  - name: user_id
+    description: 'Unique ID for users.'
+    type: string
+
+metrics:
+  count_users:
+    type: count_distinct
+    sql: ${TABLE}.user_id
+    filters:
+      - is_closed_account: false
+```
+</CodeGroup>
 
 These filters do not appear in the `Filters` tab in the Explore view, instead, they are applied automatically in the SQL query that fetches your results. That means filters added using the `filter` parameter can't be removed in the UI and won't be visible to users unless they look at the SQL query.
 
@@ -1930,55 +1822,51 @@ To filter a field using a list of values you can supply them as an array for tha
 
 For example, if you wanted to filter for orders with order status `completed` or `shipped` you should write the metric like:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: order_id
-        meta:
-          metrics:
-            completed_or_shipped_order_count:
-              type: count_distinct
-              filters:
-                - order_status:
-                    - completed
-                    - shipped
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    columns:
-      - name: order_id
-        config:
-          meta:
-            metrics:
-              completed_or_shipped_order_count:
-                type: count_distinct
-                filters:
-                  - order_status:
-                      - completed
-                      - shipped
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: my_model
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: order_id
+    config:
+      meta:
+        metrics:
+          completed_or_shipped_order_count:
+            type: count_distinct
+            filters:
+              - order_status:
+                  - completed
+                  - shipped
+```
 
-    dimensions:
-      - name: order_id
+```yaml dbt v1.9 and earlier
+columns:
+  - name: order_id
+    meta:
+      metrics:
+        completed_or_shipped_order_count:
+          type: count_distinct
+          filters:
+            - order_status:
+                - completed
+                - shipped
+```
 
-    metrics:
-      completed_or_shipped_order_count:
-        type: count_distinct
-        sql: ${TABLE}.order_id
-        filters:
-          - order_status:
-              - completed
-              - shipped
-    ```
-  </Tab>
-</Tabs>
+```yaml Lightdash YAML
+type: model
+name: my_model
+
+dimensions:
+  - name: order_id
+
+metrics:
+  completed_or_shipped_order_count:
+    type: count_distinct
+    sql: ${TABLE}.order_id
+    filters:
+      - order_status:
+          - completed
+          - shipped
+```
+</CodeGroup>
 
 
 ### Filters are joined using `AND`
@@ -1998,77 +1886,73 @@ Would give you logic like `is_closed_account = TRUE AND is_7d_active = FALSE`.
 
 To filter using a field from a joined model, just use the syntax `model_name.field`, like this:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: sales_stats
-        meta:
-          joins:
-            - join: web_sessions
-              sql_on: ${web_sessions.date} = ${sales_stats.date}
-        columns:
-          - name: user_id
-            description: 'Unique ID for users.'
-            meta:
-              dimension:
-                type: string
-              metrics:
-                count_users:
-                  type: count_distinct
-                  filters:
-                    - is_closed_account: false
-                    - web_sessions.is_bot_user: false
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    models:
-      - name: sales_stats
-        config:
-          meta:
-            joins:
-              - join: web_sessions
-                sql_on: ${web_sessions.date} = ${sales_stats.date}
-        columns:
-          - name: user_id
-            description: 'Unique ID for users.'
-            config:
-              meta:
-                dimension:
-                  type: string
-                metrics:
-                  count_users:
-                    type: count_distinct
-                    filters:
-                      - is_closed_account: false
-                      - web_sessions.is_bot_user: false
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: sales_stats
-
-    joins:
-      - join: web_sessions
-        sql_on: ${web_sessions.date} = ${sales_stats.date}
-
-    dimensions:
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: sales_stats
+    config:
+      meta:
+        joins:
+          - join: web_sessions
+            sql_on: ${web_sessions.date} = ${sales_stats.date}
+    columns:
       - name: user_id
         description: 'Unique ID for users.'
-        type: string
+        config:
+          meta:
+            dimension:
+              type: string
+            metrics:
+              count_users:
+                type: count_distinct
+                filters:
+                  - is_closed_account: false
+                  - web_sessions.is_bot_user: false
+```
 
-    metrics:
-      count_users:
-        type: count_distinct
-        sql: ${TABLE}.user_id
-        filters:
-          - is_closed_account: false
-          - web_sessions.is_bot_user: false
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: sales_stats
+    meta:
+      joins:
+        - join: web_sessions
+          sql_on: ${web_sessions.date} = ${sales_stats.date}
+    columns:
+      - name: user_id
+        description: 'Unique ID for users.'
+        meta:
+          dimension:
+            type: string
+          metrics:
+            count_users:
+              type: count_distinct
+              filters:
+                - is_closed_account: false
+                - web_sessions.is_bot_user: false
+```
+
+```yaml Lightdash YAML
+type: model
+name: sales_stats
+
+joins:
+  - join: web_sessions
+    sql_on: ${web_sessions.date} = ${sales_stats.date}
+
+dimensions:
+  - name: user_id
+    description: 'Unique ID for users.'
+    type: string
+
+metrics:
+  count_users:
+    type: count_distinct
+    sql: ${TABLE}.user_id
+    filters:
+      - is_closed_account: false
+      - web_sessions.is_bot_user: false
+```
+</CodeGroup>
 
 
 ### Referencing time intervals in filters
@@ -2090,118 +1974,114 @@ You can't use filters with non-aggregate metric types. Instead, if your non-aggr
 
 Here's an example: imagine you wanted to calculate the average cost per item that had the status `shipped`. You would need to do something like this in your .yml:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: orders
-        meta:
-          metrics:
-            average_cost_per_item_shipped:
-              type: number
-              sql: ${total_cost_of_shipped} / ${count_unique_items_shipped}
-        columns:
-          - name: item_id
-            description: 'Unique ID for items ordered.'
-            meta:
-              dimension:
-                type: string
-              metrics:
-                count_unique_items:
-                  type: count_distinct
-                count_unique_items_shipped:
-                  type: count_distinct
-                  filters:
-                    - status: 'shipped'
-          - name: item_cost
-            description: 'Cost for each item ordered.'
-            meta:
-              dimension:
-                type: number
-              metrics:
-                total_cost:
-                  type: sum
-                total_cost_of_shipped:
-                  type: sum
-                  filters:
-                    - status: 'shipped'
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    models:
-      - name: orders
-        config:
-          meta:
-            metrics:
-              average_cost_per_item_shipped:
-                type: number
-                sql: ${total_cost_of_shipped} / ${count_unique_items_shipped}
-        columns:
-          - name: item_id
-            description: 'Unique ID for items ordered.'
-            config:
-              meta:
-                dimension:
-                  type: string
-                metrics:
-                  count_unique_items:
-                    type: count_distinct
-                  count_unique_items_shipped:
-                    type: count_distinct
-                    filters:
-                      - status: 'shipped'
-          - name: item_cost
-            description: 'Cost for each item ordered.'
-            config:
-              meta:
-                dimension:
-                  type: number
-                metrics:
-                  total_cost:
-                    type: sum
-                  total_cost_of_shipped:
-                    type: sum
-                    filters:
-                      - status: 'shipped'
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: orders
-
-    dimensions:
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: orders
+    config:
+      meta:
+        metrics:
+          average_cost_per_item_shipped:
+            type: number
+            sql: ${total_cost_of_shipped} / ${count_unique_items_shipped}
+    columns:
       - name: item_id
         description: 'Unique ID for items ordered.'
-        type: string
+        config:
+          meta:
+            dimension:
+              type: string
+            metrics:
+              count_unique_items:
+                type: count_distinct
+              count_unique_items_shipped:
+                type: count_distinct
+                filters:
+                  - status: 'shipped'
       - name: item_cost
         description: 'Cost for each item ordered.'
-        type: number
+        config:
+          meta:
+            dimension:
+              type: number
+            metrics:
+              total_cost:
+                type: sum
+              total_cost_of_shipped:
+                type: sum
+                filters:
+                  - status: 'shipped'
+```
 
-    metrics:
-      count_unique_items:
-        type: count_distinct
-        sql: ${TABLE}.item_id
-      count_unique_items_shipped:
-        type: count_distinct
-        sql: ${TABLE}.item_id
-        filters:
-          - status: 'shipped'
-      total_cost:
-        type: sum
-        sql: ${TABLE}.item_cost
-      total_cost_of_shipped:
-        type: sum
-        sql: ${TABLE}.item_cost
-        filters:
-          - status: 'shipped'
-      average_cost_per_item_shipped:
-        type: number
-        sql: ${total_cost_of_shipped} / ${count_unique_items_shipped}
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: orders
+    meta:
+      metrics:
+        average_cost_per_item_shipped:
+          type: number
+          sql: ${total_cost_of_shipped} / ${count_unique_items_shipped}
+    columns:
+      - name: item_id
+        description: 'Unique ID for items ordered.'
+        meta:
+          dimension:
+            type: string
+          metrics:
+            count_unique_items:
+              type: count_distinct
+            count_unique_items_shipped:
+              type: count_distinct
+              filters:
+                - status: 'shipped'
+      - name: item_cost
+        description: 'Cost for each item ordered.'
+        meta:
+          dimension:
+            type: number
+          metrics:
+            total_cost:
+              type: sum
+            total_cost_of_shipped:
+              type: sum
+              filters:
+                - status: 'shipped'
+```
+
+```yaml Lightdash YAML
+type: model
+name: orders
+
+dimensions:
+  - name: item_id
+    description: 'Unique ID for items ordered.'
+    type: string
+  - name: item_cost
+    description: 'Cost for each item ordered.'
+    type: number
+
+metrics:
+  count_unique_items:
+    type: count_distinct
+    sql: ${TABLE}.item_id
+  count_unique_items_shipped:
+    type: count_distinct
+    sql: ${TABLE}.item_id
+    filters:
+      - status: 'shipped'
+  total_cost:
+    type: sum
+    sql: ${TABLE}.item_cost
+  total_cost_of_shipped:
+    type: sum
+    sql: ${TABLE}.item_cost
+    filters:
+      - status: 'shipped'
+  average_cost_per_item_shipped:
+    type: number
+    sql: ${total_cost_of_shipped} / ${count_unique_items_shipped}
+```
+</CodeGroup>
 
 ## Tags
 
@@ -2216,57 +2096,53 @@ Tags are useful for:
   Tags are **not** displayed as Spotlight categories in the Lightdash UI. They function as a backend/programmatic control mechanism only.
 </Note>
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: orders
-        columns:
-          - name: amount
-            meta:
-              metrics:
-                total_order_amount:
-                  type: sum
-                  tags: ["core", "finance"]
-                average_order_amount:
-                  type: average
-                  tags: ["core"]
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    models:
-      - name: orders
-        columns:
-          - name: amount
-            config:
-              meta:
-                metrics:
-                  total_order_amount:
-                    type: sum
-                    tags: ["core", "finance"]
-                  average_order_amount:
-                    type: average
-                    tags: ["core"]
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: orders
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: orders
+    columns:
+      - name: amount
+        config:
+          meta:
+            metrics:
+              total_order_amount:
+                type: sum
+                tags: ["core", "finance"]
+              average_order_amount:
+                type: average
+                tags: ["core"]
+```
 
-    metrics:
-      total_order_amount:
-        type: sum
-        sql: ${TABLE}.amount
-        tags: ["core", "finance"]
-      average_order_amount:
-        type: average
-        sql: ${TABLE}.amount
-        tags: ["core"]
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: orders
+    columns:
+      - name: amount
+        meta:
+          metrics:
+            total_order_amount:
+              type: sum
+              tags: ["core", "finance"]
+            average_order_amount:
+              type: average
+              tags: ["core"]
+```
+
+```yaml Lightdash YAML
+type: model
+name: orders
+
+metrics:
+  total_order_amount:
+    type: sum
+    sql: ${TABLE}.amount
+    tags: ["core", "finance"]
+  average_order_amount:
+    type: average
+    sql: ${TABLE}.amount
+    tags: ["core"]
+```
+</CodeGroup>
 
 ## Level of detail metrics
 
@@ -2286,19 +2162,27 @@ When you join accounts to deals and group by both segment and plan, the denomina
 
 **Without level of detail (denominator grouped by plan):**
 
+<div className="sticky-first-col">
+
 | Segment | Plan | Accounts with Won Deals | Total Accounts | % |
 |---|---|---|---|---|
 | Enterprise | Basic | 36 | 107 | 33.6% |
 | Enterprise | Professional | 13 | 46 | 28.3% |
 
+</div>
+
 The total accounts column shows **107** and **46** because only accounts that have deals in that specific plan are included in the count.
 
 **With level of detail (denominator independent of plan):**
+
+<div className="sticky-first-col">
 
 | Segment | Plan | Accounts with Won Deals | Total Accounts | % |
 |---|---|---|---|---|
 | Enterprise | Basic | 36 | 152 | 23.7% |
 | Enterprise | Professional | 13 | 152 | 8.6% |
+
+</div>
 
 The total accounts column stays at **152** because the denominator is computed independently of the plan dimension. This is achieved by pre-computing the denominator in a separate CTE in your dbt model.
 
@@ -2339,123 +2223,119 @@ left join segment_totals st on ad.segment = st.segment
 
 **Step 2: Define the metrics in your YAML**
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: account_deal_metrics
-        meta:
-          metrics:
-            pct_accounts_with_won_deals:
-              type: number
-              label: "% Accounts with Won Deals"
-              format: percent
-              sql: ${unique_accounts_with_won_deals} / NULLIF(${segment_total_accounts}, 0)
-        columns:
-          - name: account_id
-            meta:
-              dimension:
-                type: string
-                hidden: true
-              metrics:
-                unique_accounts_with_won_deals:
-                  type: count_distinct
-                  filters:
-                    - stage: 'Won'
-          - name: segment
-            meta:
-              dimension:
-                type: string
-          - name: plan
-            meta:
-              dimension:
-                type: string
-          - name: total_accounts_in_segment
-            meta:
-              dimension:
-                type: number
-              metrics:
-                segment_total_accounts:
-                  type: max
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+ and Fusion">
-    ```yaml
-    models:
-      - name: account_deal_metrics
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: account_deal_metrics
+    config:
+      meta:
+        metrics:
+          pct_accounts_with_won_deals:
+            type: number
+            label: "% Accounts with Won Deals"
+            format: percent
+            sql: ${unique_accounts_with_won_deals} / NULLIF(${segment_total_accounts}, 0)
+    columns:
+      - name: account_id
         config:
           meta:
+            dimension:
+              type: string
+              hidden: true
             metrics:
-              pct_accounts_with_won_deals:
-                type: number
-                label: "% Accounts with Won Deals"
-                format: percent
-                sql: ${unique_accounts_with_won_deals} / NULLIF(${segment_total_accounts}, 0)
-        columns:
-          - name: account_id
-            config:
-              meta:
-                dimension:
-                  type: string
-                  hidden: true
-                metrics:
-                  unique_accounts_with_won_deals:
-                    type: count_distinct
-                    filters:
-                      - stage: 'Won'
-          - name: segment
-            config:
-              meta:
-                dimension:
-                  type: string
-          - name: plan
-            config:
-              meta:
-                dimension:
-                  type: string
-          - name: total_accounts_in_segment
-            config:
-              meta:
-                dimension:
-                  type: number
-                metrics:
-                  segment_total_accounts:
-                    type: max
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: account_deal_metrics
-
-    dimensions:
-      - name: account_id
-        type: string
-        hidden: true
+              unique_accounts_with_won_deals:
+                type: count_distinct
+                filters:
+                  - stage: 'Won'
       - name: segment
-        type: string
+        config:
+          meta:
+            dimension:
+              type: string
       - name: plan
-        type: string
+        config:
+          meta:
+            dimension:
+              type: string
       - name: total_accounts_in_segment
-        type: number
+        config:
+          meta:
+            dimension:
+              type: number
+            metrics:
+              segment_total_accounts:
+                type: max
+```
 
-    metrics:
-      unique_accounts_with_won_deals:
-        type: count_distinct
-        sql: ${TABLE}.account_id
-        filters:
-          - stage: 'Won'
-      segment_total_accounts:
-        type: max
-        sql: ${TABLE}.total_accounts_in_segment
-      pct_accounts_with_won_deals:
-        type: number
-        label: "% Accounts with Won Deals"
-        format: percent
-        sql: ${unique_accounts_with_won_deals} / NULLIF(${segment_total_accounts}, 0)
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: account_deal_metrics
+    meta:
+      metrics:
+        pct_accounts_with_won_deals:
+          type: number
+          label: "% Accounts with Won Deals"
+          format: percent
+          sql: ${unique_accounts_with_won_deals} / NULLIF(${segment_total_accounts}, 0)
+    columns:
+      - name: account_id
+        meta:
+          dimension:
+            type: string
+            hidden: true
+          metrics:
+            unique_accounts_with_won_deals:
+              type: count_distinct
+              filters:
+                - stage: 'Won'
+      - name: segment
+        meta:
+          dimension:
+            type: string
+      - name: plan
+        meta:
+          dimension:
+            type: string
+      - name: total_accounts_in_segment
+        meta:
+          dimension:
+            type: number
+          metrics:
+            segment_total_accounts:
+              type: max
+```
+
+```yaml Lightdash YAML
+type: model
+name: account_deal_metrics
+
+dimensions:
+  - name: account_id
+    type: string
+    hidden: true
+  - name: segment
+    type: string
+  - name: plan
+    type: string
+  - name: total_accounts_in_segment
+    type: number
+
+metrics:
+  unique_accounts_with_won_deals:
+    type: count_distinct
+    sql: ${TABLE}.account_id
+    filters:
+      - stage: 'Won'
+  segment_total_accounts:
+    type: max
+    sql: ${TABLE}.total_accounts_in_segment
+  pct_accounts_with_won_deals:
+    type: number
+    label: "% Accounts with Won Deals"
+    format: percent
+    sql: ${unique_accounts_with_won_deals} / NULLIF(${segment_total_accounts}, 0)
+```
+</CodeGroup>
 
 The key insight is that `total_accounts_in_segment` is pre-computed in the SQL and is the same value for every row in a segment. Using `max` as the aggregation returns the correct segment-level total, regardless of what other dimensions (like `plan`) are in the query.
 

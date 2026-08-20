@@ -124,6 +124,8 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
 
 ### Decision matrix
 
+<div className="sticky-first-col">
+
 |                                       | #1 `lightdash deploy` — local CLI | #2 `lightdash deploy` — CI | #3 "Refresh dbt" — UI button | #4 `lightdash refresh` — CI | #5 `POST /refresh` API — CI |
 | ------------------------------------- | ------------------------------- | ---------------------------------- | ------------------ | ----------------------------- | ------------------------------ |
 | Automated?                            | No                              | Yes                                | No                 | Yes                           | Yes                            |
@@ -134,6 +136,8 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
 | Works without a remote git connection?| Yes                             | Yes                                | No                 | No                            | No                             |
 | Catches breaking changes pre-merge?   | With `--select` + `validate`    | If used in a PR workflow           | No                 | No                            | No                             |
 | Best for                              | Initial setup, debugging        | PR previews; CI deploys with no remote git connection | Ad-hoc UI refresh  | Post-merge sync (recommended) | Post-merge sync, minimal-CI shops |
+
+</div>
 
 ### Recommended setups
 
@@ -156,29 +160,21 @@ Not sure whether to use `lightdash deploy` or `lightdash refresh`? Read about th
 
 ### Things to know
 
-<Info>
-  **`lightdash deploy` does NOT use the UI "Target name" setting.** It uses the local `profiles.yml` default, or whatever `--target` overrides it with. Only mechanisms #3, #4, and #5 respect the UI Target name.
-</Info>
+`lightdash deploy` does not use the UI **Target name** setting. It uses the local `profiles.yml` default, or whatever `--target` overrides it with — only mechanisms #3, #4, and #5 respect the UI Target name.
 
-<Info>
-  **`lightdash refresh` requires a remote git connection.** It will fail with a `ParameterError` if the project's `dbtConnection.type` is `NONE`.
-</Info>
+`lightdash refresh` requires a remote git connection. It fails with a `ParameterError` if the project's `dbtConnection.type` is `NONE`.
 
-<Info>
-  **Refresh is async.** Both #4 and #5 return a `jobUuid` and the work continues server-side. If your CI needs to know the refresh succeeded, poll `GET /api/v1/jobs/{jobUuid}` before exiting the workflow.
-</Info>
+Refresh is async. Both #4 and #5 return a `jobUuid` and the work continues server-side. If your CI needs to know the refresh succeeded, poll `GET /api/v1/jobs/{jobUuid}` before exiting the workflow.
 
 <Warning>
   **Never commit `profiles.yml` with credentials.** For mechanism #2, use either a secret-written-to-file approach or an `env_var()` template — but never check in plaintext credentials.
 </Warning>
 
+Mechanisms #4 and #5 are underused. Most CI examples lead with `lightdash deploy`, which is the heaviest option in CI because it duplicates dbt and warehouse credentials into the runner. The refresh-based patterns are simpler and often a better fit when the project is git-connected.
+
 <Warning>
   **Projects with [multiple dbt sources](#connecting-multiple-dbt-sources) must not use `lightdash deploy`.** Mechanisms #1 and #2 replace the project's Explores with only the local repo's models. Use #3, #4, or #5 instead.
 </Warning>
-
-<Tip>
-  Mechanisms #4 and #5 are underused. Most existing CI examples lead with `lightdash deploy`, which is the heaviest option in CI (requires dbt + warehouse credentials duplicated into the runner). The refresh-based patterns are simpler and often a better fit when the project is git-connected.
-</Tip>
 
 ### How to trigger each sync
 
@@ -187,7 +183,7 @@ Not sure whether to use `lightdash deploy` or `lightdash refresh`? Read about th
 The button can be found on the Query from tables page.
 
 <Frame>
-  ![screenshot-refresh-dbt](../../images/integrations/dbt/projects/dbt-refresh.png)
+  ![screenshot-refresh-dbt](/images/integrations/dbt/projects/dbt-refresh.png)
 </Frame>
 
 _If you're using a git connection (like GitHub, GitLab, or Bitbucket), you'll need to push + merge your changes to the branch that your Lightdash project is connected to before you press `Refresh dbt`._

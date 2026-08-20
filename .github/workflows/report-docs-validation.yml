@@ -48,6 +48,16 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
 
+      - name: Download component findings
+        id: component-artifact
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: component-audit
+          path: component-artifact
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
       - name: Update validation comment
         uses: actions/github-script@v9
         env:
@@ -83,6 +93,27 @@ jobs:
               body += `\n| Location | Rule | Finding |\n| --- | --- | --- |\n${rows.join('\n')}\n`;
             }
             if (total > visible.length) body += `\nShowing ${visible.length} of ${total} findings.\n`;
+
+            // Component findings are advisory unless a rule regressed; they are
+            // annotated inline on the diff, so this only needs to summarise.
+            let components;
+            try {
+              components = JSON.parse(fs.readFileSync('component-artifact/component-audit.json', 'utf8'));
+            } catch (error) {
+              components = undefined;
+            }
+            if (components) {
+              const changedRules = Object.entries(components.summary.byRule || {})
+                .sort(([, a], [, b]) => b - a);
+              body += `\n### Component system\n\n${components.summary.warnings} finding(s) across the corpus.`;
+              if (changedRules.length) {
+                const top = changedRules.slice(0, 5)
+                  .map(([rule, count]) => `\`${rule}\` ${count}`).join(' · ');
+                body += ` Largest: ${top}.`;
+              }
+              body += `\n\nFindings on lines this pull request touched are annotated inline in **Files changed**.\n`;
+            }
+
             body += `\n[Download the structured JSON artifact](${process.env.VALIDATION_RUN_URL}).`;
 
             const issueNumber = Number(process.env.PULL_REQUEST_NUMBER);
