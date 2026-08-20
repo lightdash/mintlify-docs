@@ -167,6 +167,7 @@ The `defaults` section allows you to set project-wide default settings that appl
 defaults:
   case_sensitive: false
   column_totals: false
+  pre_aggregate_execution_fallback: false
   additional_time_intervals:
     date: ['fiscal_quarter']
     timestamp: ['HOUR']
@@ -174,12 +175,13 @@ defaults:
     week: "Week starting Monday"
 ```
 
-| Property                    | Required | Value                    | Description |
-| :-------------------------- | :------- | :----------------------- | :---------- |
-| `case_sensitive`            | No       | boolean                  | Default case sensitivity for string filters across the project. When `false`, all string filters will be case insensitive by default. Defaults to `true`. |
-| `column_totals`             | No       | boolean                  | Default behavior for column totals in the explorer results table. When `false`, Lightdash skips the extra warehouse query that calculates column totals for new queries. Charts that explicitly enable "Show column totals" still calculate them. Defaults to `true`. |
-| `additional_time_intervals` | No       | Object                   | Extra time intervals appended to the built-in defaults for `date` and `timestamp` dimensions that don't declare their own `time_intervals`. See [Additional time intervals](#additional-time-intervals) below. |
-| `granularity_labels`        | No       | Object (string → string) | Override the display label of standard granularities (e.g. `week`, `month`) project-wide. Applied to dimension labels in the Explorer, the Explorer sidebar tree, the date zoom dropdown, and chart axis labels. See [Granularity label overrides](#granularity-label-overrides) below. |
+| Property                            | Required | Value                    | Description |
+| :---------------------------------- | :------- | :----------------------- | :---------- |
+| `case_sensitive`                    | No       | boolean                  | Default case sensitivity for string filters across the project. When `false`, all string filters will be case insensitive by default. Defaults to `true`. |
+| `column_totals`                     | No       | boolean                  | Default behavior for column totals in the explorer results table. When `false`, Lightdash skips the extra warehouse query that calculates column totals for new queries. Charts that explicitly enable "Show column totals" still calculate them. Defaults to `true`. |
+| `pre_aggregate_execution_fallback`  | No       | boolean                  | Whether a matched query whose pre-aggregate execution fails is retried against the source warehouse. When `false`, the query errors instead of transparently running on the warehouse. Defaults to `true`. See [Pre-aggregate execution fallback](#pre-aggregate-execution-fallback) below. |
+| `additional_time_intervals`         | No       | Object                   | Extra time intervals appended to the built-in defaults for `date` and `timestamp` dimensions that don't declare their own `time_intervals`. See [Additional time intervals](#additional-time-intervals) below. |
+| `granularity_labels`                | No       | Object (string → string) | Override the display label of standard granularities (e.g. `week`, `month`) project-wide. Applied to dimension labels in the Explorer, the Explorer sidebar tree, the date zoom dropdown, and chart axis labels. See [Granularity label overrides](#granularity-label-overrides) below. |
 
 
 
@@ -198,6 +200,27 @@ This is a default, not a kill switch — charts that explicitly enable "Show col
 PUT /api/v2/projects/{projectUuid}/defaults
 { "column_totals": false }
 ```
+
+
+### Pre-aggregate execution fallback
+
+When a query matches a [pre-aggregate](/semantic-layer/pre-aggregates) but the pre-aggregate execution itself fails — for example, an unreadable materialization file, a DuckDB error, or a missing external table — Lightdash retries the query against the source warehouse by default. This keeps dashboards available when a materialization breaks.
+
+Set `pre_aggregate_execution_fallback: false` to disable that retry. The query returns an error instead of silently running on the warehouse, so a broken pre-aggregate surfaces immediately rather than masking as warehouse latency and cost.
+
+```yaml
+defaults:
+  pre_aggregate_execution_fallback: false
+```
+
+You can also toggle this default via the API:
+
+```http
+PUT /api/v2/projects/{projectUuid}/defaults
+{ "pre_aggregate_execution_fallback": false }
+```
+
+This setting only covers **execution-time** failures on a matched query. Queries that don't match any pre-aggregate — including cases where the pre-aggregate can't be resolved, or when a `sql_filter` or non-field reference makes the query [ineligible](/semantic-layer/pre-aggregates#sql-filter-and-pre-aggregates) — still run against the warehouse.
 
 
 ### Case sensitivity hierarchy

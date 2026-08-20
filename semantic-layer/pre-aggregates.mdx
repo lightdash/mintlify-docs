@@ -491,6 +491,14 @@ Non-additive metrics like `count_distinct`, `sum_distinct`, `average_distinct`, 
 
 This is useful when a `count_distinct` (or another non-additive metric) is the slowest part of a query. Define a pre-aggregate whose dimensions and time-dimension granularity match how the metric is queried, and Lightdash serves those queries from the materialization instead of hitting the warehouse.
 
+## Execution fallback
+
+When a query matches a pre-aggregate but the pre-aggregate execution itself fails — an unreadable materialization file, a DuckDB error, or a missing external table — Lightdash retries the query against the source warehouse by default. Dashboards stay available while you investigate the broken materialization.
+
+To turn that retry off, set `pre_aggregate_execution_fallback: false` under [`defaults`](/semantic-layer/lightdash-config-yml#pre-aggregate-execution-fallback) in `lightdash.config.yml`. The query returns an error instead of silently running on the warehouse, so a broken pre-aggregate surfaces immediately rather than re-introducing warehouse latency and cost.
+
+Execution fallback only covers a matched query whose serve fails. Queries that don't match any pre-aggregate always run against the warehouse — see [monitoring](/semantic-layer/pre-aggregates/monitoring#why-a-query-misses-a-pre-aggregate) for miss reasons.
+
 ## Current limitations
 
 Pre-aggregates support a narrower subset of the Lightdash semantic layer than regular warehouse queries.
