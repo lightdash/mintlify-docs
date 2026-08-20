@@ -1,0 +1,97 @@
+---
+title: Data retention
+description: Automatically delete AI agent conversations after a period of inactivity
+doc-type: reference
+---
+
+<Info>
+  Conversation retention is an Enterprise feature, enabled per organization on
+  request — [contact us](/contact/contact-info) to turn it on. Self-hosted
+  deployments need an Enterprise Edition license and the `ai-thread-retention`
+  feature flag. With the flag off, retention settings are hidden and no cleanup
+  runs.
+</Info>
+
+By default, Lightdash keeps AI agent conversations forever. Organizations with
+data-retention or PII requirements can set a retention window instead:
+conversations with no activity for the configured period are automatically and
+permanently deleted, once per hour.
+
+## How retention works
+
+Retention is configured in whole hours (presets from 1 hour to 90 days, or a
+custom value), at two levels:
+
+- **Organization default** — applies to every agent in the organization,
+  including conversations that aren't linked to an agent.
+- **Per-agent window** — any agent can set a *shorter* window than the
+  organization default, never a longer one. The organization value is a
+  ceiling: if it's lowered, agents whose window exceeds it are capped at the
+  new ceiling. This makes it possible to run a dedicated short-retention agent
+  for sensitive workflows while the rest of the organization keeps a longer
+  window.
+
+The clock is based on **inactivity**: a conversation expires only when it has
+had no new messages for the whole window, measured from its latest activity.
+Conversations with work still in flight — a response being generated, a SQL
+query waiting for approval, a running deep research or writeback task — are
+never deleted mid-flight.
+
+Users chatting with a retention-bound agent see a notice in the chat:
+*"Conversations are deleted after X of inactivity."*
+
+## What gets deleted
+
+When a conversation expires, everything derived from it is deleted with it:
+
+- prompts, responses, tool calls and tool results, and reasoning
+- share links (revoked)
+- agent memories learned from the conversation
+- evaluation prompts that reference the conversation (evaluation suites may
+  shrink), and past evaluation runs' conversations
+
+The only things that survive are what someone explicitly saved out of the
+conversation — for example a chart saved to a space. Saved content is fully
+independent and is not affected by the conversation's deletion.
+
+Deletion is permanent. When an admin lowers the organization window, Lightdash
+shows how many conversations across how many agents will be deleted before the
+change is confirmed.
+
+## What retention does not cover
+
+The retention window applies to AI agent conversation content stored by
+Lightdash. Adjacent stores keep their own, separately bounded retention:
+
+| Store | Retention |
+| --- | --- |
+| Slack messages | Live in your Slack workspace and follow its retention — Lightdash cannot delete them |
+| MCP tool calls | 90 days |
+| Query history (compiled SQL and metric queries) | 32 days by default, configurable per instance |
+| Query results cache | Up to 1 day (up to 31 days for deep research) |
+
+## Configuring retention
+
+**Organization default**: go to **Organization settings** → **Ask AI** →
+**General** → **Conversation retention**. Lowering the window (or setting one
+where there was none) asks for confirmation and shows how many existing
+conversations will be deleted.
+
+**Per-agent window**: in the agent's settings under **Permissions** →
+**Conversation retention**. When an organization default exists, it caps the
+values you can pick, and leaving the agent setting empty inherits the
+organization default.
+
+## Agents as code
+
+Agents managed [as code](/agents/agents-as-code) can set the per-agent window
+with the optional `threadRetentionHours` field:
+
+- a number sets the window (validated against the organization ceiling)
+- an explicit `null` clears the agent's window, inheriting the organization
+  default
+- omitting the field leaves the stored setting unchanged
+
+Uploads into an organization where retention is not enabled ignore the field
+and return a warning instead of failing, so agent configuration stays portable
+across organizations.
