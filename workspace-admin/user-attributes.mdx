@@ -18,7 +18,9 @@ To start user attributes you need to follow 2 steps:
 
 User attributes can only be managed by admins.
 
+<Frame>
 <iframe width="100%" height="420" src="https://www.youtube.com/embed/eSUULAeBZU8" title="How to create user attributes" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
 
 ## Managing user attributes
 
@@ -41,7 +43,7 @@ Each user, group, and default supports **multiple values**. When you reference t
 You can add one or more default values that will be applied to all users who don't have their own value defined in this user attribute.
 
 <Frame>
-  ![](../images/workspace-admin/user-attributes/user-attribute-default-value-5618464d7ec3e8f71a78d0af4d409229.png)
+  ![The edit panel for a user attribute, with default values set alongside the per-user assignments](/images/workspace-admin/user-attributes/user-attribute-default-value-5618464d7ec3e8f71a78d0af4d409229.png)
 </Frame>
 
 If a user has an attribute defined, we will ignore the default for that user.
@@ -85,35 +87,31 @@ When referencing user attributes in SQL you can use the following [SQL variables
   If the user email is not verified you will get the following error:
 
   <Frame>
-    ![](../images/user-attributes-info.png)
+    ![A query error reading that the user attribute email is not available because the email is unverified](/images/user-attributes-info.png)
   </Frame>
-  <Tabs>
-    <Tab title="dbt v1.9 and earlier">
-      ```yaml
-      models:
-        - name: example
-          meta:
-            sql_filter: ${lightdash.user.email} = 'example@lightdash.com'
-      ```
-    </Tab>
-    <Tab title="dbt v1.10+">
-      ```yaml
-      models:
-        - name: example
-          config:
-            meta:
-              sql_filter: ${lightdash.user.email} = 'example@lightdash.com'
-      ```
-    </Tab>
-    <Tab title="Lightdash YAML">
-      ```yaml
-      type: model
-      name: example
+  <CodeGroup>
+  ```yaml dbt v1.9 and earlier
+  models:
+    - name: example
+      meta:
+        sql_filter: ${lightdash.user.email} = 'example@lightdash.com'
+  ```
 
-      sql_filter: ${lightdash.user.email} = 'example@lightdash.com'
-      ```
-    </Tab>
-  </Tabs>
+  ```yaml dbt v1.10+ and Fusion
+  models:
+    - name: example
+      config:
+        meta:
+          sql_filter: ${lightdash.user.email} = 'example@lightdash.com'
+  ```
+
+  ```yaml Lightdash YAML
+  type: model
+  name: example
+
+  sql_filter: ${lightdash.user.email} = 'example@lightdash.com'
+  ```
+  </CodeGroup>
 
   If you are self hosting you can enable [SMTP](/self-host/customize-deployment/environment-variables#smtp) or [SSO](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash) authentication to allow users to verify their email address.
 </Info>
@@ -131,13 +129,13 @@ For example, if you have a chart showing sales data and you want each user to on
 
 The same references work on dashboard filters, so a single dashboard can be shared with many users and each will only see the rows relevant to them.
 
-![Dashboard filter using a user attribute as its value](../images/workspace-admin/user-attributes/user-attribute-dashboard-filter.png)
+If a referenced attribute is not set for the current user, the query returns a `Forbidden` error.
+
+<Frame>
+![Dashboard filter using a user attribute as its value](/images/workspace-admin/user-attributes/user-attribute-dashboard-filter.png)
+</Frame>
 
 Similarly, you can use custom attributes like `${lightdash.attribute.country}` to filter data based on a user's assigned region or department.
-
-<Info>
-  If a user attribute referenced in a filter value is not set for the current user, the query will return a `Forbidden` error.
-</Info>
 
 <Warning>
   Chart and dashboard filters are **not a security boundary**. Any user with edit access to the chart or dashboard can remove or change the filter and see the underlying rows. If you need to actually restrict which rows a user can query, use [row filtering with `sql_filter`](#row-filtering-with-sql%5Ffilter) in your dbt model — that runs on the warehouse and cannot be bypassed from the UI.
@@ -151,33 +149,29 @@ To reference a user attribute in your sql, use the special lightdash reference`$
 
 For example, if you have a user attribute called `sales_region` you can use it in your sql like this:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: my_model
-        meta:
-          sql_filter: ${TABLE}.sales_region IN (${lightdash.attributes.sales_region})
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+">
-    ```yaml
-    models:
-      - name: my_model
-        config:
-          meta:
-            sql_filter: ${TABLE}.sales_region IN (${lightdash.attributes.sales_region})
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: my_model
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: my_model
+    config:
+      meta:
+        sql_filter: ${TABLE}.sales_region IN (${lightdash.attributes.sales_region})
+```
 
-    sql_filter: ${TABLE}.sales_region IN (${lightdash.attributes.sales_region})
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: my_model
+    meta:
+      sql_filter: ${TABLE}.sales_region IN (${lightdash.attributes.sales_region})
+```
+
+```yaml Lightdash YAML
+type: model
+name: my_model
+
+sql_filter: ${TABLE}.sales_region IN (${lightdash.attributes.sales_region})
+```
+</CodeGroup>
 
 ### Column filtering with `required_attributes`
 
@@ -189,49 +183,45 @@ You can use `user attributes` to limit some dimensions to some users.
 
 In the example below, only users with `is_admin` attribute `true` can use the `salary` dimension on `user` table.
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: user
-        description: User name
-      - name: salary
-        description: User salary
-        meta:
-          dimension:
-            required_attributes:
-              is_admin: "true"
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+">
-    ```yaml
-    columns:
-      - name: user
-        description: User name
-      - name: salary
-        description: User salary
-        config:
-          meta:
-            dimension:
-              required_attributes:
-                is_admin: "true"
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: users
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: user
+    description: User name
+  - name: salary
+    description: User salary
+    config:
+      meta:
+        dimension:
+          required_attributes:
+            is_admin: "true"
+```
 
-    dimensions:
-      - name: user
-        description: User name
-      - name: salary
-        description: User salary
+```yaml dbt v1.9 and earlier
+columns:
+  - name: user
+    description: User name
+  - name: salary
+    description: User salary
+    meta:
+      dimension:
         required_attributes:
           is_admin: "true"
-    ```
-  </Tab>
-</Tabs>
+```
+
+```yaml Lightdash YAML
+type: model
+name: users
+
+dimensions:
+  - name: user
+    description: User name
+  - name: salary
+    description: User salary
+    required_attributes:
+      is_admin: "true"
+```
+</CodeGroup>
 
 If a user without access to this dimension runs a query that contains this dimension, they will get a `Forbidden` error. Also, if the user runs a query that contains a metric derived from this dimension, they won't see the metric on the explore page and won't be able to query from it.
 
@@ -239,98 +229,90 @@ You can add multiple attributes for a single dimension. There are two ways to do
 
 1. **`Multiple attributes joined with AND.`** In the example below, only users with `is_admin: "true" AND team_name: "HR"` have access to the `salary` dimension in Lightdash.
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: user
-        description: User name
-      - name: salary
-        description: User salary
-        meta:
-          dimension:
-            required_attributes:
-              is_admin: 'true'
-              team_name: 'HR'
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+">
-    ```yaml
-    columns:
-      - name: user
-        description: User name
-      - name: salary
-        description: User salary
-        config:
-          meta:
-            dimension:
-              required_attributes:
-                is_admin: 'true'
-                team_name: 'HR'
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: users
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: user
+    description: User name
+  - name: salary
+    description: User salary
+    config:
+      meta:
+        dimension:
+          required_attributes:
+            is_admin: 'true'
+            team_name: 'HR'
+```
 
-    dimensions:
-      - name: user
-        description: User name
-      - name: salary
-        description: User salary
+```yaml dbt v1.9 and earlier
+columns:
+  - name: user
+    description: User name
+  - name: salary
+    description: User salary
+    meta:
+      dimension:
         required_attributes:
           is_admin: 'true'
           team_name: 'HR'
-    ```
-  </Tab>
-</Tabs>
+```
+
+```yaml Lightdash YAML
+type: model
+name: users
+
+dimensions:
+  - name: user
+    description: User name
+  - name: salary
+    description: User salary
+    required_attributes:
+      is_admin: 'true'
+      team_name: 'HR'
+```
+</CodeGroup>
 
 2. **`Multiple attribute values joined with OR.`** In the example below, users with `team_name = 'HR' OR team_name = 'C-Suite'` have access to the `salary` dimension in Lightdash.
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: user
-        description: User name
-      - name: salary
-        description: User salary
-        meta:
-          dimension:
-            required_attributes:
-              team_name: ['HR', 'C-Suite']
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+">
-    ```yaml
-    columns:
-      - name: user
-        description: User name
-      - name: salary
-        description: User salary
-        config:
-          meta:
-            dimension:
-              required_attributes:
-                team_name: ['HR', 'C-Suite']
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: users
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: user
+    description: User name
+  - name: salary
+    description: User salary
+    config:
+      meta:
+        dimension:
+          required_attributes:
+            team_name: ['HR', 'C-Suite']
+```
 
-    dimensions:
-      - name: user
-        description: User name
-      - name: salary
-        description: User salary
+```yaml dbt v1.9 and earlier
+columns:
+  - name: user
+    description: User name
+  - name: salary
+    description: User salary
+    meta:
+      dimension:
         required_attributes:
           team_name: ['HR', 'C-Suite']
-    ```
-  </Tab>
-</Tabs>
+```
+
+```yaml Lightdash YAML
+type: model
+name: users
+
+dimensions:
+  - name: user
+    description: User name
+  - name: salary
+    description: User salary
+    required_attributes:
+      team_name: ['HR', 'C-Suite']
+```
+</CodeGroup>
 
 <Info>
   Column filtering using `required_attributes` does not take into account intrinsic attributes of a user - `email`.
@@ -342,46 +324,42 @@ While `required_attributes` uses AND logic (all conditions must match), `any_att
 
 In the example below, users with `department = "sales"` **OR** `department = "finance"` **OR** `role = "analyst"` can see the `revenue` dimension.
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: revenue
-        description: Total revenue
-        meta:
-          dimension:
-            any_attributes:
-              department: ["sales", "finance"]
-              role: "analyst"
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+">
-    ```yaml
-    columns:
-      - name: revenue
-        description: Total revenue
-        config:
-          meta:
-            dimension:
-              any_attributes:
-                department: ["sales", "finance"]
-                role: "analyst"
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: orders
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: revenue
+    description: Total revenue
+    config:
+      meta:
+        dimension:
+          any_attributes:
+            department: ["sales", "finance"]
+            role: "analyst"
+```
 
-    dimensions:
-      - name: revenue
-        description: Total revenue
+```yaml dbt v1.9 and earlier
+columns:
+  - name: revenue
+    description: Total revenue
+    meta:
+      dimension:
         any_attributes:
           department: ["sales", "finance"]
           role: "analyst"
-    ```
-  </Tab>
-</Tabs>
+```
+
+```yaml Lightdash YAML
+type: model
+name: orders
+
+dimensions:
+  - name: revenue
+    description: Total revenue
+    any_attributes:
+      department: ["sales", "finance"]
+      role: "analyst"
+```
+</CodeGroup>
 
 Each entry in `any_attributes` is a separate condition. The user needs to satisfy **any one** of them. Array values on a single key (like `["sales", "finance"]`) mean any of those values is accepted for that key.
 
@@ -394,49 +372,45 @@ You can use both `required_attributes` and `any_attributes` together. When both 
 
 In the example below, a user must have `access_level = "2"` **AND** (`department = "sales"` **OR** `department = "finance"`).
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: revenue
-        description: Total revenue
-        meta:
-          dimension:
-            required_attributes:
-              access_level: "2"
-            any_attributes:
-              department: ["sales", "finance"]
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+">
-    ```yaml
-    columns:
-      - name: revenue
-        description: Total revenue
-        config:
-          meta:
-            dimension:
-              required_attributes:
-                access_level: "2"
-              any_attributes:
-                department: ["sales", "finance"]
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: orders
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: revenue
+    description: Total revenue
+    config:
+      meta:
+        dimension:
+          required_attributes:
+            access_level: "2"
+          any_attributes:
+            department: ["sales", "finance"]
+```
 
-    dimensions:
-      - name: revenue
-        description: Total revenue
+```yaml dbt v1.9 and earlier
+columns:
+  - name: revenue
+    description: Total revenue
+    meta:
+      dimension:
         required_attributes:
           access_level: "2"
         any_attributes:
           department: ["sales", "finance"]
-    ```
-  </Tab>
-</Tabs>
+```
+
+```yaml Lightdash YAML
+type: model
+name: orders
+
+dimensions:
+  - name: revenue
+    description: Total revenue
+    required_attributes:
+      access_level: "2"
+    any_attributes:
+      department: ["sales", "finance"]
+```
+</CodeGroup>
 
 <Info>
   Column filtering using `any_attributes` does not take into account intrinsic attributes of a user - `email`.
@@ -448,36 +422,32 @@ You can use `user attributes` to limit some tables to some users.
 
 In the example below, only users with `is_admin` attribute `true` can use the `payments` table. Users without access to this table will not see it on the `tables page` or the `explore page` when joined to other tables.
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: payments
-        meta:
-          required_attributes:
-            is_admin: "true"
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+">
-    ```yaml
-    models:
-      - name: payments
-        config:
-          meta:
-            required_attributes:
-              is_admin: "true"
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: payments
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: payments
+    config:
+      meta:
+        required_attributes:
+          is_admin: "true"
+```
 
-    required_attributes:
-      is_admin: "true"
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: payments
+    meta:
+      required_attributes:
+        is_admin: "true"
+```
+
+```yaml Lightdash YAML
+type: model
+name: payments
+
+required_attributes:
+  is_admin: "true"
+```
+</CodeGroup>
 
 Similar to [columns filtering](#column-filtering-with-required%5Fattributes), you can add multiple attributes for a single table.
 
@@ -489,39 +459,35 @@ Similar to [columns filtering](#column-filtering-with-required%5Fattributes), yo
 
 You can also use `any_attributes` at the table level with OR logic. In the example below, users with `department = "sales"` **OR** `department = "finance"` **OR** `role = "analyst"` can access the `payments` table.
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: payments
-        meta:
-          any_attributes:
-            department: ["sales", "finance"]
-            role: "analyst"
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+">
-    ```yaml
-    models:
-      - name: payments
-        config:
-          meta:
-            any_attributes:
-              department: ["sales", "finance"]
-              role: "analyst"
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: payments
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: payments
+    config:
+      meta:
+        any_attributes:
+          department: ["sales", "finance"]
+          role: "analyst"
+```
 
-    any_attributes:
-      department: ["sales", "finance"]
-      role: "analyst"
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: payments
+    meta:
+      any_attributes:
+        department: ["sales", "finance"]
+        role: "analyst"
+```
+
+```yaml Lightdash YAML
+type: model
+name: payments
+
+any_attributes:
+  department: ["sales", "finance"]
+  role: "analyst"
+```
+</CodeGroup>
 
 You can combine `required_attributes` and `any_attributes` on the same table. Both checks must pass — see [combining required and any attributes](#combining-required_attributes-and-any_attributes) for details.
 
@@ -535,45 +501,41 @@ If you're joining a table, you can also customise the rows that are returned
 
 You can use user attributes to filter the rows returned by a join. This is useful if you want to restrict the data returned from the joined table. To reference a user attribute in your sql, use the special lightdash reference`${ lightdash.attributes.<attribute_name> }`. For example, if you have a user attribute called `sales_region` you can use it in your sql like this:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: base
-        meta:
-          joins:
-            - join: joined
-              sql_on: >
-                ${base}.id = ${joined}.id
-                AND ${joined}.sales_region = ${lightdash.attributes.sales_region}
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+">
-    ```yaml
-    models:
-      - name: base
-        config:
-          meta:
-            joins:
-              - join: joined
-                sql_on: >
-                  ${base}.id = ${joined}.id
-                  AND ${joined}.sales_region = ${lightdash.attributes.sales_region}
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: base
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: base
+    config:
+      meta:
+        joins:
+          - join: joined
+            sql_on: >
+              ${base}.id = ${joined}.id
+              AND ${joined}.sales_region = ${lightdash.attributes.sales_region}
+```
 
-    joins:
-      - join: joined
-        sql_on: >
-          ${base}.id = ${joined}.id
-          AND ${joined}.sales_region = ${lightdash.attributes.sales_region}
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: base
+    meta:
+      joins:
+        - join: joined
+          sql_on: >
+            ${base}.id = ${joined}.id
+            AND ${joined}.sales_region = ${lightdash.attributes.sales_region}
+```
+
+```yaml Lightdash YAML
+type: model
+name: base
+
+joins:
+  - join: joined
+    sql_on: >
+      ${base}.id = ${joined}.id
+      AND ${joined}.sales_region = ${lightdash.attributes.sales_region}
+```
+</CodeGroup>
 
 ## Current limitations
 
@@ -590,7 +552,9 @@ Lightdash dimensions and custom metrics are protected by this feature, however, 
 
 The following video gives you a full demo for how to use user attributes to filter chart results.
 
+<Frame>
 <iframe width="100%" height="420" src="https://www.youtube.com/embed/t6QS0rr0PDQ" title="Customizing Lightdash with User Attributes" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
 
 ## How user and group attribute values interact
 
@@ -602,40 +566,36 @@ If the required attributes match **_any_** of the user's group or user attribute
 
 For example, if a user is part of a group with the attribute value `kiwi`, another group with the attribute value `orange`, and they've also been assigned as a user to the attribute value `coconut`.
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    columns:
-      - name: tropical_fruits_column
-        meta:
-          dimension:
-            required_attributes:
-              fruits: 'coconut'
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+">
-    ```yaml
-    columns:
-      - name: tropical_fruits_column
-        config:
-          meta:
-            dimension:
-              required_attributes:
-                fruits: 'coconut'
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: fruits
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: tropical_fruits_column
+    config:
+      meta:
+        dimension:
+          required_attributes:
+            fruits: 'coconut'
+```
 
-    dimensions:
-      - name: tropical_fruits_column
+```yaml dbt v1.9 and earlier
+columns:
+  - name: tropical_fruits_column
+    meta:
+      dimension:
         required_attributes:
           fruits: 'coconut'
-    ```
-  </Tab>
-</Tabs>
+```
+
+```yaml Lightdash YAML
+type: model
+name: fruits
+
+dimensions:
+  - name: tropical_fruits_column
+    required_attributes:
+      fruits: 'coconut'
+```
+</CodeGroup>
 
 In this example, the `tropical_fruits_column` will be visible to them because `coconut` is listed in their attribute values `['kiwi','orange', 'coconut']`.
 
@@ -645,32 +605,28 @@ The template reference will be replaced by an array of the user's group or user 
 
 Let's walk through an example:
 
-<Tabs>
-  <Tab title="dbt v1.9 and earlier">
-    ```yaml
-    models:
-      - name: my_model
-        meta:
-          sql_filter: ${TABLE}.fruit IN (${lightdash.attributes.fruit})
-    ```
-  </Tab>
-  <Tab title="dbt v1.10+">
-    ```yaml
-    models:
-      - name: my_model
-        config:
-          meta:
-            sql_filter: ${TABLE}.fruit IN (${lightdash.attributes.fruit})
-    ```
-  </Tab>
-  <Tab title="Lightdash YAML">
-    ```yaml
-    type: model
-    name: my_model
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: my_model
+    config:
+      meta:
+        sql_filter: ${TABLE}.fruit IN (${lightdash.attributes.fruit})
+```
 
-    sql_filter: ${TABLE}.fruit IN (${lightdash.attributes.fruit})
-    ```
-  </Tab>
-</Tabs>
+```yaml dbt v1.9 and earlier
+models:
+  - name: my_model
+    meta:
+      sql_filter: ${TABLE}.fruit IN (${lightdash.attributes.fruit})
+```
+
+```yaml Lightdash YAML
+type: model
+name: my_model
+
+sql_filter: ${TABLE}.fruit IN (${lightdash.attributes.fruit})
+```
+</CodeGroup>
 
 In this example, the `${lightdash.attributes.fruit}` will be replaced with `'kiwi','orange','coconut'`. The final SQL will be `my_model.fruit IN ('kiwi','orange','coconut)`
