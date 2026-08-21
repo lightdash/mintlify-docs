@@ -1,0 +1,87 @@
+---
+title: "AI agents"
+description: "Enable AI Analyst and AI agents on a self-hosted Lightdash instance"
+---
+
+<Info>
+  <Badge icon="building-plus" color="blue" size="sm" shape="pill">Enterprise</Badge> AI Analyst and AI agents need a valid `LIGHTDASH_LICENSE_KEY` set on your instance before any of the configuration below takes effect. See [enterprise features](/self-host/enterprise-features) for applying the key.
+</Info>
+
+[AI Analyst](/agents) powers natural-language querying, AI-generated charts, and [AI agents](/agents/set-up-agents) that answer questions in-app and in Slack. To enable it on a self-hosted instance you need a model provider and the AI Analyst feature flag. Every AI feature that runs on top — [Data apps](/self-host/enterprise-features/data-apps), [AI writeback](/self-host/enterprise-features/ai-writeback), the [managed agent](#managed-agent), [MCP](/self-host/enterprise-features/mcp), and [multi-agent Slack channels](/self-host/enterprise-features#multi-agent-slack-channels) — assumes AI Analyst is enabled first.
+
+## Prerequisites
+
+- **Enterprise license** — `LIGHTDASH_LICENSE_KEY` must be set on your instance.
+- **A model provider** — OpenAI, Anthropic, Azure AI, OpenRouter, or AWS Bedrock. OpenAI and Anthropic are the most tested.
+- **Enough context budget on the chosen model** — AI Analyst sends the project's dbt catalog with every request.
+
+## Enable AI Analyst
+
+Set the main switch and provide credentials for one provider — the minimal setup uses OpenAI, the default provider:
+
+```bash
+AI_COPILOT_ENABLED=true
+OPENAI_API_KEY=<your-openai-api-key>
+```
+
+AI Analyst starts using the provider as soon as the backend restarts. To use a different provider, set `AI_DEFAULT_PROVIDER` (`openai`, `anthropic`, `azure`, `openrouter`, or `bedrock`) and the matching credentials — see [model providers](#model-providers) below. Optionally, set `ASK_AI_BUTTON_ENABLED=true` to add an "Ask AI" entry point in the app UI; without it, users reach agents from `/ai-agents`.
+
+## Model providers
+
+Each provider's exhaustive variable list lives in the [environment variables reference](/self-host/customize-deployment/environment-variables#ai-analyst); the notes below cover the choices and gotchas per provider.
+
+### OpenAI (default)
+
+Leave `AI_DEFAULT_PROVIDER` unset or set it to `openai`, then set `OPENAI_API_KEY`. `gpt-5.2` is the default model; override it with `OPENAI_MODEL_NAME`. All options: [OpenAI configuration](/self-host/customize-deployment/environment-variables#openai-configuration).
+
+Behind an OpenAI-compatible LLM gateway (LiteLLM, an internal proxy), also set `OPENAI_BASE_URL` to the gateway URL and `OPENAI_MODEL_NAME` to a model your gateway exposes. If the gateway doesn't support streaming (SSE), set `OPENAI_SUPPORTS_STREAMING=false`. If it enforces Zero Data Retention, set `OPENAI_ZERO_DATA_RETENTION=true`.
+
+### Anthropic
+
+Set `AI_DEFAULT_PROVIDER=anthropic` and provide `ANTHROPIC_API_KEY`. `claude-sonnet-4-5` is the default model; override it with `ANTHROPIC_MODEL_NAME`. All options: [Anthropic configuration](/self-host/customize-deployment/environment-variables#anthropic-configuration).
+
+### Azure AI
+
+Set `AI_DEFAULT_PROVIDER=azure` and point Lightdash at your deployment with `AZURE_AI_API_KEY`, `AZURE_AI_ENDPOINT`, `AZURE_AI_API_VERSION`, and `AZURE_AI_DEPLOYMENT_NAME`. For reasoning-capable deployments (e.g. `o3`), also set `AZURE_AI_DEPLOYMENT_SUPPORTS_REASONING=true`. All options: [Azure AI configuration](/self-host/customize-deployment/environment-variables#azure-ai-configuration).
+
+### OpenRouter
+
+Set `AI_DEFAULT_PROVIDER=openrouter` and provide `OPENROUTER_API_KEY`; override the default model with `OPENROUTER_MODEL_NAME`. All options: [OpenRouter configuration](/self-host/customize-deployment/environment-variables#openrouter-configuration).
+
+### AWS Bedrock
+
+Set `AI_DEFAULT_PROVIDER=bedrock` and `BEDROCK_REGION` (required — the AWS region where the target model is available), then authenticate with either `BEDROCK_API_KEY` or a `BEDROCK_ACCESS_KEY_ID`/`BEDROCK_SECRET_ACCESS_KEY` IAM pair — not both. Enable the corresponding models in the selected region before restarting Lightdash. All options: [AWS Bedrock configuration](/self-host/customize-deployment/environment-variables#aws-bedrock-configuration).
+
+<Warning>
+  `AI_DEFAULT_PROVIDER` is instance-wide. Setting it to `bedrock` also routes [Data apps](/self-host/enterprise-features/data-apps) through Bedrock unless you override the Data apps coding agent independently with `APPS_CODING_AGENT`.
+</Warning>
+
+## Verified answers
+
+Verified answers use vector embeddings to match new questions to previously validated ones. Enable embeddings with `AI_EMBEDDING_ENABLED=true` and pick an embedding provider with `AI_DEFAULT_EMBEDDING_PROVIDER` (`openai`, `bedrock`, or `azure`). The embedding provider can differ from the chat provider — see [verified answers](/agents/verified-answers) for how they're used at query time.
+
+## Managed agent
+
+The managed agent runs scheduled AI agent tasks on a cron. Provide `MANAGED_AGENT_ANTHROPIC_API_KEY` (falls back to `ANTHROPIC_API_KEY`) and, optionally, a list of allowed `MANAGED_AGENT_SKILL_IDS` and a custom `MANAGED_AGENT_SCHEDULE`. See [autopilot](/agents/autopilot) for how the managed agent is used in-product.
+
+## Costs
+
+Self-hosting AI Analyst means you pay the selected model provider directly. Every user question sends the project's dbt catalog plus conversation history to the provider, so long conversations against large projects use noticeably more tokens than one-shot prompts. Provider dashboards expose usage — set spend limits before rolling out.
+
+## Permissions
+
+AI Analyst follows the standard project role model: any user with query access to a project can use AI Analyst there. Restrict access at the project level via [roles and groups](/workspace-admin/roles). To limit AI Analyst to specific projects across the instance, set `AI_COPILOT_ALLOWED_PROJECT_UUID` to a comma-separated list of project UUIDs.
+
+## Troubleshooting
+
+**The "Ask AI" button doesn't appear.**
+Confirm `AI_COPILOT_ENABLED=true`, `LIGHTDASH_LICENSE_KEY` is set, and `ASK_AI_BUTTON_ENABLED=true` if you want the top-bar entry point. Users without query access to any project also won't see it.
+
+**AI Analyst returns provider authentication errors.**
+Check the API key for the selected `AI_DEFAULT_PROVIDER`. For Azure, verify `AZURE_AI_ENDPOINT`, `AZURE_AI_API_VERSION`, and `AZURE_AI_DEPLOYMENT_NAME` all match a deployment your key can call. For Bedrock, confirm the region has the target model enabled for your account.
+
+**Multi-step conversations fail against an OpenAI-compatible gateway.**
+If the gateway enforces Zero Data Retention, set `OPENAI_ZERO_DATA_RETENTION=true`. If it doesn't support SSE, set `OPENAI_SUPPORTS_STREAMING=false`.
+
+**Verified answers never match.**
+Confirm `AI_EMBEDDING_ENABLED=true` and that the embedding provider credentials are set. Tune `AI_VERIFIED_ANSWER_SIMILARITY_THRESHOLD` if legitimate matches fall below the default 0.6 similarity cutoff.
