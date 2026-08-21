@@ -172,7 +172,7 @@ The table below shows all the dimension properties you can customize:
 | [colors](#color)  | No       | Object with `value`, `color`  | Color for the values in the chart |
 | [image](#image-display)  | No       | Object with `url`  | **[WIP]** Display images in table cells using URL templates. Supports LiquidJS templating for dynamic URLs. |
 | [case_sensitive](#case-sensitive) | No | boolean | If set to `false`, string filters on this dimension will be case insensitive. Defaults to `true`. Overrides explore-level setting. |
-| [filter_autocomplete](#filter-autocomplete) | No | Object | Configure the filter autocomplete suggestions for this dimension. Provide a static list of `values` (with optional display `label`s), point at a `label_dimension` in the same table to label warehouse-fetched values, and/or disable warehouse-based autocomplete by setting `fetch_from_warehouse: false`. |
+| [filter_autocomplete](#filter-autocomplete) | No | Object | Configure the filter autocomplete suggestions for this dimension. Provide a static list of `values` (with optional display `label`s), point at a `label_dimension` in the same table to label warehouse-fetched values, source values from a dimension in another model with `options_from_dimension`, and/or disable warehouse-based autocomplete by setting `fetch_from_warehouse: false`. |
 | [tags](#tags) | No | string[] | An array of string tags for categorizing and filtering dimensions programmatically. Tags can be used by AI agents, API filters, and other backend workflows. |
 | [convert_timezone](#convert-timezone) | No | boolean | **[Experimental]** If set to `false`, the dimension opts out of the project query timezone for display, grouping, and extracts - the raw warehouse value is rendered instead. Defaults to `true`. Has no effect unless a project query timezone is set. |
 | [timestamp_domain](#timestamp-domain) | No | `aware` or `naive` | Declares whether a `timestamp` column stores an instant (`aware`) or a bare wall clock with no zone (`naive`). Overrides what Lightdash detects from the warehouse catalog. |
@@ -1360,6 +1360,7 @@ You can customize the suggestions users see when filtering on a dimension. This 
 
 - Provide a curated, static list of suggested values (with optional human-friendly labels) instead of relying solely on values from your warehouse.
 - Label warehouse-fetched values with a human-readable name from another dimension in the same table (for example, showing customer names next to customer IDs).
+- Source autocomplete values from a dimension in another model (for example, drive a `flight.airline_code` filter from the canonical list in `dim_airlines`).
 - Disable the live warehouse lookup for autocomplete to reduce warehouse queries on dimensions with very high cardinality or sensitive values.
 
 Regardless of which option you use, filter autocomplete always returns `{ value, label }` pairs. The `value` is what gets used in the filter, and the `label` is what's displayed in the dropdown. Parameters that source their options from the same dimension via [`options_from_dimension`](/semantic-layer/parameters#parameters-configuration) automatically pick up these labels too.
@@ -1369,7 +1370,8 @@ Regardless of which option you use, filter autocomplete always returns `{ value,
 | Property | Required | Value | Description |
 | :------- | :------- | :---- | :---------- |
 | values | No | Array of `value`, `label` | A static, hard-coded list of suggested filter values. `value` is the raw value used in the filter; `label` is the optional display name shown in the autocomplete dropdown. Duplicate `value`s are ignored (the first occurrence wins). Use this when the set of values is small and known ahead of time. |
-| label_dimension | No | string | Name of another dimension in the same table whose value is used as the display label for each warehouse-fetched value. Unlike static `values` (which only supports hard-coded labels), `label_dimension` labels every value that comes back from the warehouse, and search and sort both run against the label rather than the underlying value. |
+| label_dimension | No | string | Name of another dimension in the same table whose value is used as the display label for each warehouse-fetched value. Unlike static `values` (which only supports hard-coded labels), `label_dimension` labels every value that comes back from the warehouse, and search and sort both run against the label rather than the underlying value. Ignored when `options_from_dimension` is set. |
+| [options_from_dimension](#sourcing-values-from-another-model) | No | Object | Fetch autocomplete values from a dimension in another model instead of from this dimension itself. Requires `model` and `dimension`; accepts an optional `label_dimension` in that source model. Cascading filters from the current explore are not applied to the lookup query. Ignored when `fetch_from_warehouse: false` is also set. |
 | fetch_from_warehouse | No | boolean | If set to `false`, Lightdash won't query the warehouse for autocomplete suggestions on this dimension. Defaults to `true`. |
 
 ### Static suggested values with labels
@@ -1495,6 +1497,63 @@ dimensions:
 </CodeGroup>
 
 The referenced dimension must live in the same table. Any [parameter](/semantic-layer/parameters#parameters-configuration) that sources its options from `customer_id` via `options_from_dimension` also picks up the customer name labels automatically.
+
+### Sourcing values from another model
+
+Set `options_from_dimension` to fetch autocomplete values from a dimension in another model instead of from this dimension itself. This is useful when the canonical list of allowed values lives in a lookup or dimension table, but the filter is exposed on a fact table that only stores foreign keys.
+
+For example, an `flights` model exposes an `airline_code` dimension, but the full list of airlines lives in a `dim_airlines` lookup model. Point `options_from_dimension` at `dim_airlines.code` to drive the autocomplete from the lookup, and add `label_dimension: name` to show the airline name next to each code:
+
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: airline_code
+    config:
+      meta:
+        dimension:
+          filter_autocomplete:
+            options_from_dimension:
+              model: dim_airlines
+              dimension: code
+              label_dimension: name
+```
+
+```yaml dbt v1.9 and earlier
+columns:
+  - name: airline_code
+    meta:
+      dimension:
+        filter_autocomplete:
+          options_from_dimension:
+            model: dim_airlines
+            dimension: code
+            label_dimension: name
+```
+
+```yaml Lightdash YAML
+dimensions:
+  - name: airline_code
+    filter_autocomplete:
+      options_from_dimension:
+        model: dim_airlines
+        dimension: code
+        label_dimension: name
+```
+</CodeGroup>
+
+Properties inside `options_from_dimension`:
+
+| Property | Required | Value | Description |
+| :------- | :------- | :---- | :---------- |
+| model | Yes | string | The model to source autocomplete values from. Must have an explore — hidden models and seeds can't be used. |
+| dimension | Yes | string | The dimension in `model` whose values populate the autocomplete dropdown. |
+| label_dimension | No | string | A dimension in the same source `model` whose value is shown as the display label for each fetched value. Search and sort run against the label. |
+
+Notes:
+
+- Cascading filters from the current explore are not applied to the lookup query, so users see the full list of values from the source model regardless of other filters on the current query.
+- The dimension-level `label_dimension` on the current dimension is ignored when `options_from_dimension` is set. Set `label_dimension` inside `options_from_dimension` instead — labels always come from the model the values come from.
+- If `fetch_from_warehouse: false` is also set on this dimension, curated `values` are served and `options_from_dimension` is ignored. Lightdash surfaces a project warning when both are configured together.
 
 ## Image Display
 
