@@ -1,14 +1,13 @@
 ---
 title: "AI agents"
 description: "Enable AI Analyst and AI agents on a self-hosted Lightdash instance"
-doc-type: reference
 ---
 
 <Info>
-  <Badge icon="building-plus" color="blue" size="sm" shape="pill">Enterprise</Badge> AI Analyst and AI agents need a valid `LIGHTDASH_LICENSE_KEY` set on your instance before any of the configuration below takes effect.
+  <Badge icon="building-plus" color="blue" size="sm" shape="pill">Enterprise</Badge> AI Analyst and AI agents need a valid `LIGHTDASH_LICENSE_KEY` set on your instance before any of the configuration below takes effect. See [enterprise features](/self-host/enterprise-features) for applying the key.
 </Info>
 
-[AI Analyst](/agents) powers natural-language querying, AI-generated charts, and [AI agents](/agents/set-up-agents) that answer questions in-app and in Slack. To enable it on a self-hosted instance you need a model provider and the AI Analyst feature flag. Every AI feature that runs on top — [Data apps](/self-host/enterprise-features/data-apps), [AI writeback](/self-host/enterprise-features/ai-writeback), the [managed agent](#managed-agent), [MCP](/self-host/enterprise-features/mcp), and [multi-agent Slack channels](/self-host/enterprise-features/multi-agent-slack) — assumes AI Analyst is enabled first.
+[AI Analyst](/agents) powers natural-language querying, AI-generated charts, and [AI agents](/agents/set-up-agents) that answer questions in-app and in Slack. To enable it on a self-hosted instance you need a model provider and the AI Analyst feature flag. Every AI feature that runs on top — [Data apps](/self-host/enterprise-features/data-apps), [AI writeback](/self-host/enterprise-features/ai-writeback), the [managed agent](#managed-agent), [MCP](/self-host/enterprise-features/mcp), and [multi-agent Slack channels](/self-host/enterprise-features#multi-agent-slack-channels) — assumes AI Analyst is enabled first.
 
 ## Prerequisites
 
@@ -18,77 +17,40 @@ doc-type: reference
 
 ## Enable AI Analyst
 
-Set `AI_COPILOT_ENABLED=true` on your Lightdash deployment, then configure one model provider below. AI Analyst starts using it as soon as the backend restarts.
+Set the main switch and provide credentials for one provider — the minimal setup uses OpenAI, the default provider:
 
-| Variable | Example | Purpose |
-| --- | --- | --- |
-| `AI_COPILOT_ENABLED` | `true` | Main switch for AI Analyst and AI agents. |
-| `AI_DEFAULT_PROVIDER` | `openai` | Which provider to route AI Analyst requests to. Supports `openai`, `anthropic`, `azure`, `openrouter`, `bedrock`. Defaults to `openai`. |
-| `ASK_AI_BUTTON_ENABLED` | `true` | Optional. Adds an "Ask AI" entry point in the app UI. When disabled, users reach agents from `/ai-agents`. |
+```bash
+AI_COPILOT_ENABLED=true
+OPENAI_API_KEY=<your-openai-api-key>
+```
+
+AI Analyst starts using the provider as soon as the backend restarts. To use a different provider, set `AI_DEFAULT_PROVIDER` (`openai`, `anthropic`, `azure`, `openrouter`, or `bedrock`) and the matching credentials — see [model providers](#model-providers) below. Optionally, set `ASK_AI_BUTTON_ENABLED=true` to add an "Ask AI" entry point in the app UI; without it, users reach agents from `/ai-agents`.
 
 ## Model providers
 
-Choose one of the configurations below and provide the matching credentials. See the [environment variables reference](/self-host/customize-deployment/environment-variables#ai-analyst) for the full option list per provider.
+Each provider's exhaustive variable list lives in the [environment variables reference](/self-host/customize-deployment/environment-variables#ai-analyst); the notes below cover the choices and gotchas per provider.
 
 ### OpenAI (default)
 
-Leave `AI_DEFAULT_PROVIDER` unset or set it to `openai`, then set `OPENAI_API_KEY`. `gpt-5.2` is the default model.
-
-| Variable | Example | Purpose |
-| --- | --- | --- |
-| `OPENAI_API_KEY` | `<your-openai-api-key>` | Your [OpenAI](https://platform.openai.com/api-keys) API key. |
-| `OPENAI_MODEL_NAME` | `gpt-5.2` | Optional. Overrides the default model. |
+Leave `AI_DEFAULT_PROVIDER` unset or set it to `openai`, then set `OPENAI_API_KEY`. `gpt-5.2` is the default model; override it with `OPENAI_MODEL_NAME`. All options: [OpenAI configuration](/self-host/customize-deployment/environment-variables#openai-configuration).
 
 Behind an OpenAI-compatible LLM gateway (LiteLLM, an internal proxy), also set `OPENAI_BASE_URL` to the gateway URL and `OPENAI_MODEL_NAME` to a model your gateway exposes. If the gateway doesn't support streaming (SSE), set `OPENAI_SUPPORTS_STREAMING=false`. If it enforces Zero Data Retention, set `OPENAI_ZERO_DATA_RETENTION=true`.
 
 ### Anthropic
 
-Set `AI_DEFAULT_PROVIDER=anthropic` and provide an Anthropic API key. `claude-sonnet-4-5` is the default model.
-
-| Variable | Example | Purpose |
-| --- | --- | --- |
-| `AI_DEFAULT_PROVIDER` | `anthropic` | Routes AI Analyst through Anthropic. |
-| `ANTHROPIC_API_KEY` | `<your-anthropic-api-key>` | Your [Anthropic](https://console.anthropic.com/) API key. |
-| `ANTHROPIC_MODEL_NAME` | `claude-sonnet-4-5` | Optional. Overrides the default model. |
+Set `AI_DEFAULT_PROVIDER=anthropic` and provide `ANTHROPIC_API_KEY`. `claude-sonnet-4-5` is the default model; override it with `ANTHROPIC_MODEL_NAME`. All options: [Anthropic configuration](/self-host/customize-deployment/environment-variables#anthropic-configuration).
 
 ### Azure AI
 
-Set `AI_DEFAULT_PROVIDER=azure` and point Lightdash at your Azure AI deployment.
-
-| Variable | Example | Purpose |
-| --- | --- | --- |
-| `AI_DEFAULT_PROVIDER` | `azure` | Routes AI Analyst through Azure AI. |
-| `AZURE_AI_API_KEY` | `<your-azure-key>` | API key for the Azure AI deployment. |
-| `AZURE_AI_ENDPOINT` | `https://<resource>.openai.azure.com` | Endpoint for the Azure AI resource. |
-| `AZURE_AI_API_VERSION` | `2024-08-01-preview` | API version supported by the deployment. |
-| `AZURE_AI_DEPLOYMENT_NAME` | `gpt-5` | Deployment name inside Azure. |
-
-For reasoning-capable deployments (e.g. `o3`), also set `AZURE_AI_DEPLOYMENT_SUPPORTS_REASONING=true`.
+Set `AI_DEFAULT_PROVIDER=azure` and point Lightdash at your deployment with `AZURE_AI_API_KEY`, `AZURE_AI_ENDPOINT`, `AZURE_AI_API_VERSION`, and `AZURE_AI_DEPLOYMENT_NAME`. For reasoning-capable deployments (e.g. `o3`), also set `AZURE_AI_DEPLOYMENT_SUPPORTS_REASONING=true`. All options: [Azure AI configuration](/self-host/customize-deployment/environment-variables#azure-ai-configuration).
 
 ### OpenRouter
 
-Set `AI_DEFAULT_PROVIDER=openrouter` and provide an [OpenRouter](https://openrouter.ai/) API key.
-
-| Variable | Example | Purpose |
-| --- | --- | --- |
-| `AI_DEFAULT_PROVIDER` | `openrouter` | Routes AI Analyst through OpenRouter. |
-| `OPENROUTER_API_KEY` | `<your-openrouter-key>` | OpenRouter API key. |
-| `OPENROUTER_MODEL_NAME` | `openai/gpt-4.1-2025-04-14` | Optional. Overrides the default model. |
+Set `AI_DEFAULT_PROVIDER=openrouter` and provide `OPENROUTER_API_KEY`; override the default model with `OPENROUTER_MODEL_NAME`. All options: [OpenRouter configuration](/self-host/customize-deployment/environment-variables#openrouter-configuration).
 
 ### AWS Bedrock
 
-Set `AI_DEFAULT_PROVIDER=bedrock` to route AI Analyst through AWS Bedrock. Provide either a Bedrock API key or an IAM key pair; do not set both.
-
-| Variable | Example | Purpose |
-| --- | --- | --- |
-| `AI_DEFAULT_PROVIDER` | `bedrock` | Routes AI Analyst (and Data apps, unless overridden) through Bedrock. |
-| `BEDROCK_REGION` | `us-east-2` | **(Required)** AWS region where the target model is available. |
-| `BEDROCK_API_KEY` | `<bedrock-bearer-token>` | Simplest option. Use this **or** the IAM keys below. |
-| `BEDROCK_ACCESS_KEY_ID` | `<aws-access-key-id>` | Paired with `BEDROCK_SECRET_ACCESS_KEY` as an alternative to `BEDROCK_API_KEY`. |
-| `BEDROCK_SECRET_ACCESS_KEY` | `<aws-secret-access-key>` | Paired with `BEDROCK_ACCESS_KEY_ID`. |
-| `BEDROCK_MODEL_NAME` | `claude-sonnet-4-5` | Optional. Overrides the default model. |
-
-Enable the corresponding models in the selected region before restarting Lightdash.
+Set `AI_DEFAULT_PROVIDER=bedrock` and `BEDROCK_REGION` (required — the AWS region where the target model is available), then authenticate with either `BEDROCK_API_KEY` or a `BEDROCK_ACCESS_KEY_ID`/`BEDROCK_SECRET_ACCESS_KEY` IAM pair — not both. Enable the corresponding models in the selected region before restarting Lightdash. All options: [AWS Bedrock configuration](/self-host/customize-deployment/environment-variables#aws-bedrock-configuration).
 
 <Warning>
   `AI_DEFAULT_PROVIDER` is instance-wide. Setting it to `bedrock` also routes [Data apps](/self-host/enterprise-features/data-apps) through Bedrock unless you override the Data apps coding agent independently with `APPS_CODING_AGENT`.

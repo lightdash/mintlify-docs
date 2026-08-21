@@ -1,11 +1,10 @@
 ---
 title: "Pre-aggregates"
 description: "Enable pre-aggregate query routing on a self-hosted Lightdash instance"
-doc-type: reference
 ---
 
 <Info>
-  <Badge icon="building-plus" color="blue" size="sm" shape="pill">Enterprise</Badge> Pre-aggregates need a valid `LIGHTDASH_LICENSE_KEY` set on your instance before any of the configuration below takes effect.
+  <Badge icon="building-plus" color="blue" size="sm" shape="pill">Enterprise</Badge> Pre-aggregates need a valid `LIGHTDASH_LICENSE_KEY` set on your instance before any of the configuration below takes effect. See [enterprise features](/self-host/enterprise-features) for applying the key.
 </Info>
 
 [Pre-aggregates](/semantic-layer/pre-aggregates) materialize aggregated tables to S3 and route matching queries to DuckDB instead of your warehouse, so common dashboard queries return in milliseconds without hitting the warehouse. To enable them on a self-hosted instance you need an S3-compatible bucket for the materialized data and at least one [pre-aggregate worker](/self-host/nats-workers/pre-aggregate-workers) to run the materializations.
@@ -19,24 +18,18 @@ doc-type: reference
 
 ## Enable pre-aggregates
 
-Set the following environment variables on your Lightdash deployment:
+Set the main switch, keep Parquet materialization on, and point Lightdash at the bucket:
 
-| Variable | Example | Purpose |
-| --- | --- | --- |
-| `PRE_AGGREGATES_ENABLED` | `true` | Main switch. Routes matching queries to pre-aggregate storage. |
-| `PRE_AGGREGATES_PARQUET_ENABLED` | `true` | Recommended. Materializes pre-aggregates as Parquet files in S3. When `false`, pre-aggregates are kept in-memory only and lost on restart. |
-| `PRE_AGGREGATE_RESULTS_S3_BUCKET` | `lightdash-pre-aggregates` | Bucket for Parquet storage. |
-| `PRE_AGGREGATE_RESULTS_S3_REGION` | `us-east-1` | Bucket region. |
-| `PRE_AGGREGATE_RESULTS_S3_ACCESS_KEY` | `<access-key>` | Access key with read/write on the bucket. Omit to use an IAM role or the default AWS credential chain. |
-| `PRE_AGGREGATE_RESULTS_S3_SECRET_KEY` | `<secret-key>` | Paired with `PRE_AGGREGATE_RESULTS_S3_ACCESS_KEY`. |
+```bash
+PRE_AGGREGATES_ENABLED=true
+PRE_AGGREGATES_PARQUET_ENABLED=true
+PRE_AGGREGATE_RESULTS_S3_BUCKET=lightdash-pre-aggregates
+PRE_AGGREGATE_RESULTS_S3_REGION=us-east-1
+```
+
+Authenticate to the bucket with `PRE_AGGREGATE_RESULTS_S3_ACCESS_KEY` and `PRE_AGGREGATE_RESULTS_S3_SECRET_KEY`, or omit them to use an IAM role or the default AWS credential chain. `PRE_AGGREGATES_PARQUET_ENABLED=false` keeps pre-aggregates in-memory only, lost on restart. To bound DuckDB memory per worker, set `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` (e.g. `4GB`). The full variable list is in the [pre-aggregates reference](/self-host/customize-deployment/environment-variables#pre-aggregates).
 
 Deploy at least one [pre-aggregate worker](/self-host/nats-workers/pre-aggregate-workers) and restart the backend. Project developers can then define pre-aggregates in dbt and Lightdash will materialize and serve them.
-
-## Optional configuration
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` | Unlimited | DuckDB memory ceiling for pre-aggregate queries (e.g. `4GB`). Set this to bound memory usage per worker. |
 
 ## Verifying pre-aggregates
 
