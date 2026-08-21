@@ -5,7 +5,7 @@ description: "Filter every tile on a dashboard at once with temporary, saved, re
 
 A dashboard filter sits at the top of the dashboard and changes the data in the tiles below it. One filter can drive every chart on the dashboard, or just the tiles you choose, and viewers can adjust it without editing anything.
 
-Two kinds exist: [temporary filters](#temporary-filters), which only you see, and [saved filters](#saved-filters), which everyone who opens the dashboard sees. Beyond that, this page covers [SQL runner charts](#filtering-charts-created-in-the-sql-runner), [how dashboard filters override chart filters](#how-dashboard-filters-interact-with-chart-filters), [required filters](#required-filters-and-filter-requirement-groups), [empty defaults](#empty-default-dashboard-filters), [sharing with overrides](#sharing-a-dashboard-with-filter-overrides), [which tiles a filter hit](#seeing-which-tiles-have-filters-applied), [value autocomplete](#filter-value-autocomplete), and [filtering from the URL](#filtering-a-dashboard-from-the-url).
+Two kinds exist: [temporary filters](#temporary-filters), which only you see, and [saved filters](#saved-filters), which everyone who opens the dashboard sees. Beyond that, this page covers [SQL runner charts](#filtering-charts-created-in-the-sql-runner), [how dashboard filters override chart filters](#how-dashboard-filters-interact-with-chart-filters), [required filters](#required-filters-and-filter-requirement-groups), [locked filters](#locking-dashboard-filters), [empty defaults](#empty-default-dashboard-filters), [sharing with overrides](#sharing-a-dashboard-with-filter-overrides), [which tiles a filter hit](#seeing-which-tiles-have-filters-applied), [value autocomplete](#filter-value-autocomplete), and [filtering from the URL](#filtering-a-dashboard-from-the-url).
 
 For filter types and operators, see the [filters reference](/explore/filters-reference). For filtering a single chart as you build it, see [filtering in the Explore view](/explore/explore-view/filter).
 
@@ -236,6 +236,47 @@ filters:
       # ...
 ```
 
+## Locking dashboard filters
+
+<Info>
+Locking dashboard filters is available behind the `lock-dashboard-filters` feature flag. Contact Lightdash support to enable it for your organization.
+</Info>
+
+Lock a saved dashboard filter to guarantee that the dashboard always runs with a specific value — a region, a tenant, or a date range that every viewer should stay inside. A locked filter behaves the same way for everyone: viewers see what's filtered, but they can't change the value, and [URL](#filtering-a-dashboard-from-the-url) or [embed](/embed/reference#dashboard-filters-interactivity) overrides targeting the same field are ignored.
+
+Use a locked filter when you want to:
+
+- Ship a dashboard that is permanently scoped (for example, "EMEA Sales") and stop viewers from accidentally changing the scope.
+- Prevent someone from sharing a link with an override that hides or changes a filter you rely on.
+- Enforce a filter value on an embedded dashboard regardless of what the embedding application passes in `externalFilters`.
+
+### How to lock a filter
+
+You need to be an `editor` or `admin` to lock a filter.
+
+1. Open the dashboard and click **Edit dashboard**.
+2. Hover over the filter chip you want to lock. An open padlock button appears next to the **x**.
+3. Click the padlock. The icon switches to a closed lock and stays visible at rest.
+4. Click **Save** on the dashboard to persist the change.
+
+To unlock a filter, hover over the locked chip in edit mode and click the closed padlock.
+
+### What viewers see
+
+In view mode, a locked filter chip shows a closed-lock indicator on the right. Clicking the chip does nothing, and a tooltip explains that the filter is locked. The locked value still applies to every tile that uses the filter's field, exactly like a normal saved filter.
+
+### How locking interacts with overrides
+
+Locked filters take precedence over every override mechanism:
+
+- **URL overrides.** When a link contains `?filters=` or `?tempFilters=` targeting a locked field, Lightdash drops the override on load, cleans up the URL, and shows the viewer a one-time toast explaining that the override was ignored.
+- **Embed `externalFilters`.** When an [embed JWT](/embed/reference#dashboard-filters-interactivity) passes `externalFilters` targeting a locked field, Lightdash uses the dashboard's saved locked value and ignores the override.
+- **Required and locked together.** A filter that is both `Required` and `locked` must have a value in edit mode. Clearing the value disables **Apply** with the message "A locked, required filter must have a value".
+
+<Info>
+The override-stripping behaviour runs regardless of whether the feature flag is on, so dashboards with locked filters stay safe even if the flag is later turned off.
+</Info>
+
 ## Empty default dashboard filters
 
 You can save a dashboard filter that is active but has no value picked yet — for example a `country` **is** filter with no country selected. This is an "unset default": a filter control that appears in the dashboard filter bar so viewers can fill it in, without pre-committing to a value.
@@ -378,3 +419,5 @@ The `?filters=` key in the URL is followed by a URL-encoded JSON object. To read
 
 4. Replace the filter value you chose in step 2 with `${ value.formatted | url_encode }` to make it dynamic. In the example, the value is `Plant+Paradise` (highlighted in the image).
 5. Paste that URL into the YAML file for the model you're working in. See an [example in our demo project](https://github.com/lightdash/lightdash-demo-data-gardening/blob/5632406cb5b43fdf066a2086142dc3e86a41e947/dbt/models/dbt%5Forders.yml#L31-L32).
+
+If the target dashboard has a [locked filter](#locking-dashboard-filters) on the field you're driving from the URL, Lightdash drops the override on load and the dashboard's saved locked value is used instead.
