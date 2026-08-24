@@ -40,6 +40,8 @@ Behind an OpenAI-compatible LLM gateway (LiteLLM, an internal proxy), also set `
 
 Set `AI_DEFAULT_PROVIDER=anthropic` and provide `ANTHROPIC_API_KEY`. `claude-sonnet-4-5` is the default model; override it with `ANTHROPIC_MODEL_NAME`. All options: [Anthropic configuration](/self-host/customize-deployment/environment-variables#anthropic-configuration).
 
+To send Anthropic traffic through a corporate gateway, add `ANTHROPIC_BASE_URL`. See [Corporate LLM gateways](#corporate-llm-gateways) for the required URL, authentication, and API paths.
+
 ### Azure AI
 
 Set `AI_DEFAULT_PROVIDER=azure` and point Lightdash at your deployment with `AZURE_AI_API_KEY`, `AZURE_AI_ENDPOINT`, `AZURE_AI_API_VERSION`, and `AZURE_AI_DEPLOYMENT_NAME`. For reasoning-capable deployments (e.g. `o3`), also set `AZURE_AI_DEPLOYMENT_SUPPORTS_REASONING=true`. All options: [Azure AI configuration](/self-host/customize-deployment/environment-variables#azure-ai-configuration).
@@ -52,9 +54,82 @@ Set `AI_DEFAULT_PROVIDER=openrouter` and provide `OPENROUTER_API_KEY`; override 
 
 Set `AI_DEFAULT_PROVIDER=bedrock` and `BEDROCK_REGION` (required — the AWS region where the target model is available), then authenticate with either `BEDROCK_API_KEY` or a `BEDROCK_ACCESS_KEY_ID`/`BEDROCK_SECRET_ACCESS_KEY` IAM pair — not both. Enable the corresponding models in the selected region before restarting Lightdash. All options: [AWS Bedrock configuration](/self-host/customize-deployment/environment-variables#aws-bedrock-configuration).
 
+To send Bedrock traffic through a corporate gateway, add `BEDROCK_BASE_URL`. The gateway must support the Bedrock APIs used by every enabled Lightdash consumer. See [Corporate LLM gateways](#corporate-llm-gateways).
+
 <Warning>
-  `AI_DEFAULT_PROVIDER` is instance-wide. Setting it to `bedrock` also routes [Data apps](/self-host/enterprise-features/data-apps) through Bedrock unless you override the Data apps coding agent independently with `APPS_CODING_AGENT`.
+  `AI_DEFAULT_PROVIDER` is instance-wide. Setting it to `bedrock` also routes the selected [Data apps](/self-host/enterprise-features/data-apps) coding agent through Bedrock. `APPS_CODING_AGENT` chooses Claude or Codex; it does not change the provider.
 </Warning>
+
+## Corporate LLM gateways
+
+Lightdash can route AI Analyst and Data app model traffic through an HTTP(S) corporate gateway. Use the base URL for the protocol your gateway exposes:
+
+- `OPENAI_BASE_URL` for an OpenAI-compatible gateway.
+- `ANTHROPIC_BASE_URL` for an Anthropic Messages gateway.
+- `BEDROCK_BASE_URL` for a Bedrock-compatible gateway.
+
+The gateway URL must include a scheme and must not contain credentials, query parameters, or a fragment. The Lightdash backend and any Data app sandbox must be able to resolve and reach the gateway hostname.
+
+### Anthropic-compatible gateway
+
+Configure `ANTHROPIC_BASE_URL` before the API's `/v1` segment. Lightdash accepts a trailing `/v1` and removes it, but using the unversioned base avoids ambiguity:
+
+```bash
+AI_COPILOT_ENABLED=true
+AI_DEFAULT_PROVIDER=anthropic
+ANTHROPIC_API_KEY=<gateway-bearer-token>
+ANTHROPIC_BASE_URL=https://llm-gateway.example.com/anthropic
+```
+
+When `ANTHROPIC_BASE_URL` is set, Lightdash sends `ANTHROPIC_API_KEY` as an `Authorization: Bearer` token. Without a gateway, direct Anthropic requests continue to use the standard `x-api-key` header.
+
+Lightdash queries `/v1/models` to determine which models the credential can access. If the gateway does not expose the Models API, set `ANTHROPIC_AVAILABLE_MODELS` to the exact comma-separated model names the gateway accepts.
+
+An organization-level BYO Anthropic key cannot be combined with an instance-wide `ANTHROPIC_BASE_URL`. Remove the organization key to use the gateway, or remove the gateway URL to route that organization through its own Anthropic account.
+
+### Bedrock-compatible gateway
+
+Configure the gateway together with the existing Bedrock provider settings:
+
+```bash
+AI_COPILOT_ENABLED=true
+AI_DEFAULT_PROVIDER=bedrock
+BEDROCK_REGION=us-east-1
+BEDROCK_API_KEY=<gateway-bearer-token>
+BEDROCK_BASE_URL=https://llm-gateway.example.com/bedrock
+```
+
+The backend Bedrock provider still requires one supported credential mode: `BEDROCK_API_KEY`, static AWS credentials, or `BEDROCK_USE_DEFAULT_CREDENTIALS=true`. A custom Bedrock gateway used by Codex requires `BEDROCK_API_KEY`; Codex cannot combine an overridden endpoint with IAM/SigV4 credentials.
+
+For Claude Data apps, set `CLAUDE_CODE_SKIP_BEDROCK_AUTH=true` only when the gateway accepts Claude Code requests without AWS authentication. This setting suppresses credentials inside Claude Code; it does not remove the backend provider's credential requirement.
+
+### Required gateway APIs
+
+One base URL can serve multiple consumers only if the gateway implements every wire protocol those consumers use:
+
+| Consumer | Required path relative to the configured base |
+| --- | --- |
+| AI Analyst through Anthropic | Anthropic Messages: `/v1/messages` |
+| Anthropic model discovery | Anthropic Models: `/v1/models` |
+| AI Analyst through Bedrock | Bedrock Converse: `/model/{model-id}/converse` or `/model/{model-id}/converse-stream` |
+| Bedrock verified-answer embeddings | Bedrock Invoke: `/model/{model-id}/invoke` |
+| Claude Data apps through Anthropic | Anthropic Messages: `/v1/messages` |
+| Claude Data apps through Bedrock | Bedrock Invoke: `/model/{model-id}/invoke-with-response-stream` |
+| Codex Data apps through a Bedrock gateway | OpenAI Responses: `/responses` |
+
+A gateway that supports only Bedrock Converse, for example, can serve AI Analyst chat but cannot serve Claude Data app generation. For the coding-agent configuration and model naming rules, see [Data apps](/self-host/enterprise-features/data-apps).
+
+<Note>
+  These gateway settings do not reroute AI writeback, the onboarding agent, or the managed agent. When the managed agent is enabled alongside `ANTHROPIC_BASE_URL`, configure `MANAGED_AGENT_ANTHROPIC_API_KEY` separately for its direct Anthropic connection.
+</Note>
+
+### Validate before rollout
+
+1. Confirm the Lightdash backend can resolve and connect to the gateway hostname.
+2. Open AI Analyst and send a short prompt with the configured model. If model discovery fails, verify `/v1/models` or set `ANTHROPIC_AVAILABLE_MODELS`.
+3. If Data apps are enabled, generate a small app with each coding agent you plan to support. This verifies the sandbox's separate network path and API wire.
+4. Check gateway access logs for the expected paths in the table above. Redact authorization headers and tokens from logs.
+5. Restrict direct provider egress only after both backend and sandbox traffic succeed through the gateway.
 
 ## Verified answers
 
@@ -62,7 +137,7 @@ Verified answers use vector embeddings to match new questions to previously vali
 
 ## Managed agent
 
-The managed agent runs scheduled AI agent tasks on a cron. Provide `MANAGED_AGENT_ANTHROPIC_API_KEY` (falls back to `ANTHROPIC_API_KEY`) and, optionally, a list of allowed `MANAGED_AGENT_SKILL_IDS` and a custom `MANAGED_AGENT_SCHEDULE`. See [autopilot](/agents/autopilot) for how the managed agent is used in-product.
+The managed agent runs scheduled AI agent tasks on a cron. Provide `MANAGED_AGENT_ANTHROPIC_API_KEY` and, optionally, a list of allowed `MANAGED_AGENT_SKILL_IDS` and a custom `MANAGED_AGENT_SCHEDULE`. Without `ANTHROPIC_BASE_URL`, the managed agent can fall back to `ANTHROPIC_API_KEY`. When a gateway is configured, the dedicated key is required because managed-agent beta APIs continue to use Anthropic directly. See [autopilot](/agents/autopilot) for how the managed agent is used in-product.
 
 ## Costs
 
