@@ -1,0 +1,294 @@
+---
+title: "Data flows and telemetry in self-hosted Lightdash"
+sidebarTitle: "Data flows and telemetry"
+description: "What data stays inside your infrastructure, what leaves it, where it goes, and how to control it"
+doc-type: reference
+---
+
+<Info>
+This page is for self-hosted Lightdash. Lightdash Cloud is fully managed by Lightdash and has a different data-processing profile.
+</Info>
+
+## Summary
+
+- **Warehouse credentials, dbt or Lightdash YAML definitions, generated SQL, query results, dashboard and chart definitions, and underlying warehouse data are processed inside your deployment.** None of these are sent to Lightdash through product telemetry.
+- **Product telemetry is enabled by default** and points at Lightdash's RudderStack endpoint (`https://analytics.lightdash.com`) using a built-in write key. It can be [disabled with a single environment variable](#configuration-2-disable-outbound-rudderstack-telemetry), or [redirected to your own RudderStack instance](#configuration-3-send-telemetry-to-your-own-rudderstack).
+- **Enterprise Edition validates its license key against Keygen on every server start.** The request contains the license key only — no warehouse credentials, no query text, no business data. See [License validation request](#license-validation-request) for the exact payload.
+- **Optional integrations** (SSO, SMTP, Slack, GitHub, object storage, AI providers, MCP, sandbox providers, Sentry, and the organization roadmap) talk directly to the endpoints you configure. They are not proxied through Lightdash Cloud.
+
+Everything below is grounded in the current Lightdash source code and applies to a standard self-hosted deployment on the [official Helm chart](https://github.com/lightdash/helm-charts) or Docker Compose.
+
+## Three telemetry configurations
+
+Telemetry means the RudderStack event stream emitted by the Lightdash backend and browser. The three supported configurations map to three environment-variable combinations.
+
+### Configuration 1: default Lightdash telemetry
+
+If you set none of the `RUDDERSTACK_*` variables, Lightdash uses a built-in write key and its own RudderStack endpoint:
+
+- **Endpoint:** `https://analytics.lightdash.com`
+- **Write key:** built into the release
+- **Enabled by default:** yes, on every fresh install
+- **Applies to:** the backend, the scheduler, and the browser (the frontend loads its RudderStack config from the backend's `/api/v1/health` response)
+
+If you do nothing, telemetry is on and points at Lightdash.
+
+### Configuration 2: disable outbound RudderStack telemetry
+
+Set one variable on every Lightdash container:
+
+```bash
+RUDDERSTACK_ANALYTICS_DISABLED=true
+```
+
+When this is `true` the backend clears both the write key and the data plane URL, no matter what `RUDDERSTACK_WRITE_KEY` or `RUDDERSTACK_DATA_PLANE_URL` are set to. That means:
+
+- The backend `LightdashAnalytics.track()`, `identify()`, and `group()` calls short-circuit and send nothing.
+- The `/api/v1/health` response returns an empty `rudder` block, so the browser skips `rudder-sdk-js` initialization and emits no client-side events.
+- `RUDDERSTACK_ANALYTICS_DISABLED=true` **takes precedence** over `RUDDERSTACK_WRITE_KEY` and `RUDDERSTACK_DATA_PLANE_URL`.
+
+Set the variable on every process that runs Lightdash code:
+
+- The backend container (`lightdash-headless` / `lightdash`)
+- The scheduler container (`scheduler.enabled: true`)
+- Any NATS worker containers (`warehouseNatsWorker`, `preAggregateWorker`)
+
+Disabling RudderStack telemetry does not change product functionality. Nothing in the query, dashboard, AI, or admin surface depends on it. Prometheus metrics, in-product Usage Analytics dashboards, audit logs, query tags in your warehouse, and the optional usage event stream all keep working — they are independent systems (see [Related systems](#related-systems)).
+
+<CodeGroup>
+
+```yaml Helm values.yaml
+# lightdash/lightdash Helm chart
+extraEnv:
+  - name: RUDDERSTACK_ANALYTICS_DISABLED
+    value: "true"
+
+scheduler:
+  extraEnv:
+    - name: RUDDERSTACK_ANALYTICS_DISABLED
+      value: "true"
+
+warehouseNatsWorker:
+  extraEnv:
+    - name: RUDDERSTACK_ANALYTICS_DISABLED
+      value: "true"
+```
+
+```yaml docker-compose.yml
+services:
+  lightdash:
+    image: lightdash/lightdash:latest
+    environment:
+      RUDDERSTACK_ANALYTICS_DISABLED: "true"
+
+  scheduler:
+    image: lightdash/lightdash:latest
+    environment:
+      RUDDERSTACK_ANALYTICS_DISABLED: "true"
+```
+
+</CodeGroup>
+
+### Configuration 3: send telemetry to your own RudderStack
+
+Point Lightdash at a RudderStack source you control:
+
+```bash
+RUDDERSTACK_WRITE_KEY=your-write-key
+RUDDERSTACK_DATA_PLANE_URL=https://your-rudderstack.example.com
+```
+
+- The backend uses these values in place of the built-in ones.
+- The browser reads them from `/api/v1/health` and initializes `rudder-sdk-js` against your endpoint.
+- Events go to your RudderStack destination instead of Lightdash's. Lightdash never sees them.
+- If `RUDDERSTACK_ANALYTICS_DISABLED=true` is also set, disable wins — no events are sent anywhere.
+
+This is a redirection of the same event stream — it is not the same thing as audit logs, Prometheus metrics, warehouse query tags, or the in-product Usage Analytics dashboards. Those systems are independent (see [Related systems](#related-systems)).
+
+## Telemetry payload
+
+The backend emits RudderStack events through `LightdashAnalytics.track()`. Every event carries a common `context.app` block and the event's own `properties`.
+
+### Common context on every event
+
+All telemetry events carry the following installation context:
+
+| Field | Description |
+| --- | --- |
+| `app.namespace` | Constant `"lightdash"` |
+| `app.name` | Constant `"lightdash_server"` |
+| `app.version` | Backend version, e.g. `"0.1500.0"` |
+| `app.mode` | Deployment mode: `default`, `cloud_beta`, `demo`, `pr`, `dev` — self-hosted is `default` |
+| `app.siteUrl` | Present only in `cloud_beta` and `demo`. **Not sent for standard self-hosted deployments.** |
+| `app.installId` | Value of `LIGHTDASH_INSTALL_ID` if set, otherwise a random UUID generated at process start |
+| `app.installType` | Value of `LIGHTDASH_INSTALL_TYPE` if set, otherwise `unknown` (Helm chart, Docker image, etc.) |
+| `app.installChartVersion` | Value of `LIGHTDASH_HELM_CHART_VERSION` if set, otherwise `null` |
+
+The user identifier is either the Lightdash `userId` (a UUID), the anonymous ID (`00000000-0000-0000-0000-000000000000`) when the user has enabled tracking anonymization, or the constant string `"embed"` for embedded viewers.
+
+### Event categories
+
+| Category | What the events describe | Representative fields |
+| --- | --- | --- |
+| Installation and lifecycle | Process start, version upgrades, feature-flag configuration | `app.version`, `app.installId`, `app.installType`, `app.installChartVersion` |
+| User and authentication | Signup, login, invite, password reset, personal access token, SSO identity link/removal | `userId`, `loginProvider`, `context`, `is_tracking_anonymized`; email and name only if the user has **not** enabled tracking anonymization |
+| Organization, project, and resource identifiers | Create/update/delete of organizations, projects, warehouse connections, spaces | `organizationId`, `projectId`, `warehouseType`, `dbtConnectionType` |
+| Charts, dashboards, spaces, search, sharing, scheduling, API | Content lifecycle (`saved_chart.created`, `dashboard.updated`, `space.created`, `scheduler.created`, etc.), feature usage, share link creation | Resource IDs, structural counts (dimensions, metrics, filters, sorts), chart type, and for creates/updates: **`title` and `description` of charts, dashboards, and schedulers** |
+| Query execution | One event per query — `query.executed`, `query.ready`, `query.completed`, `query.error` | `queryId`, `organizationId`, `projectId`, `context` (e.g. `explore`, `dashboard`), `warehouseType`, `executionSource` (`warehouse`, `pre_aggregate_duckdb`, `pre_aggregate_warehouse`, `external_source_duckdb`), `totalRowCount`, `columnsCount`, `warehouseExecutionTimeMs`, `cacheHit`, `exploreName`, `chartId`, `dashboardId` |
+| AI usage | One `ai.usage` event per model call | `feature` (`agent`, `deep-research`, `data-app`, `chart-metadata`, `embedding`, etc.), `provider` (`openai`, `anthropic`, `bedrock`, …), `model`, `keyManagement` (`lightdash-managed` or `self-managed`), `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheWriteTokens`, `reasoningTokens`, `totalTokens`, `organizationId`, `projectId`, `aiAgentId`, `threadId`, `promptId` |
+| Errors and operational events | Query errors, scheduler-job outcomes, integration-connection outcomes | `queryId`, `context`, `warehouseType`, `errorMessage` (short server-side error strings — see next section) |
+
+<Warning>
+Telemetry is not fully anonymous. Events carry stable identifiers (`organizationId`, `projectId`, `userId`, chart/dashboard/space UUIDs) and, for some events, human-readable resource metadata: chart and dashboard **titles** and **descriptions**, scheduler names, warehouse type, dbt connection type, and short `errorMessage` strings from server-side failures. Do not assume every event is anonymous.
+</Warning>
+
+### User-level tracking anonymization
+
+Users can toggle **Anonymize my usage data** in their profile. When on:
+
+- The `is_tracking_anonymized: true` flag is set on the user record and included in identify/update events.
+- The `user.updated`, `user.verified`, and `user.deleted` events drop `email`, `firstName`, and `lastName`.
+- The `userId` and resource identifiers (`organizationId`, `projectId`, chart/dashboard UUIDs) **are still sent** — anonymization operates at the user-name/email level, not at the identifier level.
+
+This is a user-scoped setting. It does not disable telemetry, and it does not scrub identifiers or resource metadata from non-user events. To stop telemetry leaving the deployment, use [`RUDDERSTACK_ANALYTICS_DISABLED=true`](#configuration-2-disable-outbound-rudderstack-telemetry).
+
+## Not sent through RudderStack telemetry
+
+Verified against the current backend source. RudderStack telemetry never contains:
+
+- **Warehouse credentials or authentication secrets.** Connection strings, keys, and tokens live in `LIGHTDASH_SECRET`-encrypted rows in Postgres and are never included in event payloads.
+- **dbt project files or complete semantic-layer definitions.** Warehouse `type` and `dbtConnectionType` are included; the manifest, `.yml` model files, and metric definitions are not.
+- **Generated SQL or SQL Runner query text.** Query events carry an ID, structural counts, timings, and warehouse type — never the SQL string.
+- **Query results, row values, or warehouse records.** Query events carry `totalRowCount` and `columnsCount` — never row data.
+- **Complete dashboard or chart definitions.** Create/update events carry structural counts (metrics, dimensions, filters, series types), the chart type, and the chart or dashboard **title and description**. They do not carry the full config JSON, tile layout, or filter values.
+- **AI prompt text, conversation text, or model responses.** `ai.usage` events carry token counts, provider, model, feature, and IDs (`aiAgentId`, `threadId`, `promptId`, `organizationId`, `projectId`). They do not carry prompt or completion text.
+- **Integration credentials or application secrets.** OAuth tokens, Slack bot tokens, GitHub app credentials, SMTP passwords, `LIGHTDASH_LICENSE_KEY`, `LIGHTDASH_SECRET`, and AI-provider API keys are never sent.
+
+Exceptions and potentially sensitive metadata that **is** sent:
+
+- Chart, dashboard, space, and scheduler **titles and descriptions** on create/update events.
+- Explore name (`exploreName`) and virtual view ID on query events.
+- User **email, first name, last name** on user identify/update events — unless the user has enabled tracking anonymization.
+- Short server-side **error messages** on error events (typed exception messages, not stack traces of user data).
+- Stable **UUIDs** for organizations, projects, users, charts, dashboards, spaces, schedulers, queries, and AI agents.
+
+## Enterprise license validation
+
+Enterprise Edition (`LIGHTDASH_LICENSE_KEY` set) validates the license against [Keygen](https://keygen.sh) at server start and periodically thereafter.
+
+### License validation request
+
+- **Endpoint:** `POST https://api.keygen.sh/v1/accounts/1ae7d3a8-4665-44e4-989d-9de54c84761a/licenses/actions/validate-key`
+- **Timing:** on server start and roughly once every 24 hours from the process cache
+- **Initiator:** the Lightdash backend and any process that instantiates `LicenseClient` (backend, scheduler, workers)
+- **Request headers:** `Content-Type: application/json`, `Accept: application/json`
+- **Request body:**
+
+  ```json
+  {
+    "meta": {
+      "key": "<value of LIGHTDASH_LICENSE_KEY>"
+    }
+  }
+  ```
+
+- **Response:** validity, human-readable detail, and a status code. No code or configuration is pulled during validation.
+
+The request contains the license key only. It does **not** contain warehouse credentials, dbt project data, query text, query results, chart or dashboard definitions, or any organization business data.
+
+Keygen is the only Lightdash-operated external service required for Enterprise features. If you also enable the optional [organization roadmap](/self-host/customize-deployment/organization-roadmap), the backend additionally calls `https://roadmap.lightdash.com` — see the [egress matrix](#egress-matrix) below.
+
+For full license setup steps and troubleshooting, see [Enterprise features and licensing](/self-host/enterprise-features).
+
+## Related systems
+
+These systems are commonly conflated with RudderStack telemetry. They are independent, and each continues to work when `RUDDERSTACK_ANALYTICS_DISABLED=true`.
+
+| System | Where the data goes | Behaviour when `RUDDERSTACK_ANALYTICS_DISABLED=true` |
+| --- | --- | --- |
+| **RudderStack product telemetry** | Outside the deployment — `https://analytics.lightdash.com` by default, or your own RudderStack endpoint if [redirected](#configuration-3-send-telemetry-to-your-own-rudderstack) | Disabled |
+| **In-product [Usage Analytics dashboards](/workspace-admin/usage-analytics#usage-analytics-dashboards)** | Application Postgres inside the deployment | Continues to work |
+| **[Warehouse query tags](/workspace-admin/usage-analytics#query-tags)** | Your warehouse's query history | Continues to work |
+| **[Prometheus metrics](/self-host/customize-deployment/configure-prometheus-metrics-for-self-hosted-lightdash)** and OpenTelemetry HTTP metrics | Exposed on the Lightdash instance for your scraper | Continues to work |
+| **Audit logs and application logs** | Wherever your log stack collects stdout | Continues to work |
+| **Customer-configured [usage event stream](/self-host/customize-deployment/environment-variables#analytics--event-tracking)** | The S3 bucket you configure with `USAGE_EVENTS_*` variables | Continues to work — the event stream sink runs before the RudderStack path and is independent of it |
+
+## Egress matrix
+
+Every default and optional outbound destination from a self-hosted Lightdash deployment. "Required" means the deployment fails without the destination for the feature it enables; "Optional" means the destination is only reached when the feature is turned on.
+
+<div className="sticky-first-col">
+
+| Destination | When it is used | Required or optional | Initiating component | Data sent | Control |
+| --- | --- | --- | --- | --- | --- |
+| `analytics.lightdash.com` | Default RudderStack telemetry endpoint | Optional (on by default) | Backend, scheduler, workers, browser | Event stream — see [Telemetry payload](#telemetry-payload) | `RUDDERSTACK_ANALYTICS_DISABLED=true`, or redirect with `RUDDERSTACK_WRITE_KEY` + `RUDDERSTACK_DATA_PLANE_URL` |
+| `api.keygen.sh` | Enterprise license validation on server start and every 24h | **Required** for Enterprise Edition. Not called at all in Community Edition. | Backend, scheduler, workers | License key inside a JSON `meta.key` field | Remove `LIGHTDASH_LICENSE_KEY` (Community only), or run the [validation proxy](https://roadmap.lightdash.com) in front |
+| `roadmap.lightdash.com` | Optional [organization roadmap](/self-host/customize-deployment/organization-roadmap), and optional license-validation proxy | Optional | Backend | Roadmap requests: organization UUID as a path segment and license key in the `lightdash-license-key` header. Proxy requests: license key in a JSON `key` field. No query text or business data. | Do not enable the roadmap feature; leave `LIGHTDASH_LICENSE_VALIDATION_PROXY_ENABLED` unset so license validation goes directly to `api.keygen.sh` |
+| Customer data warehouse | Every query, dbt compile, warehouse worker | **Required** | Backend, scheduler, warehouse NATS workers | SQL queries, receives query results in return | Warehouse connection config — kept internal to the deployment |
+| Application Postgres | All persistent state (users, projects, encrypted secrets, dashboards, results cache metadata) | **Required** | Backend, scheduler, workers | Full application data | [`PGHOST`](/self-host/customize-deployment/configure-lightdash-to-use-an-external-database) and related variables |
+| Object storage (S3 / S3-compatible) | Results cache, exports, images, headless browser artifacts, data-app bundles | **Required** | Backend, scheduler, headless browser | Encrypted results parquet, generated CSVs/PDFs/PNGs, data-app static bundles | [`S3_*`](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage) variables |
+| SMTP provider | Transactional email (invites, password resets, scheduled deliveries) | Optional | Backend, scheduler | Email content: recipient address, invitation link, scheduled chart image or CSV attachment | [`SMTP_*`](/self-host/customize-deployment/environment-variables#smtp) variables |
+| Identity provider (Google, Okta, Azure AD, OneLogin, generic OIDC, Snowflake OAuth, Databricks OAuth) | Sign-in and SSO | Optional | Backend, browser (redirect) | OIDC/OAuth handshake — user claims from the IdP; Lightdash sends only what the OAuth flow requires | [`AUTH_*` variables](/self-host/customize-deployment/environment-variables#sso) and [SSO setup](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash) |
+| AI/model provider (OpenAI, Anthropic, Azure OpenAI, OpenRouter, Bedrock) | AI agents, AI writeback, data apps, embeddings, chart metadata generation | Optional | Backend, scheduler, sandboxes (when the agent runs in a sandbox) | Prompts, tool calls, semantic-layer metadata for context, and — depending on the feature — query results the agent has already fetched from your warehouse. Provider API key. | `AI_COPILOT_ENABLED=false`, `AI_WRITEBACK_ENABLED=false`, or a private LLM gateway; see [AI providers](/self-host/enterprise-features/ai-agents) |
+| GitHub (or other source-control provider) | dbt project write-back and AI writeback PRs | Optional | Backend, sandboxes (AI writeback) | Git commits and pull-request contents against the dbt repo you configured; GitHub App installation token or personal access token | Do not [connect GitHub](/self-host/customize-deployment/configure-github-for-lightdash); use a self-hosted GitLab / GHES instance you control |
+| Slack | Scheduled deliveries, unfurls, AI agents in Slack | Optional | Backend, scheduler | Message content: chart images, CSVs, unfurl payloads; Slack bot token | Do not [install the Slack app](/self-host/customize-deployment/configure-a-slack-app-for-lightdash) |
+| MCP servers | [Model Context Protocol](/self-host/enterprise-features/mcp) tool calls from Lightdash AI agents | Optional | Backend, scheduler | MCP tool call payloads to the servers you register | Do not enable MCP; register only internal MCP endpoints |
+| E2B (`api.e2b.dev` and per-sandbox subdomains) | Default managed [sandbox provider](/self-host/customize-deployment/sandboxes) for AI writeback and data apps | Optional | Backend, scheduler | Files copied into the sandbox (dbt project, generated code), API key. Sandbox egress from inside E2B is separately allowlisted per sandbox. | `SANDBOX_PROVIDER=aws-lambda-microvms` or `SANDBOX_PROVIDER=azure-container-apps` to run sandboxes inside your own cloud |
+| AWS Lambda MicroVMs / Azure Container Apps Sandboxes | Alternative [sandbox providers](/self-host/customize-deployment/sandboxes) | Optional | Backend, scheduler | Same payload as E2B, but into your own AWS or Azure account | Provider-specific configuration; stays inside your cloud |
+| Sentry (or another DSN) | Error reporting (optional; **disabled unless a DSN is set**) | Optional | Backend, scheduler, browser | Error message, stack trace, breadcrumbs, `userId`, `organizationUuid`, `projectUuid`, `dashboardUuid` tags. Session replay is enabled on error. | Leave `SENTRY_BE_DSN` and `SENTRY_FE_DSN` unset (default). Point at your own Sentry to keep it internal. |
+| Google Sheets API | Optional [Google Sheets sync](/self-host/customize-deployment/configure-google-sheets-integration) | Optional | Backend, scheduler | Query results written to the target sheet; Google service-account credentials | Do not configure Google Sheets integration |
+| dbt Cloud API | Optional dbt Cloud integration for a project's dbt configuration | Optional | Backend | Job trigger requests, project artifact fetches; dbt Cloud API token | Do not configure a dbt Cloud connection for the project |
+| Container image registry (Docker Hub / GHCR) | `docker pull` when starting or upgrading | **Required at deploy time only.** Not called at runtime. | Container orchestrator | Image pull | Mirror the image into a private registry |
+
+</div>
+
+Community Edition (no `LIGHTDASH_LICENSE_KEY`) does not call `api.keygen.sh` or `roadmap.lightdash.com`. Every other row is identical.
+
+## Security-review checklist
+
+<Steps>
+  <Step title="Disable Lightdash-hosted telemetry (optional)">
+    Set `RUDDERSTACK_ANALYTICS_DISABLED=true` on every Lightdash container (backend, scheduler, NATS workers). See [Configuration 2](#configuration-2-disable-outbound-rudderstack-telemetry).
+  </Step>
+  <Step title="Or, redirect telemetry to your own RudderStack">
+    Set `RUDDERSTACK_WRITE_KEY` and `RUDDERSTACK_DATA_PLANE_URL` on every Lightdash container. Confirm the browser picks up the new endpoint by inspecting `GET /api/v1/health` — the `rudder` block should show your write key and data plane URL. See [Configuration 3](#configuration-3-send-telemetry-to-your-own-rudderstack).
+  </Step>
+  <Step title="Allow-list the domains you actually need">
+    - `api.keygen.sh` — Enterprise Edition only, required.
+    - `roadmap.lightdash.com` — only if you enable the organization roadmap.
+    - `analytics.lightdash.com` — only if you leave default telemetry on.
+    - Your warehouse endpoint, S3 endpoint, IdP, SMTP host, AI provider endpoints, Slack, GitHub, and sandbox provider endpoints — whichever features you use.
+
+    Everything else can be blocked. See the [production deployment checklist](/self-host/production-deployment-checklist#security-hardening) for a starting egress policy.
+  </Step>
+  <Step title="Keep optional integrations internal">
+    - **AI providers:** point `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, or `BEDROCK_BASE_URL` at an internal LLM gateway.
+    - **Sandboxes:** set `SANDBOX_PROVIDER=aws-lambda-microvms` or `azure-container-apps` to keep sandbox execution inside your cloud account.
+    - **Sentry:** leave `SENTRY_BE_DSN` and `SENTRY_FE_DSN` unset, or point them at your own Sentry instance.
+    - **GitHub:** connect a GHES or self-hosted GitLab instead of GitHub.com.
+    - **MCP:** register only internal MCP endpoints.
+    - **Google Sheets, Slack, dbt Cloud:** leave disabled.
+  </Step>
+  <Step title="Verify the effective configuration">
+    - `GET /api/v1/health` returns the effective `rudder` and `sentry` config the frontend will use.
+    - Backend startup logs record whether Sentry initialized and whether license validation succeeded.
+    - Run a network capture or eBPF/Cilium egress log against the backend, scheduler, and worker pods to confirm the observed destinations match the allow-list.
+    - Query the `Instance health` page in Lightdash for the running configuration snapshot.
+  </Step>
+</Steps>
+
+## Further reading
+
+- [Environment variables — Analytics & Event Tracking](/self-host/customize-deployment/environment-variables#analytics--event-tracking)
+- [Enterprise features and license validation](/self-host/enterprise-features)
+- [Production deployment checklist](/self-host/production-deployment-checklist) — includes the default egress policy
+- [Usage Analytics dashboards and query tags](/workspace-admin/usage-analytics)
+- [Prometheus and OpenTelemetry metrics](/self-host/customize-deployment/configure-prometheus-metrics-for-self-hosted-lightdash)
+- [AI agents and AI providers](/self-host/enterprise-features/ai-agents)
+- [Data apps sandboxes](/self-host/customize-deployment/sandboxes)
+- [MCP](/self-host/enterprise-features/mcp)
+- [Slack](/self-host/customize-deployment/configure-a-slack-app-for-lightdash)
+- [GitHub](/self-host/customize-deployment/configure-github-for-lightdash)
+- [External object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage)
+- [Organization roadmap](/self-host/customize-deployment/organization-roadmap)
+- [Instance health](/workspace-admin/instance-health)
