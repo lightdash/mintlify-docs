@@ -99,7 +99,9 @@ All Lightdash queries run against your data warehouse. These strategies help imp
 | [Materialize as tables](#materialize-models-as-tables) | High | High |
 | [Index and partition data](#index-and-partition-your-data) | High | High |
 | [Use pre-aggregates](#use-pre-aggregates) | High | High |
+| [Match aggregations to grain](#match-aggregations-to-your-models-grain) | Medium | High |
 | [Enable caching](#leverage-caching) | Medium | High |
+| [Control filter autocomplete](#control-filter-autocomplete-lookups) | Medium | Medium |
 | [Limit exposed models](#limit-models-exposed-to-the-bi-layer) | Low | Medium |
 | [Monitor usage](#monitor-query-usage) | — | Visibility |
 
@@ -150,6 +152,7 @@ Best practices:
 - Partition by date columns used in time-based filters (e.g., `created_at`, `order_date`)
 - Cluster by columns frequently used in `WHERE` clauses or `GROUP BY`
 - Review your warehouse's query history to identify high-cost queries that could benefit from partitioning
+- Focus on large tables. Once a table is aggregated down to a small size, a full scan is already fast and pruning adds little.
 
 ### Use pre-aggregates
 
@@ -161,12 +164,23 @@ Pre-aggregates are especially useful for:
 - Dashboard queries that aggregate large datasets
 - Commonly used metric combinations
 - Time-series data at standard intervals (daily, weekly, monthly)
+- Expensive `count_distinct` metrics: compute the distinct count once per build, then define the metric as a `sum` of the pre-computed count
+
+Rolling up doesn't always mean giving up analytical depth. If the raw grain is finer than any dimension users actually query, the rolled-up table keeps every dimension while being many times smaller.
 
 You can implement pre-aggregates in two ways:
 - **In Lightdash**: Use [Lightdash pre-aggregates](/semantic-layer/pre-aggregates) to automatically cache aggregated results
 - **In dbt or your warehouse**: Pre-join and materialize tables directly as dbt models or warehouse tables if you prefer to manage them outside of Lightdash
 
 The trade-off is maintenance overhead. You need to keep pre-aggregates in sync with your source data and ensure users understand when to use them vs. the detailed tables.
+
+### Match aggregations to your model's grain
+
+`count_distinct` makes the warehouse deduplicate every value it scans. On large tables it's one of the most expensive aggregations you can run, and it's often used defensively on columns that are already unique.
+
+If your model's grain guarantees uniqueness, use `count` instead. Counting `order_id` on a table with one row per order returns identical results at a fraction of the cost.
+
+Reserve `count_distinct` for columns where duplicates are real, such as counting users across an orders table, or for measures on [joined models with fanout](/semantic-layer/joins#sql-fanouts). If an expensive `count_distinct` is unavoidable, move it to build time with a [pre-aggregate](#use-pre-aggregates).
 
 ### Leverage caching
 
@@ -175,6 +189,24 @@ The trade-off is maintenance overhead. You need to keep pre-aggregates in sync w
 - Frequently accessed dashboards
 - Charts without dynamic time filters
 - Scheduled deliveries
+
+Caching also protects against warehouse congestion. Every tile on a dashboard runs its own query, and they fire together on load, so a large dashboard can queue dozens of queries behind your warehouse's concurrency limit. Queued queries can hit timeouts even when each one is cheap on an idle warehouse. With caching, only the first load pays that cost.
+
+### Control filter autocomplete lookups
+
+When a user opens or searches a filter dropdown, Lightdash queries your warehouse for matching values from the model the dimension is defined on. On a large raw-grain model these lookups get expensive:
+
+- Each lookup scans the model's table. The result limit caps how many values come back, not how much data is scanned.
+- Every new search term fires a fresh lookup, and substring searches can't be served by partition pruning.
+- On dashboards, [other filters cascade into the lookup](/explore/dashboards/filter#filter-value-autocomplete), so each filter combination is a distinct query even when it returns the same values.
+
+Use [`filter_autocomplete`](/semantic-layer/dimensions#filter-autocomplete) to keep these lookups off large tables:
+
+- **Source values from a lookup model**: `options_from_dimension` points the dropdown at a small dimension table instead of the fact table the filter lives on.
+- **Provide a static `values` list**: best when the set of values is small and known ahead of time.
+- **Disable warehouse lookups**: `fetch_from_warehouse: false` stops Lightdash querying the warehouse for suggestions on very high-cardinality dimensions.
+
+To find which explores drive autocomplete costs, filter your warehouse query history to the `filterAutocomplete` [query context](/workspace-admin/usage-analytics#query-contexts).
 
 ### Limit models exposed to the BI layer
 
