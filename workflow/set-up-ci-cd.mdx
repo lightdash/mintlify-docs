@@ -6,41 +6,44 @@ doc-type: tutorial
 
 
 
-We've used Github actions as an example, since it's most popular with our users, but you can use any CI/CD tool that can run commands in a terminal.
+<Note>
+  Every workflow on this page has a ready-to-use template in the [cli-actions](https://github.com/lightdash/cli-actions) repo. Copy the template you need into `.github/workflows/` in your dbt repo and adapt it to your project.
+</Note>
 
-We have included templates for the two most popular automations:
+We've used [GitHub Actions](https://docs.github.com/en/actions) as an example, since it's most popular with our users, but you can use any CI/CD tool that can run commands in a terminal.
+
+The repo includes templates for the most popular automations:
 
 1. [Add Lightdash preview projects to pull requests](#add-previews-to-pull-requests)
 2. [Deploy dbt changes to your production Lightdash project](#deploy-changes-to-lightdash)
+3. [Validate your Lightdash project on pull requests](#validate-your-lightdash-project)
+4. [Compile your dbt project](#compile-your-dbt-project)
+5. [Refresh your Lightdash project](#refresh-your-lightdash-project)
 
-Both of these workflows will require you to add some secrets to your GitHub repo, so that the CI/CD tool can authenticate with Lightdash and your data warehouse. We'll go through that first.
+All of these workflows require secrets so that the CI/CD tool can authenticate with Lightdash and your data warehouse. We'll go through that first.
 
 
-## Add credentials to Github secrets
+## Set up secrets and credentials
 
-We are going to add some secrets and config to GitHub actions, but you don't want those to be public, so the best way to do this is to add them as secrets on Github.
+The workflows read their credentials from repository secrets. Follow GitHub's guide to [using secrets in GitHub Actions](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions) to add each secret below to your dbt repo.
 
 <Info>
   If you already have a GitHub action for Lightdash, then you can use the same Lightdash secrets you created for your other action.
 </Info>
 
-In Github, go to your repo, click on `Settings`, on the left sidebar, click on `Secrets` under `Security`. Now click on the `New repository secret`
+Every workflow needs these secrets:
 
-<Frame>
-  <img src="/images/workflow/github-secrets-fc35152c7ebb768974b385a0e2601dc5.png" alt="GitHub repository Settings with the Actions page under Secrets and variables open, and the New repository secret button highlighted" />
-</Frame>
-
-We need to add `LIGHTDASH_API_KEY` as a secret.    
-
-Back in Lightdash, create a new personal access token, by going to `Settings` > `Personal Access Tokens`. This is the token you'll put in for `LIGHTDASH_API_KEY`.
+* `LIGHTDASH_API_KEY` is a personal access token. Create one in Lightdash by going to `Settings` > `Personal Access Tokens`.
 
 <Frame style={{ marginBottom: '24px' }}>
   <img src="/images/workflow/personal-access-token-9ed8a8c2b16edc5ee745c4909d4093d3.png" alt="The Personal access tokens settings page listing existing tokens and their expiry dates, with Generate new token at top right" />
 </Frame>
 
-`LIGHTDASH_PROJECT` is the UUID for your project. For example, if your URL looks like `https://app.lightdash.cloud/projects/3538ab33-dc90-aabb-bc00-e50bba3a5f69/tables`, then `3538ab33-dc90-45f0-aabb-e50bba3a5f69` is your `LIGHTDASH_PROJECT`.
+* `LIGHTDASH_PROJECT` is the UUID for your project. For example, if your URL looks like `https://app.lightdash.cloud/projects/3538ab33-dc90-aabb-bc00-e50bba3a5f69/tables`, then `3538ab33-dc90-45f0-aabb-e50bba3a5f69` is your `LIGHTDASH_PROJECT`.
 
-`LIGHTDASH_URL` is `https://eu1.lightdash.cloud` or `https://app.lightdash.cloud` for Starter customers, or something like `https://your_company.lightdash.cloud` for dedicated instances. If you self-host, this should be your own custom domain.
+* `LIGHTDASH_URL` is `https://eu1.lightdash.cloud` or `https://app.lightdash.cloud` for Starter customers, or something like `https://your_company.lightdash.cloud` for dedicated instances. If you self-host, this should be your own custom domain.
+
+Workflows that compile your dbt project in CI (previews, deploy, validate, and compile) also need a `DBT_PROFILES` secret with the warehouse connection dbt should use. The [refresh workflow](#refresh-your-lightdash-project) doesn't need it.
 
 `DBT_PROFILES` tips: 
 
@@ -203,7 +206,22 @@ Find your data warehouse from the list below to get a profiles.yml file template
   </Accordion>
 </AccordionGroup>
 
-Now that you have your secrets set up, you can use them in the next two sections to automate your Lightdash CLI workflow.
+### Use a CLI config file instead of environment variables
+
+If you prefer to authenticate the Lightdash CLI with its `config.yaml` file instead of environment variables, copy the full contents of your local `~/.config/lightdash/config.yaml` into a `CLI_CONFIG` secret, then add this step to your workflow before the Lightdash CLI step:
+
+```yaml
+- name: Create config file
+  env:
+    config: ${{ secrets.CLI_CONFIG }}
+  run: |
+    mkdir -p $HOME/.config/lightdash
+    echo -e "$config" > $HOME/.config/lightdash/config.yaml
+```
+
+Both options are compatible, and environment variables take priority if you use both.
+
+Now that you have your secrets set up, you can use them in the sections below to automate your Lightdash CLI workflow.
 
 
 ## Add previews to pull requests
@@ -234,7 +252,7 @@ If you have some GitHub actions in your repo already, click on `New workflow`, t
   <img src="/images/workflow/new-workflow-existing-actions-e321bd117d93bf139a01424d3771d0e6.jpg" alt="The GitHub Actions tab with New workflow highlighted, and the Choose a workflow page with the set up a workflow yourself link highlighted" />
 </Frame>
 
-Now copy [this start-preview.yml file](https://github.com/lightdash/cli-actions/blob/main/start-preview.yml) from our [cli-actions](https://github.com/lightdash/cli-actions) repo
+Now copy [this start-preview.yml file](https://github.com/lightdash/cli-actions/blob/main/start-preview.yml) from the [cli-actions](https://github.com/lightdash/cli-actions) repo
 
 And save by clicking on `Start commit`
 
@@ -396,7 +414,7 @@ If you have some GitHub actions in your repo already, click on `New workflow`, t
   <img src="/images/workflow/new-workflow-existing-actions-e321bd117d93bf139a01424d3771d0e6.jpg" alt="The GitHub Actions tab with New workflow highlighted, and the Choose a workflow page with the set up a workflow yourself link highlighted" />
 </Frame>
 
-Now copy [this deploy.yml file](https://github.com/lightdash/cli-actions/blob/main/deploy.yml) from our [cli-actions](https://github.com/lightdash/cli-actions) repo.
+Now copy [this deploy.yml file](https://github.com/lightdash/cli-actions/blob/main/deploy.yml) from the [cli-actions](https://github.com/lightdash/cli-actions) repo.
 
 Give it a nice name like `deploy-lightdash.yml`
 
@@ -413,3 +431,58 @@ You can see the log on the `Github actions` page
   <img src="/images/workflow/github-run-e24152442d7002253f6fd6dc66a9a24e.png" alt="A GitHub Actions run summary with the build job succeeded and every step, from checkout through cli deploy, showing a green check" />
 </Frame>
 
+---
+
+
+## Validate your Lightdash project
+
+The [lightdash-validate.yml](https://github.com/lightdash/cli-actions/blob/main/lightdash-validate.yml) workflow runs [`lightdash validate`](/workflow/cli/validate) on every pull request and checks that your changes don't break any charts or dashboards in your Lightdash project. It comments the validation results on the pull request, and the comment is informational, so it doesn't block merging.
+
+
+### Create validate workflow
+
+Create a new workflow in your repo, just like you did for the [preview workflow](#create-preview-workflow), and copy in [this lightdash-validate.yml file](https://github.com/lightdash/cli-actions/blob/main/lightdash-validate.yml).
+
+Every time someone opens or updates a pull request, the workflow validates your project against the changes and posts the results as a comment on the pull request.
+
+If you want validation to block merging instead, see [validating a preview environment](/workflow/cli/validate#configure-github-actions).
+
+---
+
+
+## Compile your dbt project
+
+The [compile.yml](https://github.com/lightdash/cli-actions/blob/main/compile.yml) workflow runs [`lightdash compile`](/workflow/cli/compile) on every pull request and fails if there are any errors that would break your Lightdash project. For example, a metric that references a dimension that doesn't exist.
+
+
+### Create compile workflow
+
+Create a new workflow in your repo, just like you did for the [preview workflow](#create-preview-workflow), and copy in [this compile.yml file](https://github.com/lightdash/cli-actions/blob/main/compile.yml).
+
+<Info>
+  If you only use a subset of your dbt models in Lightdash, then you'll want to specify that subset in the workflow's compile step [here](https://github.com/lightdash/cli-actions/blob/d91de777ed3668b537acd141b734eca75def4e52/compile.yml#L65).
+
+  For example, to only compile models with the tag `lightdash`, you would change this line to: `run: lightdash compile --select tag:lightdash --project-dir "$PROJECT_DIR" --profiles-dir . --profile prod || lightdash compile --select tag:lightdash --project-dir "$PROJECT_DIR" --profiles-dir .`
+</Info>
+
+To understand how compilation works and how to enable strict compilation, see [Compilation](/workflow/cli/compile).
+
+---
+
+
+## Refresh your Lightdash project
+
+The [refresh.yml](https://github.com/lightdash/cli-actions/blob/main/refresh.yml) workflow is an alternative to [deploying changes](#deploy-changes-to-lightdash). Instead of compiling your dbt project in the workflow using your `DBT_PROFILES` secret, it runs [`lightdash refresh`](/workflow/cli/reference#lightdash-refresh) on every merge to your main branch, and Lightdash compiles your project server-side using the connection settings saved in your project.
+
+<Info>
+  Your Lightdash project must be connected to a remote git repository for `lightdash refresh` to work, since Lightdash pulls your dbt code from that repository.
+</Info>
+
+
+### Create refresh workflow
+
+Create a new workflow in your repo, just like you did for the [preview workflow](#create-preview-workflow), and copy in [this refresh.yml file](https://github.com/lightdash/cli-actions/blob/main/refresh.yml).
+
+This workflow only needs the `LIGHTDASH_API_KEY`, `LIGHTDASH_PROJECT`, and `LIGHTDASH_URL` secrets.
+
+Not sure whether to deploy or refresh? Read about the [differences between the two commands](/workflow/cli/reference#lightdash-deploy-vs-lightdash-refresh) in the CLI reference.
