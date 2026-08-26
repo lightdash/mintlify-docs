@@ -829,7 +829,7 @@ You can make changes to the code and upload these changes back to your Lightdash
   - (default: false)
   - opt-in flag to download every [virtual view](/semantic-layer/virtual-views) in the project as code. Use `--virtual-views <slugs...>` instead when you only want specific views.
 - `--apps <refs...>`
-  - opt-in flag to also download specific [data apps](/data-apps/download-data-apps-as-code) as code (enterprise only). Pass one or more app references — a slug, UUID, or app URL. Works for apps that haven't been added to a space, and is never capped. Each app is written to `lightdash/apps/<slug>/` as a locally buildable project: `lightdash-app.yml` manifest (with the app's `slug`, `name`, `description`, and linked external connections), the app's `src/` tree, `package.json` / `pnpm-lock.yaml`, local build scaffolding (`vite.config.js`, `tsconfig.json`, `index.html`), a read-only `.lightdash/context/` snapshot of the project's semantic layer, and agent skill files (`AGENTS.md`, `.claude/skills/`). For [custom chart types](/explore/chart-types/custom-project-charts), the manifest also carries a `vizSchema` field with the chart type's declared inputs so it round-trips to the destination on upload. The built output is not included — the server rebuilds it on upload. Dashboards you download bring their referenced data apps along automatically.
+  - opt-in flag to also download specific [data apps](/data-apps/download-data-apps-as-code) as code (enterprise only). Pass one or more app references — a slug, UUID, or app URL. Works for apps that haven't been added to a space, and is never capped. Each app is written to `lightdash/apps/<slug>/` as a locally buildable project: `lightdash-app.yml` manifest (with the app's `slug`, `name`, `description`, and linked external connections), the app's `src/` tree, `package.json` / `pnpm-lock.yaml`, local build scaffolding (`vite.config.js`, `tsconfig.json`, `index.html`), a read-only `.lightdash/context/` snapshot of the project's semantic layer, and agent skill files (`AGENTS.md`, `.claude/skills/`). The built output is not included — the server rebuilds it on upload. Dashboards you download bring their referenced data apps along automatically. [Custom chart types](/explore/chart-types/custom-project-charts) are a separate resource: an `--apps` ref that points at a chart type is skipped with a warning — download it with `--chart-types` instead.
 - `--include-apps`
   - (default: false)
   - opt-in flag to download every [data app](/data-apps/download-data-apps-as-code) in the project as code (enterprise only), capped at `--apps-limit`. Use `--apps <refs...>` to fetch a specific set instead.
@@ -838,7 +838,18 @@ You can make changes to the code and upload these changes back to your Lightdash
   - cap on the number of apps returned by `--include-apps`.
 - `--apps-only`
   - (default: false)
-  - download only data apps, skipping charts, dashboards, and space files (implies `--skip-charts --skip-dashboards --skip-spaces`). Requires `--apps <refs...>` or `--include-apps`. Recommended for app-focused checkouts.
+  - download only data apps, skipping charts, dashboards, and space files (implies `--skip-charts --skip-dashboards --skip-spaces`). Requires `--apps <refs...>` or `--include-apps`. Recommended for app-focused checkouts. Cannot be combined with `--chart-types-only`.
+- `--chart-types <refs...>`
+  - opt-in flag to also download specific [custom chart types](/explore/chart-types/custom-project-charts) as code (enterprise only). Pass one or more references — a slug, UUID, or chart type URL. Each chart type is written to `lightdash/chart-types/<slug>/` with the same locally buildable layout as a data app folder, and its `lightdash-app.yml` manifest carries a `vizSchema` field with the chart type's declared inputs so it round-trips to the destination on upload. A ref that points at a data app is skipped with a warning — download it with `--apps` instead. Charts you download bring the chart types they render with along automatically, since a chart file without its chart type can't be uploaded elsewhere.
+- `--include-chart-types`
+  - (default: false)
+  - opt-in flag to download every [custom chart type](/explore/chart-types/custom-project-charts) in the project as code (enterprise only), capped at `--chart-types-limit`. Use `--chart-types <refs...>` to fetch a specific set instead.
+- `--chart-types-limit <n>`
+  - (default: 50)
+  - cap on the number of chart types returned by `--include-chart-types`.
+- `--chart-types-only`
+  - (default: false)
+  - download only custom chart types, skipping charts, dashboards, and space files (implies `--skip-charts --skip-dashboards --skip-spaces`). Bare `--chart-types-only` downloads every chart type in the project; pass `--chart-types <refs...>` to select a subset. Cannot be combined with `--apps-only`.
 - `--external-connections <slugs...>`
   - opt-in flag to download specific [external connection](/data-apps/external-connections) definitions to `lightdash/external-connections/<slug>.yml`. Secrets are never written to disk — provide them via environment variables on upload.
 - `--include-external-connections`
@@ -923,6 +934,18 @@ Download just one data app and nothing else.
 lightdash download --apps-only --apps 8f2b1c4d-1111-2222-3333-444455556666
 ```
 
+Download all charts and dashboards, plus every custom chart type in the project (up to the first 50).
+
+```bash
+lightdash download --include-chart-types
+```
+
+Download just one custom chart type and nothing else, by slug.
+
+```bash
+lightdash download --chart-types-only --chart-types calendar-heatmap
+```
+
 Download every AI agent in the project alongside charts and dashboards.
 
 ```bash
@@ -1003,7 +1026,7 @@ If there have been changes made to a chart or dashboard in the application that 
   - (default: false)
   - skip uploading virtual views, even when `lightdash/virtual-views/` contains files
 - `--apps [refs...]`
-  - opt-in flag to also upload [data apps](/data-apps/download-data-apps-as-code) as code (enterprise only). Pass one or more refs (slugs, or legacy UUIDs) to upload just those app folders, or use `--include-apps` to upload every folder under `lightdash/apps/`. The CLI posts each app's `src/` tree and manifest and returns immediately — the destination rebuilds the app in its sandbox and publishes a new version. The app shows a `building` status in the UI until the build finishes. Identity is the manifest's `slug`, upserted in the target project: an existing slug appends a new version (and applies edits to `name` / `description`); a new slug creates a new app. If the source, dependencies, and viz schema are byte-for-byte identical to the latest version, the upload is skipped with `matches v<n>` (name/description edits still apply); pass `--force` to rebuild anyway. Each project runs at most 5 app builds concurrently — if the cap is hit, the CLI waits automatically (up to 10 minutes of consecutive waiting) instead of failing. For [custom chart types](/explore/chart-types/custom-project-charts), the manifest's `vizSchema` is sent alongside the source and persisted on the new version. Uploading requires the [`create:DataApp` scope](/workspace-admin/roles), which is granted to Editor, Developer, and Admin roles. Users with only [`create:DataApp@preview`](/workspace-admin/custom-roles#data-app-scopes) can upload apps to preview projects they created themselves, but not to production or to previews created by teammates. Dashboards you upload push their referenced app folders first, even without `--apps`.
+  - opt-in flag to also upload [data apps](/data-apps/download-data-apps-as-code) as code (enterprise only). Pass one or more refs (slugs, or legacy UUIDs) to upload just those app folders, or use `--include-apps` to upload every folder under `lightdash/apps/`. The CLI posts each app's `src/` tree and manifest and returns immediately — the destination rebuilds the app in its sandbox and publishes a new version. The app shows a `building` status in the UI until the build finishes. Identity is the manifest's `slug`, upserted in the target project: an existing slug appends a new version (and applies edits to `name` / `description`); a new slug creates a new app. If the source, dependencies, and viz schema are byte-for-byte identical to the latest version, the upload is skipped with `matches v<n>` (name/description edits still apply); pass `--force` to rebuild anyway. Each project runs at most 5 app builds concurrently — if the cap is hit, the CLI waits automatically (up to 10 minutes of consecutive waiting) instead of failing. A folder under `lightdash/apps/` that is actually a [custom chart type](/explore/chart-types/custom-project-charts) is skipped with a warning — move it to `lightdash/chart-types/` and upload it with `--chart-types`. Uploading requires the [`create:DataApp` scope](/workspace-admin/roles), which is granted to Editor, Developer, and Admin roles. Users with only [`create:DataApp@preview`](/workspace-admin/custom-roles#data-app-scopes) can upload apps to preview projects they created themselves, but not to production or to previews created by teammates. Dashboards you upload push their referenced app folders first, even without `--apps`.
 - `--include-apps`
   - (default: false)
   - upload every app folder under `lightdash/apps/`.
@@ -1012,6 +1035,14 @@ If there have been changes made to a chart or dashboard in the application that 
   - upload only data apps, skipping charts, dashboards, and space reconciliation. Bare `--apps-only` uploads every app folder in `lightdash/apps/`; pass `--apps <refs...>` to select a subset. Recommended for app-focused CI runs.
 - `--app-space <spaceRef>`
   - space (slug or UUID) that new data apps created by this upload land in. Existing apps keep the space they already have. Without this flag, new apps go to the target project's default location. The space must already exist in the target project — resolve slugs to a single match, or pass the space UUID directly.
+- `--chart-types <refs...>`
+  - opt-in flag to also upload [custom chart types](/explore/chart-types/custom-project-charts) as code (enterprise only). Pass one or more refs — a slug (the folder name), UUID, or chart type URL — to upload just those folders from `lightdash/chart-types/`, or use `--include-chart-types` to upload every folder there. Uploads work like data app uploads: identity is the manifest's `slug`, upserted in the target project, the server rebuilds from source, unchanged uploads are skipped, and the same `create:DataApp` scope is required. The manifest's `vizSchema` is sent alongside the source and persisted on the new version. Chart types are project-global and spaceless, so `--app-space` doesn't apply to them. Unlike dashboard-referenced apps, chart types are never auto-pushed: uploading a chart whose chart type is missing in the target project fails with a message to upload the chart type first.
+- `--include-chart-types`
+  - (default: false)
+  - upload every chart type folder under `lightdash/chart-types/`.
+- `--chart-types-only`
+  - (default: false)
+  - upload only custom chart types, skipping charts, dashboards, and space reconciliation. Bare `--chart-types-only` uploads every folder in `lightdash/chart-types/`; pass `--chart-types <refs...>` to select a subset. Cannot be combined with `--apps-only`.
 - `--allow-custom-dependencies`
   - (default: false)
   - approve uploading apps that declare [custom dependencies](/data-apps/download-data-apps-as-code#experimental-custom-dependencies) without prompting. Required for non-interactive runs (CI) of apps that add packages beyond the template's base dependencies — without it, the CLI skips those apps with a per-app warning and counts them as failures.
@@ -1104,6 +1135,18 @@ Copy a data app to a different project as a brand-new app (non-interactive).
 
 ```bash
 lightdash upload --apps --project 21eef0b9-5bae-40f3-851e-9554588e71a6 --create-new
+```
+
+Upload only a specific custom chart type by slug (the folder name under `lightdash/chart-types/`).
+
+```bash
+lightdash upload --chart-types calendar-heatmap
+```
+
+Upload every chart type folder and nothing else.
+
+```bash
+lightdash upload --chart-types-only
 ```
 
 Upload every AI agent file under `lightdash/ai-agents/` (creates missing agents, updates existing ones by slug).
