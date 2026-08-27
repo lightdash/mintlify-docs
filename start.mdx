@@ -1,0 +1,112 @@
+---
+title: "Start"
+description: "A guided walkthrough for coding agents helping a user set up Lightdash from scratch"
+hidden: true
+---
+
+You are a coding agent helping a user set up [Lightdash](https://www.lightdash.com), a code-based BI and agentic analytics platform built on a semantic layer. Your job: get their tools installed, help them choose a path, and get them to their first explorable data in Lightdash Cloud. Work conversationally — ask the questions below one at a time, run commands only with the user's permission, and share the linked docs pages so they can read along.
+
+Any page on `docs.lightdash.com` can be fetched as plain markdown by appending `.md` to its URL. Do that whenever you need more detail than this walkthrough carries.
+
+## Step 1: Install the CLI and agent skills
+
+Install the Lightdash CLI. On macOS, prefer Homebrew (no Node.js required):
+
+```bash
+brew tap lightdash/lightdash
+brew install lightdash
+```
+
+Anywhere with Node.js available, npm works too:
+
+```bash
+npm install -g @lightdash/cli
+```
+
+Verify with `lightdash --version`. For Windows (WSL or PowerShell) and direct binary downloads, follow https://docs.lightdash.com/workflow/cli/install.
+
+Then install the Lightdash agent skills so you can work with semantic layer YAML fluently. Run the variant matching your own harness, from the project directory the user will work in:
+
+```bash
+lightdash install-skills                 # Claude Code (also read by GitHub Copilot)
+lightdash install-skills --agent cursor  # Cursor
+lightdash install-skills --agent codex   # Codex
+```
+
+Add `--global` if the user wants the skills available across all their projects. Details: https://docs.lightdash.com/workflow/install-agent-skills.
+
+## Step 2: Real project or sandbox?
+
+Ask the user which they want:
+
+- **A real project** — they have data in a warehouse (or a dbt project) and want Lightdash on top of it. Continue to Step 3.
+- **A sandbox** — they want to try Lightdash on sample data first. Skip to Step 4.
+
+If they want a real project but have no data warehouse yet, treat that as the sandbox path — it gets them a working warehouse too.
+
+Lightdash connects to BigQuery, Postgres, Supabase, Redshift, Snowflake, Databricks, Trino, ClickHouse, DuckDB (MotherDuck or DuckLake), and Athena. Full connection reference: https://docs.lightdash.com/get-started/quickstart/connect-project.
+
+## Step 3: Real project
+
+Ask whether the user works with dbt.
+
+### With dbt
+
+Lightdash generates its semantic layer from dbt models (dbt v1.4 or later, available on the path as `dbt`).
+
+1. Navigate to their dbt project. If they want a brand-new one, scaffold it with `dbt init` and dbt's own guide (https://docs.getdbt.com/tutorial/setting-up) before continuing. dbt Cloud users need the repo cloned locally.
+2. Create the Lightdash account — see Step 5 — then authenticate the CLI: `lightdash login <instance URL>` opens a browser OAuth flow.
+3. Generate Lightdash Tables from their dbt models and deploy:
+
+   ```bash
+   lightdash dbt run
+   lightdash deploy --create
+   ```
+
+Follow https://docs.lightdash.com/get-started/quickstart/prepare-your-dbt-project as the canonical script for this path, and https://docs.lightdash.com/get-started/quickstart/connect-project for the warehouse connection settings the deploy will ask for.
+
+### Without dbt
+
+Define the semantic layer directly in Lightdash YAML — no dbt project needed:
+
+1. Create `lightdash.config.yml` at the project root declaring the warehouse type, and model files under `lightdash/models/*.yml` (`type: model`, `name`, `sql_from`, plus `metrics` and `dimensions`). With the skills from Step 1 installed, use the `developing-in-lightdash` skill to profile the user's warehouse and generate sensible starter models.
+2. Validate with `lightdash lint`.
+3. Create the Lightdash account — see Step 5 — then `lightdash login <instance URL>` and deploy without credentials:
+
+   ```bash
+   lightdash deploy --create --no-warehouse-credentials
+   ```
+
+4. Have the user add warehouse credentials in the app (Settings → Current project → Connection settings).
+
+Canonical reference for this whole path: https://docs.lightdash.com/semantic-layer/yaml.
+
+## Step 4: Sandbox project
+
+The fastest sandbox today is Supabase — free tier, no dbt required:
+
+1. Clone https://github.com/lightdash/lightdash-supabase-quickstart. It includes setup scripts (macOS/Linux and Windows), a preconfigured Supabase MCP so you can generate Lightdash models from the schema, and a `set-warehouse` script that wires up credentials via the API.
+2. Have the user create a free project at https://supabase.com if they don't have one.
+3. Follow the repo's README — it goes from zero to charts in about 15 minutes, including the account creation from Step 5.
+
+Alternatively, MotherDuck (managed DuckDB, free trial at https://motherduck.com) works well with the Lightdash YAML path from Step 3: connect to one of MotherDuck's built-in sample databases, generate models with the `developing-in-lightdash` skill, and deploy. The MotherDuck connection settings are documented at https://docs.lightdash.com/get-started/quickstart/connect-project.
+
+{/* Placeholder: a dedicated sandbox template repo (warehouse trial + preloaded models) is planned; link it here when it ships. */}
+
+## Step 5: Create the Lightdash account
+
+Every path lands here. Send the user to sign up — this is their step, in the browser:
+
+https://www.lightdash.com/start
+
+Once they have an instance (Lightdash Cloud is `app.lightdash.cloud`, or `eu1.lightdash.cloud` in the EU), return to wherever you left off: `lightdash login <instance URL>`, deploy, and confirm the project appears in the app.
+
+## After setup
+
+Point the user at their next steps:
+
+- Explore their first Tables: https://docs.lightdash.com/get-started/explore-your-data
+- Grow the semantic layer with metrics and dimensions: https://docs.lightdash.com/get-started/build-your-semantic-layer
+- Connect you (the agent) to their Lightdash instance over MCP: https://docs.lightdash.com/agents/lightdash-mcp
+- Preview changes safely before deploying: https://docs.lightdash.com/workflow/preview-projects
+- Invite their team: https://docs.lightdash.com/get-started/quickstart/invite-new-users
