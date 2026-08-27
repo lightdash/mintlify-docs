@@ -205,9 +205,9 @@ export interface MaturityMark {
 }
 
 /**
- * A maturity mark states the level of a *Lightdash* feature, which is why it is
- * only recognised alongside a link to the maturity-levels page. A third party's
- * beta or preview status is prose about that vendor, not a Lightdash lifecycle.
+ * A maturity mark declares the level of a *Lightdash* feature with either the
+ * lifecycle badge or a level linked directly to the maturity guide. Merely
+ * discussing a level near a link to the guide does not set the page's maturity.
  */
 export function maturityMarks(content: string): MaturityMark[] {
   const clean = withoutCodeBlocks(content);
@@ -216,13 +216,26 @@ export function maturityMarks(content: string): MaturityMark[] {
   const lines = clean.split('\n');
   const firstHeading = lines.findIndex((line) => /^\s{0,3}#{1,6}\s/.test(line)) + 1;
 
-  for (const match of clean.matchAll(/\[?\b(Experimental|Beta|Deprecated)\b\]?(\([^)]*\))?/g)) {
+  const addMark = (level: MaturityLevel, index: number): void => {
+    const line = lineOf(clean, index);
+    marks.push({ level, line, pageLevel: firstHeading === 0 || line < firstHeading });
+  };
+
+  for (const match of clean.matchAll(/<Badge\b[^>]*>\s*(Experimental|Beta|Deprecated)\s*<\/Badge>/g)) {
     const level = match[1] as MaturityLevel | undefined;
     if (level === undefined || match.index === undefined) continue;
     const line = lineOf(clean, match.index);
     const context = lines.slice(Math.max(0, line - 4), line + 3).join('\n');
     if (!context.includes(MATURITY_PAGE)) continue;
-    marks.push({ level, line, pageLevel: firstHeading === 0 || line < firstHeading });
+    addMark(level, match.index);
+  }
+
+  for (const match of clean.matchAll(/\[(Experimental|Beta|Deprecated)\]\(([^)\s]+)\)/g)) {
+    const level = match[1] as MaturityLevel | undefined;
+    const target = match[2]?.replace(/^\//, '');
+    if (level === undefined || match.index === undefined) continue;
+    if (target !== MATURITY_PAGE && !target?.startsWith(`${MATURITY_PAGE}#`)) continue;
+    addMark(level, match.index);
   }
 
   const seen = new Set<string>();
