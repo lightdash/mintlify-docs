@@ -61,8 +61,11 @@ Deprecated is not a maturity level — it is where a feature goes after GA. Its 
 | Condition | Badge |
 | --- | --- |
 | Enterprise plan | `<Badge icon="building-plus" color="blue" size="sm" shape="pill">Enterprise</Badge>` |
+| AI add-on, on any plan | `<Badge icon="sparkles" color="blue" size="sm" shape="pill">AI add-on</Badge>` |
 | Self-hosted deployments only | `<Badge icon="server" color="blue" size="sm" shape="pill">Self-hosted</Badge>` |
 | Lightdash Cloud only | `<Badge icon="cloud-bolt" color="blue" size="sm" shape="pill">Cloud</Badge>` |
+
+The four values and every gated feature that carries one are mapped on [feature availability](../support/feature-availability.mdx) — the availability counterpart to feature maturity levels. A page whose gate changes updates that map in the same change.
 
 **A badge gates, it never labels.** It answers whether the reader can use the thing, and a reader who cannot is meant to stop. A badge describing what the page is about — the tool it uses, the surface it covers — fails the test, because that badge could be justified on any page and so distinguishes none of them. If the page's area, title, or first sentence already implies it, it is a label.
 
