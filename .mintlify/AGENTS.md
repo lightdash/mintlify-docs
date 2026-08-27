@@ -47,9 +47,17 @@ Pick a component by the job it does for the reader, never by how it looks. The f
 
 Treat a reorganization as one change to pages, navigation, redirects, the IA map, and media. Follow the [reorganization checklist](.mintlify/ia-rules.md#reorganization-checklist), including when a section gains or loses a `root` without changing its label.
 
+## Local preview
+
+Start `mint dev --port 3333` **once** in the background and reuse it for the whole session — it hot-reloads `.mdx`, `snippets/`, `styles.css`, and `docs.json`, so never restart it to pick up an edit. If the port is taken, mint silently binds the next port up instead of failing, so relaunching stacks zombie servers. To stop it, kill the background task's PID (the process cmdline is `node .../mint/index.js dev`, so `pkill -f "mint dev"` matches nothing); check for strays with `procs mint`. Launching needs to run outside the sandbox (`mint` writes preview locks under `~/.mintlify`), as does spawning Chrome for screenshots.
+
 ## Before done
 
-Frontmatter is complete and the page is reachable from nav. Run `node scripts/docs/render-ia-map.ts --check`, `node scripts/docs/validate.ts --changed-files <file-list>`, `node scripts/docs/audit-components.ts --baseline`, and `mint broken-links`. The file list contains one changed path per line, including deleted paths. Mintlify build validation alone does not check the repository's IA annotations or media placement. Report any pre-existing failures separately.
+Frontmatter is complete and the page is reachable from nav. Run `node scripts/docs/render-ia-map.ts --check`, `node scripts/docs/validate.ts --changed-files <file-list>`, `node scripts/docs/audit-components.ts --baseline`, and `mint broken-links`. The file list contains one changed path per line, including deleted paths. Mintlify build validation alone does not check the repository's IA annotations or media placement.
+
+### Hidden pages
+
+Pages meant to be fetched by URL rather than browsed declare `hidden: true` in frontmatter instead of a nav entry — the validator exempts them from nav reachability, and `seo.indexing: "all"` in `docs.json` keeps them in `llms.txt` and the `.md` export. `start.mdx` (the agent endpoint behind the homepage copy-prompt button) is the one such page; don't add it to nav.
 
 ## Reference docs
 
