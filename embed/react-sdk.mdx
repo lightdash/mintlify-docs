@@ -130,7 +130,8 @@ type DashboardProps = {
   };
   filters?: SdkFilter[];            // Apply filters programmatically
   paletteUuid?: string;             // Color palette UUID for custom theming
-  contentOverrides?: LanguageMap;   // Localization/translation overrides
+  contentOverrides?: LanguageMap;   // Translate your content (names, titles, markdown)
+  uiOverrides?: SdkUiOverrides;     // Translate Lightdash UI strings (filters, menus, buttons)
   isEditMode?: boolean;             // Render the dashboard in edit mode (requires writeActions JWT)
   onEditModeChange?: (
     isEditMode: boolean,
@@ -265,6 +266,7 @@ type DashboardBuilderProps = {
   filters?: SdkFilter[];
   paletteUuid?: string;
   contentOverrides?: LanguageMap;
+  uiOverrides?: SdkUiOverrides;
   isEditMode?: boolean;             // Render the new dashboard in edit mode
   onEditModeChange?: (
     isEditMode: boolean,
@@ -332,7 +334,8 @@ type ChartProps = {
     backgroundColor?: string;       // Background color or 'transparent'
     fontFamily?: string;            // Font family for all text
   };
-  contentOverrides?: LanguageMap;   // Localization/translation overrides
+  contentOverrides?: LanguageMap;   // Translate your content (names, titles, markdown)
+  uiOverrides?: SdkUiOverrides;     // Translate Lightdash UI strings (filters, menus, buttons)
 };
 ```
 
@@ -411,7 +414,8 @@ type ExploreProps = {
     backgroundColor?: string;       // Background color or 'transparent'
     fontFamily?: string;            // Font family for all text
   };
-  contentOverrides?: LanguageMap;   // Localization/translation overrides
+  contentOverrides?: LanguageMap;   // Translate your content (names, titles, markdown)
+  uiOverrides?: SdkUiOverrides;     // Translate Lightdash UI strings (filters, menus, buttons)
 };
 ```
 
@@ -490,7 +494,7 @@ type AiAgentProps = {
 ```
 
 <Info>
-`Lightdash.AiAgent` does not accept `filters`, `contentOverrides`, or `onExplore`. Threads, navigation, and chart actions are managed inside the embedded agent UI.
+`Lightdash.AiAgent` does not accept `filters`, `contentOverrides`, `uiOverrides`, or `onExplore`. Threads, navigation, and chart actions are managed inside the embedded agent UI.
 </Info>
 
 `onThreadChange` fires whenever the embedded agent creates a new thread or opens an existing one. Use it together with `threadUuid` to persist the current conversation in your app (for example in `localStorage` or your own backend) and resume it the next time the user returns. Under the hood, the SDK passes a `targetOrigin` query parameter to the iframe and listens for `lightdash:aiAgentThreadChanged` `postMessage` events from the embedded page — no extra setup is required on your side.
@@ -606,7 +610,7 @@ type MetricsCatalogProps = {
 ```
 
 <Info>
-`Lightdash.MetricsCatalog` does not accept `filters`, `contentOverrides`, or `onExplore`. The catalog and the embedded Explore it launches are managed inside the component.
+`Lightdash.MetricsCatalog` does not accept `filters`, `contentOverrides`, `uiOverrides`, or `onExplore`. The catalog and the embedded Explore it launches are managed inside the component.
 </Info>
 
 #### Basic usage
@@ -1223,21 +1227,34 @@ To generate tokens with filterable fields, configure your embed in the Lightdash
 
 ## Localization
 
-The **Lightdash SDK** supports multilingual translation using standard i18n translation objects. To display a translated Lightdash dashboard, pass a correctly formatted translation object to the SDK.
+The React SDK has two translation props, split by what they translate:
 
-### Recommended tools
+| Prop               | Translates                                                                                                                | Shape                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `contentOverrides` | **Your content**: dashboard and chart names, tile titles, markdown, labels                                                 | `LanguageMap`, slug-keyed, generated with `lightdash download --language-map` |
+| `uiOverrides`      | **Lightdash's UI**: filter operators and inputs, the filter popover, date zoom, tile menus, export buttons                 | Flat `{ key: string }` map with a fixed, typed key set                       |
+
+There is no locale setting and no bundled language packs. Your app owns locale state and passes the translated strings for the language it wants. Anything you don't override renders in the built-in English.
+
+Both props are accepted by `Lightdash.Dashboard`, `Lightdash.DashboardBuilder`, `Lightdash.Chart`, and `Lightdash.Explore`. They are React SDK props only; [iframe embeds](/embed/iframe) are not translatable.
+
+### Translating your content with `contentOverrides`
+
+`contentOverrides` translates the content you author in Lightdash: dashboard names and descriptions, tile titles, chart names, axis labels, series names, and markdown content.
+
+Recommended tools:
 
 - **Translation maps** – The Lightdash CLI can generate translation maps when downloading content as code
 - **Runtime translation management** – Use a translation library like `i18next`
 - **Translation production tools** – Tools like **Locize** help manage translations efficiently
 
-### Video overview
+#### Video overview
 
 <Frame>
 <iframe width="640" height="360" src="https://www.loom.com/embed/d664260545624198b9d4074401c6fb6f?sid=292691a9-5cd9-4504-80b3-bcd6cd874558" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen />
 </Frame>
 
-### Translation maps
+#### Translation maps
 
 The Lightdash CLI can produce translation maps for dashboards and charts. To include translation maps when downloading content, add the `--language-map` flag:
 
@@ -1268,7 +1285,7 @@ dashboard:
 
 These translation maps can be imported into tools like Locize to begin translation.
 
-### Runtime translation
+#### Runtime translation
 
 At runtime, pass a translation object to the SDK's `contentOverrides` prop. We suggest using `i18Next` to load translations:
 
@@ -1285,7 +1302,7 @@ import i18n from 'i18next';
 />
 ```
 
-### Setting up i18Next with Locize
+#### Setting up i18Next with Locize
 
 ```typescript
 import i18next from 'i18next';
@@ -1310,25 +1327,83 @@ i18next
   });
 ```
 
+### Translating the Lightdash UI with `uiOverrides`
+
+`uiOverrides` translates the interface Lightdash renders around your content: filter operators and inputs, the add/edit filter popover, the date zoom control, tile menus, and dashboard export buttons.
+
+Pass a flat object mapping keys to translated strings. The key set is exported as the TypeScript type `SdkUiOverrides` from `@lightdash/sdk`, so editors autocomplete every key and unknown keys are compile errors.
+
+```tsx
+import Lightdash, { type SdkUiOverrides } from '@lightdash/sdk';
+
+const frenchUi: SdkUiOverrides = {
+  'filters.addFilter': 'Ajouter un filtre',
+  'filters.apply': 'Appliquer',
+  'filters.operators.equals': 'est',
+  'filters.operators.inThePast': 'au cours des derniers',
+  'filters.unitsOfTime.days.plural': 'jours',
+  'filters.unitsOfTime.days.completedPlural': 'jours révolus',
+  'dateZoom.defaultZoom': 'Zoom par défaut',
+  'tileMenu.downloadData': 'Télécharger les données',
+};
+
+<Lightdash.Dashboard
+  instanceUrl={instanceUrl}
+  token={token}
+  contentOverrides={frenchLanguageMap} // your content
+  uiOverrides={frenchUi}               // Lightdash's UI
+/>;
+```
+
+<Note>
+Both the `@lightdash/sdk` package and your Lightdash instance must be on a version that includes `uiOverrides`. If you self-host, upgrade your instance as well, since the strings render inside Lightdash's UI. There is no feature flag; `uiOverrides` is available wherever embedding is available.
+</Note>
+
+#### Available keys
+
+Keys are flat dot-paths, namespaced by the surface they translate:
+
+- `filters.*` – operator labels (including date-specific variants), units of time, filter pills, the add/edit filter popover, value inputs, autocomplete states, the collapsed filter-bar summary, cross-filtering menu items, and the required-filters flow viewers see
+- `dateZoom.*` – the date zoom control, granularity names, tooltips, and the per-tile zoom indicator
+- `tileMenu.*` – the tile menu: Explore from here, Download data, Export image, View underlying data
+- `dashboard.*` – dashboard-level export and print buttons
+
+The authoritative key list, with the English defaults, is the `SdkUiOverrides` type in `@lightdash/sdk`. Use your editor's autocomplete to browse it.
+
+#### Key rules
+
+- **Every key is optional.** Partial dictionaries are fine; missing keys render in English.
+- **Keys are a stable, additive contract.** Existing keys are never renamed or removed across SDK versions. New UI may add keys, which fall back to English until you translate them.
+- **Keep `{token}` placeholders.** Some values contain placeholders that Lightdash fills at runtime, like `'filters.autocomplete.addValue': 'Add "{value}"'` or `'filters.crossFilter.menuLabel': 'Filter dashboard on {field} to'`. Keep the token, with its exact name in braces, somewhere in the translation. Its position is free. No other syntax is supported (not ICU MessageFormat).
+- **Plurals are one key per form.** Count-dependent strings exist as separate keys, like `filters.summary.filterSingular` / `filters.summary.filterPlural`, and units of time with `.singular` / `.plural` / `.completedSingular` / `.completedPlural` variants. There are no CLDR plural rules, so languages with more than two plural forms can only approximate.
+
+#### Using `uiOverrides` with an i18n framework
+
+Because the map is flat JSON, it drops directly into i18next-style resource files. Keep a `uiOverrides` object per locale and pass the active one:
+
+```tsx
+// locales/fr/translation.json → { "uiOverrides": { "filters.apply": "Appliquer", ... } }
+const uiOverrides = i18n.getResourceBundle(i18n.language, 'translation')?.uiOverrides;
+
+<Lightdash.Dashboard ... uiOverrides={uiOverrides} key={i18n.language} />;
+```
+
+Re-mounting the component on language change (the `key` prop) is the simplest way to re-render every string.
+
 ### What can be translated
 
-**Can be translated** (UI strings specified in Lightdash):
-- Dashboard names and descriptions
-- Tile titles
-- Chart names
-- Axis labels
-- Series names
-- Markdown content
+| Surface                                                                                            | Translatable with  |
+| -------------------------------------------------------------------------------------------------- | ------------------ |
+| Dashboard and chart names, descriptions, tile titles, axis labels, series names, markdown content   | `contentOverrides` |
+| Filter operators and inputs, the filter popover, date zoom, tile menus, export and print buttons    | `uiOverrides`      |
 
-**Cannot be translated** (data from your warehouse):
-- String values in charts
-- Dimension values
-- Metric names from database
-- Raw data in tables
+Not translatable:
 
-<Info>
-Strings originating from your data warehouse cannot be translated by the SDK. They are presented as they exist in your database.
-</Info>
+- **Data from your warehouse** – string values in charts, dimension values, and raw table data render as they exist in your database
+- **Field and table names** – dimension and metric labels shown on filter pills and in the field picker come from your dbt schema
+- **Date picker internals** – month and weekday names inside calendar popups render in English
+- **Data formatting** – numbers, dates, and currencies render per chart config
+- **Editor-only UI** – dashboard edit mode is not translated
 
 ## Complete example
 
