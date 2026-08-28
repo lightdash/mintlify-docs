@@ -130,7 +130,8 @@ type DashboardProps = {
   };
   filters?: SdkFilter[];            // Apply filters programmatically
   paletteUuid?: string;             // Color palette UUID for custom theming
-  contentOverrides?: LanguageMap;   // Localization/translation overrides
+  contentOverrides?: LanguageMap;   // Translate your content (names, titles, markdown)
+  uiOverrides?: SdkUiOverrides;     // Translate Lightdash UI strings (filters, menus, buttons)
   isEditMode?: boolean;             // Render the dashboard in edit mode (requires writeActions JWT)
   onEditModeChange?: (
     isEditMode: boolean,
@@ -265,6 +266,7 @@ type DashboardBuilderProps = {
   filters?: SdkFilter[];
   paletteUuid?: string;
   contentOverrides?: LanguageMap;
+  uiOverrides?: SdkUiOverrides;
   isEditMode?: boolean;             // Render the new dashboard in edit mode
   onEditModeChange?: (
     isEditMode: boolean,
@@ -332,7 +334,8 @@ type ChartProps = {
     backgroundColor?: string;       // Background color or 'transparent'
     fontFamily?: string;            // Font family for all text
   };
-  contentOverrides?: LanguageMap;   // Localization/translation overrides
+  contentOverrides?: LanguageMap;   // Translate your content (names, titles, markdown)
+  uiOverrides?: SdkUiOverrides;     // Translate Lightdash UI strings (filters, menus, buttons)
 };
 ```
 
@@ -411,7 +414,8 @@ type ExploreProps = {
     backgroundColor?: string;       // Background color or 'transparent'
     fontFamily?: string;            // Font family for all text
   };
-  contentOverrides?: LanguageMap;   // Localization/translation overrides
+  contentOverrides?: LanguageMap;   // Translate your content (names, titles, markdown)
+  uiOverrides?: SdkUiOverrides;     // Translate Lightdash UI strings (filters, menus, buttons)
 };
 ```
 
@@ -490,7 +494,7 @@ type AiAgentProps = {
 ```
 
 <Info>
-`Lightdash.AiAgent` does not accept `filters`, `contentOverrides`, or `onExplore`. Threads, navigation, and chart actions are managed inside the embedded agent UI.
+`Lightdash.AiAgent` does not accept `filters`, `contentOverrides`, `uiOverrides`, or `onExplore`. Threads, navigation, and chart actions are managed inside the embedded agent UI.
 </Info>
 
 `onThreadChange` fires whenever the embedded agent creates a new thread or opens an existing one. Use it together with `threadUuid` to persist the current conversation in your app (for example in `localStorage` or your own backend) and resume it the next time the user returns. Under the hood, the SDK passes a `targetOrigin` query parameter to the iframe and listens for `lightdash:aiAgentThreadChanged` `postMessage` events from the embedded page — no extra setup is required on your side.
@@ -606,7 +610,7 @@ type MetricsCatalogProps = {
 ```
 
 <Info>
-`Lightdash.MetricsCatalog` does not accept `filters`, `contentOverrides`, or `onExplore`. The catalog and the embedded Explore it launches are managed inside the component.
+`Lightdash.MetricsCatalog` does not accept `filters`, `contentOverrides`, `uiOverrides`, or `onExplore`. The catalog and the embedded Explore it launches are managed inside the component.
 </Info>
 
 #### Basic usage
@@ -1223,21 +1227,34 @@ To generate tokens with filterable fields, configure your embed in the Lightdash
 
 ## Localization
 
-The **Lightdash SDK** supports multilingual translation using standard i18n translation objects. To display a translated Lightdash dashboard, pass a correctly formatted translation object to the SDK.
+The React SDK has two translation props, split by what they translate:
 
-### Recommended tools
+| Prop               | Translates                                                                                                                | Shape                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `contentOverrides` | **Your content**: dashboard and chart names, tile titles, markdown, labels                                                 | `LanguageMap`, slug-keyed, generated with `lightdash download --language-map` |
+| `uiOverrides`      | **Lightdash's UI**: filter operators and inputs, the filter popover, date zoom, tile menus, export buttons                 | Flat `{ key: string }` map with a fixed, typed key set                       |
+
+There is no locale setting and no bundled language packs. Your app owns locale state and passes the translated strings for the language it wants. Anything you don't override renders in the built-in English.
+
+Both props are accepted by `Lightdash.Dashboard`, `Lightdash.DashboardBuilder`, `Lightdash.Chart`, and `Lightdash.Explore`. They are React SDK props only; [iframe embeds](/embed/iframe) are not translatable.
+
+### Translating your content with `contentOverrides`
+
+`contentOverrides` translates the content you author in Lightdash: dashboard names and descriptions, tile titles, chart names, axis labels, series names, and markdown content.
+
+Recommended tools:
 
 - **Translation maps** – The Lightdash CLI can generate translation maps when downloading content as code
 - **Runtime translation management** – Use a translation library like `i18next`
 - **Translation production tools** – Tools like **Locize** help manage translations efficiently
 
-### Video overview
+#### Video overview
 
 <Frame>
 <iframe width="640" height="360" src="https://www.loom.com/embed/d664260545624198b9d4074401c6fb6f?sid=292691a9-5cd9-4504-80b3-bcd6cd874558" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen />
 </Frame>
 
-### Translation maps
+#### Translation maps
 
 The Lightdash CLI can produce translation maps for dashboards and charts. To include translation maps when downloading content, add the `--language-map` flag:
 
@@ -1268,7 +1285,7 @@ dashboard:
 
 These translation maps can be imported into tools like Locize to begin translation.
 
-### Runtime translation
+#### Runtime translation
 
 At runtime, pass a translation object to the SDK's `contentOverrides` prop. We suggest using `i18Next` to load translations:
 
@@ -1285,7 +1302,7 @@ import i18n from 'i18next';
 />
 ```
 
-### Setting up i18Next with Locize
+#### Setting up i18Next with Locize
 
 ```typescript
 import i18next from 'i18next';
@@ -1310,25 +1327,518 @@ i18next
   });
 ```
 
+### Translating the Lightdash UI with `uiOverrides`
+
+`uiOverrides` translates the interface Lightdash renders around your content: filter operators and inputs, the add/edit filter popover, the date zoom control, tile menus, and dashboard export buttons.
+
+Pass a flat object mapping keys to translated strings. The key set is exported as the TypeScript type `SdkUiOverrides` from `@lightdash/sdk`, so editors autocomplete every key and unknown keys are compile errors.
+
+```tsx
+import Lightdash, { type SdkUiOverrides } from '@lightdash/sdk';
+
+const frenchUi: SdkUiOverrides = {
+  'filters.addFilter': 'Ajouter un filtre',
+  'filters.apply': 'Appliquer',
+  'filters.operators.equals': 'est',
+  'filters.operators.inThePast': 'au cours des derniers',
+  'filters.unitsOfTime.days.plural': 'jours',
+  'filters.unitsOfTime.days.completedPlural': 'jours révolus',
+  'dateZoom.defaultZoom': 'Zoom par défaut',
+  'tileMenu.downloadData': 'Télécharger les données',
+};
+
+<Lightdash.Dashboard
+  instanceUrl={instanceUrl}
+  token={token}
+  contentOverrides={frenchLanguageMap} // your content
+  uiOverrides={frenchUi}               // Lightdash's UI
+/>;
+```
+
+<Note>
+Both the `@lightdash/sdk` package and your Lightdash instance must be on a version that includes `uiOverrides`. If you self-host, upgrade your instance as well, since the strings render inside Lightdash's UI. There is no feature flag; `uiOverrides` is available wherever embedding is available.
+</Note>
+
+#### Available keys
+
+Keys are flat dot-paths, namespaced by the surface they translate:
+
+- `filters.*` – operator labels (including date-specific variants), units of time, filter pills, the add/edit filter popover, value inputs, autocomplete states, the collapsed filter-bar summary, cross-filtering menu items, and the required-filters flow viewers see
+- `dateZoom.*` – the date zoom control, granularity names, tooltips, and the per-tile zoom indicator
+- `tileMenu.*` – the tile menu: Explore from here, Download data, Export image, View underlying data
+- `dashboard.*` – dashboard-level export and print buttons
+
+Every key is also exported through the `SdkUiOverrides` type in `@lightdash/sdk`, so your editor autocompletes the full set. The complete list with the built-in English defaults:
+
+<AccordionGroup>
+<Accordion title="All translatable keys with English defaults">
+```json
+{
+  "tileMenu.exploreFromHere": "Explore from here",
+  "tileMenu.downloadData": "Download data",
+  "tileMenu.exportImage": "Export image",
+  "tileMenu.viewUnderlyingData": "View underlying data",
+  "dateZoom.defaultZoom": "Default zoom",
+  "dateZoom.none": "None",
+  "dateZoom.viewModeTooltip": "Charts will display dates using their original granularity settings.",
+  "dateZoom.appliesToOneChart": "Applies to {n} chart not in a zoom control",
+  "dateZoom.appliesToManyCharts": "Applies to {n} charts not in a zoom control",
+  "dateZoom.noChartsUseDefault": "No charts use the default (every chart is in a zoom control)",
+  "dateZoom.granularities.Second": "Second",
+  "dateZoom.granularities.Minute": "Minute",
+  "dateZoom.granularities.Hour": "Hour",
+  "dateZoom.granularities.Day": "Day",
+  "dateZoom.granularities.Week": "Week",
+  "dateZoom.granularities.Month": "Month",
+  "dateZoom.granularities.Quarter": "Quarter",
+  "dateZoom.granularities.Year": "Year",
+  "dateZoom.dateZoomLabel": "Date zoom:",
+  "dateZoom.onLabel": "On:",
+  "filters.summary.filterSingular": "filter",
+  "filters.summary.filterPlural": "filters",
+  "filters.summary.parameterSingular": "parameter",
+  "filters.summary.parameterPlural": "parameters",
+  "filters.summary.dateZoomLabel": "Date Zoom:",
+  "filters.summary.default": "Default",
+  "filters.summary.showFilters": "Show filters",
+  "filters.operators.isNull": "is null",
+  "filters.operators.notNull": "is not null",
+  "filters.operators.equals": "is",
+  "filters.operators.notEquals": "is not",
+  "filters.operators.startsWith": "starts with",
+  "filters.operators.endsWith": "ends with",
+  "filters.operators.doesNotInclude": "does not include",
+  "filters.operators.include": "includes",
+  "filters.operators.lessThan": "is less than",
+  "filters.operators.lessThanOrEqual": "is less than or equal",
+  "filters.operators.greaterThan": "is greater than",
+  "filters.operators.greaterThanOrEqual": "is greater than or equal",
+  "filters.operators.inThePast": "in the last",
+  "filters.operators.notInThePast": "not in the last",
+  "filters.operators.inTheNext": "in the next",
+  "filters.operators.inTheCurrent": "in the current",
+  "filters.operators.notInTheCurrent": "not in the current",
+  "filters.operators.inBetween": "is between",
+  "filters.operators.notInBetween": "is not between",
+  "filters.operators.inPeriodToDate": "in all",
+  "filters.dateOperators.lessThan": "is before",
+  "filters.dateOperators.lessThanOrEqual": "is on or before",
+  "filters.dateOperators.greaterThan": "is after",
+  "filters.dateOperators.greaterThanOrEqual": "is on or after",
+  "filters.dateOperators.inBetween": "is between",
+  "filters.operators.inPeriodToDateDropdown": "in all periods to date",
+  "filters.operators.inPeriodToDateDescription": "Trims every period in the range to the same point as today — e.g. with weeks selected, if today is Thursday, you get Mon–Thu of every week. Useful for like-for-like comparisons (WTD, MTD, QTD, YTD). For just the current period so far, use \"in the current\" instead.",
+  "filters.nullValue": "(null)",
+  "filters.betweenJoiner": "and",
+  "filters.selectValuePlaceholder": "Select value",
+  "filters.selectPeriodPlaceholder": "Select period",
+  "filters.periodToDate.years": "year to date",
+  "filters.periodToDate.quarters": "quarter to date",
+  "filters.periodToDate.months": "month to date",
+  "filters.periodToDate.weeks": "week to date",
+  "filters.periodToDate.fallback": "period to date",
+  "filters.periodToDateSelect.years": "years to date",
+  "filters.periodToDateSelect.quarters": "quarters to date",
+  "filters.periodToDateSelect.months": "months to date",
+  "filters.periodToDateSelect.weeks": "weeks to date",
+  "filters.unitsOfTime.milliseconds.singular": "millisecond",
+  "filters.unitsOfTime.milliseconds.plural": "milliseconds",
+  "filters.unitsOfTime.milliseconds.completedSingular": "completed millisecond",
+  "filters.unitsOfTime.milliseconds.completedPlural": "completed milliseconds",
+  "filters.unitsOfTime.seconds.singular": "second",
+  "filters.unitsOfTime.seconds.plural": "seconds",
+  "filters.unitsOfTime.seconds.completedSingular": "completed second",
+  "filters.unitsOfTime.seconds.completedPlural": "completed seconds",
+  "filters.unitsOfTime.minutes.singular": "minute",
+  "filters.unitsOfTime.minutes.plural": "minutes",
+  "filters.unitsOfTime.minutes.completedSingular": "completed minute",
+  "filters.unitsOfTime.minutes.completedPlural": "completed minutes",
+  "filters.unitsOfTime.hours.singular": "hour",
+  "filters.unitsOfTime.hours.plural": "hours",
+  "filters.unitsOfTime.hours.completedSingular": "completed hour",
+  "filters.unitsOfTime.hours.completedPlural": "completed hours",
+  "filters.unitsOfTime.days.singular": "day",
+  "filters.unitsOfTime.days.plural": "days",
+  "filters.unitsOfTime.days.completedSingular": "completed day",
+  "filters.unitsOfTime.days.completedPlural": "completed days",
+  "filters.unitsOfTime.weeks.singular": "week",
+  "filters.unitsOfTime.weeks.plural": "weeks",
+  "filters.unitsOfTime.weeks.completedSingular": "completed week",
+  "filters.unitsOfTime.weeks.completedPlural": "completed weeks",
+  "filters.unitsOfTime.months.singular": "month",
+  "filters.unitsOfTime.months.plural": "months",
+  "filters.unitsOfTime.months.completedSingular": "completed month",
+  "filters.unitsOfTime.months.completedPlural": "completed months",
+  "filters.unitsOfTime.quarters.singular": "quarter",
+  "filters.unitsOfTime.quarters.plural": "quarters",
+  "filters.unitsOfTime.quarters.completedSingular": "completed quarter",
+  "filters.unitsOfTime.quarters.completedPlural": "completed quarters",
+  "filters.unitsOfTime.years.singular": "year",
+  "filters.unitsOfTime.years.plural": "years",
+  "filters.unitsOfTime.years.completedSingular": "completed year",
+  "filters.unitsOfTime.years.completedPlural": "completed years",
+  "filters.addFilter": "Add filter",
+  "filters.apply": "Apply",
+  "filters.isAnyValue": "is any value",
+  "filters.requiredFilterTooltip": "This is a required filter defined in the model configuration and cannot be removed.",
+  "filters.placeholders.anyValue": "any value",
+  "filters.placeholders.enterValue": "Enter value",
+  "filters.placeholders.enterValues": "Enter value(s)",
+  "filters.placeholders.startTyping": "Start typing to filter results",
+  "filters.placeholders.selectDate": "Select a date",
+  "filters.placeholders.selectDates": "Select date(s)",
+  "filters.placeholders.selectValue": "Select a value",
+  "filters.autocomplete.loading": "Loading...",
+  "filters.autocomplete.noResults": "No results found",
+  "filters.autocomplete.addValue": "Add \"{value}\"",
+  "filters.autocomplete.maxResultsContinue": "Showing first {n} results. Continue typing...",
+  "filters.autocomplete.maxResultsStart": "Showing first {n} results. Start typing...",
+  "filters.autocomplete.editValuesTooltip": "Edit filter values",
+  "filters.autocomplete.filterNotAvailable": "Filter not available",
+  "filters.values.true": "True",
+  "filters.values.false": "False",
+  "filters.config.filterSettingsTab": "Filter Settings",
+  "filters.config.filterSettingsTabTooltip": "Select the value you want to filter your dimension by",
+  "filters.config.tilesTab": "Tiles",
+  "filters.config.tilesTabTooltip": "Select tiles to apply filter to and which field to filter by",
+  "filters.config.tabsAndTilesTab": "Tabs & tiles",
+  "filters.config.tabsAndTilesTabTooltip": "Select which tabs and tiles this filter applies to",
+  "filters.config.selectField": "Select a field to filter",
+  "filters.config.selectFilterPlaceholder": "Select a filter",
+  "filters.config.searchFieldPlaceholder": "Search field...",
+  "filters.actions.cancel": "Cancel",
+  "filters.actions.clearAll": "Clear all",
+  "filters.config.applyRequiredTooltip": "Filter field and value required",
+  "filters.config.applyLockedRequiredTooltip": "A locked, required filter must have a value",
+  "filters.config.resetToOriginal": "Reset to original value",
+  "filters.config.resetToOriginalAria": "Reset filter to original value",
+  "filters.config.selectColumn": "Select a column to filter",
+  "filters.config.searchColumnPlaceholder": "Search column...",
+  "filters.config.noMatchingFields": "No matching fields",
+  "filters.config.fieldsInThisTab": "Fields in this tab",
+  "filters.config.otherAvailableFields": "Other available fields",
+  "filters.config.valueLabel": "Value",
+  "filters.config.clearToAnyValue": "Clear to any value",
+  "filters.config.alreadyAnyValue": "Already showing any value",
+  "filters.config.noValueToClear": "No value to clear",
+  "filters.config.expandTab": "Expand tab",
+  "filters.config.collapseTab": "Collapse tab",
+  "filters.config.noTilesInTab": "No tiles in this tab",
+  "filters.config.noFieldsMatchingType": "No fields matching filter type",
+  "filters.config.fieldNotAvailableInChart": "The selected field '{field}' is not available in this chart",
+  "filters.coverage.noMatchingCharts": "No charts have a matching field for this filter.",
+  "filters.coverage.reviewTileTargets": "Review tile targets",
+  "filters.coverage.wontAffectCurrentTab": "This filter won't affect charts on the current tab.",
+  "filters.coverage.appliesAutomaticallyTo": "It applies automatically to:",
+  "filters.coverage.reviewAndChangeTarget": "Review tile targets and change the filter target",
+  "filters.notAppliedToAnyTiles": "This filter is not applied to any tiles",
+  "filters.notAppliedToAnyTabs": "This filter is not applied to any tabs",
+  "filters.filterIsLocked": "Filter is locked",
+  "filters.filterIsLockedOnTab": "Filter is locked on this tab",
+  "filters.tableLabel": "Table: ",
+  "filters.tablesLabel": "Tables: ",
+  "filters.invalidFilter": "Invalid filter",
+  "filters.required.setValueTooltip": "Required: set a value to run this dashboard",
+  "filters.required.setValueGroupTooltip": "Required: set a value on this or an alternative filter to run this dashboard",
+  "filters.required.modalTitle": "Set filters to load this dashboard",
+  "filters.required.modalDescription": "Data loads automatically once the filters below are set.",
+  "filters.required.change": "Change",
+  "filters.required.setInToolbar": "Set filters in the toolbar instead",
+  "filters.crossFilter.menuLabel": "Filter dashboard on {field} to",
+  "filters.crossFilter.showOnly": "Show only",
+  "filters.crossFilter.exclude": "Exclude",
+  "filters.inputs.startDate": "Start date",
+  "filters.inputs.endDate": "End date",
+  "filters.inputs.minValue": "Min value",
+  "filters.inputs.maxValue": "Max value",
+  "filters.inputs.bothValuesRequired": "Both values are required",
+  "filters.inputs.minLessThanMax": "Minimum should be less than the maximum",
+  "filters.inputs.typeToAddValue": "Please type to add the filter value",
+  "filters.inputs.selectQuarter": "Select Quarter",
+  "filters.inputs.pasteDetected": "Multiple comma-separated values detected:",
+  "filters.inputs.pasteQuestion": "Would you like to add them as single or multiple values?",
+  "filters.inputs.singleValue": "Single value",
+  "filters.inputs.multipleValues": "Multiple values",
+  "filters.autocomplete.manageValuesTooltip": "Manage filter values",
+  "filters.autocomplete.refreshTooltip": "Click to refresh filter values",
+  "filters.autocomplete.resultsLoadedAt": "Results loaded at {time}",
+  "filters.manageValues.title": "Manage values",
+  "filters.manageValues.filterValuesTitle": "Manage filter values",
+  "filters.manageValues.clearAllValues": "Clear all values",
+  "filters.manageValues.importCsv": "Import CSV",
+  "filters.manageValues.importCsvAria": "Import CSV file",
+  "filters.manageValues.selectAllShown": "Select all shown",
+  "filters.manageValues.selections": "Selections",
+  "filters.manageValues.searchPlaceholder": "Search values…",
+  "filters.manageValues.valuesCount": "{n} values",
+  "filters.manageValues.selectedCount": "({n} selected)",
+  "filters.manageValues.noValuesYet": "No values yet",
+  "filters.manageValues.noMatches": "No matches",
+  "filters.manageValues.tryDifferentSearch": "Try a different search.",
+  "filters.manageValues.importCsvHint": "Import a CSV to populate this filter, then you can review and remove items here.",
+  "filters.resetAll": "Reset all filters",
+  "filters.unsavedFiltersTooltip": "Filters you add are not saved",
+  "filters.summary.hideFilters": "Hide filters",
+  "filters.summary.hide": "Hide",
+  "dashboard.exportAllTiles": "Export all tiles",
+  "dashboard.printPage": "Print this page"
+}
+```
+</Accordion>
+<Accordion title="Complete Spanish example">
+```json
+{
+  "tileMenu.exploreFromHere": "Explorar desde aquí",
+  "tileMenu.downloadData": "Descargar datos",
+  "tileMenu.exportImage": "Exportar imagen",
+  "tileMenu.viewUnderlyingData": "Ver datos subyacentes",
+  "dateZoom.defaultZoom": "Zoom predeterminado",
+  "dateZoom.none": "Ninguno",
+  "dateZoom.viewModeTooltip": "Los gráficos mostrarán las fechas con su granularidad original.",
+  "dateZoom.appliesToOneChart": "Se aplica a {n} gráfico fuera de un control de zoom",
+  "dateZoom.appliesToManyCharts": "Se aplica a {n} gráficos fuera de un control de zoom",
+  "dateZoom.noChartsUseDefault": "Ningún gráfico usa el predeterminado (todos están en un control de zoom)",
+  "dateZoom.granularities.Second": "Segundo",
+  "dateZoom.granularities.Minute": "Minuto",
+  "dateZoom.granularities.Hour": "Hora",
+  "dateZoom.granularities.Day": "Día",
+  "dateZoom.granularities.Week": "Semana",
+  "dateZoom.granularities.Month": "Mes",
+  "dateZoom.granularities.Quarter": "Trimestre",
+  "dateZoom.granularities.Year": "Año",
+  "dateZoom.dateZoomLabel": "Zoom de fecha:",
+  "dateZoom.onLabel": "En:",
+  "filters.summary.filterSingular": "filtro",
+  "filters.summary.filterPlural": "filtros",
+  "filters.summary.parameterSingular": "parámetro",
+  "filters.summary.parameterPlural": "parámetros",
+  "filters.summary.dateZoomLabel": "Zoom de fecha:",
+  "filters.summary.default": "Predeterminado",
+  "filters.summary.showFilters": "Mostrar filtros",
+  "filters.operators.isNull": "es nulo",
+  "filters.operators.notNull": "no es nulo",
+  "filters.operators.equals": "es",
+  "filters.operators.notEquals": "no es",
+  "filters.operators.startsWith": "empieza por",
+  "filters.operators.endsWith": "termina en",
+  "filters.operators.doesNotInclude": "no incluye",
+  "filters.operators.include": "incluye",
+  "filters.operators.lessThan": "es menor que",
+  "filters.operators.lessThanOrEqual": "es menor o igual que",
+  "filters.operators.greaterThan": "es mayor que",
+  "filters.operators.greaterThanOrEqual": "es mayor o igual que",
+  "filters.operators.inThePast": "en los últimos",
+  "filters.operators.notInThePast": "no en los últimos",
+  "filters.operators.inTheNext": "en los próximos",
+  "filters.operators.inTheCurrent": "en este",
+  "filters.operators.notInTheCurrent": "no en este",
+  "filters.operators.inBetween": "está entre",
+  "filters.operators.notInBetween": "no está entre",
+  "filters.operators.inPeriodToDate": "en todos",
+  "filters.dateOperators.lessThan": "es antes de",
+  "filters.dateOperators.lessThanOrEqual": "es el o antes de",
+  "filters.dateOperators.greaterThan": "es después de",
+  "filters.dateOperators.greaterThanOrEqual": "es el o después de",
+  "filters.dateOperators.inBetween": "está entre",
+  "filters.operators.inPeriodToDateDropdown": "en todos los períodos hasta la fecha",
+  "filters.operators.inPeriodToDateDescription": "Recorta cada período del rango al mismo punto que hoy; p. ej., con semanas seleccionadas, si hoy es jueves, obtienes de lunes a jueves de cada semana. Útil para comparaciones equivalentes (WTD, MTD, QTD, YTD). Para solo el período actual, usa «en este».",
+  "filters.nullValue": "(nulo)",
+  "filters.betweenJoiner": "y",
+  "filters.selectValuePlaceholder": "Seleccionar valor",
+  "filters.selectPeriodPlaceholder": "Seleccionar período",
+  "filters.periodToDate.years": "año hasta la fecha",
+  "filters.periodToDate.quarters": "trimestre hasta la fecha",
+  "filters.periodToDate.months": "mes hasta la fecha",
+  "filters.periodToDate.weeks": "semana hasta la fecha",
+  "filters.periodToDate.fallback": "período hasta la fecha",
+  "filters.periodToDateSelect.years": "años hasta la fecha",
+  "filters.periodToDateSelect.quarters": "trimestres hasta la fecha",
+  "filters.periodToDateSelect.months": "meses hasta la fecha",
+  "filters.periodToDateSelect.weeks": "semanas hasta la fecha",
+  "filters.unitsOfTime.milliseconds.singular": "milisegundo",
+  "filters.unitsOfTime.milliseconds.plural": "milisegundos",
+  "filters.unitsOfTime.milliseconds.completedSingular": "milisegundo completo",
+  "filters.unitsOfTime.milliseconds.completedPlural": "milisegundos completos",
+  "filters.unitsOfTime.seconds.singular": "segundo",
+  "filters.unitsOfTime.seconds.plural": "segundos",
+  "filters.unitsOfTime.seconds.completedSingular": "segundo completo",
+  "filters.unitsOfTime.seconds.completedPlural": "segundos completos",
+  "filters.unitsOfTime.minutes.singular": "minuto",
+  "filters.unitsOfTime.minutes.plural": "minutos",
+  "filters.unitsOfTime.minutes.completedSingular": "minuto completo",
+  "filters.unitsOfTime.minutes.completedPlural": "minutos completos",
+  "filters.unitsOfTime.hours.singular": "hora",
+  "filters.unitsOfTime.hours.plural": "horas",
+  "filters.unitsOfTime.hours.completedSingular": "hora completa",
+  "filters.unitsOfTime.hours.completedPlural": "horas completas",
+  "filters.unitsOfTime.days.singular": "día",
+  "filters.unitsOfTime.days.plural": "días",
+  "filters.unitsOfTime.days.completedSingular": "día completo",
+  "filters.unitsOfTime.days.completedPlural": "días completos",
+  "filters.unitsOfTime.weeks.singular": "semana",
+  "filters.unitsOfTime.weeks.plural": "semanas",
+  "filters.unitsOfTime.weeks.completedSingular": "semana completa",
+  "filters.unitsOfTime.weeks.completedPlural": "semanas completas",
+  "filters.unitsOfTime.months.singular": "mes",
+  "filters.unitsOfTime.months.plural": "meses",
+  "filters.unitsOfTime.months.completedSingular": "mes completo",
+  "filters.unitsOfTime.months.completedPlural": "meses completos",
+  "filters.unitsOfTime.quarters.singular": "trimestre",
+  "filters.unitsOfTime.quarters.plural": "trimestres",
+  "filters.unitsOfTime.quarters.completedSingular": "trimestre completo",
+  "filters.unitsOfTime.quarters.completedPlural": "trimestres completos",
+  "filters.unitsOfTime.years.singular": "año",
+  "filters.unitsOfTime.years.plural": "años",
+  "filters.unitsOfTime.years.completedSingular": "año completo",
+  "filters.unitsOfTime.years.completedPlural": "años completos",
+  "filters.addFilter": "Añadir filtro",
+  "filters.apply": "Aplicar",
+  "filters.isAnyValue": "es cualquier valor",
+  "filters.requiredFilterTooltip": "Este filtro es obligatorio, definido en la configuración del modelo, y no se puede eliminar.",
+  "filters.placeholders.anyValue": "cualquier valor",
+  "filters.placeholders.enterValue": "Introducir valor",
+  "filters.placeholders.enterValues": "Introducir valor(es)",
+  "filters.placeholders.startTyping": "Escribe para filtrar resultados",
+  "filters.placeholders.selectDate": "Seleccionar una fecha",
+  "filters.placeholders.selectDates": "Seleccionar fecha(s)",
+  "filters.placeholders.selectValue": "Seleccionar un valor",
+  "filters.autocomplete.loading": "Cargando...",
+  "filters.autocomplete.noResults": "Sin resultados",
+  "filters.autocomplete.addValue": "Añadir \"{value}\"",
+  "filters.autocomplete.maxResultsContinue": "Mostrando los primeros {n} resultados. Sigue escribiendo...",
+  "filters.autocomplete.maxResultsStart": "Mostrando los primeros {n} resultados. Empieza a escribir...",
+  "filters.autocomplete.editValuesTooltip": "Editar valores del filtro",
+  "filters.autocomplete.filterNotAvailable": "Filtro no disponible",
+  "filters.values.true": "Verdadero",
+  "filters.values.false": "Falso",
+  "filters.config.filterSettingsTab": "Configuración del filtro",
+  "filters.config.filterSettingsTabTooltip": "Selecciona el valor por el que filtrar tu dimensión",
+  "filters.config.tilesTab": "Mosaicos",
+  "filters.config.tilesTabTooltip": "Selecciona los mosaicos a los que aplicar el filtro y el campo por el que filtrar",
+  "filters.config.tabsAndTilesTab": "Pestañas y mosaicos",
+  "filters.config.tabsAndTilesTabTooltip": "Selecciona a qué pestañas y mosaicos se aplica este filtro",
+  "filters.config.selectField": "Selecciona un campo para filtrar",
+  "filters.config.selectFilterPlaceholder": "Selecciona un filtro",
+  "filters.config.searchFieldPlaceholder": "Buscar campo...",
+  "filters.actions.cancel": "Cancelar",
+  "filters.actions.clearAll": "Borrar todo",
+  "filters.config.applyRequiredTooltip": "Se requiere campo y valor del filtro",
+  "filters.config.applyLockedRequiredTooltip": "Un filtro bloqueado y obligatorio debe tener un valor",
+  "filters.config.resetToOriginal": "Restablecer al valor original",
+  "filters.config.resetToOriginalAria": "Restablecer el filtro al valor original",
+  "filters.config.selectColumn": "Selecciona una columna para filtrar",
+  "filters.config.searchColumnPlaceholder": "Buscar columna...",
+  "filters.config.noMatchingFields": "No hay campos coincidentes",
+  "filters.config.fieldsInThisTab": "Campos en esta pestaña",
+  "filters.config.otherAvailableFields": "Otros campos disponibles",
+  "filters.config.valueLabel": "Valor",
+  "filters.config.clearToAnyValue": "Borrar a cualquier valor",
+  "filters.config.alreadyAnyValue": "Ya muestra cualquier valor",
+  "filters.config.noValueToClear": "No hay valor que borrar",
+  "filters.config.expandTab": "Expandir pestaña",
+  "filters.config.collapseTab": "Contraer pestaña",
+  "filters.config.noTilesInTab": "No hay mosaicos en esta pestaña",
+  "filters.config.noFieldsMatchingType": "No hay campos que coincidan con el tipo de filtro",
+  "filters.config.fieldNotAvailableInChart": "El campo seleccionado '{field}' no está disponible en este gráfico",
+  "filters.coverage.noMatchingCharts": "Ningún gráfico tiene un campo que coincida con este filtro.",
+  "filters.coverage.reviewTileTargets": "Revisar los mosaicos de destino",
+  "filters.coverage.wontAffectCurrentTab": "Este filtro no afectará a los gráficos de la pestaña actual.",
+  "filters.coverage.appliesAutomaticallyTo": "Se aplica automáticamente a:",
+  "filters.coverage.reviewAndChangeTarget": "Revisar los mosaicos de destino y cambiar el destino del filtro",
+  "filters.notAppliedToAnyTiles": "Este filtro no se aplica a ningún mosaico",
+  "filters.notAppliedToAnyTabs": "Este filtro no se aplica a ninguna pestaña",
+  "filters.filterIsLocked": "El filtro está bloqueado",
+  "filters.filterIsLockedOnTab": "El filtro está bloqueado en esta pestaña",
+  "filters.tableLabel": "Tabla: ",
+  "filters.tablesLabel": "Tablas: ",
+  "filters.invalidFilter": "Filtro no válido",
+  "filters.required.setValueTooltip": "Obligatorio: establece un valor para ejecutar este tablero",
+  "filters.required.setValueGroupTooltip": "Obligatorio: establece un valor en este filtro o en uno alternativo para ejecutar este tablero",
+  "filters.required.modalTitle": "Establece filtros para cargar este tablero",
+  "filters.required.modalDescription": "Los datos se cargan automáticamente cuando se establecen los filtros siguientes.",
+  "filters.required.change": "Cambiar",
+  "filters.required.setInToolbar": "Establecer los filtros en la barra de herramientas",
+  "filters.crossFilter.menuLabel": "Filtrar el tablero por {field} para",
+  "filters.crossFilter.showOnly": "Mostrar solo",
+  "filters.crossFilter.exclude": "Excluir",
+  "filters.inputs.startDate": "Fecha de inicio",
+  "filters.inputs.endDate": "Fecha de fin",
+  "filters.inputs.minValue": "Valor mínimo",
+  "filters.inputs.maxValue": "Valor máximo",
+  "filters.inputs.bothValuesRequired": "Ambos valores son obligatorios",
+  "filters.inputs.minLessThanMax": "El mínimo debe ser menor que el máximo",
+  "filters.inputs.typeToAddValue": "Escribe para añadir el valor del filtro",
+  "filters.inputs.selectQuarter": "Seleccionar trimestre",
+  "filters.inputs.pasteDetected": "Se detectaron varios valores separados por comas:",
+  "filters.inputs.pasteQuestion": "¿Quieres añadirlos como un solo valor o como varios?",
+  "filters.inputs.singleValue": "Valor único",
+  "filters.inputs.multipleValues": "Varios valores",
+  "filters.autocomplete.manageValuesTooltip": "Gestionar valores del filtro",
+  "filters.autocomplete.refreshTooltip": "Haz clic para actualizar los valores del filtro",
+  "filters.autocomplete.resultsLoadedAt": "Resultados cargados a las {time}",
+  "filters.manageValues.title": "Gestionar valores",
+  "filters.manageValues.filterValuesTitle": "Gestionar valores del filtro",
+  "filters.manageValues.clearAllValues": "Borrar todos los valores",
+  "filters.manageValues.importCsv": "Importar CSV",
+  "filters.manageValues.importCsvAria": "Importar archivo CSV",
+  "filters.manageValues.selectAllShown": "Seleccionar todos los mostrados",
+  "filters.manageValues.selections": "Selecciones",
+  "filters.manageValues.searchPlaceholder": "Buscar valores…",
+  "filters.manageValues.valuesCount": "{n} valores",
+  "filters.manageValues.selectedCount": "({n} seleccionados)",
+  "filters.manageValues.noValuesYet": "Aún no hay valores",
+  "filters.manageValues.noMatches": "Sin coincidencias",
+  "filters.manageValues.tryDifferentSearch": "Prueba otra búsqueda.",
+  "filters.manageValues.importCsvHint": "Importa un CSV para poblar este filtro; después podrás revisar y eliminar elementos aquí.",
+  "filters.resetAll": "Restablecer todos los filtros",
+  "filters.unsavedFiltersTooltip": "Los filtros que añadas no se guardan",
+  "filters.summary.hideFilters": "Ocultar filtros",
+  "filters.summary.hide": "Ocultar",
+  "dashboard.exportAllTiles": "Exportar todos los mosaicos",
+  "dashboard.printPage": "Imprimir esta página"
+}
+```
+</Accordion>
+</AccordionGroup>
+
+<Note>
+A quick way to create a new translation: copy one of the examples above and ask an AI agent to translate the values into your target language. Keep the keys and any `{token}` placeholders unchanged, then review the output before shipping it.
+</Note>
+
+#### Key rules
+
+- **Every key is optional.** Partial dictionaries are fine; missing keys render in English.
+- **Keys are a stable, additive contract.** Existing keys are never renamed or removed across SDK versions. New UI may add keys, which fall back to English until you translate them.
+- **Keep `{token}` placeholders.** Some values contain placeholders that Lightdash fills at runtime, like `'filters.autocomplete.addValue': 'Add "{value}"'` or `'filters.crossFilter.menuLabel': 'Filter dashboard on {field} to'`. Keep the token, with its exact name in braces, somewhere in the translation. Its position is free. No other syntax is supported (not ICU MessageFormat).
+- **Plurals are one key per form.** Count-dependent strings exist as separate keys, like `filters.summary.filterSingular` / `filters.summary.filterPlural`, and units of time with `.singular` / `.plural` / `.completedSingular` / `.completedPlural` variants. There are no CLDR plural rules, so languages with more than two plural forms can only approximate.
+
+#### Using `uiOverrides` with an i18n framework
+
+Because the map is flat JSON, it drops directly into i18next-style resource files. Keep a `uiOverrides` object per locale and pass the active one:
+
+```tsx
+// locales/fr/translation.json → { "uiOverrides": { "filters.apply": "Appliquer", ... } }
+const uiOverrides = i18n.getResourceBundle(i18n.language, 'translation')?.uiOverrides;
+
+<Lightdash.Dashboard ... uiOverrides={uiOverrides} key={i18n.language} />;
+```
+
+Re-mounting the component on language change (the `key` prop) is the simplest way to re-render every string.
+
 ### What can be translated
 
-**Can be translated** (UI strings specified in Lightdash):
-- Dashboard names and descriptions
-- Tile titles
-- Chart names
-- Axis labels
-- Series names
-- Markdown content
+| Surface                                                                                            | Translatable with  |
+| -------------------------------------------------------------------------------------------------- | ------------------ |
+| Dashboard and chart names, descriptions, tile titles, axis labels, series names, markdown content   | `contentOverrides` |
+| Filter operators and inputs, the filter popover, date zoom, tile menus, export and print buttons    | `uiOverrides`      |
 
-**Cannot be translated** (data from your warehouse):
-- String values in charts
-- Dimension values
-- Metric names from database
-- Raw data in tables
+Not translatable:
 
-<Info>
-Strings originating from your data warehouse cannot be translated by the SDK. They are presented as they exist in your database.
-</Info>
+- **Data from your warehouse** – string values in charts, dimension values, and raw table data render as they exist in your database
+- **Field and table names** – dimension and metric labels shown on filter pills and in the field picker come from your dbt schema
+- **Date picker internals** – month and weekday names inside calendar popups render in English
+- **Data formatting** – numbers, dates, and currencies render per chart config
+- **Editor-only UI** – dashboard edit mode is not translated
 
 ## Complete example
 
