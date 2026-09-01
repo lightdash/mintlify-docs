@@ -420,6 +420,21 @@ set -euo pipefail
 : "${TARGET_IMAGE_TAG:=$TARGET_VERSION}"
 : "${VALUES_FILE:=values.yml}"
 
+version_gte() {
+  local current_major current_minor current_patch minimum_major minimum_minor minimum_patch
+  IFS=. read -r current_major current_minor current_patch <<<"$1"
+  IFS=. read -r minimum_major minimum_minor minimum_patch <<<"$2"
+  if (( 10#$current_major != 10#$minimum_major )); then
+    (( 10#$current_major > 10#$minimum_major ))
+    return
+  fi
+  if (( 10#$current_minor != 10#$minimum_minor )); then
+    (( 10#$current_minor > 10#$minimum_minor ))
+    return
+  fi
+  (( 10#$current_patch >= 10#$minimum_patch ))
+}
+
 set +e
 CHECK_JSON="$(lightdash upgrade-check --from "$CURRENT_VERSION" --to "$TARGET_VERSION" --json)"
 CHECK_EXIT=$?
@@ -434,27 +449,49 @@ if ! jq -e \
     (.safe | type == "boolean") and
     (.verdict == true or .verdict == false or .verdict == "unknown") and
     (.requiredStops | type == "array" and all(.[]; type == "string")) and
+    (.minPreviousVersion == null or (.minPreviousVersion | type == "string")) and
     (.missingRanges | type == "array" and all(.[]; type == "object" and (.afterVersion | type == "string") and (.beforeVersion | type == "string")))
   ' >/dev/null <<<"$CHECK_JSON"; then
   printf '%s\n' 'upgrade-check returned no usable verdict; aborting.' >&2
   exit 1
 fi
 
-FIRST_STOP="$(jq -r '.requiredStops[0] // empty' <<<"$CHECK_JSON")"
-if [[ -n "$FIRST_STOP" ]]; then
-  printf 'Upgrade first to required stop %s, then check the next hop.\n' "$FIRST_STOP" >&2
+MINIMUM_VERSION="$(jq -r '.minPreviousVersion // empty' <<<"$CHECK_JSON")"
+if [[ -n "$MINIMUM_VERSION" ]] && ! version_gte "$CURRENT_VERSION" "$MINIMUM_VERSION"; then
+  printf 'Current version %s is below the minimum direct-upgrade version %s.\n' "$CURRENT_VERSION" "$MINIMUM_VERSION" >&2
   exit 1
 fi
 
-CHECK_STATE="$(jq -r '[.safe, .verdict] | @tsv' <<<"$CHECK_JSON")"
-case "$CHECK_STATE:$CHECK_EXIT" in
-  $'true\ttrue:0') UPGRADE_MODE=RollingUpdate ;;
-  $'false\tfalse:1'|$'false\tunknown:1') UPGRADE_MODE=Recreate ;;
-  *)
-    printf '%s\n' 'upgrade-check returned an unusable result; aborting.' >&2
+INTERMEDIATE_STOPS="$(jq -r --arg target "$TARGET_VERSION" '[.requiredStops[] | select(. != $target)] | join(", ")' <<<"$CHECK_JSON")"
+if [[ -n "$INTERMEDIATE_STOPS" ]]; then
+  printf 'Upgrade first to required stop %s, then check the next hop.\n' "$INTERMEDIATE_STOPS" >&2
+  exit 1
+fi
+
+REQUIRED_STOP_COUNT="$(jq -r '.requiredStops | length' <<<"$CHECK_JSON")"
+if [[ "$REQUIRED_STOP_COUNT" != "0" ]]; then
+  STOP_TARGET_IS_SAFE="$(jq -r --arg target "$TARGET_VERSION" '
+    .verdict == true and
+    (.missingRanges | length == 0) and
+    (.requiredStops | length == 1 and .[0] == $target)
+  ' <<<"$CHECK_JSON")"
+  if [[ "$STOP_TARGET_IS_SAFE:$CHECK_EXIT" == "true:1" ]]; then
+    UPGRADE_MODE=RollingUpdate
+  else
+    printf '%s\n' 'The required-stop target does not meet the reviewed-hop conditions; aborting.' >&2
     exit 1
-    ;;
-esac
+  fi
+else
+  CHECK_STATE="$(jq -r '[.safe, .verdict] | @tsv' <<<"$CHECK_JSON")"
+  case "$CHECK_STATE:$CHECK_EXIT" in
+    $'true\ttrue:0') UPGRADE_MODE=RollingUpdate ;;
+    $'false\tfalse:1'|$'false\tunknown:1') UPGRADE_MODE=Recreate ;;
+    *)
+      printf '%s\n' 'upgrade-check returned an unusable result; aborting.' >&2
+      exit 1
+      ;;
+  esac
+fi
 
 helm upgrade -f "$VALUES_FILE" \
   --set-string upgrade.mode="$UPGRADE_MODE" \
@@ -462,7 +499,7 @@ helm upgrade -f "$VALUES_FILE" \
   lightdash lightdash/lightdash
 ```
 
-`--set-string` overrides any static `upgrade.mode` in the values file. Derive the mode for every upgrade. A required stop is a separate target, not a direct hop. Malformed output, an execution failure, or a fetch failure has no usable verdict and aborts the pipeline.
+`--set-string` overrides any static `upgrade.mode` in the values file. Derive the mode for every upgrade. An earlier required stop is a separate target. A required stop equal to `TARGET_VERSION` is allowed only when it has a true underlying verdict, complete coverage, and a satisfied minimum version. A current version below `minPreviousVersion` aborts the direct hop. Malformed output, an execution failure, or a fetch failure has no usable verdict and aborts the pipeline.
 
 ### Recommended default policy
 
