@@ -224,11 +224,32 @@ Read the release notes for every release you are crossing, then check the span:
 lightdash upgrade-check --from 1.130.0 --to 1.138.0
 ```
 
-Green means a `RollingUpdate` is advised. Anything else means `Recreate` (or scale to zero before switching the tag), and a maintenance window. If the check reports required stops, upgrade to the first stop and let it finish before continuing. See [upgrade safety](/self-host/upgrade-safety) for how verdicts compose across a span.
+Green means `upgrade.mode: RollingUpdate` is advised. Anything else means `upgrade.mode: Recreate` and a maintenance window. The upgrade check supplies this decision. The chart does not fetch or calculate the verdict. If the check reports required stops, upgrade to the first stop and let it finish before continuing. See [upgrade safety](/self-host/upgrade-safety) for how verdicts compose across a span.
 </Step>
 
-<Step title="Scale application workloads to zero when required">
-For a `false` or `unknown` verdict with `migrationJob.enabled: true`, scale every Lightdash application workload to zero before you run `helm upgrade`. Helm runs the pre-upgrade migration Job before it applies the Deployment strategy, so `Recreate` alone does not stop existing pods before the Job migrates the database.
+<Step title="Configure the upgrade mode">
+Set the release-wide mode from the upgrade check. This example is for a `false` or `unknown` verdict:
+
+```yaml
+upgrade:
+  mode: Recreate
+migrationJob:
+  enabled: true
+```
+
+Set `upgrade.mode: RollingUpdate` for a `true` verdict. Leave `upgrade.mode` empty to preserve the legacy per-component Deployment strategies. When the mode is empty and a legacy backend or enabled worker strategy is `Recreate`, the chart still uses the shutdown barrier with `migrationJob.enabled`.
+
+The automatic barrier requires a chart version whose values reference includes `upgrade.mode`. If the field is absent, use the manual fallback in the next step.
+</Step>
+
+<Step title="Run the automatic shutdown barrier">
+With `migrationJob.enabled: true` and `upgrade.mode: Recreate`, a chart that supports `upgrade.mode` automatically removes the release-managed HPA, scales all database-capable Lightdash workloads to zero, waits for their pods to terminate, and then runs the pre-upgrade migration Job. Do not scale workloads manually for this path.
+
+Helm restores the configured replicas and release-managed HPA after a successful upgrade. If the shutdown, migration, or upgrade fails, the release can remain stopped. Follow [recovery](#recovery) or [manual rollback](#rolling-back) before restoring workloads.
+</Step>
+
+<Step title="Scale application workloads manually when required">
+Use this fallback for chart versions that do not support `upgrade.mode` and for custom or manual deployments. For a `false` or `unknown` verdict with `migrationJob.enabled: true`, scale every Lightdash application workload to zero before you run `helm upgrade`.
 
 First, inventory the release-managed HorizontalPodAutoscalers (HPAs). Remove them, or suspend them if your platform supports that, before you scale workloads. An active HPA can immediately scale a deployment back up:
 
@@ -271,7 +292,7 @@ helm repo update lightdash
 helm upgrade -f values.yml lightdash lightdash/lightdash
 ```
 
-With `migrationJob.enabled: true`, the chart runs migrations in a `pre-install,pre-upgrade` hook Job and the backend pods then start without migrating, so replicas never race for the lock. This is the recommended setup for any multi-replica deployment. For a `false` or `unknown` verdict, complete the [scale-to-zero step](#scale-application-workloads-to-zero-when-required) first. Without the Job, the pods migrate at startup and the lease runtime arbitrates between them: one pod wins and migrates, the rest wait.
+With `migrationJob.enabled: true`, the chart runs migrations in a `pre-install,pre-upgrade` hook Job and the backend pods then start without migrating, so replicas never race for the lock. This is the recommended setup for any multi-replica deployment. For a `false` or `unknown` verdict, the [automatic shutdown barrier](#run-the-automatic-shutdown-barrier) runs when the chart supports `upgrade.mode`; otherwise use the [manual fallback](#scale-application-workloads-manually-when-required). Without the Job, the pods migrate at startup and the lease runtime arbitrates between them: one pod wins and migrates, the rest wait.
 </Step>
 
 <Step title="Watch it land">

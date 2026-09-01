@@ -29,7 +29,7 @@ Both are public — no account or license required — and both are designed to 
 
 `unknown` is what the pipeline publishes when it could not *prove* safety — a degraded check, an unclassifiable change, an old release nobody vouched for. Treat every `unknown` exactly like `false`: use the `Recreate` strategy. Never write automation that treats "not false" as safe.
 
-When `migrationJob.enabled` is enabled, `Recreate` alone does not stop old pods before migrations. Helm runs the pre-upgrade migration hook before it applies the Deployment strategy. For a `false` or `unknown` span, [scale Lightdash application workloads to zero and verify that they have terminated](/self-host/upgrade-runbook#scale-application-workloads-to-zero-when-required) before `helm upgrade`.
+The check supplies this verdict. The Helm chart does not fetch or calculate it. Set `upgrade.mode: RollingUpdate` for `true`, and `upgrade.mode: Recreate` for `false` or `unknown`. With `migrationJob.enabled`, a chart that supports `upgrade.mode` stops application workloads before its pre-upgrade migration hook when the mode is `Recreate`. See the [upgrade runbook](/self-host/upgrade-runbook#configure-the-upgrade-mode) for the automatic path and its fallback.
 </Warning>
 
 Everything else on this page is detail on top of that rule.
@@ -84,10 +84,10 @@ lightdash upgrade-check --from 1.111.0 --to 1.115.0 --json | jq .safe
 
 | Verdict for the span | Kubernetes / Helm | docker compose |
 | --- | --- | --- |
-| Every release `rollingUpdateSafe: true` | `RollingUpdate` strategy is advised — old and new pods may serve side by side during rollout | `docker compose up -d` with the new tag |
-| Anything `false` or `unknown` | Use `Recreate`. With `migrationJob.enabled`, first [scale application workloads to zero](/self-host/upgrade-runbook#scale-application-workloads-to-zero-when-required) | `docker compose down`, update the tag, `docker compose up -d` |
+| Every release `rollingUpdateSafe: true` | Set `upgrade.mode: RollingUpdate` | `docker compose up -d` with the new tag |
+| Anything `false` or `unknown` | Set `upgrade.mode: Recreate`. With `migrationJob.enabled`, use the [runbook's automatic path or fallback](/self-host/upgrade-runbook#configure-the-upgrade-mode) | `docker compose down`, update the tag, `docker compose up -d` |
 
-`Recreate` means a short window of downtime. Without a migration Job, it stops old replicas before new pods start and migrate. With a migration Job, use the [runbook's scale-to-zero procedure](/self-host/upgrade-runbook#scale-application-workloads-to-zero-when-required), because old replicas otherwise keep serving while the pre-upgrade hook changes the schema. A rolling update is only appropriate when the verdict certifies that behaviour as safe.
+`Recreate` means a short window of downtime. With `migrationJob.enabled` and chart support for `upgrade.mode`, the chart stops database-capable application workloads before it migrates. Without a migration Job, `Recreate` still applies the Deployment strategies during Helm's normal apply phase. A rolling update is only appropriate when the verdict certifies that behaviour as safe.
 
 ## Worked example: reading a release artifact
 
@@ -220,7 +220,7 @@ The index is a derived summary — one entry per release, oldest first. Per-rele
 
 - Read the [release notes](https://github.com/lightdash/lightdash/releases) for every release in your span.
 - Run the [span check](#checking-an-upgrade-span) — note the verdict, required stops, and `minPreviousVersion`.
-- If the span verdict is anything other than `true`, plan a maintenance window and use `Recreate`. With `migrationJob.enabled`, follow the [scale-to-zero procedure](/self-host/upgrade-runbook#scale-application-workloads-to-zero-when-required) before the Helm upgrade.
+- If the span verdict is anything other than `true`, plan a maintenance window and set `upgrade.mode: Recreate`. With `migrationJob.enabled`, follow the [upgrade runbook](/self-host/upgrade-runbook#configure-the-upgrade-mode).
 - If migrations are present, check their `heaviness` flags in the per-release artifacts — table rewrites and scans on large tables take time.
 - Scan `config.changes` for environment variables you set explicitly.
 - Confirm your database backup (and [point-in-time recovery](/self-host/production-deployment-checklist), if configured) is current.
