@@ -462,25 +462,29 @@ if [[ -n "$MINIMUM_VERSION" ]] && ! version_gte "$CURRENT_VERSION" "$MINIMUM_VER
   exit 1
 fi
 
-INTERMEDIATE_STOPS="$(jq -r --arg target "$TARGET_VERSION" '[.requiredStops[] | select(. != $target)] | join(", ")' <<<"$CHECK_JSON")"
-if [[ -n "$INTERMEDIATE_STOPS" ]]; then
-  printf 'Upgrade first to required stop %s, then check the next hop.\n' "$INTERMEDIATE_STOPS" >&2
+EARLIEST_INTERMEDIATE_STOP="$(jq -r --arg target "$TARGET_VERSION" '
+  [.requiredStops[] | select(. != $target) | {version: ., parts: (split(".") | map(tonumber))}]
+  | sort_by(.parts)
+  | .[0].version // empty
+' <<<"$CHECK_JSON")"
+if [[ -n "$EARLIEST_INTERMEDIATE_STOP" ]]; then
+  printf 'Upgrade first to required stop %s, then check the next hop.\n' "$EARLIEST_INTERMEDIATE_STOP" >&2
   exit 1
 fi
 
 REQUIRED_STOP_COUNT="$(jq -r '.requiredStops | length' <<<"$CHECK_JSON")"
 if [[ "$REQUIRED_STOP_COUNT" != "0" ]]; then
-  STOP_TARGET_IS_SAFE="$(jq -r --arg target "$TARGET_VERSION" '
-    .verdict == true and
-    (.missingRanges | length == 0) and
-    (.requiredStops | length == 1 and .[0] == $target)
+  STOP_TARGET_VERDICT="$(jq -r --arg target "$TARGET_VERSION" '
+    if .requiredStops | length == 1 and .[0] == $target then .verdict else "invalid" end
   ' <<<"$CHECK_JSON")"
-  if [[ "$STOP_TARGET_IS_SAFE:$CHECK_EXIT" == "true:1" ]]; then
-    UPGRADE_MODE=RollingUpdate
-  else
-    printf '%s\n' 'The required-stop target does not meet the reviewed-hop conditions; aborting.' >&2
-    exit 1
-  fi
+  case "$STOP_TARGET_VERDICT:$CHECK_EXIT" in
+    true:1) UPGRADE_MODE=RollingUpdate ;;
+    false:1|unknown:1) UPGRADE_MODE=Recreate ;;
+    *)
+      printf '%s\n' 'The required-stop target has an unusable verdict; aborting.' >&2
+      exit 1
+      ;;
+  esac
 else
   CHECK_STATE="$(jq -r '[.safe, .verdict] | @tsv' <<<"$CHECK_JSON")"
   case "$CHECK_STATE:$CHECK_EXIT" in
@@ -499,7 +503,7 @@ helm upgrade -f "$VALUES_FILE" \
   lightdash lightdash/lightdash
 ```
 
-`--set-string` overrides any static `upgrade.mode` in the values file. Derive the mode for every upgrade. An earlier required stop is a separate target. A required stop equal to `TARGET_VERSION` is allowed only when it has a true underlying verdict, complete coverage, and a satisfied minimum version. A current version below `minPreviousVersion` aborts the direct hop. Malformed output, an execution failure, or a fetch failure has no usable verdict and aborts the pipeline.
+`--set-string` overrides any static `upgrade.mode` in the values file. Derive the mode for every upgrade. An earlier required stop is a separate target. When `requiredStops` is exactly `[TARGET_VERSION]` and the minimum version is satisfied, `true` selects `RollingUpdate`; `false` or `unknown` selects `Recreate`. A current version below `minPreviousVersion` aborts the direct hop. Malformed output, an execution failure, or a fetch failure has no usable verdict and aborts the pipeline.
 
 ### Recommended default policy
 
