@@ -227,6 +227,36 @@ lightdash upgrade-check --from 1.130.0 --to 1.138.0
 Green means a `RollingUpdate` is advised. Anything else means `Recreate` (or scale to zero before switching the tag), and a maintenance window. If the check reports required stops, upgrade to the first stop and let it finish before continuing. See [upgrade safety](/self-host/upgrade-safety) for how verdicts compose across a span.
 </Step>
 
+<Step title="Scale application workloads to zero when required">
+For a `false` or `unknown` verdict with `migrationJob.enabled: true`, scale every Lightdash application workload to zero before you run `helm upgrade`. Helm runs the pre-upgrade migration Job before it applies the Deployment strategy, so `Recreate` alone does not stop existing pods before the Job migrates the database.
+
+First, inventory the release-managed HorizontalPodAutoscalers (HPAs). Remove them, or suspend them if your platform supports that, before you scale workloads. An active HPA can immediately scale a deployment back up:
+
+```bash
+kubectl get hpa -l app.kubernetes.io/instance=lightdash
+kubectl delete hpa -l app.kubernetes.io/instance=lightdash
+```
+
+Then list the workloads for your release and scale the backend and every enabled worker deployment to zero:
+
+```bash
+kubectl get deployments -l app.kubernetes.io/instance=lightdash
+kubectl scale deployments -l app.kubernetes.io/instance=lightdash --replicas=0
+```
+
+Verify that all Lightdash application pods have terminated before continuing. Do not run `helm upgrade` while any of those pods are `Running` or `Terminating`:
+
+```bash
+kubectl get pods -l app.kubernetes.io/instance=lightdash
+```
+
+<Warning>
+If old application code remains running while the migration Job changes the database schema, it can run against an incompatible schema.
+</Warning>
+
+Keep the migration Job enabled. Helm recreates the release-managed HPAs and restores the configured replica counts only after a successful upgrade. If the migration Job or upgrade fails, the workloads stay stopped. Follow [recovery](#recovery) or [manual rollback](#rolling-back) before you restore the HPAs or workloads.
+</Step>
+
 <Step title="Preflight the new image (optional)">
 `up` runs preflight automatically, so this step buys you the answer *before* you commit to the deploy rather than during it. Run the [one-off Job](#running-them-in-context) on the new tag and read its report.
 
@@ -241,7 +271,7 @@ helm repo update lightdash
 helm upgrade -f values.yml lightdash lightdash/lightdash
 ```
 
-With `migrationJob.enabled: true`, the chart runs migrations in a `pre-install,pre-upgrade` hook Job and the backend pods then start without migrating, so replicas never race for the lock. This is the recommended setup for any multi-replica deployment. Without it, the pods migrate at startup and the lease runtime arbitrates between them: one pod wins and migrates, the rest wait.
+With `migrationJob.enabled: true`, the chart runs migrations in a `pre-install,pre-upgrade` hook Job and the backend pods then start without migrating, so replicas never race for the lock. This is the recommended setup for any multi-replica deployment. For a `false` or `unknown` verdict, complete the [scale-to-zero step](#scale-application-workloads-to-zero-when-required) first. Without the Job, the pods migrate at startup and the lease runtime arbitrates between them: one pod wins and migrates, the rest wait.
 </Step>
 
 <Step title="Watch it land">
