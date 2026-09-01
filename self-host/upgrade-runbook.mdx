@@ -408,6 +408,62 @@ If verification fails, freeze: open a freeze issue, escalate to the channel, and
 </Step>
 </Steps>
 
+### Pass a checked mode to Helm
+
+The reference automation only promotes green-reachable targets. Use the route below when your deployment pipeline intentionally upgrades to a checked target that can require `Recreate`. The chart does not fetch the verdict. The pipeline passes the checked mode to Helm.
+
+```bash
+set -euo pipefail
+
+: "${CURRENT_VERSION:?Set CURRENT_VERSION}"
+: "${TARGET_VERSION:?Set TARGET_VERSION}"
+: "${TARGET_IMAGE_TAG:=$TARGET_VERSION}"
+: "${VALUES_FILE:=values.yml}"
+
+set +e
+CHECK_JSON="$(lightdash upgrade-check --from "$CURRENT_VERSION" --to "$TARGET_VERSION" --json)"
+CHECK_EXIT=$?
+set -e
+
+if ! jq -e \
+  --arg from "$CURRENT_VERSION" \
+  --arg to "$TARGET_VERSION" \
+  '
+    (.fromVersion == $from) and
+    (.toVersion == $to) and
+    (.safe | type == "boolean") and
+    (.verdict == true or .verdict == false or .verdict == "unknown") and
+    (.requiredStops | type == "array" and all(.[]; type == "string")) and
+    (.missingRanges | type == "array" and all(.[]; type == "object" and (.afterVersion | type == "string") and (.beforeVersion | type == "string")))
+  ' >/dev/null <<<"$CHECK_JSON"; then
+  printf '%s\n' 'upgrade-check returned no usable verdict; aborting.' >&2
+  exit 1
+fi
+
+FIRST_STOP="$(jq -r '.requiredStops[0] // empty' <<<"$CHECK_JSON")"
+if [[ -n "$FIRST_STOP" ]]; then
+  printf 'Upgrade first to required stop %s, then check the next hop.\n' "$FIRST_STOP" >&2
+  exit 1
+fi
+
+CHECK_STATE="$(jq -r '[.safe, .verdict] | @tsv' <<<"$CHECK_JSON")"
+case "$CHECK_STATE:$CHECK_EXIT" in
+  $'true\ttrue:0') UPGRADE_MODE=RollingUpdate ;;
+  $'false\tfalse:1'|$'false\tunknown:1') UPGRADE_MODE=Recreate ;;
+  *)
+    printf '%s\n' 'upgrade-check returned an unusable result; aborting.' >&2
+    exit 1
+    ;;
+esac
+
+helm upgrade -f "$VALUES_FILE" \
+  --set-string upgrade.mode="$UPGRADE_MODE" \
+  --set-string image.tag="$TARGET_IMAGE_TAG" \
+  lightdash lightdash/lightdash
+```
+
+`--set-string` overrides any static `upgrade.mode` in the values file. Derive the mode for every upgrade. A required stop is a separate target, not a direct hop. Malformed output, an execution failure, or a fetch failure has no usable verdict and aborts the pipeline.
+
 ### Recommended default policy
 
 **Auto-apply when green, hold when not.** A proven-safe hop is exactly the case where human review adds latency and no information; everything else is exactly the case where it adds both. Keep the freeze switch manual and obvious, so disarming upgrades during an incident is one action rather than a code change.
