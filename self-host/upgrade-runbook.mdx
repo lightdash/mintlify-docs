@@ -224,7 +224,58 @@ Read the release notes for every release you are crossing, then check the span:
 lightdash upgrade-check --from 1.130.0 --to 1.138.0
 ```
 
-Green means a `RollingUpdate` is advised. Anything else means `Recreate` (or scale to zero before switching the tag), and a maintenance window. If the check reports required stops, upgrade to the first stop and let it finish before continuing. See [upgrade safety](/self-host/upgrade-safety) for how verdicts compose across a span.
+Green means `upgrade.mode: RollingUpdate` is advised. Anything else means `upgrade.mode: Recreate` and a maintenance window. The upgrade check supplies this decision. The chart does not fetch or calculate the verdict. If the check reports required stops, upgrade to the first stop and let it finish before continuing. See [upgrade safety](/self-host/upgrade-safety) for how verdicts compose across a span.
+</Step>
+
+<Step title="Configure the upgrade mode">
+Set the release-wide mode from the upgrade check. This example is for a `false` or `unknown` verdict:
+
+```yaml
+upgrade:
+  mode: Recreate
+migrationJob:
+  enabled: true
+```
+
+Set `upgrade.mode: RollingUpdate` for a `true` verdict. Leave `upgrade.mode` empty to preserve the legacy per-component Deployment strategies. When the mode is empty and a legacy backend or enabled worker strategy is `Recreate`, the chart still uses the shutdown barrier with `migrationJob.enabled`.
+
+Chart `2.16.284` and later supports `upgrade.mode` and the automatic shutdown barrier. Chart `2.16.283` and earlier needs the manual fallback in the next step.
+</Step>
+
+<Step title="Run the automatic shutdown barrier">
+With chart `2.16.284` or later, `migrationJob.enabled: true`, and `upgrade.mode: Recreate`, the chart automatically removes the release-managed HPA, scales all database-capable Lightdash workloads to zero, waits for their pods to terminate, and then runs the pre-upgrade migration Job. Do not scale workloads manually for this path.
+
+Helm restores the configured replicas and release-managed HPA after a successful upgrade. If the shutdown, migration, or upgrade fails, the release can remain stopped. Follow [recovery](#recovery) or [manual rollback](#rolling-back) before restoring workloads.
+</Step>
+
+<Step title="Scale application workloads manually when required">
+Use this fallback with chart `2.16.283` and earlier, and for custom or manual deployments. For a `false` or `unknown` verdict with `migrationJob.enabled: true`, scale every Lightdash application workload to zero before you run `helm upgrade`.
+
+First, inventory the release-managed HorizontalPodAutoscalers (HPAs). Remove them, or suspend them if your platform supports that, before you scale workloads. An active HPA can immediately scale a deployment back up:
+
+```bash
+kubectl get hpa -l app.kubernetes.io/instance=lightdash
+kubectl delete hpa -l app.kubernetes.io/instance=lightdash
+```
+
+Then list the workloads for your release and scale the backend and every enabled worker deployment to zero:
+
+```bash
+kubectl get deployments -l app.kubernetes.io/instance=lightdash
+kubectl scale deployments -l app.kubernetes.io/instance=lightdash --replicas=0
+```
+
+Verify that all Lightdash application pods have terminated before continuing. Do not run `helm upgrade` while any of those pods are `Running` or `Terminating`:
+
+```bash
+kubectl get pods -l app.kubernetes.io/instance=lightdash
+```
+
+<Warning>
+If old application code remains running while the migration Job changes the database schema, it can run against an incompatible schema.
+</Warning>
+
+Keep the migration Job enabled. Helm recreates the release-managed HPAs and restores the configured replica counts only after a successful upgrade. If the migration Job or upgrade fails, the workloads stay stopped. Follow [recovery](#recovery) or [manual rollback](#rolling-back) before you restore the HPAs or workloads.
 </Step>
 
 <Step title="Preflight the new image (optional)">
@@ -241,7 +292,7 @@ helm repo update lightdash
 helm upgrade -f values.yml lightdash lightdash/lightdash
 ```
 
-With `migrationJob.enabled: true`, the chart runs migrations in a `pre-install,pre-upgrade` hook Job and the backend pods then start without migrating, so replicas never race for the lock. This is the recommended setup for any multi-replica deployment. Without it, the pods migrate at startup and the lease runtime arbitrates between them: one pod wins and migrates, the rest wait.
+With `migrationJob.enabled: true`, the chart runs migrations in a `pre-install,pre-upgrade` hook Job and the backend pods then start without migrating, so replicas never race for the lock. This is the recommended setup for any multi-replica deployment. For a `false` or `unknown` verdict, chart `2.16.284` and later runs the [automatic shutdown barrier](#run-the-automatic-shutdown-barrier); chart `2.16.283` and earlier uses the [manual fallback](#scale-application-workloads-manually-when-required). Without the Job, the pods migrate at startup and the lease runtime arbitrates between them: one pod wins and migrates, the rest wait.
 </Step>
 
 <Step title="Watch it land">
@@ -356,6 +407,103 @@ Poll `/api/v1/readyz` until it returns `200` and the served version matches the 
 If verification fails, freeze: open a freeze issue, escalate to the channel, and stop planning further upgrades until a human closes it. There is **no auto-rollback**. Recovery is forward-only, and an automation that rolls back unattended is an automation that can undo a migration nobody watched.
 </Step>
 </Steps>
+
+### Pass a checked mode to Helm
+
+The reference automation only promotes green-reachable targets. Use the route below when your deployment pipeline intentionally upgrades to a checked target that can require `Recreate`. The chart does not fetch the verdict. The pipeline passes the checked mode to Helm.
+
+```bash
+set -euo pipefail
+
+: "${CURRENT_VERSION:?Set CURRENT_VERSION}"
+: "${TARGET_VERSION:?Set TARGET_VERSION}"
+: "${TARGET_IMAGE_TAG:=$TARGET_VERSION}"
+: "${VALUES_FILE:=values.yml}"
+
+version_gte() {
+  local current_major current_minor current_patch minimum_major minimum_minor minimum_patch
+  IFS=. read -r current_major current_minor current_patch <<<"$1"
+  IFS=. read -r minimum_major minimum_minor minimum_patch <<<"$2"
+  if (( 10#$current_major != 10#$minimum_major )); then
+    (( 10#$current_major > 10#$minimum_major ))
+    return
+  fi
+  if (( 10#$current_minor != 10#$minimum_minor )); then
+    (( 10#$current_minor > 10#$minimum_minor ))
+    return
+  fi
+  (( 10#$current_patch >= 10#$minimum_patch ))
+}
+
+set +e
+CHECK_JSON="$(lightdash upgrade-check --from "$CURRENT_VERSION" --to "$TARGET_VERSION" --json)"
+CHECK_EXIT=$?
+set -e
+
+if ! jq -e \
+  --arg from "$CURRENT_VERSION" \
+  --arg to "$TARGET_VERSION" \
+  '
+    (.fromVersion == $from) and
+    (.toVersion == $to) and
+    (.safe | type == "boolean") and
+    (.verdict == true or .verdict == false or .verdict == "unknown") and
+    (.requiredStops | type == "array" and all(.[]; type == "string")) and
+    (.minPreviousVersion == null or (.minPreviousVersion | type == "string")) and
+    (.missingRanges | type == "array" and all(.[]; type == "object" and (.afterVersion | type == "string") and (.beforeVersion | type == "string")))
+  ' >/dev/null <<<"$CHECK_JSON"; then
+  printf '%s\n' 'upgrade-check returned no usable verdict; aborting.' >&2
+  exit 1
+fi
+
+MINIMUM_VERSION="$(jq -r '.minPreviousVersion // empty' <<<"$CHECK_JSON")"
+if [[ -n "$MINIMUM_VERSION" ]] && ! version_gte "$CURRENT_VERSION" "$MINIMUM_VERSION"; then
+  printf 'Current version %s is below the minimum direct-upgrade version %s.\n' "$CURRENT_VERSION" "$MINIMUM_VERSION" >&2
+  exit 1
+fi
+
+EARLIEST_INTERMEDIATE_STOP="$(jq -r --arg target "$TARGET_VERSION" '
+  [.requiredStops[] | select(. != $target) | {version: ., parts: (split(".") | map(tonumber))}]
+  | sort_by(.parts)
+  | .[0].version // empty
+' <<<"$CHECK_JSON")"
+if [[ -n "$EARLIEST_INTERMEDIATE_STOP" ]]; then
+  printf 'Upgrade first to required stop %s, then check the next hop.\n' "$EARLIEST_INTERMEDIATE_STOP" >&2
+  exit 1
+fi
+
+REQUIRED_STOP_COUNT="$(jq -r '.requiredStops | length' <<<"$CHECK_JSON")"
+if [[ "$REQUIRED_STOP_COUNT" != "0" ]]; then
+  STOP_TARGET_VERDICT="$(jq -r --arg target "$TARGET_VERSION" '
+    if .requiredStops | length == 1 and .[0] == $target then .verdict else "invalid" end
+  ' <<<"$CHECK_JSON")"
+  case "$STOP_TARGET_VERDICT:$CHECK_EXIT" in
+    true:1) UPGRADE_MODE=RollingUpdate ;;
+    false:1|unknown:1) UPGRADE_MODE=Recreate ;;
+    *)
+      printf '%s\n' 'The required-stop target has an unusable verdict; aborting.' >&2
+      exit 1
+      ;;
+  esac
+else
+  CHECK_STATE="$(jq -r '[.safe, .verdict] | @tsv' <<<"$CHECK_JSON")"
+  case "$CHECK_STATE:$CHECK_EXIT" in
+    $'true\ttrue:0') UPGRADE_MODE=RollingUpdate ;;
+    $'false\tfalse:1'|$'false\tunknown:1') UPGRADE_MODE=Recreate ;;
+    *)
+      printf '%s\n' 'upgrade-check returned an unusable result; aborting.' >&2
+      exit 1
+      ;;
+  esac
+fi
+
+helm upgrade -f "$VALUES_FILE" \
+  --set-string upgrade.mode="$UPGRADE_MODE" \
+  --set-string image.tag="$TARGET_IMAGE_TAG" \
+  lightdash lightdash/lightdash
+```
+
+`--set-string` overrides any static `upgrade.mode` in the values file. Derive the mode for every upgrade. An earlier required stop is a separate target. When `requiredStops` is exactly `[TARGET_VERSION]` and the minimum version is satisfied, `true` selects `RollingUpdate`; `false` or `unknown` selects `Recreate`. A current version below `minPreviousVersion` aborts the direct hop. Malformed output, an execution failure, or a fetch failure has no usable verdict and aborts the pipeline.
 
 ### Recommended default policy
 
