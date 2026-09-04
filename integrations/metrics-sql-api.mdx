@@ -44,7 +44,7 @@ Queries run with the permissions of the token, so you can only query explores an
 - **Metrics are pre-aggregated.** Select a metric like any other column and Lightdash computes the aggregation for you. `GROUP BY` is optional — results are implicitly grouped by the dimensions you select. If you do write one, it's validated against your `SELECT` list.
 - **Results are limited to 500 rows** by default. Add a `LIMIT` to override it.
 
-Supported SQL includes `WHERE` (`=`, `!=`, `<`, `<=`, `>`, `>=`, `IN`, `LIKE`/`ILIKE`, `BETWEEN`, `IS NULL`, `AND`/`OR`), `HAVING`, `ORDER BY`, `LIMIT`, and calculated expressions in the `SELECT` list (arithmetic, functions, `CASE`, and window functions).
+Supported SQL includes `WHERE` (`=`, `!=`, `<`, `<=`, `>`, `>=`, `IN`, `LIKE`/`ILIKE`, `BETWEEN`, `IS NULL`, `AND`/`OR`), `HAVING`, `ORDER BY`, `LIMIT`, date parts of date columns (`EXTRACT`, `DATE_PART`, `DATE_TRUNC`), and calculated expressions in the `SELECT` list (arithmetic, functions, `CASE`, and window functions).
 
 ## Examples
 
@@ -86,6 +86,23 @@ WHERE orders_order_date >= '2026-01-01'
 ORDER BY 1
 LIMIT 12;
 ```
+
+### Date parts
+
+`EXTRACT`, `DATE_PART` and `DATE_TRUNC` over a date or timestamp dimension compile to that dimension's Lightdash time frame, so the warehouse groups by the date part directly. The explore's own interval column (e.g. `orders_order_date_year`) is used when it exists; otherwise the part is computed the same way Lightdash builds interval dimensions. `ORDER BY` and `GROUP BY` can repeat the same expression — this is the shape BI tools like Looker Studio generate for derived year, quarter and month fields:
+
+```sql
+SELECT
+  orders_order_date_day,
+  CAST(EXTRACT(YEAR FROM orders_order_date::TIMESTAMP) AS INT) AS "Year",
+  orders_total_order_amount
+FROM orders
+ORDER BY CAST(EXTRACT(YEAR FROM orders_order_date::TIMESTAMP) AS INT) DESC;
+```
+
+Supported parts are `YEAR`, `QUARTER`, `MONTH`, `WEEK`, `DAY`, `DOY`, `HOUR` and `MINUTE` for `EXTRACT`/`DATE_PART`, and `year` through `milliseconds` for `DATE_TRUNC`. `EXTRACT(DOW)` is rejected because Postgres and Lightdash number weekdays differently — select the dimension's day-of-week interval column instead.
+
+Parts the model already exposes as interval columns work for every role. Parts the model doesn't list are computed as custom SQL dimensions, which — like calculated expressions — need the developer role's custom fields permission.
 
 ### Calculated expressions
 
