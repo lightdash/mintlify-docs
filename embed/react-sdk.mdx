@@ -120,7 +120,7 @@ Embed complete Lightdash dashboards with multiple visualizations, filters, and i
 type DashboardProps = {
   // Required
   instanceUrl: string;              // Your Lightdash instance URL
-  token: string | Promise<string>;  // JWT (can be async)
+  token: string | Promise<string>;  // JWT (can be async; can be replaced at runtime)
 
   // Optional
   theme?: 'light' | 'dark';         // Force light or dark color scheme
@@ -494,7 +494,7 @@ type AiAgentProps = {
 ```
 
 <Info>
-`Lightdash.AiAgent` does not accept `filters`, `contentOverrides`, `uiOverrides`, or `onExplore`. Threads, navigation, and chart actions are managed inside the embedded agent UI.
+`Lightdash.AiAgent` does not accept `filters`, `contentOverrides`, `uiOverrides`, or `onExplore`. Threads, navigation, and chart actions are managed inside the embedded agent UI. Changing `token` reloads the iframe; see [Rotating tokens](#rotating-tokens).
 </Info>
 
 `onThreadChange` fires whenever the embedded agent creates a new thread or opens an existing one. Use it together with `threadUuid` to persist the current conversation in your app (for example in `localStorage` or your own backend) and resume it the next time the user returns. Under the hood, the SDK passes a `targetOrigin` query parameter to the iframe and listens for `lightdash:aiAgentThreadChanged` `postMessage` events from the embedded page — no extra setup is required on your side.
@@ -946,6 +946,56 @@ function EmbeddedDashboard() {
 <Warning>
   To ensure security, JWT generation code must run **in your backend**, and the **Lightdash embed secret** must never be exposed in frontend code. This prevents unauthorized access and protects sensitive data.
 </Warning>
+
+### Rotating tokens
+
+<Info>
+Self-hosted instances need Lightdash `2.137.0` or later to replace a token at runtime. On earlier versions the component keeps sending the first token it was given.
+</Info>
+
+Short-lived tokens are the safer default. To keep a long-lived embed working, mint a new token before the current one expires and pass it to the same component. The `token` prop can change at any time: the component stays mounted, dashboard filters, Explore state and chart edit mode are kept, and every request from then on carries the new token. Do not change the component's React `key` to swap tokens; that remounts it and resets its state.
+
+```tsx
+import Lightdash from '@lightdash/sdk';
+import { useState, useEffect } from 'react';
+
+function EmbeddedDashboard() {
+  const [token, setToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+
+    const refresh = async () => {
+      // Your backend returns the JWT and how long it is valid for
+      const { token, expiresInSeconds } = await fetch('/api/embed-token')
+        .then(res => res.json());
+      setToken(token);
+      // Mint the next token a minute before this one expires
+      timer = setTimeout(refresh, (expiresInSeconds - 60) * 1000);
+    };
+
+    void refresh();
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (!token) return <div>Loading...</div>;
+
+  return (
+    <Lightdash.Dashboard
+      instanceUrl="https://app.lightdash.cloud"
+      token={token}
+    />
+  );
+}
+```
+
+This applies to `Lightdash.Dashboard`, `Lightdash.DashboardBuilder`, `Lightdash.Chart`, `Lightdash.Explore`, and `Lightdash.MetricsCatalog`.
+
+<Note>
+- Refresh before expiry. A request that already failed on an expired token is not retried with the new one.
+- The new token replaces the old one for every SDK component on the page. Render one SDK component per page; two components with different tokens are not supported.
+- `Lightdash.AiAgent` renders an iframe and passes the token in its URL, so changing the token reloads the agent and closes the open thread. Mint AI agent tokens that outlive the session instead.
+</Note>
 
 ## Applying styles
 
