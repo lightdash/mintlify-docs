@@ -114,7 +114,10 @@ backend already runs in**:
   `sandboxes/microvm-agent/`), push them to ECR, and register each as a Lambda MicroVM
   image on the AWS-managed `al2023` base — `ARM_64`, 4 GB memory, with the agent's
   `/ready` hook on port 8080. Each registration returns an **image ARN** for the config
-  below.
+  below. The data app Dockerfile copies `lightdash-query-sdk.tgz`, a generated artifact
+  that a fresh checkout does not contain — build and pack it into `sandboxes/data-apps/`
+  first, as shown in [Build the gateway image](#2-build-the-gateway-image) under the
+  Cloud Run provider. The writeback Dockerfile has no such prerequisite.
 - **Control-plane permissions on your backend's existing IAM role** — add `RunMicrovm`,
   `GetMicrovm`, `SuspendMicrovm`, `ResumeMicrovm`, `TerminateMicrovm`, and
   `CreateMicrovmAuthToken`.
@@ -200,7 +203,11 @@ in**, using the [`aca` CLI](https://aka.ms/aca/sandboxes/dev) or the
   repo (`sandboxes/data-apps/`, `sandboxes/ai-writeback/`), push them to a container registry
   (e.g. Azure Container Registry), and register each as a disk image in its sandbox group.
   Registration returns a disk image **ID** for the config below. (Unlike the AWS provider,
-  there is no in-VM agent to build — Sandboxes expose a native command/file API.)
+  there is no in-VM agent to build — Sandboxes expose a native command/file API.) The data
+  app Dockerfile copies `lightdash-query-sdk.tgz`, a generated artifact that a fresh
+  checkout does not contain — build and pack it into `sandboxes/data-apps/` first, as
+  shown in [Build the gateway image](#2-build-the-gateway-image) under the Cloud Run
+  provider. The writeback Dockerfile has no such prerequisite.
 - **A workload identity with the data-plane role** — grant your backend's managed identity
   the **Container Apps SandboxGroup Data Owner** role on each sandbox group. Lightdash uses
   `DefaultAzureCredential` (workload identity on AKS, or the standard Azure credential chain)
@@ -250,6 +257,8 @@ AI writeback is not supported.
 - A recent version of the `gcloud` CLI that supports
   `gcloud beta run deploy --sandbox-launcher`.
 - A checkout of the Lightdash repository.
+- Node and pnpm at the repository-pinned versions (`.nvmrc` and the `packageManager`
+  field in `package.json`), to build the query SDK.
 - [External object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage)
   configured for Lightdash.
 - An Anthropic API key.
@@ -263,11 +272,39 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
 
 ### 2. Build the gateway image
 
+<Note>
+Newer Lightdash releases include a build script that does all of this in one step. If
+`sandboxes/data-apps/build-cloud-run-image.sh` exists in your checkout, prefer it over
+the manual recipe below — it prepares the SDK tarball and pins the gateway version for
+you:
+
+```bash
+./sandboxes/data-apps/build-cloud-run-image.sh <image-tag> --push
+```
+</Note>
+
+The Docker build context copies `lightdash-query-sdk.tgz`, a generated artifact that a
+fresh checkout does not contain, so the recipe builds and packs it first. Use the
+repository-pinned toolchain: the Node version in `.nvmrc` and the pnpm version in the
+`packageManager` field of `package.json` (for example, `nvm use` and `corepack enable`
+from the repository root).
+
 From the root of the Lightdash repository, run:
 
 ```bash
+set -euo pipefail
+
+# Install workspace dependencies
+pnpm install --frozen-lockfile
+
 cd sandboxes/data-apps
 
+# Build and pack @lightdash/query-sdk — the Dockerfile copies this tarball
+pnpm -C ../../packages/query-sdk build
+pnpm -C ../../packages/query-sdk pack --pack-destination "$(pwd)"
+mv lightdash-query-sdk-*.tgz lightdash-query-sdk.tgz
+
+# Stage the Docker context with the gateway
 STAGE=$(mktemp -d)
 cp -R template lightdash-query-sdk.tgz "$STAGE/"
 npm pack @computesdk/cloud-run --pack-destination "$STAGE" >/dev/null
@@ -275,7 +312,9 @@ tar -xzf "$STAGE"/computesdk-cloud-run-*.tgz \
   -C "$STAGE" package/dist/gateway.mjs
 mv "$STAGE/package/dist/gateway.mjs" "$STAGE/gateway.mjs"
 
-sed 's|^RUN chown -R user:user /app|RUN useradd -m -s /bin/bash user 2>/dev/null \|\| true|' \
+# E2B's builder injects a `user` account that plain Docker bases lack:
+# create it, and keep the chown so /app stays owned by that user
+sed 's|^RUN chown -R user:user /app|RUN useradd -m -s /bin/bash user 2>/dev/null \|\| true \&\& chown -R user:user /app|' \
   e2b.Dockerfile > "$STAGE/Dockerfile"
 
 cat >> "$STAGE/Dockerfile" <<'EOF'
@@ -289,6 +328,22 @@ gcloud builds submit "$STAGE" \
   --tag gcr.io/<your-project>/lightdash-sandbox-gateway:latest \
   --project <your-project>
 ```
+
+Instead of building the SDK from your local source, you can download the published
+tarball from npm. Pin it to the version in your checkout so the sandbox template and SDK
+stay in step — don't use an unpinned `latest`. This replaces `pnpm install` and the two
+`pnpm` commands above (run it from `sandboxes/data-apps`):
+
+```bash
+SDK_VERSION=$(node -p "require('../../packages/query-sdk/package.json').version")
+npm pack "@lightdash/query-sdk@${SDK_VERSION}"
+mv "lightdash-query-sdk-${SDK_VERSION}.tgz" lightdash-query-sdk.tgz
+```
+
+This downloads a prebuilt archive from the npm registry — it does not build your local
+source, so any local changes under `packages/query-sdk/` are not included. If the version
+in your checkout hasn't been published yet (for example, on an unreleased development
+branch), build from source instead.
 
 ### 3. Deploy the gateway
 
