@@ -122,6 +122,10 @@ Each table in an explore is filtered independently using one of two modes:
    - If explore tags match: ALL fields in the table are visible
    - If explore tags don't match: NO fields are visible
 
+**Joined tables:**
+
+Tagging the base model does not restrict joined models. Once an explore is visible, each joined table is filtered by its own tags only. A joined table with no tags falls into explore-level mode, so all of its fields are visible to the agent. To restrict a joined model's fields, add field-level tags to that model (see Scenarios 4 and 6 below).
+
 ### Adding tags at the model level
 
 Tag entire models to give your AI agent access to all metrics and dimensions within that explore:
@@ -356,6 +360,43 @@ Result: The entire explore is HIDDEN because the base table (`orders`) has no ma
 
 <Warning>
   An explore is only visible if the **base table** has matching tags (either at explore level or field level). Having matching tags only in joined tables is not enough.
+</Warning>
+
+**Scenario 6: Tagged base model with an untagged joined model**
+
+<CodeGroup>
+
+```yaml orders.yml (base model)
+models:
+  - name: orders
+    config:
+      tags: ["ai-enabled"]
+      meta:
+        joins:
+          - join: customers
+            sql_on: ${customers.customer_id} = ${orders.customer_id}
+    columns:
+      - name: order_id
+      - name: status
+```
+
+```yaml customers.yml (joined model)
+models:
+  - name: customers
+    columns:
+      - name: customer_id # no tags
+      - name: email # no tags
+      - name: phone # no tags
+```
+
+</CodeGroup>
+
+Result: If agent has `["ai-enabled"]` tag:
+- `orders` table: ALL fields visible (explore-level mode - explore tags match)
+- `customers` table: ALL fields visible (explore-level mode - the joined model has no tags anywhere, so nothing restricts it)
+
+<Warning>
+  Tagging the base model does not restrict joined models. A tagged base model exposes every field of an untagged joined model to the agent. To restrict a joined model's fields, add field-level tags to that model, as in Scenario 4.
 </Warning>
 
 ## User attributes and permissions
