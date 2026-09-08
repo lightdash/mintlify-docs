@@ -13,6 +13,7 @@ This page is for self-hosted Lightdash. Lightdash Cloud is fully managed by Ligh
 
 - **Warehouse credentials, dbt or Lightdash YAML definitions, generated SQL, query results, dashboard and chart definitions, and underlying warehouse data are processed inside your deployment.** None of these are sent to Lightdash through product telemetry.
 - **Product telemetry is enabled by default** and points at Lightdash's RudderStack endpoint (`https://analytics.lightdash.com`) using a built-in write key. It can be [disabled with a single environment variable](#configuration-2-disable-outbound-rudderstack-telemetry), or [redirected to your own RudderStack instance](#configuration-3-send-telemetry-to-your-own-rudderstack).
+- **While telemetry is enabled, each user chooses between anonymized and standard telemetry.** Anonymized users are tracked under a random UUID with no email or name; standard users' events also carry their email, first name, and last name. See [User-level tracking anonymization](#user-level-tracking-anonymization).
 - **Enterprise Edition validates its license key against Keygen on every server start.** The request contains the license key only — no warehouse credentials, no query text, no business data. See [License validation request](#license-validation-request) for the exact payload.
 - **Optional integrations** (SSO, SMTP, Slack, GitHub, object storage, AI providers, MCP, sandbox providers, Sentry, and the organization roadmap) talk directly to the endpoints you configure. They are not proxied through Lightdash Cloud.
 
@@ -124,7 +125,7 @@ All telemetry events carry the following installation context:
 | `app.installType` | Value of `LIGHTDASH_INSTALL_TYPE` if set, otherwise `unknown` (Helm chart, Docker image, etc.) |
 | `app.installChartVersion` | Value of `LIGHTDASH_HELM_CHART_VERSION` if set, otherwise `null` |
 
-The user identifier is either the Lightdash `userId` (a UUID), the anonymous ID (`00000000-0000-0000-0000-000000000000`) when the user has enabled tracking anonymization, or the constant string `"embed"` for embedded viewers.
+The user identifier is the Lightdash `userId` (a random UUID, not derived from the user's name or email), the constant string `"embed"` for embedded viewers, or the anonymous ID `00000000-0000-0000-0000-000000000000` for events with no user attached. Users who enable tracking anonymization keep their `userId` on events; anonymization removes their email and name, not the identifier (see [User-level tracking anonymization](#user-level-tracking-anonymization)).
 
 ### Event categories
 
@@ -144,13 +145,17 @@ Telemetry is not fully anonymous. Events carry stable identifiers (`organization
 
 ### User-level tracking anonymization
 
-Users can toggle **Anonymize my usage data** in their profile. When on:
+While telemetry is enabled, each user chooses one of two tracking modes:
 
-- The `is_tracking_anonymized: true` flag is set on the user record and included in identify/update events.
-- The `user.updated`, `user.verified`, and `user.deleted` events drop `email`, `firstName`, and `lastName`.
-- The `userId` and resource identifiers (`organizationId`, `projectId`, chart/dashboard UUIDs) **are still sent** — anonymization operates at the user-name/email level, not at the identifier level.
+- **Anonymized telemetry** — the user is tracked under their `userId` only, a random UUID that identifies the account without revealing who the person is. Usage events are still sent, but identify calls and the `user.updated`, `user.verified`, and `user.deleted` events drop `email`, `firstName`, and `lastName`, and carry the `is_tracking_anonymized: true` flag instead.
+- **Standard telemetry** — identify calls and user events additionally include the user's email, first name, and last name.
 
-This is a user-scoped setting. It does not disable telemetry, and it does not scrub identifiers or resource metadata from non-user events. To stop telemetry leaving the deployment, use [`RUDDERSTACK_ANALYTICS_DISABLED=true`](#configuration-2-disable-outbound-rudderstack-telemetry).
+The choice is per user, not per deployment:
+
+- Users set it with the **Anonymize my usage data** checkbox during account setup.
+- It can be changed at any time by setting `isTrackingAnonymized` on `PATCH /api/v1/user/me`.
+
+Anonymization does not disable telemetry. The `userId` and resource identifiers (`organizationId`, `projectId`, chart/dashboard UUIDs) **are still sent**, and resource metadata on non-user events (chart and dashboard titles, error messages) is not scrubbed. To stop telemetry leaving the deployment for every user, set [`RUDDERSTACK_ANALYTICS_DISABLED=true`](#configuration-2-disable-outbound-rudderstack-telemetry).
 
 ## Not sent through RudderStack telemetry
 
