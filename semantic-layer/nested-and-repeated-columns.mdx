@@ -11,13 +11,35 @@ tag: "Beta"
 
 BigQuery columns can contain a non-repeated `STRUCT` (`RECORD`) or a repeated `ARRAY` of scalars or structs. Define their leaves with dotted column names in dbt YAML. Lightdash keeps non-repeated leaves on the model and exposes repeated columns as virtual tables joined with `UNNEST`.
 
-Use [Define nested columns in YAML](#define-nested-columns-in-yaml) for the complete configuration, then refer to [Virtual tables](#virtual-tables), [Query behavior and grain](#query-behavior-and-grain), [Query warnings](#query-warnings), [Pre-aggregates](#pre-aggregates), and [Known limitations](#known-limitations) as needed.
+Use [How column shapes map to fields](#how-column-shapes-map-to-fields) for a visual overview and [Define nested columns in YAML](#define-nested-columns-in-yaml) for the complete configuration. Refer to [Virtual tables](#virtual-tables), [Query behavior and grain](#query-behavior-and-grain), [Query warnings](#query-warnings), [Pre-aggregates](#pre-aggregates), and [Known limitations](#known-limitations) as needed.
+
+## How column shapes map to fields
+
+### Non-repeated STRUCT (RECORD)
+
+A leaf below a non-repeated struct is an ordinary dimension on the model with its dotted name. In this `orders` model, `- name: customer.address.city` exposes only the `city` leaf. Add separate entries for `customer_id`, `name`, or `street` if you also want them as fields.
+
+<Frame>
+  <img src="/images/semantic-layer/nested-and-repeated-columns/non-repeated-record-yaml-mapping.png" alt="Orders table with a customer record containing an address record, mapped to the dotted YAML column customer.address.city" />
+</Frame>
+
+The `customer.address.city` dimension compiles to `` `orders`.customer.address.city `` and has the field ID `orders_customer__address__city`. Lightdash gets its type from the warehouse catalog, so `meta.dimension.type` is optional. An explicitly declared type takes precedence over the catalog type.
+
+### REPEATED (ARRAY)
+
+A repeated column with at least one listed leaf becomes a virtual table. In this `orders` model, `line_items.sku` becomes the `sku` dimension on `orders__line_items`. The `price` leaf is not exposed because it is not listed in YAML.
+
+<Frame>
+  <img src="/images/semantic-layer/nested-and-repeated-columns/repeated-record-yaml-mapping.png" alt="Orders table with three line item records in a repeated column, mapped to line_items and line_items.sku entries in YAML" />
+</Frame>
+
+The `- name: line_items` container entry is optional. Include it when you want to set the virtual table's `description` or `meta.dimension.label`. Every virtual table also gets an `offset` dimension for the array position, so this example exposes `sku` and `offset` on `orders__line_items`.
 
 ## Define nested columns in YAML
 
 Add one YAML entry for each leaf you want to expose. Use a dotted path that matches dbt-bigquery's column naming convention. Lightdash reads the warehouse catalog to determine whether each node in the path is a struct or an array; the YAML does not declare the container type.
 
-Only leaves listed in YAML become fields. The following example uses the public `bigquery-public-data.google_analytics_sample.ga_sessions_20170801` table, which has one row per session:
+Only leaves listed in YAML become fields. The diagrams above use a small `orders` model; the complete example below uses the public `bigquery-public-data.google_analytics_sample.ga_sessions_20170801` table to show a repeated record nested inside another repeated record. The table has one row per session:
 
 <CodeGroup>
 ```yaml dbt v1.10+ and Fusion
@@ -43,9 +65,10 @@ models:
               total_pageviews:
                 type: sum
       - name: device.deviceCategory
-      # REPEATED RECORD: becomes the virtual table ga_sessions__hits
+      # Optional container metadata for the ga_sessions__hits virtual table
       - name: hits
         description: One row per hit within the session
+      # Leaves below the REPEATED RECORD belong to ga_sessions__hits
       - name: hits.hitNumber
         config:
           meta:
@@ -53,7 +76,7 @@ models:
               hit_count:
                 type: count
       - name: hits.page.pagePath
-      # REPEATED RECORD inside hits: becomes ga_sessions__hits__product
+      # Leaves below the nested REPEATED RECORD belong to ga_sessions__hits__product
       - name: hits.product.productSKU
       - name: hits.product.v2ProductName
       - name: hits.product.productRevenue
@@ -84,16 +107,17 @@ models:
             total_pageviews:
               type: sum
       - name: device.deviceCategory
-      # REPEATED RECORD: becomes the virtual table ga_sessions__hits
+      # Optional container metadata for the ga_sessions__hits virtual table
       - name: hits
         description: One row per hit within the session
+      # Leaves below the REPEATED RECORD belong to ga_sessions__hits
       - name: hits.hitNumber
         meta:
           metrics:
             hit_count:
               type: count
       - name: hits.page.pagePath
-      # REPEATED RECORD inside hits: becomes ga_sessions__hits__product
+      # Leaves below the nested REPEATED RECORD belong to ga_sessions__hits__product
       - name: hits.product.productSKU
       - name: hits.product.v2ProductName
       - name: hits.product.productRevenue
@@ -104,21 +128,13 @@ models:
 ```
 </CodeGroup>
 
-The container entry, such as `- name: hits`, is optional. When it is present, Lightdash uses its `description` and `meta.dimension.label` for the virtual table. `lightdash generate` does not write container entries or entries below a repeated column, so add those leaves by hand.
-
-### Non-repeated STRUCT leaves
-
-A leaf below a non-repeated struct is an ordinary dimension on the model with its dotted name. For example, `- name: customer.address.city` compiles to `` `orders`.customer.address.city `` and has the field ID `orders_customer__address__city`.
-
-Lightdash gets the leaf's type from the warehouse catalog, so `meta.dimension.type` is optional. An explicitly declared type takes precedence over the catalog type.
+`lightdash generate` does not write container entries or entries below a repeated column, so add those entries by hand.
 
 ## Virtual tables
 
 Each repeated column with at least one leaf listed in YAML becomes a virtual table in the Explore view. The virtual table is joined with `UNNEST`, and its leaves become the table's dimensions and metrics.
 
 A leaf belongs to the virtual table of its deepest repeated ancestor. For example, `hits.page.pagePath` becomes the `page.pagePath` dimension on `ga_sessions__hits`. There is no nesting-depth limit: a repeated column inside another repeated column creates a chain of virtual tables.
-
-{/* Screenshot placeholder: add a production Explore screenshot showing virtual tables in the sidebar and a query at repeated-element grain. */}
 
 ### Names and field references
 
