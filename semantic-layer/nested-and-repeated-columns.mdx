@@ -39,91 +39,52 @@ The `- name: line_items` container entry is optional. Include it when you want t
 
 Add one YAML entry for each leaf you want to expose. Use a dotted path that matches dbt-bigquery's column naming convention. Lightdash reads the warehouse catalog to determine whether each node in the path is a struct or an array; the YAML does not declare the container type.
 
-Only leaves listed in YAML become fields. The diagrams above use a small `orders` model; the complete example below uses the public `bigquery-public-data.google_analytics_sample.ga_sessions_20170801` table to show a repeated record nested inside another repeated record. The table has one row per session:
+Only leaves listed in YAML become fields. The example below continues with the `orders` model from the diagrams. The warehouse table has one row per order, a `customer` record, and a repeated `line_items` record:
 
 <CodeGroup>
 ```yaml dbt v1.10+ and Fusion
 models:
-  - name: ga_sessions
+  - name: orders
     config:
       meta:
-        primary_key: [fullVisitorId, visitId]
+        primary_key: order_id
     columns:
-      - name: fullVisitorId
-      - name: visitId
-      - name: date
+      - name: order_id
+      - name: status
+      # STRUCT leaf: an ordinary dotted dimension on orders
+      - name: customer.address.city
+      # Optional metadata for the orders__line_items virtual table
+      - name: line_items
+        description: One row per item in the order
+      # Leaves below the REPEATED RECORD belong to orders__line_items
+      - name: line_items.sku
+      - name: line_items.price
         config:
           meta:
             metrics:
-              session_count:
-                type: count
-      # STRUCT leaves: ordinary dotted dimensions on the model
-      - name: totals.pageviews
-        config:
-          meta:
-            metrics:
-              total_pageviews:
-                type: sum
-      - name: device.deviceCategory
-      # Optional container metadata for the ga_sessions__hits virtual table
-      - name: hits
-        description: One row per hit within the session
-      # Leaves below the REPEATED RECORD belong to ga_sessions__hits
-      - name: hits.hitNumber
-        config:
-          meta:
-            metrics:
-              hit_count:
-                type: count
-      - name: hits.page.pagePath
-      # Leaves below the nested REPEATED RECORD belong to ga_sessions__hits__product
-      - name: hits.product.productSKU
-      - name: hits.product.v2ProductName
-      - name: hits.product.productRevenue
-        config:
-          meta:
-            metrics:
-              total_product_revenue:
+              total_revenue:
                 type: sum
 ```
 
 ```yaml dbt v1.9 and earlier
 models:
-  - name: ga_sessions
+  - name: orders
     meta:
-      primary_key: [fullVisitorId, visitId]
+      primary_key: order_id
     columns:
-      - name: fullVisitorId
-      - name: visitId
-      - name: date
+      - name: order_id
+      - name: status
+      # STRUCT leaf: an ordinary dotted dimension on orders
+      - name: customer.address.city
+      # Optional metadata for the orders__line_items virtual table
+      - name: line_items
+        description: One row per item in the order
+      # Leaves below the REPEATED RECORD belong to orders__line_items
+      - name: line_items.sku
+      - name: line_items.price
         meta:
           metrics:
-            session_count:
-              type: count
-      # STRUCT leaves: ordinary dotted dimensions on the model
-      - name: totals.pageviews
-        meta:
-          metrics:
-            total_pageviews:
-              type: sum
-      - name: device.deviceCategory
-      # Optional container metadata for the ga_sessions__hits virtual table
-      - name: hits
-        description: One row per hit within the session
-      # Leaves below the REPEATED RECORD belong to ga_sessions__hits
-      - name: hits.hitNumber
-        meta:
-          metrics:
-            hit_count:
-              type: count
-      - name: hits.page.pagePath
-      # Leaves below the nested REPEATED RECORD belong to ga_sessions__hits__product
-      - name: hits.product.productSKU
-      - name: hits.product.v2ProductName
-      - name: hits.product.productRevenue
-        meta:
-          metrics:
-            total_product_revenue:
+            total_revenue:
               type: sum
 ```
 </CodeGroup>
@@ -134,14 +95,14 @@ models:
 
 Each repeated column with at least one leaf listed in YAML becomes a virtual table in the Explore view. The virtual table is joined with `UNNEST`, and its leaves become the table's dimensions and metrics.
 
-A leaf belongs to the virtual table of its deepest repeated ancestor. For example, `hits.page.pagePath` becomes the `page.pagePath` dimension on `ga_sessions__hits`. There is no nesting-depth limit: a repeated column inside another repeated column creates a chain of virtual tables.
+A leaf belongs to the virtual table of its deepest repeated ancestor. For example, `line_items.sku` becomes the `sku` dimension on `orders__line_items`. There is no nesting-depth limit: if each line item also contains a repeated `discounts` record, `line_items.discounts.code` belongs to `orders__line_items__discounts`.
 
 ### Names and field references
 
-- **Table name:** `<model>__<column>`. Nested virtual-table names continue the chain, as in `ga_sessions__hits__product`. The separator is two underscores.
-- **Sidebar label:** `<Model label>: <Column label>`. A nested label continues the chain, as in `Ga sessions: Hits: Product`.
-- **Field ID:** `<virtual table>_<dimension>`, as in `ga_sessions__hits__product_v2ProductName`.
-- **YAML reference:** use the virtual-table name as the table prefix. For example, use `${ga_sessions__hits__product.productRevenue}` in metric SQL and `ga_sessions__hits__product.v2ProductName` in filters and pre-aggregates.
+- **Table name:** `<model>__<column>`. Nested virtual-table names continue the chain, as in `orders__line_items__discounts`. The separator is two underscores.
+- **Sidebar label:** `<Model label>: <Column label>`. A nested label continues the chain, as in `Orders: Line items: Discounts`.
+- **Field ID:** `<virtual table>_<dimension>`, as in `orders__line_items_sku`.
+- **YAML reference:** use the virtual-table name as the table prefix. For example, use `${orders__line_items.price}` in metric SQL and `orders__line_items.sku` in filters and pre-aggregates.
 
 Every virtual table also has a number dimension named `offset`, which is the element's zero-based position in its array.
 
@@ -155,17 +116,15 @@ When a model is joined into another Explore under an alias, or joined more than 
 
 ## Generated SQL
 
-For a query that selects `ga_sessions.date`, `hits.product.v2ProductName`, and the sum of `hits.product.productRevenue`, Lightdash generates two chained `UNNEST` joins:
+For a query that selects `customer.address.city`, `line_items.sku`, and total revenue, Lightdash generates one `UNNEST` join:
 
 ```sql
 SELECT
-  `ga_sessions`.date AS `ga_sessions_date`,
-  `ga_sessions__hits__product`.v2ProductName AS `ga_sessions__hits__product_v2ProductName`,
-  SUM(`ga_sessions__hits__product`.productRevenue) AS `ga_sessions__hits__product_total_product_revenue`
-FROM `my-project`.`analytics`.`ga_sessions` AS `ga_sessions`
-LEFT OUTER JOIN UNNEST(`ga_sessions`.hits) AS `ga_sessions__hits` WITH OFFSET AS `ga_sessions__hits__offset`
-  ON TRUE
-LEFT OUTER JOIN UNNEST(`ga_sessions__hits`.product) AS `ga_sessions__hits__product` WITH OFFSET AS `ga_sessions__hits__product__offset`
+  `orders`.customer.address.city AS `orders_customer__address__city`,
+  `orders__line_items`.sku AS `orders__line_items_sku`,
+  SUM(`orders__line_items`.price) AS `orders__line_items_total_revenue`
+FROM `my-project`.`analytics`.`orders` AS `orders`
+LEFT OUTER JOIN UNNEST(`orders`.line_items) AS `orders__line_items` WITH OFFSET AS `orders__line_items__offset`
   ON TRUE
 GROUP BY 1, 2
 ```
@@ -185,13 +144,15 @@ The query grain follows the fields included in the query:
 
 The yellow icon next to **Run query** shows warnings about combinations that can inflate metrics.
 
-- When two repeated columns that are not nested inside one another are selected together, Lightdash shows this warning once per query and only for the deepest virtual tables. A chain such as `hits` and `hits.product` does not trigger it:
+- When two repeated columns that are not nested inside one another are selected together, Lightdash shows this warning once per query and only for the deepest virtual tables. For example, if `orders` also has a repeated `shipments` column, selecting fields from both `line_items` and `shipments` shows:
 
-  > Repeated columns "ga_sessions__hits" and "ga_sessions__customDimensions" are unnested together, so each row pairs their elements and metrics can be inflated.
+  > Repeated columns "orders__line_items" and "orders__shipments" are unnested together, so each row pairs their elements and metrics can be inflated.
+
+  A nested chain such as `line_items` and `line_items.discounts` does not trigger this warning.
 
 - When a metric on a virtual table is queried with a deeper or sibling unnest, Lightdash shows:
 
-  > Metric "Hit count" could be inflated by another unnested repeated column.
+  > Metric "Total revenue" could be inflated by another unnested repeated column.
 
 - The existing **could be inflated due to join relationships** warning still applies to model metrics that Lightdash cannot deduplicate, including metrics on a model without a `primary_key`.
 
@@ -202,29 +163,27 @@ Reference virtual-table fields with the virtual-table name as their table prefix
 <CodeGroup>
 ```yaml dbt v1.10+ and Fusion
 models:
-  - name: ga_sessions
+  - name: orders
     config:
       meta:
         pre_aggregates:
-          - name: ga_product_revenue
+          - name: revenue_by_sku
             dimensions:
-              - ga_sessions__hits__product.v2ProductName
+              - orders__line_items.sku
             metrics:
-              - ga_sessions__hits__product.total_product_revenue
-              - ga_sessions__hits.hit_count
+              - orders__line_items.total_revenue
 ```
 
 ```yaml dbt v1.9 and earlier
 models:
-  - name: ga_sessions
+  - name: orders
     meta:
       pre_aggregates:
-        - name: ga_product_revenue
+        - name: revenue_by_sku
           dimensions:
-            - ga_sessions__hits__product.v2ProductName
+            - orders__line_items.sku
           metrics:
-            - ga_sessions__hits__product.total_product_revenue
-            - ga_sessions__hits.hit_count
+            - orders__line_items.total_revenue
 ```
 </CodeGroup>
 
@@ -239,8 +198,8 @@ On self-hosted deployments, add `unnest-repeated-columns` to `LIGHTDASH_ENABLE_F
 ## Known limitations
 
 - Only BigQuery is supported. On another warehouse, the model fails to compile with an error that names the warehouse.
-- There is no parent-level containment filter, such as “sessions that contain product X,” that preserves the parent grain.
-- You cannot access an element by index without unnesting, such as `hits[0].page.pagePath`. Define a dimension with custom `sql` instead.
+- There is no parent-level containment filter, such as “orders that contain SKU X,” that preserves the parent grain.
+- You cannot access an element by index without unnesting, such as `line_items[0].sku`. Define a dimension with custom `sql` instead.
 - Selecting the struct or array container itself is not supported. Its cell displays JSON text, and CSV or Excel exports display `[object Object]`.
 - Selecting two repeated columns that are not nested inside one another multiplies their rows. See [Query warnings](#query-warnings).
 - SQL Runner and virtual views type nested columns but do not expand them.
