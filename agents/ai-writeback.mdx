@@ -1,23 +1,23 @@
 ---
 title: AI writeback
-description: Ask an AI agent to edit your dbt project in chat and open a pull request with the changes
+description: Ask an AI agent to edit dbt or native Lightdash YAML files and open a pull request
 doc-type: tutorial
 ---
 
-AI writeback lets you ask an AI agent in chat or Slack to change something in the dbt repository that backs your project — rename a metric, add a dimension, edit a model's SQL, fix a YAML description — and have the agent open a pull request (or GitLab merge request) with the change.
+AI writeback lets you ask an AI agent in chat or Slack to edit the repository that backs your project and open a pull request with the change. It can update dbt models or [native Lightdash YAML models](/semantic-layer/yaml#ai-writeback-and-issues), including metrics, dimensions, and descriptions.
 
-This is the same writeback capability you would normally trigger from the Custom Metric or SQL Runner menus, surfaced inside the conversation with your AI agent.
+Use it for changes that need editing across project files. To promote an individual custom field, use the write-back action in the Explore view.
 
-For changes that don't belong in the dbt project — for example, editing an app repo, a service, or a docs site — use the [AI coding agent](/agents/ai-coding-agent) instead. It runs on the same E2B + Anthropic pipeline but targets any repository your organization has connected, and delegates verification to that repository's own CI.
+For changes that don't belong in the semantic layer project — for example, editing an app repo, a service, or a docs site — use the [AI coding agent](/agents/ai-coding-agent) instead.
 
 ## When to use it
 
-Use AI writeback when the change you want needs to land in your dbt project files:
+Use AI writeback when the change belongs in your semantic layer project files:
 
 - Rename a metric in a YAML file
-- Add a new metric or dimension to a dbt model
-- Edit a model's SQL
-- Update a description, label, or `meta` block
+- Add a metric or dimension to a model
+- Edit field SQL, or a dbt model's SQL
+- Update a description, label, or dbt `meta` block
 - Fix a typo in a column definition
 
 For other kinds of changes, the agent will pick a different tool:
@@ -26,23 +26,25 @@ For other kinds of changes, the agent will pick a different tool:
 | --- | --- |
 | Ask a question about data | Query and discovery tools |
 | Edit an existing chart or dashboard in Lightdash | `editContent` |
-| Change the underlying dbt repository | `editDbtProject` |
+| Change dbt or native Lightdash YAML source files | `editDbtProject` |
 
 ## Prerequisites
 
-- Your project's dbt connection must be a **GitHub**, **GitLab**, or **Bitbucket Cloud** repository. Azure DevOps, dbt Cloud, and local dbt connections are not supported by this workflow.
-- Configure access for your Git provider:
+- Use a supported repository connection: **GitHub**, **GitLab.com**, or **Bitbucket Cloud** for dbt; **GitHub** for native Lightdash YAML. Azure DevOps, dbt Cloud, and CLI-only connections are not supported for AI writeback.
+- Configure repository access so the agent can open requests:
   - **GitHub** — install the Lightdash GitHub App on the repository.
   - **GitLab** — connect the Lightdash GitLab App for your organization. Writeback works against GitLab.com; self-hosted GitLab domains aren't reachable from the writeback sandbox yet.
   - **Bitbucket Cloud** — configure the [project API token and writeback permissions](/get-started/quickstart/connect-project#bitbucket-cloud-api-token).
 - You need at least [project Developer](/workspace-admin/roles) permissions on the project.
+
+For native projects, follow [Connect through GitHub](/semantic-layer/yaml#connect-through-github) and select **Native Lightdash YAML** as the semantic layer format.
 
 ## How it works
 
 When you ask the agent for a change that belongs in the repo, it calls a tool called `editDbtProject`. The tool:
 
 1. Generates a self-contained instruction from your request and starts a sandboxed environment with no memory of your chat. A follow-up to the same change resumes that environment; an unrelated request gets a fresh one.
-2. Edits the relevant files and runs `lightdash compile` to validate the result.
+2. Edits the relevant files and validates the result. dbt projects use `lightdash compile`; native projects use [native YAML validation](/semantic-layer/yaml#ai-writeback-and-issues) without setting up dbt.
 3. Pushes a new branch and opens a pull request (GitHub or Bitbucket) or merge request (GitLab) against the branch configured in your project connection.
 4. Returns the pull request URL to you in chat.
 
@@ -88,7 +90,7 @@ description: change "lifteime" to "lifetime."
 
 ### Mentioning project files with `@`
 
-In the agent chat input, type `@` to open the mention menu. Alongside the existing chart and dashboard suggestions, you'll see a **Files** group listing the source files in your project's dbt repository. Pick a file and its path is inserted as a pill in your message.
+In the agent chat input, type `@` to open the mention menu. Alongside chart and dashboard suggestions, the **Files** group lists source files in your project's repository. Pick a file and its path is inserted as a pill in your message.
 
 Use file mentions to point the writeback agent at the exact file you want changed:
 
@@ -127,7 +129,7 @@ The writeback PR card has two action groups:
   - Both actions ask you to confirm before sending the request.
   - Once the PR reaches a terminal state, the button group collapses to a **Merged** or **Closed** marker and the card stops polling.
 
-When you merge from the card, Lightdash recompiles the project automatically — the same refresh as **Settings → Project → Sync dbt project** — so the merged change goes live without a manual sync. If the change renamed or removed a field, the merge also kicks off the content-migration flow described in [Impact and safety checks](#impact-and-safety-checks).
+When you merge from the card, Lightdash recompiles the project automatically using its selected semantic layer format, so the merged change goes live without a manual refresh. If the change renamed or removed a field, the merge also kicks off the content-migration flow described in [Impact and safety checks](#impact-and-safety-checks).
 
 <Note>
   Merging or closing a writeback PR from the card uses your project permissions
@@ -148,21 +150,21 @@ For changes that could break existing content or change results, the agent does 
 
 **That the numbers still hold.** When a change relies on results staying the same — consolidating two duplicate metrics, replacing one field with another, splitting a metric into parts, or refactoring a field's SQL — the agent proves it rather than asserting it. It either shows the guarantee from the model SQL, or runs the affected fields at a total and across a time dimension and confirms they match, before calling the change safe. If the numbers diverge, it tells you exactly what differs instead of shipping the change.
 
-## Reading the dbt repository
+## Reading the project repository <a id="reading-the-dbt-repository" />
 
-The agent can also read source files in your dbt repository to ground its answers and plan a writeback before opening a pull request. Use it when the question is about how a model is built (its SQL, refs, or `dbt_project.yml` config), or to confirm what the file currently contains before asking for an edit.
+The agent can also read source files in your project repository to ground its answers and plan a writeback before opening a pull request. Use it to inspect a native model's `sql_from`, dimensions, or metrics, a dbt model's SQL and configuration, or the current contents of a file before asking for an edit.
 
-For questions about what data exists, what a metric means, or whether two metrics overlap, the agent stays on the semantic-layer tools — the repo is for dbt implementation details, not the catalogue of what's queryable.
+For questions about what data exists, what a metric means, or whether two metrics overlap, the agent uses semantic-layer discovery tools. Repository access supplies the source definitions behind those fields.
 
 ### Requirements
 
-- Your project's dbt connection must be a **GitHub** or **GitLab** repository with the matching Lightdash app installed. On GitLab, repository-wide code search isn't available, so the agent falls back to reading and searching within files it lists.
+- Repository reading is available for **GitHub** or **GitLab** connections with the matching Lightdash app installed. On GitLab, repository-wide code search isn't available, so the agent falls back to reading and searching within files it lists.
 - The user asking the question needs the **view source code** permission on the project.
 - In Slack, read access is only available when [AI Agents OAuth](/integrations/slack#ai-agents-configuration) is required, so the agent can evaluate permissions against the asking user.
 
 ### What the agent can see
 
-- The dbt project is mounted at the connection's `project_sub_path`, and that is where the agent is pointed. Other repositories readable by your organization's Lightdash app installation (or your linked GitHub account) can also be browsed read-only on their default branch; secret and credential file paths are blocked.
+- The agent starts in the configured project directory. Other repositories readable by your organization's Lightdash app installation (or your linked GitHub account) can also be browsed read-only on their default branch; secret and credential file paths are blocked.
 - The agent can list directories, read files, and search for strings, but it cannot modify anything. To change a file, it still has to call `editDbtProject`.
 
 Each repo command shows up as its own sub-step under a terminal icon, so you can see exactly what the agent looked at before answering or proposing a change.
@@ -176,9 +178,9 @@ When the preview is ready:
 - The agent's reply in chat (or the writeback status on a review item) includes a **View preview** link to the preview project.
 - A bot comment is posted on the pull request with the same preview URL.
 
-The preview project is built using the same dbt connection as your production project, with the branch overridden to the PR's head branch. It's compiled by Lightdash's own scheduler — the customer repository doesn't need to install or run the Lightdash preview-deploy GitHub Action.
+The preview project uses the production project's connection and semantic layer format, with the branch overridden to the PR's head branch. Native projects compile their YAML directly; dbt projects use dbt. Lightdash builds the preview without requiring a preview-deploy GitHub Action in your repository.
 
-If the preview can't be built — for example, the project isn't connected to GitHub, the dbt compile fails on the PR branch, or the GitHub App can't reach the repo — the pull request is still opened and the agent reports the PR link without a preview. The writeback itself never fails because the preview failed.
+If the preview can't be built — for example, the project isn't connected to GitHub, compilation fails on the PR branch, or the GitHub App can't reach the repo — the pull request is still opened and the agent reports the PR link without a preview. The writeback itself never fails because the preview failed.
 
 ## Iterating on an existing pull request
 
@@ -199,7 +201,7 @@ metric is rounded to 2 decimal places.
 
 The pasted pull request must:
 
-- Live in the same GitHub repository as the project's dbt connection.
+- Live in the same GitHub repository as the project's connection.
 - Be **open** — merged or closed PRs are rejected.
 - Have its branch in the same repository (PRs opened from forks are rejected).
 
@@ -209,8 +211,8 @@ If any of those checks fail, the agent stops and tells you why instead of silent
 
 | Situation | Result |
 | --- | --- |
-| Project's dbt connection isn't GitHub, GitLab, or Bitbucket Cloud | The agent tells you the project must be connected to a supported git host for writeback. |
-| GitHub App isn't installed on the repo | The agent surfaces a setup error. Install the Lightdash GitHub App on the repository (from your project's dbt connection settings) and try again. |
+| Project has no supported repository connection | The agent explains which connection is required. See [Prerequisites](#prerequisites). |
+| GitHub App isn't installed on the repo | The agent surfaces a setup error. Install the Lightdash GitHub App on the repository from your project's connection settings and try again. |
 | Writeback agent makes no file changes | No pull request or merge request is opened. The agent reports back that nothing needed to change. |
 | Pasted PR link is in a different repo, merged, closed, or from a fork | The agent rejects the link with an explanation and does not open a new pull request. |
 | The pull request behind a change has been merged or closed | The agent can't add to that pull request, so a follow-up opens a fresh one in the same thread. |
@@ -219,5 +221,6 @@ If any of those checks fail, the agent stops and tells you why instead of silent
 
 ## Related
 
-- [AI coding agent](/agents/ai-coding-agent) — the general-purpose counterpart to AI writeback for changes to any connected repository (not just the dbt project). Verification is delegated to the target repo's own CI. *(Beta)*
+- [AI coding agent](/agents/ai-coding-agent) — make changes in other connected repositories.
 - [dbt write-back](/integrations/dbt/write-back) — write back individual custom metrics, dimensions, and SQL Runner queries from the Lightdash UI.
+- [Lightdash YAML write-back](/semantic-layer/yaml#write-back-from-lightdash) — promote custom fields into native models.
