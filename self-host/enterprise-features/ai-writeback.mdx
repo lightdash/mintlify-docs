@@ -7,18 +7,16 @@ description: "Enable AI writeback on a self-hosted Lightdash instance"
   <Badge icon="building-plus" color="blue" size="sm" shape="pill">Enterprise</Badge> AI writeback needs a valid `LIGHTDASH_LICENSE_KEY` set on your instance ([enterprise features](/self-host/enterprise-features) covers applying the key) before any of the configuration below takes effect.
 </Info>
 
-AI writeback lets an AI agent edit the dbt repository that backs a project and open a pull request (GitHub) or merge request (GitLab) with the change. The edits run inside an isolated [sandbox](/self-host/customize-deployment/sandboxes) where a Claude-driven agent applies the diff, runs `lightdash compile` to validate, and pushes a new branch. To enable the feature on a self-hosted Lightdash instance you need a configured sandbox provider, an Anthropic API key, and the matching Lightdash git app connected to the repositories you want writeback against.
+AI writeback lets an AI agent edit the semantic layer repository that backs a project and open a pull request with the change. The edits run inside an isolated [sandbox](/self-host/customize-deployment/sandboxes). Validation depends on the project format; see [how AI writeback works](/agents/ai-writeback#how-it-works). To enable the feature on a self-hosted Lightdash instance you need a configured sandbox provider, an Anthropic API key, and repository access.
 
 For an overview of what the feature does and how to use it in chat, see [AI writeback](/agents/ai-writeback).
 
 ## Prerequisites
 
 - **Enterprise license** — `LIGHTDASH_LICENSE_KEY` must be set on your instance.
-- **A configured sandbox provider** — see [sandboxes](/self-host/customize-deployment/sandboxes). The writeback agent edits files and runs `lightdash compile` there.
+- **A configured sandbox provider** — see [sandboxes](/self-host/customize-deployment/sandboxes). The writeback agent edits files there.
 - **An Anthropic API key** — sign up at [console.anthropic.com](https://console.anthropic.com/) and create an API key. Claude is the model that drives the writeback agent.
-- **A supported git host** — each project that should support writeback must be connected to a **GitHub** or **GitLab** repository (Bitbucket, Azure DevOps, dbt Cloud, and local dbt projects are not supported), with the matching Lightdash app installed:
-  - **GitHub** — install the Lightdash GitHub App on the repository.
-  - **GitLab** — connect the Lightdash GitLab App for your organization. Writeback works against GitLab.com; self-hosted GitLab domains aren't reachable from the writeback sandbox yet.
+- **Repository access** — configure a supported provider and semantic layer format using the [AI writeback prerequisites](/agents/ai-writeback#prerequisites).
 
 ## Configuration
 
@@ -29,7 +27,7 @@ Add the following environment variables to your Lightdash deployment:
 | `E2B_AI_WRITEBACK_TEMPLATE_NAME` | `lightdash/lightdash-ai-writeback` | Lightdash's public E2B template for writeback — pulls our prebuilt sandbox image so you don't have to build one yourself. The `lightdash/` prefix points at our public team template; without it E2B looks in your own team and won't find the image. |
 | `ANTHROPIC_API_KEY` | `<your-anthropic-api-key>` | Your [Anthropic](https://console.anthropic.com/) API key. Claude is the model that drives the writeback agent. |
 
-Restart the backend. Users with AI Analyst access on a project connected to a supported git host will see the agent offer to open a pull request when they ask for a change that belongs in the dbt repo.
+Restart the backend. Users with AI Analyst access on a project connected to a supported git host will see the agent offer to open a pull request when they ask for a change that belongs in the semantic layer repo.
 
 ### Optional configuration
 
@@ -38,6 +36,8 @@ Restart the backend. Users with AI Analyst access on a project connected to a su
 | `E2B_AI_WRITEBACK_TEMPLATE_TAG` | Running Lightdash version (e.g. `0.2917.1`) | Pins the writeback sandbox image to a specific tag of the E2B template. Each Lightdash release publishes a matching tag so the backend and sandbox stay in sync. Override this to roll back to a previous build or set it to an empty string to use the template's `default` tag. Most operators don't need to touch this. |
 
 ## Supported dbt versions
+
+This section applies to dbt projects. Native Lightdash YAML uses [native validation](/semantic-layer/yaml#ai-writeback-and-issues) and needs no dbt installation.
 
 The writeback sandbox runs `lightdash compile` using the dbt version configured on the project, so validation behaves the same way it would locally. The sandbox ships with dbt **1.8, 1.9, 1.10, 1.11, and 1.12** preinstalled:
 
@@ -58,15 +58,16 @@ Both providers expose usage dashboards. We recommend setting spend limits on bot
 
 ## Permissions
 
-AI writeback is gated by the user's project role. Anyone asking the agent to open a pull request needs at least [project Developer](/workspace-admin/roles) permissions on the project the agent is connected to. The git commits themselves are made by the installed Lightdash app, not by the end user:
+AI writeback is gated by the user's project role. Anyone asking the agent to open a pull request needs at least [project Developer](/workspace-admin/roles) permissions on the project the agent is connected to. Git authentication depends on the provider:
 
 - **GitHub** commits are signed by the Lightdash GitHub App.
 - **GitLab** commits are pushed over OAuth and are unsigned.
+- **Bitbucket Cloud** uses the [project API token owner's identity](/get-started/quickstart/connect-project#bitbucket-cloud-api-token).
 
 ## Troubleshooting
 
 **The agent never offers to open a pull request.**
-Check that `LIGHTDASH_LICENSE_KEY` is set and the project's dbt connection is GitHub or GitLab with the matching Lightdash app installed.
+Check that `LIGHTDASH_LICENSE_KEY` is set and the project meets the [repository and permission prerequisites](/agents/ai-writeback#prerequisites).
 
 **Writebacks fail immediately with a sandbox creation error.**
 Check your [sandbox provider's](/self-host/customize-deployment/sandboxes) credentials, and verify `E2B_AI_WRITEBACK_TEMPLATE_NAME` is set to `lightdash/lightdash-ai-writeback` (the `lightdash/` prefix is required to pull our public template — a bare name resolves to your own team). If you've overridden `E2B_AI_WRITEBACK_TEMPLATE_TAG`, double-check the tag exists.
