@@ -30,10 +30,11 @@ For other kinds of changes, the agent will pick a different tool:
 
 ## Prerequisites
 
-- Your project's dbt connection must be a **GitHub** or **GitLab** repository. Bitbucket, Azure DevOps, dbt Cloud, and local dbt projects are not supported.
-- The matching Lightdash app must be installed for the repository so the agent can open requests:
+- Your project's dbt connection must be a **GitHub**, **GitLab**, or **Bitbucket Cloud** repository. Azure DevOps, dbt Cloud, and local dbt connections are not supported by this workflow.
+- Configure access for your Git provider:
   - **GitHub** — install the Lightdash GitHub App on the repository.
   - **GitLab** — connect the Lightdash GitLab App for your organization. Writeback works against GitLab.com; self-hosted GitLab domains aren't reachable from the writeback sandbox yet.
+  - **Bitbucket Cloud** — configure the [project API token and writeback permissions](/get-started/quickstart/connect-project#bitbucket-cloud-api-token).
 - You need at least [project Developer](/workspace-admin/roles) permissions on the project.
 
 ## How it works
@@ -42,7 +43,7 @@ When you ask the agent for a change that belongs in the repo, it calls a tool ca
 
 1. Generates a self-contained instruction from your request and starts a sandboxed environment with no memory of your chat. A follow-up to the same change resumes that environment; an unrelated request gets a fresh one.
 2. Edits the relevant files and runs `lightdash compile` to validate the result.
-3. Pushes a new branch and opens a pull request (GitHub) or merge request (GitLab) against your repository's default branch.
+3. Pushes a new branch and opens a pull request (GitHub or Bitbucket) or merge request (GitLab) against the branch configured in your project connection.
 4. Returns the pull request URL to you in chat.
 
 The tool call can take a few minutes. The agent tells you a pull request is being prepared, and the chat card auto-updates in place with the pull request URL as soon as the run finishes — you don't need to send another message or refresh the thread.
@@ -57,6 +58,12 @@ If you're driving writeback from an external client via MCP rather than the in-p
   you in chat to link your account if you haven't yet.
   GitLab commits are pushed over OAuth and are unsigned.
 </Note>
+
+### Bitbucket Cloud behavior
+
+Bitbucket AI writeback edits the connected dbt repository. Follow-up requests can add commits to the same open pull request. If that request has been merged or declined, a follow-up starts a fresh pull request.
+
+Review and merge Bitbucket pull requests in Bitbucket, then sync the project in Lightdash. The integration does not provide automatic preview projects, Bitbucket Pipelines status, or merging from the chat card. Repository browsing and file mentions have separate provider requirements, described below. Standalone Lightdash YAML projects, Bitbucket Server/Data Center, and general-purpose coding-agent access are outside this Bitbucket integration.
 
 ## Using it in chat
 
@@ -112,10 +119,10 @@ The writeback PR card has two action groups:
 
 - **View ▾** — a dropdown with up to three entries:
   - **Preview** — opens the Lightdash preview environment for the PR's branch, so you can click around the change before merging. Hidden if no preview is available (for example, on non-GitHub runs or when preview deploys aren't set up for the project).
-  - **Pull request** — opens the PR on GitHub or GitLab in a new tab.
+  - **Pull request** — opens the PR on GitHub, GitLab, or Bitbucket in a new tab.
   - **Diff** — opens a diff viewer inside Lightdash with a file-list sidebar (file name and per-file `+/−` counts) and a unified diff for the selected file.
 - **Close PR** / **Merge PR** — a button group for finishing the review in place:
-  - **Merge PR** stays disabled until the host reports the PR as mergeable (required checks passing, no conflicts, branch not blocked by branch protection). The card pins the commit SHA it was opened against, so you can't accidentally merge a newer commit that was pushed after the agent posted the card.
+  - **Merge PR** is available for GitHub and stays disabled until the host reports the PR as mergeable (required checks passing, no conflicts, branch not blocked by branch protection). The card pins the commit SHA it was opened against, so you can't accidentally merge a newer commit that was pushed after the agent posted the card.
   - **Close PR** closes the PR without merging.
   - Both actions ask you to confirm before sending the request.
   - Once the PR reaches a terminal state, the button group collapses to a **Merged** or **Closed** marker and the card stops polling.
@@ -182,7 +189,7 @@ When you follow up on a change whose pull request is already open — either ear
 - **Paste a link.** Paste the GitHub pull request URL alongside your request — in this thread or a new one — and the agent checks out that PR's branch and commits your edits onto it.
 
 <Note>
-If the pull request behind a change has already been merged or closed — from the chat card or directly on GitHub/GitLab — the agent can't push more commits to its branch. Rather than blocking, it opens a fresh pull request for your follow-up in the same thread, so there's no need to start a new one.
+If the pull request behind a change has already been merged or closed — from the chat card or directly on GitHub, GitLab, or Bitbucket — the agent can't push more commits to its branch. Rather than blocking, it opens a fresh pull request for your follow-up in the same thread, so there's no need to start a new one.
 </Note>
 
 ```text
@@ -202,12 +209,13 @@ If any of those checks fail, the agent stops and tells you why instead of silent
 
 | Situation | Result |
 | --- | --- |
-| Project's dbt connection isn't GitHub or GitLab | The agent tells you the project must be connected to a supported git host for writeback. |
+| Project's dbt connection isn't GitHub, GitLab, or Bitbucket Cloud | The agent tells you the project must be connected to a supported git host for writeback. |
 | GitHub App isn't installed on the repo | The agent surfaces a setup error. Install the Lightdash GitHub App on the repository (from your project's dbt connection settings) and try again. |
 | Writeback agent makes no file changes | No pull request or merge request is opened. The agent reports back that nothing needed to change. |
 | Pasted PR link is in a different repo, merged, closed, or from a fork | The agent rejects the link with an explanation and does not open a new pull request. |
 | The pull request behind a change has been merged or closed | The agent can't add to that pull request, so a follow-up opens a fresh one in the same thread. |
 | GitLab App isn't connected for the organization | The agent surfaces a `GitLab App is not installed` error. Connect the Lightdash GitLab App for your organization and try again. |
+| Bitbucket token is missing, expired, revoked, or lacks permissions | Update the [project API token](/get-started/quickstart/connect-project#bitbucket-cloud-api-token) and confirm the owner can write to the repository. |
 
 ## Related
 
