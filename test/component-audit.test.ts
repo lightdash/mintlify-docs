@@ -4,7 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { auditComponents, regressions, readBaseline, writeBaseline } from '../scripts/docs/audit-components.ts';
+import {
+  advisoryWorkflowFindings,
+  auditComponents,
+  regressions,
+  readBaseline,
+  writeBaseline,
+} from '../scripts/docs/audit-components.ts';
 import { BLOCKING_RULES } from '../scripts/docs/lib/components.ts';
 import { validateDocs } from '../scripts/docs/validate.ts';
 import { groupIcons } from '../scripts/docs/lib/navigation.ts';
@@ -179,9 +185,12 @@ test('flags an icon on a nested navigation group', () => {
 test('reads a maturity level only where the page cites the maturity guide', () => {
   const lightdash = '<Info>\n  Autopilot is a [Beta](/support/feature-maturity-levels) feature.\n</Info>';
   const thirdParty = '<Note>\n  Azure Container Apps is currently an Azure **preview** feature.\n</Note>';
+  const comparison = 'Availability is separate from [maturity](/support/feature-maturity-levels): '
+    + 'a feature can be Experimental or Beta and Enterprise-only, or GA and available to everybody.';
 
   assert.deepEqual(maturityMarks(lightdash).map(({ level }) => level), ['Beta']);
   assert.deepEqual(maturityMarks(thirdParty), []);
+  assert.deepEqual(maturityMarks(comparison), []);
 });
 
 test('a non-GA page needs its level in frontmatter for the sidebar pill', () => {
@@ -460,6 +469,18 @@ test('promotes exactly the blocking rules into the validator', async () => {
   const promoted = validated.filter((rule) => BLOCKING_RULES.has(rule));
   const carried = (await validateDocs({ root })).findings.filter((f) => promoted.includes(f.rule));
   assert.ok(carried.every(({ severity }) => severity === 'error'), 'promoted findings block');
+});
+
+test('annotates blocking component findings only through the validator', () => {
+  const gate = '<Info>\n  A [Beta](/support/feature-maturity-levels) feature.\n</Info>';
+  const root = fixture({
+    'docs.json': NAV(['blocking', 'advisory']),
+    'blocking.mdx': page(gate),
+    'advisory.mdx': page(gate, 'tag: "Experimental"\n'),
+  });
+
+  const findings = advisoryWorkflowFindings(auditComponents({ root }).findings);
+  assert.deepEqual(findings.map(({ rule }) => rule), ['lifecycle.tag-mismatch']);
 });
 
 test('scopes blocking component findings to the files a change touched', async () => {

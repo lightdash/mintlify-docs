@@ -11,7 +11,7 @@ There are two main approaches to working with content as code. You can mix and m
 |  | Disposable editing | Git-managed dashboards |
 | --- | --- | --- |
 | **Source of truth** | Lightdash UI | Git repository |
-| **UI editing** | Anyone can edit freely | Restricted to view-only for managed content |
+| **UI editing** | Users with edit access can edit | Restricted to view-only for managed content |
 | **Version history** | Lightdash's built-in history | Full Git audit trail with diffs and blame |
 | **Review process** | None required | Pull requests with approvals |
 | **Setup complexity** | Minimal — just the CLI | Requires CI/CD and space permissions |
@@ -233,7 +233,7 @@ This will upload all content from: `/Users/katiehindson/lightdash/lightdash-anal
 You can also use relative paths like:
 
 ```bash
-lightdash download -p ../
+lightdash upload -p ../
 ```
 
 ### Specify a project to upload to
@@ -577,6 +577,9 @@ Here's an example of a basic dashboard with three tiles and a couple of filters.
 ```yml Dashboards as code example [expandable]
 name: My cool dashboard
 description: Shows a few of our KPIs
+ownerEmail: david@example.com
+# The dashboard owner, by email. A string assigns that organization member,
+# null clears the owner, and omitting the field leaves the owner unchanged.
 updatedAt: "2025-01-01T10:15:47.406Z"
 tiles: 
     # Each tile is represented here with a co-ordinate
@@ -694,6 +697,8 @@ verified: true
 # or omit to leave verification state unchanged.
 # See /explore/verified-content for full semantics.
 ```
+
+`ownerEmail` sets the [dashboard owner](/explore/dashboards#assign-an-owner). Download writes the current owner's email, and upload resolves it back to a member of your organization, so ownership survives a move between projects or instances. If the email matches nobody in the organization, the upload still succeeds with a warning and the owner is left unchanged.
 
 ### Charts
 
@@ -1159,3 +1164,27 @@ See [Editing dashboards with agents](/workflow/edit-dashboards-with-agents) for 
 ## Validate content YAML in your editor
 
 Set up JSON schema validation in your editor so chart and dashboard YAML is checked — with autocomplete and inline errors — as you write it. See [Set up VS Code](/workflow/set-up-vs-code) for the schema configuration.
+
+## Direct access to content
+
+Dashboards, independently saved Explore and SQL charts, and data-app manifests support an optional `access` block for [direct sharing](/workspace-admin/direct-access). Dashboard-owned charts use their dashboard's policy. The block contains stored direct assignments, not inherited roles or expanded group membership.
+
+```yaml
+access:
+  users:
+    - email: analyst@example.com
+      role: viewer
+  groups:
+    - name: Finance
+      role: editor
+```
+
+Both `users` and `groups` are required arrays when `access` is present. Users are identified by primary email, groups by exact case-sensitive name, and roles are `viewer`, `editor`, or `admin`. Principals must resolve to eligible members or groups in the destination; an upload does not create project membership.
+
+- Omitting `access` preserves the destination item's direct policy.
+- Including `access` replaces its entire direct policy, rather than merging assignments.
+- Setting both arrays to `[]` removes all direct assignments while retaining inherited access.
+
+Downloads omit the block when there are no direct assignments. If a policy contains an identity that cannot be represented safely by email or group name, the whole block is omitted. Review the downloaded policy before using files to manage permissions.
+
+Applying a policy requires direct access to be enabled and permission to manage the destination item's sharing. Invalid roles, duplicate principals, and unresolved identities are rejected. A content-as-code permission alone does not authorize changing an item's access.

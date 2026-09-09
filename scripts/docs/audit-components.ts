@@ -8,6 +8,7 @@ import {
   adjacentCallouts,
   badgeProblems,
   allowsPageIcon,
+  BLOCKING_RULES,
   extractIconTypes,
   extractIcons,
   extractIframes,
@@ -47,6 +48,16 @@ export interface ComponentAuditReport {
     byArea: Record<string, number>;
   };
   findings: Finding[];
+}
+
+export function advisoryWorkflowFindings(
+  findings: Finding[],
+  changed?: ReadonlySet<string>,
+): Finding[] {
+  return findings.filter((finding) => (
+    !BLOCKING_RULES.has(finding.rule)
+      && (changed === undefined || changed.has(finding.file))
+  ));
 }
 
 const SNIPPET_DIRECTORY = 'snippets';
@@ -476,9 +487,7 @@ export async function main(): Promise<void> {
       const changed = changedFileList === undefined
         ? undefined
         : new Set(fs.readFileSync(changedFileList, 'utf8').split('\n').map((line) => line.trim()).filter(Boolean));
-      const scoped = changed === undefined
-        ? report.findings
-        : report.findings.filter((finding) => changed.has(finding.file));
+      const scoped = advisoryWorkflowFindings(report.findings, changed);
       const annotations = buildWorkflowAnnotations(scoped, 30);
       for (const command of annotations.commands) console.log(command);
       if (annotations.omitted > 0) {

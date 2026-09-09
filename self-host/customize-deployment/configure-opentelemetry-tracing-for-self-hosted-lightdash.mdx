@@ -1,0 +1,90 @@
+---
+title: "Configure OpenTelemetry tracing for self-hosted Lightdash"
+sidebarTitle: OpenTelemetry tracing
+description: "Export distributed traces from your Lightdash instance to any OpenTelemetry-compatible backend"
+boost: 0.001
+doc-type: reference
+---
+
+import OtelEnv from '/snippets/self-host/otel-env.mdx';
+
+<Note>
+🛠 This page is for engineering teams self-hosting their own Lightdash instance. For instance health metrics, see [Prometheus metrics](/self-host/customize-deployment/configure-prometheus-metrics-for-self-hosted-lightdash).
+</Note>
+
+Lightdash can export distributed traces using the OpenTelemetry SDK, so you can follow a request or scheduled job across the API server, scheduler, and warehouse queries in any OpenTelemetry-compatible backend (for example Grafana Tempo, Jaeger, Honeycomb, or Datadog).
+
+Tracing runs in one of two exclusive modes:
+
+- **Sentry mode (default)**: spans are created and exported through Sentry, controlled by the [Sentry environment variables](/self-host/customize-deployment/environment-variables#sentry).
+- **OpenTelemetry mode**: spans are created by the OpenTelemetry SDK and exported according to the standard `OTEL_*` environment variables. Sentry still captures errors, but receives no spans.
+
+## Enabling OpenTelemetry tracing
+
+By default, Lightdash traces through Sentry. To switch to OpenTelemetry mode, set the following environment variable on every Lightdash container (API server and scheduler):
+
+```bash
+LIGHTDASH_OTEL_TRACES_ENABLED=true
+```
+
+Then point the OTLP exporter at your collector:
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+```
+
+## Configuration options
+
+<OtelEnv />
+
+## Choosing an exporter
+
+Lightdash defers exporter and protocol selection to the OpenTelemetry Node SDK's standard environment variable handling:
+
+- `OTEL_TRACES_EXPORTER` supports `otlp` (default), `console`, `zipkin`, and `none`. You can combine exporters with a comma-separated list. If the list contains `none`, no traces are exported regardless of the other values.
+- With the `otlp` exporter, `OTEL_EXPORTER_OTLP_PROTOCOL` (or the traces-specific `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`) selects `grpc`, `http/json`, or `http/protobuf` (default).
+- Unsupported exporter or protocol values are ignored with a warning in the Lightdash logs at startup.
+
+For example, to export traces over gRPC with an authentication header:
+
+```bash
+LIGHTDASH_OTEL_TRACES_ENABLED=true
+OTEL_TRACES_EXPORTER=otlp
+OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp.example.com:4317
+OTEL_EXPORTER_OTLP_HEADERS="authorization=Bearer <token>"
+```
+
+## Sampling
+
+`LIGHTDASH_OTEL_TRACES_SAMPLE_RATE` sets the head-sampling ratio for trace roots, from `0.0` (nothing) to `1.0` (everything, the default). Child spans follow their root's decision, so a sampled request captures the whole waterfall.
+
+Two behaviours to be aware of:
+
+- **AI agent traces are always sampled** regardless of the ratio, so a broken agent run always has a trace to debug. Set `LIGHTDASH_OTEL_ALWAYS_SAMPLE_AI_TRACES=false` to make them follow the global ratio instead.
+- **`OTEL_TRACES_SAMPLER` and `OTEL_TRACES_SAMPLER_ARG` are overridden** by Lightdash's own sampler and have no effect.
+
+Requests to health checks (`/api/v1/health`, `livez`), status polling endpoints, `favicon.ico`, and `robots.txt` are never traced.
+
+## Database query tracing
+
+Set `LIGHTDASH_OTEL_DB_TRACES_ENABLED=true` to add a span for each application database (Postgres) query, so you can see where a request spends time inside Lightdash's own database:
+
+```bash
+LIGHTDASH_OTEL_TRACES_ENABLED=true
+LIGHTDASH_OTEL_DB_TRACES_ENABLED=true
+```
+
+- Database spans only appear inside an existing trace, so they follow the sampling decision of their parent request or job.
+- Each span records the SQL statement, truncated to `LIGHTDASH_OTEL_DB_TRACES_MAX_QUERY_LENGTH` characters (default `1022`). Invalid values fall back to the default with a warning.
+- This traces queries to Lightdash's application database only, not queries sent to your data warehouse.
+
+## Troubleshooting
+
+At startup, Lightdash logs a line confirming the tracing configuration, including the active exporters, OTLP protocol, and sampling ratio. This confirms configuration only; exporter connectivity is not validated at startup.
+
+If traces aren't arriving in your backend, set `OTEL_LOG_LEVEL=DEBUG` to enable OpenTelemetry SDK and exporter diagnostics in the Lightdash logs. Diagnostic output is redacted before logging: URL credentials and query strings are stripped, values containing tokens or API keys are omitted, and span payloads are not printed.
+
+## Metrics
+
+This page covers traces only. For instance health metrics (CPU, memory, event loop, query durations), see [Prometheus metrics](/self-host/customize-deployment/configure-prometheus-metrics-for-self-hosted-lightdash), which can also feed an OpenTelemetry backend through the collector's Prometheus receiver.

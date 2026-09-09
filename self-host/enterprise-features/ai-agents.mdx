@@ -141,7 +141,28 @@ The managed agent runs scheduled AI agent tasks on a cron. Provide `MANAGED_AGEN
 
 ## Costs
 
-Self-hosting AI Analyst means you pay the selected model provider directly. Every user question sends the project's dbt catalog plus conversation history to the provider, so long conversations against large projects use noticeably more tokens than one-shot prompts. Provider dashboards expose usage — set spend limits before rolling out.
+Self-hosting AI Analyst means you pay the selected model provider directly. Every user question sends the project's dbt catalog plus conversation history to the provider, so long conversations against large projects use noticeably more tokens than one-shot prompts. Query results also contribute to usage when [data access](/agents/data-access#data-access-modes) is enabled. Provider dashboards expose usage — set spend limits before rolling out.
+
+To keep prompts smaller:
+
+- [Limit each agent to the explores and fields it needs](/agents/data-access#limiting-access-to-specific-explores-and-fields).
+- Start a new thread when you change subjects so unrelated conversation history is not sent again.
+- Keep [always-included knowledge documents](/agents/effective-analytics-with-agents#always-include-in-context) short.
+- Enable compact filter expressions as described below.
+
+### Compact filter expressions
+
+Compact filter expressions replace verbose structured filter schemas for AI agent and Model Context Protocol (MCP) query tools with a smaller expression syntax. This reduces the filter-related tool definitions and inputs sent to the model. Total savings vary by model, conversation history, caching, and tool usage; the setting does not reduce the catalog, existing conversation history, or query results.
+
+Lightdash Cloud enables compact filter expressions automatically. On a self-hosted deployment, enable the feature on every backend/API replica and on any scheduler or worker process that executes AI agent jobs, then redeploy or recreate those containers:
+
+```bash
+LIGHTDASH_ENABLE_FEATURE_FLAGS=ai-filter-expressions
+```
+
+If `LIGHTDASH_ENABLE_FEATURE_FLAGS` already contains other flags, append `ai-filter-expressions` to its comma-separated list. Remove it from `LIGHTDASH_DISABLE_FEATURE_FLAGS` if present. Lightdash reads both variables at process startup.
+
+Users do not need to create new agents or threads: the next response uses compact filter expressions, including in an existing thread. After enabling the feature for MCP, reconnect or refresh each client so it reloads the query tool definitions.
 
 ## Permissions
 

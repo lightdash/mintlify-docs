@@ -276,6 +276,24 @@ Every refresh — [sync mechanisms 3, 4, and 5](#sync-mechanisms), plus **Test &
   **Do not use `lightdash deploy` against a multi-source project.** The CLI compiles the local repo and writes those Explores directly, without merging in the other sources — a CLI deploy will replace the project's Explores with only the local repo's models until the next server-side refresh. Teams using multiple dbt sources should sync via mechanism #3, #4, or #5, and must not run `lightdash deploy` in CI against a multi-source project.
 </Warning>
 
+### Preview projects
+
+A preview of a multi-source project contains models from every source, not just the repo you are working in. How that happens depends on where the preview is created.
+
+**From the Lightdash UI.** The preview inherits the parent's additional sources, then compiles all of them server-side and stores the merged result. Branch and manifest overrides you set when creating the preview apply to the primary source only; additional sources are always compiled from the branch saved on their own connection.
+
+**From the CLI** (`lightdash preview` and `lightdash start-preview`). The CLI compiles your local repo, then fetches the parent project's merged manifest from Lightdash and combines the two before uploading. Your locally compiled models win on conflicts, so you get your working changes on top of everything else in the project. This is automatic — you don't need to pass `--combine-manifest`.
+
+<Warning>
+  **The CLI's automatic combine is fail-open.** If the parent's merged manifest can't be fetched, the CLI prints a warning and continues with your local models alone, which produces a preview missing the other sources' models rather than an error. Read the CLI output if a preview looks short of models. The most common causes are:
+
+  - The parent project has not completed a server-side refresh since additional sources were added, so it has no merged manifest yet. Run **Test & deploy** on the parent first.
+  - Your local repo isn't recognised as one of the parent's sources, in which case the CLI says `the local dbt project is not a source of this Lightdash project`.
+  - You passed `--no-combine`, which skips the fetch.
+</Warning>
+
+Passing `--combine-manifest <path-or-url>` explicitly overrides the automatic fetch, and is still the right option when you want a specific manifest rather than the parent's. It takes a single file, so in a project with more than two sources that file must already contain the full merged set.
+
 ### Write-back behavior
 
 Lightdash has two write-back paths, and they behave differently in a multi-source project.
@@ -589,5 +607,44 @@ sha1_hash: b980d166c84935d6d661192cf31db5144295c1af
 Commit `package-lock.yml` to version control. Lightdash runs `dbt deps` when it compiles your project server-side (the "Refresh dbt" button, `lightdash refresh`, and the refresh API), so a committed lock file makes Lightdash install the same package versions as your local and CI runs — the same reason it keeps your team, CI, and production consistent.
 
 To update packages, edit the version ranges in `packages.yml` (or delete `package-lock.yml` to force a fresh resolution), run `dbt deps`, test the change, and commit both files together.
+
+### Private packages
+
+Lightdash runs `dbt deps` on its own servers, so a package hosted in a private repository only installs if the credentials to read that repository are available where dbt runs.
+
+**Over the GitHub connector, this works with no extra configuration.** Lightdash passes the same credentials it used to clone your project — the GitHub App installation token or the personal access token on the connection — to `dbt deps`. Package URLs written in SSH form are rewritten to HTTPS and authenticated with those credentials, so both of these install:
+
+```yaml
+packages:
+  - git: "git@github.com:my-org/my-private-package.git"
+    revision: v1.0.0
+  - git: "https://github.com/my-org/my-other-package.git"
+    revision: v2.1.0
+```
+
+The credentials must be able to read the package repository as well as the project repository:
+
+- **GitHub App**: install the app on the package repository too. If it is missing, `dbt deps` fails and the error tells you to add the dependency to the same installation.
+- **Personal access token**: the token needs read access to the package repository.
+
+This also applies to GitHub Enterprise, using the host domain set on the connection.
+
+<Warning>
+  **SSH keys are never used.** The image that runs dbt has no SSH client, so git cannot fall back to SSH. Over the GitHub connector the SSH-form URL above is rewritten to HTTPS before dbt runs, so it still works. On every other connection type an SSH package URL fails with `error: cannot run ssh: No such file or directory`.
+</Warning>
+
+**On other connection types** — GitLab, Azure DevOps, Bitbucket, and dbt Cloud — the connection's credentials are not available to `dbt deps`. Declare the package over HTTPS with a token supplied as a dbt environment variable:
+
+```yaml
+packages:
+  - git: "https://{{ env_var('DBT_ENV_SECRET_PKG_TOKEN') }}@github.com/my-org/my-private-package.git"
+    revision: v1.0.0
+```
+
+Set `DBT_ENV_SECRET_PKG_TOKEN` under **Advanced configuration options → Environment variables** on the dbt connection, and use a read-only token scoped to the package repository. The `DBT_ENV_SECRET_` prefix tells dbt to mask the value in its logs.
+
+<Note>
+  In a project with [multiple dbt sources](#connecting-multiple-dbt-sources), every source resolves its own packages with its own connection's credentials, and environment variables are scoped to a single source. A token needed by two sources must be set on both.
+</Note>
 
 For more on dbt package management, see the [dbt packages documentation](https://docs.getdbt.com/docs/build/packages).
