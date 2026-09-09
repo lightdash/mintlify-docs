@@ -790,7 +790,7 @@ Use `writeActions.permissionsMode` to choose how dashboard capabilities and AI a
 
 | Embed type | Omitted or `'default'` | `'roles'` |
 | --- | --- | --- |
-| Dashboard | JWT interactivity flags and their defaults | JWT interactivity flags **OR** the actor's corresponding embed scopes |
+| Dashboard | JWT interactivity flags and their defaults | Only the actor's corresponding embed scopes |
 | AI agent | Actor must satisfy AI access prerequisites | Same prerequisites **AND** the actor's `view:EmbedAiAgent` scope |
 
 This setting does not change standalone chart, data app, or metrics catalog embeds. Tokens without a mode continue to work without adding embed scopes to their actors' roles.
@@ -805,11 +805,11 @@ Permissions from the actor's organization and project roles are additive. Removi
 
 ### Dashboard capabilities
 
-In `'roles'` mode, either source can grant a capability. For example, `canExportCsv: false` plus `view:EmbedCsvExport` allows CSV export, and `canExportCsv: true` allows it even without the scope. In `'default'` mode, the scope is ignored.
+In `'roles'` mode, only the actor's embed scopes grant capabilities. JWT interactivity flags are ignored whether they are `true`, `false`, or omitted. For example, CSV export requires `view:EmbedCsvExport` even when the token contains `canExportCsv: true`. In `'default'` mode, the scope is ignored and the JWT flag decides.
 
-The dashboard scopes correspond to these fields inside `content`:
+The dashboard scopes replace these `content` options when using `'roles'` mode:
 
-| JWT field | Embed scope |
+| JWT field (default mode) | Embed scope (roles mode) |
 | --- | --- |
 | `dashboardFiltersInteractivity.enabled` | `view:EmbedDashboardFilters` |
 | `dashboardFiltersInteractivity.canAddFilters` | `view:EmbedDashboardFilterAddition` |
@@ -825,7 +825,7 @@ The dashboard scopes correspond to these fields inside `content`:
 
 The filter-interactivity scope enables all dashboard filters rather than only those in `allowedFilters`. Adding temporary filters and changing parameters have separate scopes. Hidden-filter presentation and user-attribute data restrictions still apply.
 
-For capabilities you want to manage through roles, set the corresponding JWT flags to `false`:
+To manage dashboard capabilities through roles, set the mode and omit the JWT interactivity flags:
 
 ```javascript
 import jwt from 'jsonwebtoken';
@@ -834,9 +834,6 @@ const token = jwt.sign({
   content: {
     type: 'dashboard',
     dashboardUuid: 'your-dashboard-uuid',
-    canExplore: false,
-    canExportCsv: false,
-    canExportPagePdf: false,
   },
   writeActions: {
     serviceAccountUserUuid: 'service-account-user-uuid',
@@ -846,10 +843,10 @@ const token = jwt.sign({
 }, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
 ```
 
-In this example, grant or remove `view:EmbedExplore`, `view:EmbedCsvExport`, and `view:EmbedPagePdfExport` on the actor's role to control those three capabilities. Other options keep their JWT defaults.
+In this example, grant or remove the corresponding embed scopes on the actor's role to control each capability. A capability without a scope grant is disabled.
 
 <Warning>
-Removing a dashboard scope cannot override a JWT flag set to `true`. PDF export also defaults to enabled when `canExportPagePdf` is omitted, so explicitly set it to `false` if you want the PDF scope to control access.
+Before selecting `'roles'`, grant every embed capability the actor needs. JWT flags and their defaults do not provide fallback access: PDF export requires `view:EmbedPagePdfExport`, even though it defaults to enabled in `'default'` mode.
 </Warning>
 
 ### AI agent access
@@ -866,7 +863,7 @@ writeActions: {
 }
 ```
 
-Grant `view:EmbedAiAgent` to allow access, or remove its last effective grant to block access. Unlike dashboard capabilities, there is no AI-access boolean flag to combine with this scope. This controls embedded AI access, not access to AI in the main Lightdash app, and does not change AI Explore interactivity flags. Dashboard tokens do not authorize AI agent endpoints.
+Grant `view:EmbedAiAgent` to allow access, or remove its last effective grant to block access. There is no AI-access boolean flag that bypasses this scope in `'roles'` mode. This controls embedded AI access, not access to AI in the main Lightdash app, and does not change AI Explore interactivity flags. Dashboard tokens do not authorize AI agent endpoints.
 
 ### Verify role changes
 
