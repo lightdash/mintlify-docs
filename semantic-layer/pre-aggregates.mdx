@@ -485,6 +485,10 @@ Pre-aggregates support two kinds of metrics.
 
 You can add exact-only metrics to any pre-aggregate. They are materialized (or expected in the [external table's column contract](/semantic-layer/pre-aggregates/external#2-get-the-column-contract)) and served whenever a query matches the pre-aggregate exactly. Non-exact queries that include an exact-only metric miss with the reason **`non_additive_metric_requires_exact_match`** — the fix is to select exactly the pre-aggregate's dimensions at exactly its granularity.
 
+### Parent metrics deduplicated across a join
+
+A re-aggregatable metric becomes exact-only when the pre-aggregate deduplicates it. If a pre-aggregate groups by dimensions from the "many" side of a one-to-many join (order lines, or an unnested repeated column) and carries a `count`, `sum` or `average` from the "one" side (orders), each stored row holds the value for the distinct parents in that group, computed through the parent's `primary_key`. That value is correct at the pre-aggregate's own grain, but summing rows across the many-side dimension would count every parent once per child. Lightdash serves such a metric only on an [exact-match query](#exact-match-queries) and otherwise falls back to the warehouse with the miss reason "Metric deduplicated across a join". Metrics defined on the many side, and inflation-proof metrics such as `min` and `max`, re-aggregate as usual.
+
 ### Non-additive metrics on exact matches
 
 Non-additive metrics like `count_distinct`, `sum_distinct`, `average_distinct`, `median`, and `percentile` normally can't be re-aggregated from a rollup, because combining group-level values produces the wrong answer (see [Metrics that need re-aggregation to combine](#metrics-that-need-re-aggregation-to-combine)). But on an exact match there is nothing to re-aggregate: each result row corresponds to exactly one materialization row, so the stored value is already the correct answer.
