@@ -22,6 +22,8 @@ Lightdash supports three ways to share embedded content:
 
 All three methods use the same JWT-based authentication described below.
 
+For role-controlled dashboard capabilities and AI access, see [Permission modes](#permission-modes).
+
 **For method-specific implementation details, see:**
 - [iframe embedding reference](/embed/iframe) - URL patterns, HTML embedding
 - [React SDK reference](/embed/react-sdk) - React components, props, TypeScript
@@ -135,6 +137,7 @@ All configuration options (`dashboardFiltersInteractivity`, `canExportCsv`, `can
     spaceUuid: string,                // Destination space for created content
     serviceAccountUserUuid?: string,  // Actor for the write (use one)
     userUuid?: string,
+    permissionsMode?: 'default' | 'roles',
   },
 
   // Optional: User information for query tracking
@@ -263,6 +266,7 @@ For embedding a Lightdash [AI agent](/agents) so users can chat with their data 
     spaceUuid: string,                  // Space the agent reads/writes content from
     serviceAccountUserUuid?: string,    // Use a service account as the actor
     userUuid?: string,                  // Or use an existing Lightdash user as the actor
+    permissionsMode?: 'default' | 'roles',
   },
 
   // Optional: row-level filtering for the embedded viewer
@@ -493,6 +497,8 @@ const token = jwt.sign({
 
 ## Interactivity options reference
 
+The options below describe JWT-controlled interactivity. For dashboard role-based grants, see [Permission modes](#permission-modes).
+
 ### Dashboard filters interactivity
 
 Controls whether users can interact with dashboard filters.
@@ -709,6 +715,7 @@ writeActions?: {
   spaceUuid: string,                  // Required: destination space for created content
   serviceAccountUserUuid?: string,    // Use a service account as the actor
   userUuid?: string,                  // Or use an existing Lightdash user as the actor
+  permissionsMode?: 'default' | 'roles', // Dashboard and AI agent permission mode
 }
 ```
 
@@ -743,7 +750,7 @@ const token = jwt.sign({
   content: {
     type: 'dashboard',
     dashboardUuid: 'your-dashboard-uuid',
-    canExplore: true,                  // Required to reach the Explore view from a chart tile
+    canExplore: true,                  // Enables Explore in the default permission mode
   },
   writeActions: {
     serviceAccountUserUuid: 'service-account-user-uuid',
@@ -776,6 +783,93 @@ const token = jwt.sign({
 <Warning>
 Embedded users cannot pick a different space when saving. The space is fixed by the `spaceUuid` in the JWT. This keeps embedded write activity contained and predictable.
 </Warning>
+
+## Permission modes
+
+Use `writeActions.permissionsMode` to choose how dashboard capabilities and AI agent access are authorized. Set it in the JWT you sign on your server, not in `content` or an SDK prop. The accepted values are `'default'` and `'roles'`; omitting it is equivalent to `'default'`.
+
+| Embed type | Omitted or `'default'` | `'roles'` |
+| --- | --- | --- |
+| Dashboard | JWT interactivity flags and their defaults | Only the actor's corresponding embed scopes |
+| AI agent | Actor must satisfy AI access prerequisites | Same prerequisites **AND** the actor's `view:EmbedAiAgent` scope |
+
+This setting does not change standalone chart, data app, or metrics catalog embeds. Tokens without a mode continue to work without adding embed scopes to their actors' roles.
+
+### Choose the actor and its role
+
+Role checks use the Lightdash user identified by `writeActions.userUuid`, or the service account identified by `writeActions.serviceAccountUserUuid`. Include `writeActions.spaceUuid` and meet the [write-action requirements](#write-actions), even when you are configuring read-only capabilities such as export. Dashboard `'roles'` mode rejects requests if the actor cannot be resolved; it does not fall back to JWT-only permissions.
+
+Configure embed scopes in the **Embedding** section of a [custom role](/workspace-admin/custom-roles), then assign that role to the actor. Built-in roles also provide embed scopes; duplicate a system role if you want a starting point you can edit. The external viewer's `user.externalId` is not the role-bearing actor.
+
+Permissions from the actor's organization and project roles are additive. Removing a scope from one role does not revoke a grant from another role. When testing a restrictive custom role, make sure the actor has no other role that still grants the capability.
+
+### Dashboard capabilities
+
+In `'roles'` mode, only the actor's embed scopes grant capabilities. JWT interactivity flags are ignored whether they are `true`, `false`, or omitted. For example, CSV export requires `view:EmbedCsvExport` even when the token contains `canExportCsv: true`. In `'default'` mode, the scope is ignored and the JWT flag decides.
+
+The dashboard scopes replace these `content` options when using `'roles'` mode:
+
+| JWT field (default mode) | Embed scope (roles mode) |
+| --- | --- |
+| `dashboardFiltersInteractivity.enabled` | `view:EmbedDashboardFilters` |
+| `dashboardFiltersInteractivity.canAddFilters` | `view:EmbedDashboardFilterAddition` |
+| `parameterInteractivity.enabled` | `view:EmbedDashboardParameters` |
+| `canExportCsv` | `view:EmbedCsvExport` |
+| `canExportDashboardCsv` | `view:EmbedDashboardCsvExport` |
+| `canExportImages` | `view:EmbedImageExport` |
+| `canExportPagePdf` | `view:EmbedPagePdfExport` |
+| `canDateZoom` | `view:EmbedDateZoom` |
+| `canExplore` | `view:EmbedExplore` |
+| `canViewUnderlyingData` | `view:EmbedUnderlyingData` |
+| `canViewDataApps` | `view:EmbedDataApps` |
+
+The filter-interactivity scope enables all dashboard filters rather than only those in `allowedFilters`. Adding temporary filters and changing parameters have separate scopes. Hidden-filter presentation and user-attribute data restrictions still apply.
+
+To manage dashboard capabilities through roles, set the mode and omit the JWT interactivity flags:
+
+```javascript
+import jwt from 'jsonwebtoken';
+
+const token = jwt.sign({
+  content: {
+    type: 'dashboard',
+    dashboardUuid: 'your-dashboard-uuid',
+  },
+  writeActions: {
+    serviceAccountUserUuid: 'service-account-user-uuid',
+    spaceUuid: 'destination-space-uuid',
+    permissionsMode: 'roles',
+  },
+}, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
+```
+
+In this example, grant or remove the corresponding embed scopes on the actor's role to control each capability. A capability without a scope grant is disabled.
+
+<Warning>
+Before selecting `'roles'`, grant every embed capability the actor needs. JWT flags and their defaults do not provide fallback access: PDF export requires `view:EmbedPagePdfExport`, even though it defaults to enabled in `'default'` mode.
+</Warning>
+
+### AI agent access
+
+Both modes require an AI agent token, a resolved actor who can view the project and create charts in the destination space, and the existing agent, space, and thread access checks. `'default'` does not mean unrestricted AI access.
+
+To make the actor's role control access to embedded AI, add the mode to the [AI agent token](#ai-agent-token):
+
+```javascript
+writeActions: {
+  userUuid: 'lightdash-user-uuid',
+  spaceUuid: 'destination-space-uuid',
+  permissionsMode: 'roles',
+}
+```
+
+Grant `view:EmbedAiAgent` to allow access, or remove its last effective grant to block access. There is no AI-access boolean flag that bypasses this scope in `'roles'` mode. This controls embedded AI access, not access to AI in the main Lightdash app, and does not change AI Explore interactivity flags. Dashboard tokens do not authorize AI agent endpoints.
+
+### Verify role changes
+
+After changing the actor's scopes, reload the embed with the same unexpired JWT. The backend checks the actor's current permissions on subsequent requests; you do not need to issue another token for a role change. Changes affect all embeds using that actor and mode, not just one external viewer.
+
+To change the mode or a JWT flag, issue a newly signed token. Removing embed scopes does not revoke tokens using `'default'` mode. Keep tokens short-lived and choose `'roles'` when you want centralized role control.
 
 ## Allowed content
 
