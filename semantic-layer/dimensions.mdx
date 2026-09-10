@@ -1195,6 +1195,52 @@ dimensions:
 
 See [Per-dimension timezone opt-out](/workspace-admin/set-project-timezone#opt-a-column-out-of-timezone-conversion) in the Timezones guide for how this interacts with other timezone settings and filter behavior.
 
+## Wall clock timezone
+
+Set `wall_clock_timezone` on a naive `timestamp` dimension (one with no timezone in its warehouse type) to declare the zone its values are actually stored in, when your connection's data timezone doesn't cover it.
+
+<CodeGroup>
+```yaml dbt v1.10+
+columns:
+  - name: created_at_sast
+    config:
+      meta:
+        dimension:
+          type: timestamp
+          wall_clock_timezone: Africa/Johannesburg
+```
+
+```yaml dbt v1.9 and earlier
+columns:
+  - name: created_at_sast
+    meta:
+      dimension:
+        type: timestamp
+        wall_clock_timezone: Africa/Johannesburg
+```
+
+```yaml Lightdash YAML
+dimensions:
+  - name: created_at_sast
+    type: timestamp
+    wall_clock_timezone: Africa/Johannesburg
+```
+</CodeGroup>
+
+Lightdash reads the column's values as wall clock times in that zone instead of the connection's data timezone. Display, grouping, and filters all use it, so two naive columns stored in different zones on the same connection both come out right.
+
+Setting `wall_clock_timezone` declares the column naive. If the warehouse catalog reports it as timezone-aware, the declaration wins and a project validation warning is shown.
+
+The value must be an IANA zone name, such as `Europe/Berlin`. Any other value is ignored, with a warning. It's only valid on `timestamp` dimensions.
+
+It can't be combined with `convert_timezone: false`. If both are set on the same dimension, `convert_timezone: false` applies and the wall clock zone is ignored, with a warning.
+
+Time-interval children of the dimension (`_day`, `_month`, `_day_of_week_index`, ...) inherit it.
+
+Most columns don't need this. The connection's data timezone already covers a warehouse where every naive column is in the same zone. Reach for `wall_clock_timezone` for the exceptions, like a column pre-converted to local time sitting next to columns in UTC.
+
+See [Declare a column's stored timezone](/workspace-admin/set-project-timezone#declare-a-columns-stored-timezone) in the Timezones guide for when to use this.
+
 ## Timestamp domain
 
 Lightdash reads whether a `timestamp` column stores an instant (`aware`) or a bare wall clock (`naive`) from your warehouse catalog, so you don't usually need to set this. Override it when the catalog type doesn't match the data, for example a `TIMESTAMP_NTZ` column that already holds UTC instants.
