@@ -143,7 +143,7 @@ Aggregate metric types perform (surprise, surprise) aggregations. Sums and avera
 
 Aggregate metrics can _only_ reference dimensions, not other metrics.
 
-Aggregate metrics cannot use window functions in their `sql`. Their SQL is wrapped in an aggregate function and evaluated as part of the main `GROUP BY` in the generated query, and SQL does not allow window functions inside an aggregate call. See [post calculation metrics](#post-calculation-metrics) for the window operations Lightdash does support and what to do instead.
+Aggregate metrics cannot use window functions in their `sql`. Their SQL is wrapped in an aggregate function and evaluated as part of the main `GROUP BY` in the generated query, and SQL does not allow window functions inside an aggregate call. See [post calculation metrics](#post-calculation-metrics-experimental) for the window operations Lightdash does support and what to do instead.
 
 ### Non-aggregate metrics
 
@@ -151,7 +151,7 @@ Non-aggregate metrics are metric types that, you guessed it, do _not_ perform ag
 
 Numbers and booleans are examples of non-aggregate metrics. These metric types perform a calculation on a single data point, so they can only reference aggregate metrics. They _cannot_ reference dimensions.
 
-Non-aggregate metrics cannot use window functions in their `sql`. Their SQL is inserted alongside the aggregate metrics in the same `SELECT`, which runs in the same step as the `GROUP BY`, so window functions — which must run after aggregation — are not allowed. See [post calculation metrics](#post-calculation-metrics) for the window operations Lightdash does support and what to do instead.
+Non-aggregate metrics cannot use window functions in their `sql`. Their SQL is inserted alongside the aggregate metrics in the same `SELECT`, which runs in the same step as the `GROUP BY`, so window functions — which must run after aggregation — are not allowed. See [post calculation metrics](#post-calculation-metrics-experimental) for the window operations Lightdash does support and what to do instead.
 
 ### Post calculation metrics <Badge icon="test-pipe-2" color="orange" size="sm" shape="pill">Experimental</Badge>
 
@@ -317,8 +317,8 @@ Here are all of the properties you can customize:
 | [number](#number)                           | Non-aggregate                   | For adding calculations to metrics that return numbers.                         |
 | [string](#string)                           | Non-aggregate                   | For metrics that contain letters or special characters                          |
 | [sum](#sum)                                 | Aggregate                       | Generates a sum of values within a column                                       |
-| [sum_distinct](#sum_distinct)               | Aggregate (Beta)                | Generates a sum of values, deduplicating by specified keys                      |
-| [average_distinct](#average_distinct)       | Aggregate (Beta)                | Generates an average of values, deduplicating by specified keys                 |
+| [sum_distinct](#sum_distinct-beta)               | Aggregate (Beta)                | Generates a sum of values, deduplicating by specified keys                      |
+| [average_distinct](#average_distinct-beta)       | Aggregate (Beta)                | Generates an average of values, deduplicating by specified keys                 |
 | [percent_of_previous](#percent_of_previous) | Post calculation (Experimental) | Current value as a percentage of the previous row's value                       |
 | [percent_of_total](#percent_of_total)       | Post calculation (Experimental) | Current value as a percentage of the total across the result set (or partition) |
 | [running_total](#running_total)             | Post calculation (Experimental) | Cumulative total                                                                |
@@ -327,7 +327,7 @@ Here are all of the properties you can customize:
 
 Takes the percentile of the values in the given field. Like SQL's `PERCENTILE_CONT` function.
 
-The `percentile` metric can be used on any numeric dimension or, [for custom SQL](#using-custom-sql-in-aggregate-metrics), any valid SQL expression that gives a numeric table column.
+The `percentile` metric can be used on any numeric dimension or, [for custom SQL](#custom-sql-in-aggregate-metrics), any valid SQL expression that gives a numeric table column.
 
 For example, this creates a metric `median_price` by taking the 50% percentile of the `item_price` dimension:
 
@@ -372,7 +372,7 @@ metrics:
 
 Takes the 50th percentile of the values in the given field. Like SQL's `PERCENTILE_CONT(0.5)` function.
 
-The `median` metric can be used on any numeric dimension or, [for custom SQL](#using-custom-SQL-in-aggregate-metrics), any valid SQL expression that gives a numeric table column.
+The `median` metric can be used on any numeric dimension or, [for custom SQL](#custom-sql-in-aggregate-metrics), any valid SQL expression that gives a numeric table column.
 
 For example, this creates a metric `median_price` by taking the 50% percentile of the `item_price` dimension:
 
@@ -414,7 +414,7 @@ metrics:
 
 Takes the average (mean) of the values in the given field. Like SQL's `AVG` function.
 
-The `average` metric can be used on any numeric dimension or, [for custom SQL](#using-custom-SQL-in-aggregate-metrics), any valid SQL expression that gives a numeric table column.
+The `average` metric can be used on any numeric dimension or, [for custom SQL](#custom-sql-in-aggregate-metrics), any valid SQL expression that gives a numeric table column.
 
 For example, this creates a metric `avg_price` by taking the average of the `item_price` dimension:
 
@@ -509,7 +509,7 @@ metrics:
 
 Does a table count, like SQL’s `COUNT` function.
 
-The `count` metric can be used on any dimension or, [for custom SQL](#using-custom-SQL-in-aggregate-metrics), any valid SQL expression that gives a set of values.
+The `count` metric can be used on any dimension or, [for custom SQL](#custom-sql-in-aggregate-metrics), any valid SQL expression that gives a set of values.
 
 For example, this creates a metric `number_of_users` by counting the number of `user_id` values in the table:
 
@@ -551,7 +551,7 @@ metrics:
 
 Counts the number of distinct values in a given field. It's like SQL’s `COUNT DISTINCT` function.
 
-The `count_distinct` metric can be used on any dimension or, [for custom SQL](#using-custom-SQL-in-aggregate-metrics), any valid SQL expression that gives a set of values.
+The `count_distinct` metric can be used on any dimension or, [for custom SQL](#custom-sql-in-aggregate-metrics), any valid SQL expression that gives a set of values.
 
 For example, this creates a metric `number_of_unique_users` by counting the number of unique `user_id` values in the table:
 
@@ -645,7 +645,7 @@ metrics:
 
 Max gives you the largest value in a given numeric field. It's like SQL’s `MAX` function.
 
-The `max` metric can be used on any numeric dimension or, [for custom SQL](#using-custom-SQL-in-aggregate-metrics), any valid SQL expression that gives a numeric value.
+The `max` metric can be used on any numeric dimension or, [for custom SQL](#custom-sql-in-aggregate-metrics), any valid SQL expression that gives a numeric value.
 
 Because `type: max` metrics only work with numerical fields, you can't use them to find a maximum date. Instead, you can use the `MAX()` function in the `sql` parameter of a metric of `type: date` to get a maximum date (you can see an [example of this in the date section](#date).
 
@@ -689,7 +689,7 @@ metrics:
 
 Min gives you the smallest value in a given numeric field. It's like SQL’s `MIN` function.
 
-The `min` metric can be used on any numeric dimension or, [for custom SQL](#using-custom-SQL-in-aggregate-metrics), any valid SQL expression that gives a numeric value.
+The `min` metric can be used on any numeric dimension or, [for custom SQL](#custom-sql-in-aggregate-metrics), any valid SQL expression that gives a numeric value.
 
 Because `type: min` metrics only work with numerical fields, you can't use them to find a minimum date. Instead, you can use the `MIN()` function in the `sql` parameter of a metric of `type: date` to get a minimum date (you can see an [example of this in the date section](#date).
 
@@ -801,7 +801,7 @@ The example above also uses the NULLIF() SQL function to avoid division-by-zero 
 
 Adds up the values in a given field. Like SQL's `SUM` function.
 
-The `sum` metric can be used on any numeric dimension or, [for custom SQL](#using-custom-SQL-in-aggregate-metrics), any valid SQL expression that gives a numeric table column.
+The `sum` metric can be used on any numeric dimension or, [for custom SQL](#custom-sql-in-aggregate-metrics), any valid SQL expression that gives a numeric table column.
 
 For example, this creates a metric `total_revenue` by adding up the values in the `revenue` dimension:
 
@@ -1021,7 +1021,7 @@ If you want a per-group total that varies with an unrelated dimension, add that 
 
 `average_distinct` is in [Beta](/support/feature-maturity-levels).
 
-Calculates the average of values in a given field while deduplicating data based on one or more specified distinct keys. This works the same way as [`sum_distinct`](#sum_distinct), but computes an average instead of a sum.
+Calculates the average of values in a given field while deduplicating data based on one or more specified distinct keys. This works the same way as [`sum_distinct`](#sum_distinct-beta), but computes an average instead of a sum.
 
 <Info>
 Lightdash already supports [SQL fanout protection](/semantic-layer/joins#handling-fanouts) to remove duplicates when joining tables together. `average_distinct` allows you to remove duplicates from wide tables where deduplication cannot be handled at the join level.
@@ -1185,7 +1185,7 @@ metrics:
 ```
 </CodeGroup>
 
-`average_distinct` follows the same rules as `sum_distinct` for how selected dimensions interact with `distinct_keys`. See [How selected dimensions interact with `distinct_keys`](#sum_distinct) for details.
+`average_distinct` follows the same rules as `sum_distinct` for how selected dimensions interact with `distinct_keys`. See [How selected dimensions interact with `distinct_keys`](#sum_distinct-beta) for details.
 
 ### string
 
