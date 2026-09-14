@@ -1,219 +1,103 @@
 ---
 title: "Nested and repeated columns"
-description: "Define BigQuery STRUCT and ARRAY fields in the Lightdash semantic layer"
-doc-type: reference
+description: "Expose STRUCT and ARRAY values as fields in Lightdash"
 tag: "Beta"
 ---
 
 <Info>
-  <Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> Available for BigQuery projects. On Lightdash Cloud, ask Lightdash support to enable it for your organization. For self-hosted deployments, see [Deploy and generate](#deploy-and-generate). [What Beta means](/support/feature-maturity-levels).
+  <Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> Available for BigQuery projects. On Lightdash Cloud, ask Lightdash support to enable it for your organization. On self-hosted deployments, add `unnest-repeated-columns` to `LIGHTDASH_ENABLE_FEATURE_FLAGS`; see [Feature flags](/self-host/customize-deployment/environment-variables#feature-flags). [What Beta means](/support/feature-maturity-levels).
 </Info>
 
-BigQuery columns can contain non-repeated `RECORD` values (`STRUCT`), repeated records (`ARRAY<STRUCT>`), or repeated scalar values (`ARRAY<type>`). Define record leaves with dotted column names in dbt YAML. Lightdash keeps leaves from non-repeated records on the model and exposes repeated values as virtual tables joined with `UNNEST`.
+Columns can store records and arrays. Lightdash turns their contents into fields, so users can explore them without writing `UNNEST` queries.
 
-Use [How column shapes map to fields](#how-column-shapes-map-to-fields) for a visual overview and [Define nested columns in YAML](#define-nested-columns-in-yaml) for the complete configuration. Refer to [Virtual tables](#virtual-tables), [Query behavior and grain](#query-behavior-and-grain), [Query warnings](#query-warnings), [Pre-aggregates](#pre-aggregates), and [Known limitations](#known-limitations) as needed.
+## Supported types
 
-## How column shapes map to fields
+| Column type | Example | What Lightdash creates |
+| --- | --- | --- |
+| `STRUCT` or non-repeated `RECORD` | `customer.address.city` | An ordinary dimension on the model |
+| `ARRAY<STRUCT>` or repeated `RECORD` | `line_items.sku` | A separate group in the Explore, queried at one row per array element |
+| `ARRAY<type>` | `tags` as `ARRAY<STRING>` | A separate group in the Explore with `value` and `offset` dimensions |
 
-### Non-repeated RECORD (`STRUCT`)
+For records, add each leaf you want to expose. For an array of scalar values, add the array column itself.
 
-A leaf below a non-repeated record is an ordinary dimension on the model with its dotted name. In this `orders` model, `- name: customer.address.city` exposes only the `city` leaf. Add separate entries for `customer.customer_id`, `customer.name`, or `customer.address.street` if you also want them as fields.
+## From your warehouse to Lightdash
 
-<Frame>
-  <img src="/images/semantic-layer/nested-and-repeated-columns/non-repeated-record-yaml-mapping.png" alt="Orders table with a customer record containing an address record, mapped to the dotted YAML column customer.address.city" />
-</Frame>
+Imagine an `orders` table with one row per order.
 
-The `customer.address.city` dimension has the SQL path `orders.customer.address.city` and the field ID `orders_customer__address__city`. Lightdash gets its type from the warehouse catalog, so `meta.dimension.type` is optional. An explicitly declared type takes precedence over the catalog type.
+Add the full path of each field you want to expose to your dbt YAML. Lightdash reads the type and structure from your warehouse, so you do not need to describe the nesting in YAML.
 
-### REPEATED RECORD (`ARRAY<STRUCT>`)
+<Columns cols={2}>
+  <Column>
+    **In your warehouse**
 
-A repeated column with at least one listed leaf becomes a virtual table. In this `orders` model, `line_items.sku` becomes the `sku` dimension on `orders__line_items`. The `price` leaf is not exposed because it is not listed in YAML.
+    <Frame>
+      <img src="/images/semantic-layer/nested-and-repeated-columns/orders-table-schema.png" alt="Orders table with a nested customer record, repeated line item records, and repeated scalar tags, each with an array offset" />
+    </Frame>
+  </Column>
+  <Column>
+    **In your semantic layer**
 
-<Frame>
-  <img src="/images/semantic-layer/nested-and-repeated-columns/repeated-record-yaml-mapping.png" alt="Orders table with three line item records and their array positions, mapped to line_items and line_items.sku entries in YAML" />
-</Frame>
-
-The `- name: line_items` container entry is optional. Include it when you want to set the virtual table's `description` or `meta.dimension.label`. Every virtual table also gets an `offset` dimension for the array position, so this example exposes `sku` and `offset` on `orders__line_items`.
-
-### Repeated scalar values (`ARRAY<type>`)
-
-An array of scalars has no leaves to list. Add the array column itself to dbt YAML. For example, if the `orders` model has a `tags` column with the type `ARRAY<STRING>`, add:
-
-```yaml
-columns:
-  - name: tags
-```
-
-Lightdash creates the `orders__tags` virtual table with a string dimension named `value` and the number dimension `offset`. Reference the value as `orders__tags.value` in filters and pre-aggregates or as `${orders__tags.value}` in custom SQL.
-
-## Define nested columns in YAML
-
-Add one YAML entry for each record leaf or scalar array you want to expose. Write a leaf's full path from the top-level column, separating each level with a dot—for example, `customer.address.city`. Lightdash gets the structure from your BigQuery table, so you do not need to specify whether each level is a `STRUCT` or `ARRAY` in YAML.
-
-Only record leaves and scalar arrays listed in YAML become fields. The example below extends the `orders` model from the diagrams by exposing `line_items.price` and the `tags` scalar array. The warehouse table has one row per order, a `customer` record, a repeated `line_items` record, and a `tags` scalar array:
-
-<CodeGroup>
-```yaml dbt v1.10+ and Fusion
-models:
-  - name: orders
-    config:
-      meta:
-        primary_key: order_id
-    columns:
-      - name: order_id
-      - name: status
-      # Non-repeated RECORD leaf: an ordinary dotted dimension on orders
-      - name: customer.address.city
-      # Optional metadata for the orders__line_items virtual table
-      - name: line_items
-        description: One row per item in the order
-      # Leaves below the REPEATED RECORD belong to orders__line_items
-      - name: line_items.sku
-      - name: line_items.price
+    <CodeGroup>
+    ```yaml dbt v1.10+ and Fusion
+    models:
+      - name: orders
         config:
           meta:
-            metrics:
-              total_revenue:
-                type: sum
-      # A repeated scalar becomes the value dimension on orders__tags
-      - name: tags
-```
+            primary_key: order_id
+        columns:
+          - name: order_id
+          - name: customer.address.city
+          - name: line_items.sku
+          - name: line_items.price
+          - name: tags
+    ```
 
-```yaml dbt v1.9 and earlier
-models:
-  - name: orders
-    meta:
-      primary_key: order_id
-    columns:
-      - name: order_id
-      - name: status
-      # Non-repeated RECORD leaf: an ordinary dotted dimension on orders
-      - name: customer.address.city
-      # Optional metadata for the orders__line_items virtual table
-      - name: line_items
-        description: One row per item in the order
-      # Leaves below the REPEATED RECORD belong to orders__line_items
-      - name: line_items.sku
-      - name: line_items.price
+    ```yaml dbt v1.9 and earlier
+    models:
+      - name: orders
         meta:
-          metrics:
-            total_revenue:
-              type: sum
-      # A repeated scalar becomes the value dimension on orders__tags
-      - name: tags
-```
-</CodeGroup>
+          primary_key: order_id
+        columns:
+          - name: order_id
+          - name: customer.address.city
+          - name: line_items.sku
+          - name: line_items.price
+          - name: tags
+    ```
+    </CodeGroup>
+  </Column>
+</Columns>
 
-See [Deploy and generate](#deploy-and-generate) for how `lightdash generate` handles nested and repeated columns.
+After you deploy the project, users see:
 
-## Virtual tables
+- **City** on the **Orders** table. Because `customer` is not repeated, the field stays at the order grain.
+- **Sku**, **Price**, and **Offset** under **Orders: Line items**. Each line item is one row, and `offset` is its zero-based position in the array.
+- **Value** and **Offset** under **Orders: Tags**. `value` contains the tag itself.
 
-A repeated record becomes a virtual table when at least one of its leaves is listed in YAML. A scalar array becomes a virtual table when the array column itself is listed. Lightdash joins each virtual table with `UNNEST`.
+Only the fields listed in YAML are exposed. For example, `customer.name` remains hidden until you add it.
 
-A leaf belongs to the virtual table of its deepest repeated ancestor. For example, `line_items.sku` becomes the `sku` dimension on `orders__line_items`. There is no nesting-depth limit: if each line item also contains a repeated `discounts` record, `line_items.discounts.code` belongs to `orders__line_items__discounts`.
+## How queries behave
 
-### Names and field references
+Lightdash expands a repeated column only when a query selects, filters, or sorts by one of its fields. Each array element adds a row to the query before Lightdash groups the results. Orders with an empty or `NULL` array remain in the result with `NULL` repeated fields.
 
-- **Table name:** `<model>__<column>`. Nested virtual-table names continue the chain, as in `orders__line_items__discounts`. The separator is two underscores.
-- **Sidebar label:** `<Model label>: <Column label>`. A nested label continues the chain, as in `Orders: Line items: Discounts`.
-- **Field ID:** `<virtual table>_<dimension>`, as in `orders__line_items_sku`.
-- **YAML reference:** use the virtual-table name as the table prefix. For example, use `${orders__line_items.price}` in metric SQL and `orders__line_items.sku` in filters and pre-aggregates.
+The `primary_key` lets Lightdash deduplicate metrics defined on the parent model when repeated fields change the query grain. Metrics defined on a repeated field are calculated at the array-element grain.
 
-Every virtual table also has a number dimension named `offset`, which is the element's zero-based position in its array.
+A filter on a repeated field keeps the matching elements, not every element from each matching order. For example, filtering to one SKU returns that SKU rather than all line items from orders that contain it.
 
-If a generated virtual-table name clashes with any other table in the Explore, that Explore fails to compile and the error names the conflicting table.
+### Query warnings
 
-### Join behavior
+Selecting fields from two separate repeated columns pairs every element from one array with every element from the other. This can inflate metrics. For example, selecting both `line_items.sku` and a field from a repeated `shipments` column multiplies the line items by the shipments for each order.
 
-Lightdash joins a virtual table with a left join and `ON TRUE`. The relationship is one-to-many, so a parent with an empty or `NULL` array keeps its row with `NULL` leaf values. A virtual table has no primary key and cannot declare one; its grain is the parent row multiplied by the array element.
+Lightdash shows a warning when a query combines repeated columns this way, or when a metric on one repeated column could be inflated by another.
 
-When a model is joined into another Explore under an alias, or joined more than once, its virtual-table names and labels follow that alias. For example, aliases named `online_orders` and `store_orders` produce `online_orders__line_items` and `store_orders__line_items`, labeled `Online orders: Line items` and `Store orders: Line items`.
+## Deploy your changes
 
-## Generated SQL
+Before running [`lightdash deploy`](/workflow/cli/deploy), [update the Lightdash CLI](/workflow/cli/install#updating-the-lightdash-cli). The CLI reads the nested-column setting from the Lightdash server when it compiles your Explores.
 
-For a query that selects `customer.address.city`, `line_items.sku`, and total revenue, Lightdash generates one `UNNEST` join:
+[`lightdash generate`](/workflow/cli/generate) does not add repeated columns or their leaves to YAML. Add those entries manually after generating your model configuration.
 
-```sql
-SELECT
-  `orders`.customer.address.city AS `orders_customer__address__city`,
-  `orders__line_items`.sku AS `orders__line_items_sku`,
-  SUM(`orders__line_items`.price) AS `orders__line_items_total_revenue`
-FROM `my-project`.`analytics`.`orders` AS `orders`
-LEFT OUTER JOIN UNNEST(`orders`.line_items) AS `orders__line_items` WITH OFFSET AS `orders__line_items__offset`
-  ON TRUE
-GROUP BY 1, 2
-```
+## Limitations
 
-## Query behavior and grain
-
-The query grain follows the fields included in the query:
-
-- A virtual table is joined only when one of its fields is selected, filtered, or sorted, just like any other joined table. If the query uses no repeated leaf, Lightdash does not add `UNNEST`, and the query stays at the model's grain.
-- When the query uses a field from a virtual table, the join introduces one row per array element before Lightdash groups the results by the selected dimensions. A parent with an empty or `NULL` array contributes one row with `NULL` virtual-table fields.
-- Metrics defined on the model pass through Lightdash's existing primary-key deduplication. They remain correct at element grain when the model declares a `primary_key`.
-- Metrics defined on a repeated leaf or scalar array are calculated at element grain.
-- A filter on a repeated leaf keeps only matching element rows. Parents with no matching element are excluded, and Lightdash does not restore the other elements from a parent after one element matches.
-- Grand totals in the results table drop dimensions. If a query's only repeated fields are dimensions, its grand total is calculated at model grain.
-
-## Query warnings
-
-The **Query warnings** icon next to **Run query** shows warnings about combinations that can inflate metrics.
-
-- When two repeated columns that are not nested inside one another are selected together, Lightdash shows this warning once per query and only for the deepest virtual tables. For example, if `orders` also has a repeated `shipments` column, selecting fields from both `line_items` and `shipments` shows:
-
-  > Repeated columns "orders__line_items" and "orders__shipments" are unnested together, so each row pairs their elements and metrics can be inflated.
-
-  A nested chain such as `line_items` and `line_items.discounts` does not trigger this warning.
-
-- When a metric on a virtual table is queried with a deeper or sibling unnest, Lightdash shows:
-
-  > Metric "Total revenue" could be inflated by another unnested repeated column.
-
-- The existing **could be inflated due to join relationships** warning still applies to model metrics that Lightdash cannot deduplicate, including metrics on a model without a `primary_key`.
-
-## Pre-aggregates
-
-Reference virtual-table fields with the virtual-table name as their table prefix:
-
-<CodeGroup>
-```yaml dbt v1.10+ and Fusion
-models:
-  - name: orders
-    config:
-      meta:
-        pre_aggregates:
-          - name: revenue_by_sku
-            dimensions:
-              - orders__line_items.sku
-            metrics:
-              - orders__line_items.total_revenue
-```
-
-```yaml dbt v1.9 and earlier
-models:
-  - name: orders
-    meta:
-      pre_aggregates:
-        - name: revenue_by_sku
-          dimensions:
-            - orders__line_items.sku
-          metrics:
-            - orders__line_items.total_revenue
-```
-</CodeGroup>
-
-## Deploy and generate
-
-Explores compile in the CLI during [`lightdash deploy`](/workflow/cli/deploy), and the CLI reads the nested-column setting from the Lightdash server. Before deploying, [update the Lightdash CLI](/workflow/cli/install#updating-the-lightdash-cli). If the CLI cannot reach the server or read the setting, it compiles with nested-column support disabled and silently drops repeated leaves from the Explore.
-
-On self-hosted deployments, add `unnest-repeated-columns` to `LIGHTDASH_ENABLE_FEATURE_FLAGS`; see [Feature flags](/self-host/customize-deployment/environment-variables#feature-flags).
-
-[`lightdash generate`](/workflow/cli/generate) does not generate an entry for a container column or any leaf below a repeated column. Add those entries to the generated YAML by hand.
-
-## Known limitations
-
-- Only BigQuery is supported.
+- Record and array containers cannot be selected directly as fields.
 - To access an array element by index, such as `line_items[0].sku`, define a dimension with custom `sql`.
-- Record and array containers are not selectable as fields. A scalar array exposes its elements through the virtual table's `value` dimension.
-- Selecting two repeated columns that are not nested inside one another multiplies their rows. See [Query warnings](#query-warnings).
-- SQL Runner and virtual views type nested columns but do not expand them.
+- SQL Runner and virtual views recognize nested column types but do not expand them into fields.

@@ -269,10 +269,15 @@ Limits: 5 concurrent builds per project (the CLI waits for a slot automatically)
 ## Experimental: custom dependencies
 
 <Warning>
-  Custom dependencies are <Badge icon="test-pipe-2" color="orange" size="sm" shape="pill">Experimental</Badge> and off by default. They must be enabled for your organization — contact Lightdash support (or your admin, on self-hosted instances) to turn on the feature flag. Uploading an app that declares custom dependencies additionally requires the `manage:DataAppDependency` permission, granted only to admins by default.
+  Custom dependencies are <Badge icon="test-pipe-2" color="orange" size="sm" shape="pill">Experimental</Badge> and off by default. Enabling them is a security decision each organization makes for itself — contact Lightdash support (or your admin, on self-hosted instances) to turn on the feature flag. Uploading an app that declares custom dependencies additionally requires the `manage:DataAppDependency` permission, granted only to admins by default.
 </Warning>
 
-By default, apps build against a fixed, pre-installed library set — edits to `package.json` are ignored. With custom dependencies enabled, you can extend that set from the app folder:
+By default, apps build against a fixed, pre-installed library set that Lightdash vets and ships — edits to `package.json` are ignored. Turning custom dependencies on lets an app pull additional packages from the public npm registry into the build sandbox, which is why it's opt-in:
+
+* A third-party library becomes part of your app. It can shape how the app behaves and touch any data the app is allowed to query, so the main consideration is trust in the libraries you choose. That's also why the upload permission (`manage:DataAppDependency`) is restricted to admins by default.
+* Lightdash adds several layers of protection to reduce that risk: every uploaded version is screened against the OSV malicious-package feed, installs use `--frozen-lockfile --ignore-scripts` so lifecycle scripts can't run, the sandbox has no access to Lightdash credentials, and network egress is limited to the npm registry.
+
+With custom dependencies enabled, you can extend the pre-installed set from the app folder:
 
 ```bash
 cd lightdash/apps/revenue-explorer
@@ -294,7 +299,7 @@ Upload "revenue-explorer" with custom dependencies?
 - At most 60 direct dependencies; lockfile ≤ 2 MB and consistent with `package.json`.
 - Every version is screened against the OSV malicious-package feed at upload; known-bad versions are rejected outright.
 
-**Security model:** the sandbox installs with `--frozen-lockfile --ignore-scripts`, with network egress limited to the npm registry, and the build never sees any credentials. Install scripts also never run on your machine — the scaffolded `.npmrc` sets `ignore-scripts=true`; keep it. Self-hosted instances can additionally require a minimum package release age (`LIGHTDASH_APP_DEPENDENCY_MIN_RELEASE_AGE_DAYS`) or point installs at an internal mirror (`LIGHTDASH_APP_DEPENDENCY_REGISTRY_HOSTS`).
+**Additional hardening:** install scripts also never run on your machine — the scaffolded `.npmrc` sets `ignore-scripts=true`; keep it. Self-hosted instances can further tighten the policy by requiring a minimum package release age (`LIGHTDASH_APP_DEPENDENCY_MIN_RELEASE_AGE_DAYS`) or pointing installs at an internal mirror (`LIGHTDASH_APP_DEPENDENCY_REGISTRY_HOSTS`).
 
 **Uploads are the only way to change dependencies.** When someone iterates on the app in the UI, the AI builder can edit `src/` but the stored dependency set is restored as-is — its `package.json` edits are ignored. Dependency changes on a version are visible in the version history.
 
