@@ -19,22 +19,89 @@ These files need to be stored in a S3 Compatible Cloud storage. Some options are
 
 ## Configure cloud storage on Google Cloud Platform
 
-Go into GCP: Cloud storage
+In the Google Cloud console, go to Cloud Storage and create a bucket with these details:
 
-Create a new bucket with the following details:
-
-- Give it an unique `Bucket name` like - `lightdash-cloud-file-storage-eu`
-- Select region (like multi US or multi EU or single region EU-west-1)
-- Select storage class: default standard
+- Give it a unique `Bucket name`, such as `lightdash-cloud-file-storage-eu`
+- Select a region, such as multi-region US, multi-region EU, or a single region like `europe-west1`
+- Select the default `Standard` storage class
 - Enable `Enforce public access prevention on this bucket`
 - Select `Uniform` access control
-- Protection: `none`
+- Set Protection to `none`
 
-Go to settings \> Interoperability and create a `Access key for service account`
+Set `S3_ENDPOINT` to `https://storage.googleapis.com` and `S3_REGION` to `auto`.
 
-- Copy the `access key` and `secret`
+Then choose how Lightdash authenticates to the bucket. Google Cloud Storage accepts two
+methods, and they are not interchangeable.
 
-`S3_ENDPOINT` for google is `https://storage.googleapis.com` `S3_REGION` for google is `auto`
+### Option A: HMAC keys
+
+Use this option anywhere outside Google Kubernetes Engine (GKE), or when you want the
+simplest setup.
+
+1. Go to **Settings > Interoperability** and create an **Access key for service account**.
+2. Copy the access key and the secret.
+3. Set `S3_ACCESS_KEY` and `S3_SECRET_KEY`.
+
+These keys are long-lived static secrets. Rotate them on a schedule. Google Cloud Storage
+supports several active keys per service account, so you can rotate without downtime.
+
+### Option B: Workload identity, with no keys
+
+Use this option when Lightdash runs on GKE and you do not want static secrets in the
+cluster. Lightdash sends a short-lived Google OAuth token instead of signing requests with
+a key.
+
+Set `S3_AUTH_MODE=gcp_oauth` and leave `S3_ACCESS_KEY` and `S3_SECRET_KEY` unset.
+
+<Warning>
+`S3_USE_CREDENTIALS_FROM` does not enable this option, even though its `ecs` and `ec2`
+values look like they should. Every source that setting accepts is an **AWS** credential
+provider, and Google Cloud Storage cannot verify AWS credentials. On GKE, use
+`S3_AUTH_MODE=gcp_oauth`.
+</Warning>
+
+Grant these permissions to the Google service account that the pod runs as:
+
+1. Bind the Kubernetes service account to the Google service account, as described in the
+   [GKE workload identity documentation](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity).
+2. Grant the `roles/storage.objectUser` role **on the bucket**. Do not grant a project-wide
+   role such as Editor.
+3. Grant the `roles/iam.serviceAccountTokenCreator` role **on the service account itself**.
+   The member and the resource are the same service account. Lightdash needs this role to
+   sign download URLs.
+4. Enable the `iamcredentials.googleapis.com` API in the project.
+
+<Warning>
+If you skip step 3, the deployment looks healthy. Uploads, downloads, and result caching
+all work. Only signed download links fail, and only when a user asks for one. The error is
+`Permission 'iam.serviceAccounts.signBlob' denied on resource`.
+</Warning>
+
+Set these environment variables:
+
+```bash
+S3_ENDPOINT=https://storage.googleapis.com
+S3_REGION=auto
+S3_BUCKET=your-bucket-name
+S3_AUTH_MODE=gcp_oauth
+S3_FORCE_PATH_STYLE=true
+```
+
+Both URL styles work with Google Cloud Storage. Path style also works for bucket names that
+contain dots, which break TLS certificate matching in the other style.
+
+Signed URLs in this mode last at most 7 days, which is a Google Cloud Storage limit.
+Lightdash fails to start if `S3_EXPIRATION_TIME` exceeds 604800 seconds.
+
+To develop locally against a bucket that uses this mode, run:
+
+```bash
+gcloud auth application-default login --impersonate-service-account=SERVICE_ACCOUNT_EMAIL
+```
+
+Your own user credentials cannot sign URLs, and the error is
+`Cannot sign data without 'client_email'`. Impersonating the service account fixes it. Do
+not download a service account key file.
 
 ## Configure cloud storage on AWS
 
@@ -109,11 +176,22 @@ Any omitted result storage setting inherits its corresponding `S3_*` value.
 Raw JSONL result downloads use a presigned URL that browsers fetch directly from `RESULTS_S3_ENDPOINT`. This endpoint must be reachable from users' browsers; `S3_PUBLIC_ENDPOINT` does not apply to the query results bucket. The bucket can remain private, but an IP policy that limits `GetObject` to Lightdash's backend egress addresses will block these downloads.
 </Warning>
 
-### Using IAM roles
+### Authenticate without static keys
 
-Lightdash also supports authentication via IAM roles. If you omit the `S3_ACCESS_KEY` and `S3_SECRET_KEY` variables, the S3 library will automatically attempt to use IAM roles. For more details on how this works, refer to the [AWS SDK for JavaScript documentation on setting credentials in Node.js](https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/setting-credentials-node.html).
+How you do this depends on the cloud provider, because the two mechanisms are unrelated.
 
-If you are using an IAM role to generate signed URLs, be aware that these URLs have a maximum validity of 7 days due to AWS limitations, independently of the `S3_EXPIRATION_TIME` configuration.
+**On AWS.** Omit `S3_ACCESS_KEY` and `S3_SECRET_KEY`, and the AWS SDK looks for an IAM role
+automatically. To control which credential sources it tries and in what order, set
+`S3_USE_CREDENTIALS_FROM`. For more detail, read the
+[AWS SDK for JavaScript documentation on setting credentials in Node.js](https://docs.aws.amazon.com/sdk-for-javascript/v2/developer-guide/setting-credentials-node.html).
+
+**On Google Cloud.** Set `S3_AUTH_MODE=gcp_oauth`. See
+[Option B: workload identity, with no keys](#option-b-workload-identity-with-no-keys).
+`S3_USE_CREDENTIALS_FROM` does not work here, because every source it accepts is an AWS
+credential provider.
+
+Signed URLs last at most 7 days in both cases, whatever you set `S3_EXPIRATION_TIME` to.
+The limit comes from the signing algorithm, not from Lightdash.
 
 ## Production bucket strategy
 
@@ -123,6 +201,9 @@ For an enterprise deployment, use a **dedicated bucket per purpose**, each with 
 - **Pre-aggregations bucket** (if using [pre-aggregates](/self-host/nats-workers/pre-aggregate-workers)) — lifecycle delete after **~30 days**.
 - **Data-apps bucket** (if using [data apps](/self-host/enterprise-features/data-apps)) — persistent, with **no** delete lifecycle.
 
-**Block all public access** on every bucket. Prefer **IAM roles** (IRSA on EKS, Workload Identity on GKE) over static keys — noting that signed URLs are then capped at 7 days.
+**Block all public access** on every bucket, and prefer short-lived credentials over static
+keys. On EKS, use IAM roles for service accounts (IRSA). On GKE, set
+`S3_AUTH_MODE=gcp_oauth` to use workload identity. In both cases, signed URLs last at most
+7 days.
 
 If users share download links that must outlive the signed-URL TTL (`S3_EXPIRATION_TIME`, default 3 days), enable `PERSISTENT_DOWNLOAD_URLS_ENABLED: "true"` — see [persistent download URLs](/self-host/customize-deployment/environment-variables#persistent-download-urls).
