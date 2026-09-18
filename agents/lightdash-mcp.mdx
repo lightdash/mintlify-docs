@@ -21,6 +21,7 @@ With MCP, your AI assistant becomes a data analyst that can:
 - Run queries and generate visualizations
 - Discover existing charts and dashboards, including verified content
 - Create and edit charts and dashboards using content-as-code
+- [Build and iterate on data apps](#data-app-builds) from a brief
 - Leverage your AI agents' domain expertise and verified answers
 - Switch between different projects seamlessly
 - Respect your data governance and access controls
@@ -548,6 +549,153 @@ The assistant will call `read_content` to fetch the source chart, modify the JSO
 <Tip>
   For bulk edits across many dashboards or as part of a CI/CD pipeline, the [download-edit-upload workflow](/workflow/edit-dashboards-with-agents) using the Lightdash CLI is still the recommended approach. MCP content tools are best for interactive edits inside an AI assistant.
 </Tip>
+
+#### Data app builds
+
+MCP exposes [data apps](/data-apps) — interactive applications a coding agent generates from a brief on top of the active project's semantic layer — to any MCP client. Ask the assistant to build an app, wait while the build runs, then iterate on it with follow-up briefs. Each build produces one **version** of the app.
+
+- **Generate data app** (`generate_data_app`) - Start building a new data app from a name and a brief. Returns immediately with the app's permanent `slug` and the `version` this build produces.
+- **Iterate data app** (`iterate_data_app`) - Start a build that adds a version to an existing app from a follow-up brief. Returns the same `slug` and the new `version`.
+- **List data app themes** (`list_data_app_themes`) - List the organization's [themes](/data-apps/customize-themes) — slug, name, whether it's the organization default, and a description — so you can pass a `themeSlug` when starting a build.
+- **Get data app build status** (`get_data_app_build_status`) - Poll a build by app slug. Returns the current pipeline stage while the build is in flight, and the app's URL (or an error message) once it reaches a terminal state.
+
+##### How the async flow works
+
+A build takes several minutes — longer than most MCP transports will hold a connection open — so the start tools enqueue the build and return as soon as it has started. The caller then polls `get_data_app_build_status` for the outcome.
+
+**You name the app, and the returned slug is final.** `generate_data_app` requires a `name`, and the app's slug is derived from that name at creation. A name already taken in the project gets a numeric suffix on the slug, so always identify the app by the slug the call returned — never by one you derived from the name yourself. The slug never changes afterwards, even if the app is renamed.
+
+Polling has no session affinity — you can call `get_data_app_build_status` from a different MCP session or a different API token, as long as the caller can view that app and version.
+
+<Info>
+  **Where the app lands.** An app built over MCP is created as the calling user's **personal app**: at the project root, in no space, visible only to them until they move it into a space from the Lightdash UI. This mirrors what the in-product [AI agent](/agents) does.
+</Info>
+
+<Warning>
+  **Agent-scoped sessions and personal apps.** If your MCP session is scoped to an [AI agent](#agent-context) that is restricted to specific spaces, it may not be able to read back a root-level personal app it just built — the app is in no space, so it falls outside the agent's scope. Build and poll without `agentUuid` when you want to work with an app you own.
+</Warning>
+
+##### `generate_data_app` — start a new app
+
+**Parameters**
+
+- `name` _(string, required)_ — Display name for the app: a headline-short title in title case, naming what the app shows (for example, _"Revenue Overview"_). The slug is derived from it at creation, so treat it as final.
+- `prompt` _(string, required)_ — A self-contained brief for the coding agent: what the app shows, for whom, and how it behaves. The coding agent explores the semantic layer itself but can't see your conversation or its query results, so carry any analysis over as queries rather than pasted numbers — a number in the brief gets hardcoded into the app.
+- `template` _(string, optional)_ — Starter template: `"dashboard"`, `"slideshow"`, `"pdf"`, or `"custom"`. Omit unless the user asked for one.
+- `dashboardSlug` _(string, optional)_ — Generate from an existing dashboard. The app starts from that dashboard's layout and charts; the dashboard itself stays unchanged.
+- `chartSlugs` _(string[], optional)_ — Saved charts whose queries the app is built on; the charts themselves stay unchanged.
+- `themeSlug` _(string, optional)_ — Theme to build the app with, from `list_data_app_themes`. Omit to use the organization default. An unknown slug returns an error listing the valid slugs and starts no build.
+
+**Response** (`structuredContent`)
+
+```json
+{
+  "slug": "revenue-overview",
+  "version": 1
+}
+```
+
+##### `iterate_data_app` — add a version to an existing app
+
+**Parameters**
+
+- `appSlug` _(string, required)_ — Slug of the app to change, from an earlier `generate_data_app` result, `find_content`, or `read_content`.
+- `prompt` _(string, required)_ — A self-contained brief of the change. The coding agent works from the app's current source, so describe the change rather than restating the whole app.
+- `dashboardSlug`, `chartSlugs`, `themeSlug` _(optional)_ — Same as `generate_data_app`. Pass `themeSlug` only when you want to switch the app's theme; otherwise the app keeps its current one.
+
+There's no `name` parameter — an existing app already has its final name and slug.
+
+**Response** (`structuredContent`)
+
+```json
+{
+  "slug": "revenue-overview",
+  "version": 2
+}
+```
+
+<Note>
+  Only one build can run for an app at a time. Calling `iterate_data_app` while a version is already building fails immediately with _"A version is already building for this app"_ — poll `get_data_app_build_status` until the current build reaches a terminal status, then iterate.
+</Note>
+
+##### `list_data_app_themes` — list themes
+
+Takes no parameters. Returns `{ themes: [{ slug, name, isDefault, description }] }`. Call it when the user names a theme, brand, or look; skip it when they say nothing about the look, since the organization default applies. An organization may have no themes at all, in which case omit `themeSlug`.
+
+##### `get_data_app_build_status` — poll for the result
+
+**Parameters**
+
+- `appSlug` _(string, required)_ — The app's slug, as returned when the build started.
+- `version` _(integer, optional)_ — Which version to report on. Omit for the latest version, which is the one a build you just started produces.
+
+**Response** (`structuredContent`)
+
+```json
+{
+  "status": "ready",
+  "statusMessage": "The data app \"Revenue Overview\" is ready.",
+  "errorMessage": null,
+  "name": "Revenue Overview",
+  "slug": "revenue-overview",
+  "href": "https://app.lightdash.cloud/projects/3675b69e-.../apps/...",
+  "nextPollAfterMs": 15000
+}
+```
+
+- `status` is either `"pending"` (not yet picked up by a worker), an in-progress pipeline stage (`"sandbox"`, `"catalog"`, `"generating"`, `"building"`, or `"packaging"`), or a terminal value: `"ready"` (finished — open `href`), `"error"` (finished — check `errorMessage`), or `"cancelled"` (someone cancelled the build in Lightdash).
+- `statusMessage` is a short line describing what the build is doing, or how it ended. It's safe to show to a user.
+- `errorMessage` is set only when `status` is `"error"`.
+- `href` opens the app in Lightdash. `name` and `slug` identify it.
+- `nextPollAfterMs` is how long to wait before polling again — currently 15000.
+
+Poll every 10-15 seconds rather than tight-looping — a build takes several minutes, and the status row updates in stages rather than continuously. An unknown slug, or an app or version you can't view, returns an error rather than a status.
+
+**Example poll loop**
+
+```ts
+const { slug } = (
+  await callMcpTool('generate_data_app', {
+    name: 'Revenue Overview',
+    prompt:
+      'A dashboard-style app showing monthly revenue, revenue by region, and the top 10 customers by revenue.',
+    template: 'dashboard',
+  })
+).structuredContent;
+
+while (true) {
+  const { status, href, errorMessage, nextPollAfterMs } = (
+    await callMcpTool('get_data_app_build_status', { appSlug: slug })
+  ).structuredContent;
+
+  if (status === 'ready') {
+    console.log(`App ready: ${href}`);
+    break;
+  }
+  if (status === 'error') {
+    throw new Error(errorMessage ?? 'Data app build failed');
+  }
+  if (status === 'cancelled') {
+    console.log('The build was cancelled.');
+    break;
+  }
+
+  await new Promise((r) => setTimeout(r, nextPollAfterMs));
+}
+```
+
+Once the build is `"ready"`, read the finished app with `read_content` using the same slug — handy for checking what the coding agent produced before iterating on it.
+
+<Info>
+  **What enables these tools.** The four data app tools only appear in the tools list when both of these are true:
+
+  1. Data apps are enabled for your organization.
+  2. The caller can create data apps in the active project.
+
+  Both are checked at tool registration, so callers without them don't see the tools at all.
+</Info>
+
+**Example prompt:** _"Build a data app called Revenue Overview that shows monthly revenue and the top 10 customers, then tell me when it's ready."_
 
 #### Scheduled deliveries
 
