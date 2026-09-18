@@ -51,9 +51,13 @@ Ship the redirect in the same change (principle 7):
 2. Re-point any existing redirect whose destination you moved — redirects must never chain.
 3. Rewrite inbound internal links to the final URL (`rg` the old slug); internal links never route through a redirect.
 
+## Local preview
+
+Start `mint dev --port 3333` **once** in the background and reuse it for the whole session — it hot-reloads `.mdx`, `snippets/`, `styles.css`, and `docs.json`, so never restart it to pick up an edit. If the port is taken, mint silently binds the next port up instead of failing, so relaunching stacks zombie servers. To stop it, kill the background task's PID (the process cmdline is `node .../mint/index.js dev`, so `pkill -f "mint dev"` matches nothing); check for strays with `procs mint`. Launching needs to run outside the sandbox (`mint` writes preview locks under `~/.mintlify`), as does spawning Chrome for screenshots.
+
 ## Before done
 
-Frontmatter is complete, the page is reachable from nav, and `mint broken-links` passes.
+Frontmatter is complete, the page is reachable from nav, and `mint broken-links` passes. Pages meant to be fetched by URL rather than browsed declare `hidden: true` in frontmatter instead of a nav entry — the validator exempts them from nav reachability, and `seo.indexing: "all"` in `docs.json` keeps them in `llms.txt` and the `.md` export. `start.mdx` (the agent endpoint behind the homepage copy-prompt button) is the one such page; don't add it to nav.
 
 ## Reference docs
 
