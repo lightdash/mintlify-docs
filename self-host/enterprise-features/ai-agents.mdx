@@ -7,7 +7,7 @@ description: "Enable AI Analyst and AI agents on a self-hosted Lightdash instanc
   <Badge icon="building-plus" color="blue" size="sm" shape="pill">Enterprise</Badge> AI Analyst and AI agents need a valid `LIGHTDASH_LICENSE_KEY` set on your instance before any of the configuration below takes effect. See [enterprise features](/self-host/enterprise-features) for applying the key.
 </Info>
 
-[AI Analyst](/agents) powers natural-language querying, AI-generated charts, and [AI agents](/agents/set-up-agents) that answer questions in-app and in Slack. To enable it on a self-hosted instance you need a model provider and the AI Analyst feature flag. Every AI feature that runs on top — [Data apps](/self-host/enterprise-features/data-apps), [AI writeback](/self-host/enterprise-features/ai-writeback), the [managed agent](#managed-agent), [MCP](/self-host/enterprise-features/mcp), and [multi-agent Slack channels](/self-host/enterprise-features#multi-agent-slack-channels) — assumes AI Analyst is enabled first.
+[AI Analyst](/agents) powers natural-language querying, AI-generated charts, and [AI agents](/agents/set-up-agents) that answer questions in-app and in Slack. To enable it on a self-hosted instance you need a model provider and the AI Analyst feature flag. Every AI feature that runs on top — [Data apps](/self-host/enterprise-features/data-apps), [AI writeback](/self-host/enterprise-features/ai-writeback), [Autopilot](#autopilot), [MCP](/self-host/enterprise-features/mcp), and [multi-agent Slack channels](/self-host/enterprise-features#multi-agent-slack-channels) — assumes AI Analyst is enabled first.
 
 ## Prerequisites
 
@@ -62,7 +62,7 @@ To send Bedrock traffic through a corporate gateway, add `BEDROCK_BASE_URL`. The
 
 ## Corporate LLM gateways
 
-Lightdash can route AI Analyst and Data app model traffic through an HTTP(S) corporate gateway. Use the base URL for the protocol your gateway exposes:
+Lightdash can route AI Analyst, Autopilot, and Data app model traffic through an HTTP(S) corporate gateway. Use the base URL for the protocol your gateway exposes:
 
 - `OPENAI_BASE_URL` for an OpenAI-compatible gateway.
 - `ANTHROPIC_BASE_URL` for an Anthropic Messages gateway.
@@ -109,9 +109,9 @@ One base URL can serve multiple consumers only if the gateway implements every w
 
 | Consumer | Required path relative to the configured base |
 | --- | --- |
-| AI Analyst through Anthropic | Anthropic Messages: `/v1/messages` |
+| AI Analyst and Autopilot through Anthropic | Anthropic Messages: `/v1/messages` |
 | Anthropic model discovery | Anthropic Models: `/v1/models` |
-| AI Analyst through Bedrock | Bedrock Converse: `/model/{model-id}/converse` or `/model/{model-id}/converse-stream` |
+| AI Analyst and Autopilot through Bedrock | Bedrock Converse: `/model/{model-id}/converse` or `/model/{model-id}/converse-stream` |
 | Bedrock verified-answer embeddings | Bedrock Invoke: `/model/{model-id}/invoke` |
 | Claude Data apps through Anthropic | Anthropic Messages: `/v1/messages` |
 | Claude Data apps through Bedrock | Bedrock Invoke: `/model/{model-id}/invoke-with-response-stream` |
@@ -120,24 +120,69 @@ One base URL can serve multiple consumers only if the gateway implements every w
 A gateway that supports only Bedrock Converse, for example, can serve AI Analyst chat but cannot serve Claude Data app generation. For the coding-agent configuration and model naming rules, see [Data apps](/self-host/enterprise-features/data-apps).
 
 <Note>
-  These gateway settings do not reroute AI writeback, the onboarding agent, or the managed agent. When the managed agent is enabled alongside `ANTHROPIC_BASE_URL`, configure `MANAGED_AGENT_ANTHROPIC_API_KEY` separately for its direct Anthropic connection.
+  These gateway settings do not reroute AI writeback or the onboarding agent. Autopilot uses the same provider configuration as AI Analyst. Its scheduler must also be able to reach the gateway.
 </Note>
 
 ### Validate before rollout
 
-1. Confirm the Lightdash backend can resolve and connect to the gateway hostname.
+1. Confirm the Lightdash backend and any scheduler running Autopilot can resolve and connect to the gateway hostname.
 2. Open AI Analyst and send a short prompt with the configured model. If model discovery fails, verify `/v1/models` or set `ANTHROPIC_AVAILABLE_MODELS`.
 3. If Data apps are enabled, generate a small app with each coding agent you plan to support. This verifies the sandbox's separate network path and API wire.
-4. Check gateway access logs for the expected paths in the table above. Redact authorization headers and tokens from logs.
-5. Restrict direct provider egress only after both backend and sandbox traffic succeed through the gateway.
+4. If Autopilot is enabled, run it on a disposable project and check its recorded provider, model, and outcome. A successful configuration check does not prove the gateway accepts a model request.
+5. Check gateway access logs for the expected paths in the table above. Redact authorization headers and tokens from logs.
+6. Restrict direct provider egress only after all enabled consumers succeed through the gateway.
 
 ## Verified answers
 
 Verified answers use vector embeddings to match new questions to previously validated ones. Enable embeddings with `AI_EMBEDDING_ENABLED=true` and pick an embedding provider with `AI_DEFAULT_EMBEDDING_PROVIDER` (`openai`, `bedrock`, or `azure`). The embedding provider can differ from the chat provider — see [verified answers](/agents/verified-answers) for how they're used at query time.
 
-## Managed agent
+<span id="managed-agent" />
 
-The managed agent runs scheduled AI agent tasks on a cron. Provide `MANAGED_AGENT_ANTHROPIC_API_KEY` and, optionally, a list of allowed `MANAGED_AGENT_SKILL_IDS` and a custom `MANAGED_AGENT_SCHEDULE`. Without `ANTHROPIC_BASE_URL`, the managed agent can fall back to `ANTHROPIC_API_KEY`. When a gateway is configured, the dedicated key is required because managed-agent beta APIs continue to use Anthropic directly. See [autopilot](/agents/autopilot) for how the managed agent is used in-product.
+## Autopilot
+
+[Autopilot](/agents/autopilot) runs scheduled maintenance for each enabled project using the AI SDK runtime. It needs AI Analyst enabled and a provider configured through the [instance model settings](#model-providers) or [organization AI providers and models](/agents/set-up-agents#bring-your-own-ai-providers-and-models). It uses the organization's visible, available default model, then the configured provider default if available, then another available model. Azure uses its configured deployment directly. There is no per-project model override.
+
+Enable the Autopilot feature on every API and scheduler process:
+
+```bash
+LIGHTDASH_ENABLE_FEATURE_FLAGS=ai-autopilot
+```
+
+Append `ai-autopilot` if the enable list already contains other flags, and remove it from `LIGHTDASH_DISABLE_FEATURE_FLAGS` if present. Restart the API and scheduler after changing environment variables. Keep their provider and Autopilot configuration consistent; the scheduler executes scheduled runs and needs access to the selected provider or gateway.
+
+A user with project management permissions can then enable Autopilot from the project's Home page. Runs act as the user who enabled it and require that user to retain project management permissions. The AI SDK runtime needs no separate service-account token for Autopilot.
+
+Setup and the activity page show the current provider, model, and key source. Enabling Autopilot checks that a model can be configured, without making a model request. Invalid credentials, unavailable deployments, and gateway errors can still fail the first run. Changing organization settings changes the next run's selection; previous runs retain their recorded model.
+
+### Schedule and limits
+
+Choose a schedule per project in the UI. `MANAGED_AGENT_SCHEDULE` supplies the fallback cron schedule, defaulting to `0 0 * * *`. `MANAGED_AGENT_SESSION_TIMEOUT_MS` defaults to 600000 (10 minutes), and `MANAGED_AGENT_MAX_STEPS` defaults to 120 model steps per run. The deadline requests cancellation and prevents queued actions from starting; a content write already in progress must finish its bookkeeping. These limits do not set a dollar spending cap. See [provider and usage](/agents/autopilot#ai-provider-and-usage).
+
+### Model qualification and cleanup
+
+Autopilot only flags or deletes content on models that are qualified for it. Every other model runs in observe mode. When `MANAGED_AGENT_VALIDATED_MODELS` is unset, these models are qualified for `cleanup`:
+
+| Provider | Models |
+| --- | --- |
+| Anthropic | Claude Opus 5, Claude Opus 4.8, Claude Opus 4.7, Claude Sonnet 5 |
+| Amazon Bedrock | Claude Opus 5, Claude Opus 4.7, Claude Sonnet 5 |
+| OpenAI | GPT-5.6 Sol, GPT-5.5, GPT-5.4 |
+
+On Anthropic and Bedrock, Autopilot runs on the newest Claude Opus your organization may use, unless the organization default is already a Claude Opus. Other providers follow the organization default.
+
+Azure deployments, Google, OpenRouter and any model not listed above start in observe mode. To qualify one, set `MANAGED_AGENT_VALIDATED_MODELS` to a JSON array of exact provider/model pairs with a mode of `observe`, `flag`, or `cleanup`. Setting the variable replaces the built-in list, so include the built-in models you still want; an empty value qualifies no model. Duplicate qualifications use the most restrictive mode; malformed configuration rejects startup. Qualify a model on disposable representative content before increasing its permissions; use the exact IDs shown in Autopilot, including Azure deployment names or Bedrock inference-profile prefixes.
+
+Autopilot uses the more restrictive of the project's requested cleanup mode and the model's qualification. A downgrade appears in setup and the run summary. **Observe mode does not mean read-only:** chart creation and repair still follow the project's capability toggles. Disable those capabilities as well when evaluating without content changes.
+
+### Upgrading from the hosted runtime
+
+Lightdash 2.262.0 removed the hosted runtime. From that version Autopilot always runs on your configured AI provider.
+
+- **Nothing to change to keep Autopilot running.** Provider credentials come from the shared AI configuration described above. Keep the schedule and timeout settings, and review the step limit and model qualifications.
+- **Remove the old settings.** The hosted-runtime credential, the remote skill list and `MANAGED_AGENT_RUNTIME` are ignored. Lightdash logs a warning at startup for each one that is still set.
+- **No configuration rollback.** Setting `MANAGED_AGENT_RUNTIME=anthropic-managed` cannot restore the hosted runner. To roll back, redeploy a release before 2.262.0 with the credentials it needs.
+
+On releases 2.255.0 to 2.261.x both runtimes exist and the AI SDK runner is the default. `MANAGED_AGENT_RUNTIME` selects the runner there and must match on the API and scheduler processes.
 
 ## Costs
 
