@@ -14,7 +14,7 @@ export const MATURITY_PAGE = 'support/feature-maturity-levels';
  * top-level areas only, in docs.json — a lone icon on one subsection reads as a
  * rendering fault rather than a distinction.
  */
-export const ICON_CARVE_OUTS = ['explore/chart-types'];
+export const ICON_CARVE_OUTS = ['explore/visualizations'];
 
 export function allowsPageIcon(file: string): boolean {
   const directory = file.replace(/\/[^/]*$/, '');
