@@ -63,6 +63,7 @@ jobs:
         env:
           PULL_REQUEST_NUMBER: ${{ steps.pull-request.outputs.number }}
           VALIDATION_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          VALIDATION_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         with:
           script: |
             const fs = require('fs');
@@ -72,18 +73,22 @@ jobs:
               report = JSON.parse(fs.readFileSync('validation-artifact/docs-validation.json', 'utf8'));
             } catch (error) {
               report = {
-                status: 'tool_failure',
+                status: 'unavailable',
                 summary: { errors: 0, autoFixable: 0 },
                 findings: [],
               };
             }
             const total = report.findings.length;
             const visible = report.findings.slice(0, 50);
-            const status = report.status === 'passed'
-              ? '✅ All blocking checks passed.'
-              : report.status === 'tool_failure'
-                ? '❌ The validator failed. This is a tooling error, not a content finding.'
-                : `❌ ${report.summary.errors} blocking finding(s), including ${report.summary.autoFixable} auto-fixable.`;
+            const status = report.status === 'unavailable'
+              ? '❌ Validation report is unavailable. Inspect the run for setup, execution, or artifact upload failures.'
+              : report.status === 'passed'
+                ? process.env.VALIDATION_CONCLUSION === 'success'
+                  ? '✅ All blocking checks passed.'
+                  : '❌ Content validation passed, but another workflow check failed. Inspect the validation run.'
+                : report.status === 'tool_failure'
+                  ? '❌ The validator failed. This is a tooling error, not a content finding.'
+                  : `❌ ${report.summary.errors} blocking finding(s), including ${report.summary.autoFixable} auto-fixable.`;
             const rows = visible.map((item) => {
               const message = item.message.replaceAll('|', '\\|').replaceAll('\n', ' ');
               return `| \`${item.file}:${item.line}\` | \`${item.rule}\` | ${message} |`;
@@ -102,7 +107,9 @@ jobs:
             } catch (error) {
               components = undefined;
             }
-            if (components) {
+            if (components?.status === 'tool_failure') {
+              body += '\n### Component system\n\n❌ Component audit failed. Inspect the validation run.';
+            } else if (components) {
               const changedRules = Object.entries(components.summary.byRule || {})
                 .sort(([, a], [, b]) => b - a);
               body += `\n### Component system\n\n${components.summary.warnings} finding(s) across the corpus.`;
@@ -114,7 +121,7 @@ jobs:
               body += `\n\nFindings on lines this pull request touched are annotated inline in **Files changed**.\n`;
             }
 
-            body += `\n[Download the structured JSON artifact](${process.env.VALIDATION_RUN_URL}).`;
+            body += `\n[View the validation run](${process.env.VALIDATION_RUN_URL}).`;
 
             const issueNumber = Number(process.env.PULL_REQUEST_NUMBER);
             const comments = await github.paginate(github.rest.issues.listComments, {
