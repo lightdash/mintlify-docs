@@ -125,13 +125,13 @@ test('checks frontmatter icons, which drive the sidebar and card listings', () =
 });
 
 test('allows page icons only inside a documented carve-out', () => {
-  assert.equal(allowsPageIcon('explore/visualizations/sankey.mdx'), true);
+  assert.equal(allowsPageIcon('visualizations/sankey.mdx'), true);
   assert.equal(allowsPageIcon('integrations/dbt.mdx'), false);
-  assert.equal(allowsPageIcon('explore/visualizations/nested/deep.mdx'), false);
+  assert.equal(allowsPageIcon('visualizations/nested/deep.mdx'), false);
 
   const root = fixture({
-    'docs.json': NAV(['explore/visualizations/sankey', 'integrations/dbt']),
-    'explore/visualizations/sankey.mdx': page('Body.', 'icon: "chart-sankey"\n'),
+    'docs.json': NAV(['visualizations/sankey', 'integrations/dbt']),
+    'visualizations/sankey.mdx': page('Body.', 'icon: "chart-sankey"\n'),
     'integrations/dbt.mdx': page('Body.', 'icon: "hierarchy-2"\n'),
   });
 
