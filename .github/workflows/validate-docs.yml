@@ -8,6 +8,8 @@ on:
       - '**.md'
       - '**.mdx'
       - 'docs.json'
+      - '.mintlify/ia-map.yml'
+      - '.mintignore'
       - 'images/**'
       - 'scripts/**'
       - 'test/**'
@@ -33,6 +35,9 @@ jobs:
     timeout-minutes: 10
 
     steps:
+      - name: Set report directory
+        run: echo "REPORT_DIR=$RUNNER_TEMP/docs-validation" >> "$GITHUB_ENV"
+
       - name: Checkout source
         uses: actions/checkout@v7
         with:
@@ -52,9 +57,6 @@ jobs:
       - name: Type-check and test utilities
         run: npm run check
 
-      - name: Check documentation IA map
-        run: node scripts/docs/render-ia-map.ts --check
-
       - name: List changed files
         if: github.event_name == 'pull_request'
         env:
@@ -67,7 +69,8 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          arguments=(--output docs-validation.json)
+          mkdir -p "$REPORT_DIR"
+          arguments=(--output "$REPORT_DIR/docs-validation.json")
           if [[ "$EVENT_NAME" == 'pull_request' ]]; then
             arguments+=(--changed-files changed-files.txt)
           fi
@@ -76,8 +79,8 @@ jobs:
           node scripts/docs/validate.ts "${arguments[@]}"
           exit_code=$?
           set -e
-          if [[ ! -f docs-validation.json ]]; then
-            printf '%s\n' '{"schemaVersion":1,"status":"tool_failure","scope":"unknown","summary":{"errors":0,"autoFixable":0},"findings":[],"error":"Validator exited before writing its report."}' > docs-validation.json
+          if [[ ! -f "$REPORT_DIR/docs-validation.json" ]]; then
+            printf '%s\n' '{"schemaVersion":1,"status":"tool_failure","scope":"unknown","summary":{"errors":0,"autoFixable":0},"findings":[],"error":"Validator exited before writing its report."}' > "$REPORT_DIR/docs-validation.json"
             exit_code=2
           fi
           echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
@@ -87,31 +90,37 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          arguments=(--baseline --output component-audit.json)
+          mkdir -p "$REPORT_DIR"
+          arguments=(--baseline --output "$REPORT_DIR/component-audit.json")
           if [[ "$EVENT_NAME" == 'pull_request' ]]; then
             arguments+=(--changed-files changed-files.txt)
           fi
 
           set +e
           node scripts/docs/audit-components.ts "${arguments[@]}"
-          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          exit_code=$?
           set -e
+          if [[ ! -f "$REPORT_DIR/component-audit.json" ]]; then
+            printf '%s\n' '{"schemaVersion":1,"status":"tool_failure","scope":"all","summary":{"warnings":0,"byRule":{},"byArea":{}},"findings":[],"error":"Component audit exited before writing its report."}' > "$REPORT_DIR/component-audit.json"
+            exit_code=2
+          fi
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
 
       - name: Upload component findings
-        if: always()
+        if: ${{ !cancelled() && steps.components.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
           name: component-audit
-          path: component-audit.json
-          if-no-files-found: warn
+          path: ${{ env.REPORT_DIR }}/component-audit.json
+          if-no-files-found: error
           retention-days: 14
 
       - name: Upload structured findings
-        if: always()
+        if: ${{ !cancelled() && steps.validation.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
           name: docs-validation
-          path: docs-validation.json
+          path: ${{ env.REPORT_DIR }}/docs-validation.json
           if-no-files-found: error
           retention-days: 14
 
@@ -119,17 +128,31 @@ jobs:
         if: always()
         run: |
           node - <<'NODE' >> "$GITHUB_STEP_SUMMARY"
-          const report = require('./docs-validation.json');
+          const fs = require('node:fs');
+          const path = require('node:path');
+          function readReport(name) {
+            try {
+              return JSON.parse(fs.readFileSync(path.join(process.env.REPORT_DIR, name), 'utf8'));
+            } catch {
+              return undefined;
+            }
+          }
+          const report = readReport('docs-validation.json');
           console.log('## Documentation validation');
           console.log('');
-          if (report.status === 'tool_failure') {
+          if (!report) {
+            console.log('Validation report is unavailable. Inspect the preceding steps for setup or execution failures.');
+          } else if (report.status === 'tool_failure') {
             console.log('Validator failure. Inspect the job log and structured artifact.');
           } else {
             console.log(`${report.summary.errors} blocking finding(s), ${report.summary.autoFixable} auto-fixable.`);
           }
-          const fs = require('node:fs');
-          if (fs.existsSync('./component-audit.json')) {
-            const components = require('./component-audit.json');
+          const components = readReport('component-audit.json');
+          if (!components) {
+            console.log('\nComponent audit report is unavailable.');
+          } else if (components.status === 'tool_failure') {
+            console.log('\nComponent audit failed. Inspect the job log and structured artifact.');
+          } else {
             const baseline = require('./scripts/docs/component-baseline.json');
             const grown = Object.entries(components.summary.byRule || {})
               .filter(([rule, count]) => count > (baseline.rules[rule] ?? 0));
@@ -144,7 +167,7 @@ jobs:
           NODE
 
       - name: Set validation result
-        if: always()
+        if: ${{ !cancelled() && steps.validation.outcome == 'success' }}
         env:
           EXIT_CODE: ${{ steps.validation.outputs.exit_code }}
           COMPONENT_EXIT_CODE: ${{ steps.components.outputs.exit_code }}

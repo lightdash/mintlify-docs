@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { auditComponents } from './audit-components.ts';
+import { renderIaMap } from './render-ia-map.ts';
 import { argument, errorMessage, isDirectRun, writeJsonReport } from './lib/command.ts';
 import { BLOCKING_RULES } from './lib/components.ts';
 import { findPages, normalizePath, pageFile, pageSlug, readMintignore } from './lib/discovery.ts';
@@ -42,6 +43,27 @@ export async function validateDocs({
   const redirectSources = new Map(redirects.map((redirect) => [redirect.source, redirect]));
   const findings: Finding[] = [];
   const imageUsage = new Map<string, Set<string>>();
+
+  const iaMap = renderIaMap({ root });
+  const annotationLines = fs.readFileSync(path.join(root, '.mintlify/ia-map.yml'), 'utf8').split('\n');
+  for (const key of iaMap.unannotated) {
+    findings.push(createFinding(
+      'ia.missing-annotation',
+      'docs.json',
+      docsJsonLine(docsContent, key),
+      `Navigation node has no placement annotation. Add "${key}:" to .mintlify/ia-map.yml.`,
+      { target: key },
+    ));
+  }
+  for (const key of iaMap.orphans) {
+    findings.push(createFinding(
+      'ia.orphaned-annotation',
+      '.mintlify/ia-map.yml',
+      annotationLines.findIndex((line) => line.match(/^([^\s#][^:]*):\s*$/)?.[1]?.trim() === key) + 1,
+      `Annotation "${key}" has no navigation node. Use the root slug for an area or the group label for a section.`,
+      { target: key },
+    ));
+  }
 
   for (const file of pages) {
     const content = fs.readFileSync(path.join(root, file), 'utf8');

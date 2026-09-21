@@ -35,7 +35,7 @@ import {
 
 function fixture(files: Record<string, string>): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'component-audit-'));
-  for (const [name, content] of Object.entries(files)) {
+  for (const [name, content] of Object.entries({ '.mintlify/ia-map.yml': '', ...files })) {
     const file = path.join(root, name);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, content);
