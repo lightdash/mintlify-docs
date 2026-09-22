@@ -149,6 +149,33 @@ Replace default URLs and tweak in-product UI surfaces.
 | `HEADWAY_ENABLED`                             | Enables the Headway changelogs widget in the Lightdash menu (default=true)                                              |
 | `LIGHTDASH_DASHBOARD_DISABLE_SENTRY_TRACKING` | When `true`, suppresses Sentry tracking on the embedded dashboard frame. (default=false)                                |
 
+## Map basemaps
+
+[Map charts](/visualizations/map) use CARTO for the Light, Dark, and Voyager backgrounds, including the Voyager fallback when OpenStreetMap tiles fail. Lightdash requests these tiles through its backend and keeps the API key out of the browser. OpenStreetMap and Satellite backgrounds do not use this key.
+
+| Variable | Description |
+| :--- | :--- |
+| `CARTO_API_KEY` | CARTO **Basemaps** API key. Optional; unset by default. Without a key, Lightdash still requests anonymous tiles, which can display CARTO's "API key required" watermark. |
+
+To configure a key:
+
+1. [Request a free CARTO Basemaps API key](https://carto.com/basemaps/apikey/). Complete the form with your email and project details; CARTO emails the key to you. Review the usage limits and terms linked on that page.
+2. Set `CARTO_API_KEY` in the environment of every Lightdash backend replica using your deployment's secret management. For example, `CARTO_API_KEY=your-carto-basemaps-api-key`. If you restrict the key, allow your backend's outbound public IP addresses: tile requests originate from the server, so website-only restrictions do not authorize these requests.
+3. Restart or roll out the backend, then open a map with a Light, Dark, or Voyager background. The map should render without the watermark. If an old watermark remains, force-refresh the browser to discard cached tiles.
+
+For Helm deployments, you can reference an existing Kubernetes Secret. Create a Secret named `lightdash-carto` in the release's namespace with a `CARTO_API_KEY` entry, then add this to your Helm values:
+
+```yaml
+extraEnv:
+  - name: CARTO_API_KEY
+    valueFrom:
+      secretKeyRef:
+        name: lightdash-carto
+        key: CARTO_API_KEY
+```
+
+Allow outbound HTTPS from the backend to `basemaps.cartocdn.com`. CARTO's usage limits still apply; the backend proxy does not remove provider quotas.
+
 ## Feature toggles
 
 Enable or disable individual product features across the instance.
