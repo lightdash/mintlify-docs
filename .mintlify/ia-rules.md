@@ -65,6 +65,8 @@ Only the annotations are hand-maintained, in `.mintlify/ia-map.yml`.
 or section. Adding a page does not touch them. `node scripts/docs/render-ia-map.ts --check` reports both failure
 modes and exits non-zero: a node with no annotation, and an annotation whose node no longer exists.
 
+Annotation keys are the exact `root` slug for an area and the exact `group` label for a section without a root. Adding or removing `root` changes the key even when the label stays the same. Replace the superseded key and update its `for:` description to match the node's scope.
+
 If you cannot write a one-line `for:` that distinguishes a new node from its siblings, it should not
 be a node.
 
@@ -88,6 +90,14 @@ several children; anything less belongs inside an existing one. Sections are fre
 5. **Ship it whole:** doc type declared, frontmatter complete, nav entry added, redirect if anything
 moved.
 
+## Reorganization checklist
+
+1. Update pages and `docs.json` navigation together, including group roots and child entries. Each page has one navigation home.
+2. Apply principle 7 to shipped URLs: add direct redirects, flatten existing redirects, and rewrite inbound links to final destinations. Search for every retired slug, including anchors.
+3. Reconcile `.mintlify/ia-map.yml` with the resulting areas and sections using the key rules in [The IA map](#the-ia-map). Remove annotations for dissolved nodes.
+4. Move page-owned images and local videos with their content, including content merged into another page. Use `images/<final-page-slug>/` or a shared parent directory; preserve assets still used by other pages. Update references in pages and snippets, search for retired media paths, and check that alt text still describes the actual image.
+5. Run the repository checks listed in `AGENTS.md` before publishing. Review both missing resources and valid resources left under a retired page's media directory.
+
 ## Patch profile — any agent making a docs change
 
 - **Search before writing.** Local agents: `qmd query` against the docs index when available, else `rg`. The Mintlify agent: site search. Default to extending the canonical page over adding a page.
@@ -95,8 +105,8 @@ moved.
 - **Declare the doc type.** Verb-first slug if and only if it's a Tutorial.
 - **Write in current state.** The page describes how the product works now — no "new", "recently", "previously", or changelog narration.
 - **Restating a fact from another page?** Replace it with a link or snippet before finishing (principles 1, 5).
-- **Moving, renaming, or merging anything?** Full principle-7 checklist: redirect + re-point + rewrite inbound links (`rg` the old slug).
-- **Before done:** frontmatter has `title` and `description`; the page is reachable from nav; `mint broken-links` passes.
+- **Moving, renaming, merging, or regrouping anything?** Follow the [reorganization checklist](#reorganization-checklist).
+- **Before done:** follow the completion checks in `AGENTS.md`.
 
 ## Cleanup profile — periodic review agents
 

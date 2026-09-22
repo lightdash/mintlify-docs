@@ -45,15 +45,11 @@ Pick a component by the job it does for the reader, never by how it looks. The f
 
 ## Moving, renaming, or merging
 
-Ship the redirect in the same change (principle 7):
-
-1. Add the redirect entry to `docs.json` `redirects`.
-2. Re-point any existing redirect whose destination you moved — redirects must never chain.
-3. Rewrite inbound internal links to the final URL (`rg` the old slug); internal links never route through a redirect.
+Treat a reorganization as one change to pages, navigation, redirects, the IA map, and media. Follow the [reorganization checklist](.mintlify/ia-rules.md#reorganization-checklist), including when a section gains or loses a `root` without changing its label.
 
 ## Before done
 
-Frontmatter is complete, the page is reachable from nav, and `mint broken-links` passes.
+Frontmatter is complete and the page is reachable from nav. Run `node scripts/docs/render-ia-map.ts --check`, `node scripts/docs/validate.ts --changed-files <file-list>`, `node scripts/docs/audit-components.ts --baseline`, and `mint broken-links`. The file list contains one changed path per line, including deleted paths. Mintlify build validation alone does not check the repository's IA annotations or media placement. Report any pre-existing failures separately.
 
 ## Reference docs
 
