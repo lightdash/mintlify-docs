@@ -55,14 +55,14 @@ Every area and section carries a placement annotation: what it is **for**, and w
 contested, what it is **not** for and where that goes instead. Read the map as a walkable tree:
 
 ```bash
-node scripts/docs/render-ia-map.ts
+aube run render:ia-map
 ```
 
 The tree itself is derived from `docs.json` at read time, so it cannot drift from the real structure.
 Only the annotations are hand-maintained, in `.mintlify/ia-map.yml`.
 
 **Update the annotations when you change the tree** — adding, renaming, moving, or dissolving an area
-or section. Adding a page does not touch them. `node scripts/docs/render-ia-map.ts --check` reports both failure
+or section. Adding a page does not touch them. `aube run render:ia-map -- --check` reports both failure
 modes and exits non-zero: a node with no annotation, and an annotation whose node no longer exists.
 
 Annotation keys are the exact `root` slug for an area and the exact `group` label for a section without a root. Adding or removing `root` changes the key even when the label stays the same. Replace the superseded key and update its `for:` description to match the node's scope.

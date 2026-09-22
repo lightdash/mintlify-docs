@@ -11,7 +11,7 @@ These rules govern every change. The full system — doc-type contracts and the 
 
 ## Placement and naming
 
-- **Deciding where something goes?** Run `node scripts/docs/render-ia-map.ts` for the annotated area tree, and see Placement in [`ia-rules.md`](.mintlify/ia-rules.md) for edge cases and new topics.
+- **Deciding where something goes?** Run `aube run render:ia-map` for the annotated area tree, and see Placement in [`ia-rules.md`](.mintlify/ia-rules.md) for edge cases and new topics.
 - **Directories are product areas, never doc types:** `get-started`, `explore`, `visualizations`, `semantic-layer`, `workflow` (incl. `workflow/cli`), `agents`, `data-apps`, `embed`, `integrations`, `workspace-admin`, `personal-settings`, `self-host`, `api-reference`, `support`. Place a page by which part of the product it serves. Never make a directory named for a content type.
 - **One name per feature.** Slug ≈ title ≈ sidebarTitle; the sidebar may shorten the title, never diverge from it. "Best practices" never appears in a title or slug — that content is a Guide with a real name.
 - **Add the nav entry in `docs.json` in the same change.** For navigation structure — tabs vs groups, root pages, sidebar rendering and density — read [`navigation.md`](.mintlify/navigation.md).
@@ -53,7 +53,15 @@ Start `mint dev --port 3333` **once** in the background and reuse it for the who
 
 ## Before done
 
-Frontmatter is complete and the page is reachable from nav. Run `node scripts/docs/render-ia-map.ts --check`, `node scripts/docs/validate.ts --changed-files <file-list>`, `node scripts/docs/audit-components.ts --baseline`, and `mint broken-links`. The file list contains one changed path per line, including deleted paths. Mintlify build validation alone does not check the repository's IA annotations or media placement.
+Use the named tasks in `package.json` instead of invoking their scripts directly. Run from the repository root:
+
+- `aube run validate:docs -- --changed-files <file-list>` checks frontmatter, nav reachability, redirects, internal links, media placement, IA annotations, and blocking component rules. The file list contains one changed path per line, including deleted paths; omit `--changed-files <file-list>` for a full-site audit.
+- `aube run audit:components -- --baseline` checks for component regressions across the site.
+- `mint validate` checks the Mintlify build and needs to run outside the sandbox because it writes under `~/.mintlify/previews`; `mint broken-links --check-anchors` checks page links and heading anchors.
+- `aube run check` type-checks and tests the utilities when tooling changes.
+- `aube run audit:external-links` reports unavailable third-party links when auditing external URLs; findings are advisory.
+
+Mintlify build validation alone does not check the repository's IA annotations or media placement.
 
 ### Hidden pages
 
@@ -66,6 +74,6 @@ Pages meant to be fetched by URL rather than browsed declare `hidden: true` in f
 - [`component-reference.md`](.mintlify/component-reference.md) — Mintlify's component surface and prop lists
 - [`navigation.md`](.mintlify/navigation.md) — docs.json navigation primitives and mapping rules
 - [`sidebar-rendering.md`](.mintlify/sidebar-rendering.md) — mint-theme sidebar DOM internals behind the `styles.css` override
-- `ia-map.yml` — the area tree `node scripts/docs/render-ia-map.ts` renders
+- `ia-map.yml` — the area tree `aube run render:ia-map` renders
 
 Internal guidance goes here, never in `.mintlify/skills/`. That directory publishes to `docs.lightdash.com/skill.md` for external agents, so it describes Lightdash product capabilities — never how to write these docs.
