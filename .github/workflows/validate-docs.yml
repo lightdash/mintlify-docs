@@ -85,6 +85,20 @@ jobs:
           fi
           echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
 
+      - name: Audit internal links and anchors
+        id: internal-links
+        run: |
+          mkdir -p "$REPORT_DIR"
+          set +e
+          node scripts/docs/audit-internal-links.ts --output "$REPORT_DIR/internal-links.json"
+          exit_code=$?
+          set -e
+          if [[ ! -f "$REPORT_DIR/internal-links.json" ]]; then
+            printf '%s\n' '{"schemaVersion":1,"status":"tool_failure","scope":"all","summary":{"errors":0,"autoFixable":0},"findings":[],"error":"Internal link audit exited before writing its report."}' > "$REPORT_DIR/internal-links.json"
+            exit_code=2
+          fi
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+
       - name: Check the component baseline
         id: components
         env:
@@ -120,7 +134,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: docs-validation
-          path: ${{ env.REPORT_DIR }}/docs-validation.json
+          path: |
+            ${{ env.REPORT_DIR }}/docs-validation.json
+            ${{ env.REPORT_DIR }}/internal-links.json
           if-no-files-found: error
           retention-days: 14
 
@@ -147,6 +163,14 @@ jobs:
           } else {
             console.log(`${report.summary.errors} blocking finding(s), ${report.summary.autoFixable} auto-fixable.`);
           }
+          const internalLinks = readReport('internal-links.json');
+          if (!internalLinks) {
+            console.log('\nInternal link report is unavailable.');
+          } else if (internalLinks.status === 'tool_failure') {
+            console.log('\nInternal link audit failed. Inspect the job log and structured artifact.');
+          } else {
+            console.log(`\n${internalLinks.summary.errors} broken internal link or anchor finding(s).`);
+          }
           const components = readReport('component-audit.json');
           if (!components) {
             console.log('\nComponent audit report is unavailable.');
@@ -170,9 +194,11 @@ jobs:
         if: ${{ !cancelled() && steps.validation.outcome == 'success' }}
         env:
           EXIT_CODE: ${{ steps.validation.outputs.exit_code }}
+          INTERNAL_LINK_EXIT_CODE: ${{ steps.internal-links.outputs.exit_code }}
           COMPONENT_EXIT_CODE: ${{ steps.components.outputs.exit_code }}
         run: |
           if [[ "${EXIT_CODE:-2}" != '0' ]]; then exit "${EXIT_CODE:-2}"; fi
+          if [[ "${INTERNAL_LINK_EXIT_CODE:-2}" != '0' ]]; then exit "${INTERNAL_LINK_EXIT_CODE:-2}"; fi
           exit "${COMPONENT_EXIT_CODE:-2}"
 
   external-links:

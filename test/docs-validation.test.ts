@@ -6,6 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { auditExternalLinks } from '../scripts/docs/audit-external-links.ts';
+import { auditInternalLinks } from '../scripts/docs/audit-internal-links.ts';
 import { buildWorkflowAnnotations } from '../scripts/docs/lib/findings.ts';
 import { validateDocs } from '../scripts/docs/validate.ts';
 
@@ -143,6 +144,25 @@ test('reports external failures as advisory structured findings', async (t) => {
   assert.equal(report.findings[0]?.severity, 'warning');
   assert.equal(report.findings[0]?.file, 'index.mdx');
   assert.equal(report.findings[0]?.line, 6);
+});
+
+test('reports broken heading anchors with source locations', async (t) => {
+  const root = fixture({
+    'docs.json': JSON.stringify({ navigation: { pages: ['index', 'target'] } }),
+    'index.mdx': page('[Moved section](/target#old-heading)'),
+    'target.mdx': page('## Current heading'),
+  });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const report = await auditInternalLinks({ root });
+
+  assert.equal(report.status, 'failed');
+  assert.deepEqual(report.findings.map(({ rule, file, line, target }) => ({ rule, file, line, target })), [{
+    rule: 'link.broken-anchor',
+    file: 'index.mdx',
+    line: 6,
+    target: '/target#old-heading',
+  }]);
 });
 
 test('uses a separate exit condition and report for tool failures', (t) => {
