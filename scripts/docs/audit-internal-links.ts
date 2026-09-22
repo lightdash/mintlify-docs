@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -11,39 +12,69 @@ import type { ValidationReport } from './lib/types.ts';
 
 export interface AuditInternalLinksOptions {
   root?: string;
+  runMint?: MintRunner;
 }
 
-interface BrokenInternalLink {
-  originalPath: string;
-  relativeDir: string;
-  filename: string;
-  anchorLink?: string;
+interface MintResult {
+  exitCode: number;
+  output: string;
+}
+
+type MintRunner = (root: string) => Promise<MintResult>;
+
+const runMint: MintRunner = (root) => new Promise((resolve, reject) => {
+  const child = spawn('mint', ['broken-links', '--check-anchors'], {
+    cwd: root,
+    env: { ...process.env, CI: 'true', NO_COLOR: '1' },
+  });
+  let output = '';
+  child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+  child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+  child.on('error', reject);
+  child.on('close', (exitCode) => resolve({ exitCode: exitCode ?? 2, output }));
+});
+
+function brokenLinksFrom(output: string): Array<{ file: string; target: string }> {
+  const lines = output.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, '').split('\n');
+  const brokenLinks: Array<{ file: string; target: string }> = [];
+  let file: string | undefined;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/\.(md|mdx)$/.test(trimmed)) {
+      file = normalizePath(trimmed);
+      continue;
+    }
+    const marker = trimmed.indexOf('⎿');
+    if (file !== undefined && marker >= 0) {
+      const target = trimmed.slice(marker + 1).trim();
+      if (target !== '') brokenLinks.push({ file, target });
+    }
+  }
+  return brokenLinks;
 }
 
 export async function auditInternalLinks({
   root = process.cwd(),
+  runMint: checkLinks = runMint,
 }: AuditInternalLinksOptions = {}): Promise<ValidationReport> {
-  const moduleName: string = '@mintlify/link-rot';
-  const { getBrokenInternalLinks } = await import(moduleName) as {
-    getBrokenInternalLinks: (
-      repoPath: string,
-      options: { checkAnchors: boolean },
-    ) => Promise<BrokenInternalLink[]>;
-  };
-  const brokenLinks = await getBrokenInternalLinks(root, { checkAnchors: true });
+  const result = await checkLinks(root);
+  const brokenLinks = brokenLinksFrom(result.output);
+  if (result.exitCode > 1 || (result.exitCode === 1 && brokenLinks.length === 0)) {
+    throw new Error(`Mintlify link audit failed with exit code ${result.exitCode}.\n${result.output}`);
+  }
   const searchOffsets = new Map<string, number>();
   const findings = brokenLinks.map((link) => {
-    const file = normalizePath(path.join(link.relativeDir, link.filename));
+    const file = link.file;
     const content = fs.readFileSync(path.join(root, file), 'utf8');
-    const searchKey = `${file}\0${link.originalPath}`;
-    const index = content.indexOf(link.originalPath, searchOffsets.get(searchKey) ?? 0);
-    if (index >= 0) searchOffsets.set(searchKey, index + link.originalPath.length);
+    const searchKey = `${file}\0${link.target}`;
+    const index = content.indexOf(link.target, searchOffsets.get(searchKey) ?? 0);
+    if (index >= 0) searchOffsets.set(searchKey, index + link.target.length);
     return createFinding(
-      link.anchorLink === undefined ? 'link.broken-internal' : 'link.broken-anchor',
+      link.target.includes('#') ? 'link.broken-anchor' : 'link.broken-internal',
       file,
       index < 0 ? 1 : lineOf(content, index),
-      `Internal link does not resolve: ${link.originalPath}`,
-      { target: link.originalPath },
+      `Internal link does not resolve: ${link.target}`,
+      { target: link.target },
     );
   }).sort((left, right) => left.file.localeCompare(right.file) || left.line - right.line);
 
