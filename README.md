@@ -8,23 +8,18 @@ Welcome to the Lightdash documentation repository! This repo contains all docume
 
 - Node.js 24+ installed
 - Familiarity with Markdown/MDX
+- The [`mint` CLI](https://www.npmjs.com/package/mint) installed globally for local development
 
-### Local Development
+### Preview locally
 
-Install the [Mintlify CLI](https://www.npmjs.com/package/mintlify) to preview documentation changes locally:
+Install the Mintlify CLI and start its local development server:
 
 ```bash
-# Install Mintlify CLI
-npm i -g mintlify
-
-# Start local development server
-mintlify dev
+npm i -g mint@latest
+mint dev
 ```
 
-### Troubleshooting
-
-- Mintlify dev isn't running - Run `mintlify install` to re-install dependencies
-- Page loads as a 404 - Make sure you are running in a folder with `docs.json`
+See the [local development workflow](#3-local-development) for the checks to run before opening a pull request.
 
 ## 📁 Documentation Structure
 
@@ -92,7 +87,7 @@ Introduction paragraph explaining what this page covers.
 Content here...
 ```
 
-4. **Add to navigation** in `docs.json`:
+1. **Add to navigation** in `docs.json`:
 
 ```json
 {
@@ -106,16 +101,19 @@ Content here...
 ### Content Best Practices
 
 #### Use Clear, Action-Oriented Titles
+
 - ✅ **Good**: "How to create a dashboard"
 - ❌ **Bad**: "Dashboards"
 
 #### Write for Your Audience
+
 - **Docs** (default type): Assume basic familiarity with the feature
 - **Tutorials**: Walk a first-timer through one task start to finish
 - **Guides**: Opinionated recommendations for readers already familiar with the basics
 - **References**: Technical users who need exhaustive detail
 
 #### Structure Your Content
+
 ```mdx
 # Page Title (H1 - only one per page)
 
@@ -146,6 +144,7 @@ More instructions...
 ### Adding Images
 
 1. **Create a folder matching your page**:
+
    ```
    explore/my-new-feature.mdx
    images/explore/my-new-feature/
@@ -179,6 +178,7 @@ More instructions...
 ### Accessibility
 
 Always include meaningful alt text:
+
 ```mdx
 <img src="/images/path/file.png" alt="Dashboard settings showing the theme selector dropdown menu"/>
 ```
@@ -216,6 +216,7 @@ git checkout -b docs/your-feature-name
 ```
 
 Branch naming:
+
 - `docs/new-feature-guide` - New documentation
 - `docs/fix-typo-in-setup` - Fixes
 - `docs/update-api-reference` - Updates
@@ -226,38 +227,44 @@ Branch naming:
 - Add images to the correct folders
 - Update `docs.json` navigation if needed
 
-### 3. Test Locally
+### 3. Local development
 
 ```bash
-mintlify dev
+mint dev
 ```
 
 - Check all links work
 - Verify images display correctly
 - Review formatting
 
-#### Run Validation Scripts
+#### Run validation checks
 
-Before submitting your PR, run these validation scripts to catch common issues:
+Install the repository dependencies, then run the project and Mintlify checks before submitting your pull request:
 
 ```bash
-# Install the utility type-checker and test dependencies
 npm ci
 
-# Type-check and test the utilities
+# Type-check and test the documentation utilities
 npm run check
 
-# Check links, images, frontmatter, navigation, and redirects
-node scripts/docs/validate.ts
+# Check repository-specific documentation rules
+npm run validate:docs
 
-# Audit external links separately (optional, slower, and advisory)
-node scripts/docs/audit-external-links.ts
+# Run the Mintlify validation and link checks
+mint validate
+mint broken-links --check-anchors
+
+# Audit external links (optional, slower, and advisory)
+npm run audit:external-links
 ```
 
 **What these scripts check:**
 
-- **validate.ts** - Enforces internal links, image locations, page frontmatter, navigation reachability, and redirect integrity. Pass `--output <file>` for structured JSON findings.
-- **audit-external-links.ts** - Records unavailable third-party links as advisory JSON findings without blocking content changes.
+- **`npm run check`** - Type-checks the utilities and runs their tests.
+- **`npm run validate:docs`** - Enforces internal links, image locations, page frontmatter, navigation reachability, and redirect integrity.
+- **`mint validate`** - Validates the Mintlify project configuration and content.
+- **`mint broken-links --check-anchors`** - Checks page links and heading anchors.
+- **`npm run audit:external-links`** - Records unavailable third-party links as advisory findings without blocking content changes.
 
 **Automated checks:** Pull requests block only on findings in changed files. The validation workflow adds inline annotations, updates one PR comment, and publishes the complete JSON report as an artifact. Full-site and external-link audits run on a schedule.
 
@@ -267,16 +274,16 @@ The validator identifies auto-fixable image placement findings without writing t
 
 ```bash
 # Preview what would be changed
-node scripts/docs/fix-image-locations.ts --dry-run
+npm run fix:image-locations -- --dry-run
 
 # Apply the fixes
-node scripts/docs/fix-image-locations.ts
+npm run fix:image-locations
 ```
 
 **Troubleshooting common issues:**
 
 - **Broken links:** Use absolute paths from root (`/explore/spaces` not `../explore/spaces`) and omit file extensions in links
-- **Misplaced images:** Run `node scripts/docs/fix-image-locations.ts` to automatically fix
+- **Misplaced images:** Run `npm run fix:image-locations` to automatically fix
 - **Shared images:** Can be placed in the nearest common parent directory
 
 ### 4. Commit Your Changes
@@ -287,6 +294,7 @@ git commit -m "docs: add guide for custom metrics"
 ```
 
 Commit message format:
+
 - `docs: add [feature]` - New content
 - `docs: fix [issue]` - Bug fixes
 - `docs: update [page]` - Updates
@@ -299,6 +307,7 @@ git push origin docs/your-feature-name
 ```
 
 Then create a Pull Request with:
+
 - Clear title describing the change
 - Description of what changed and why
 - Screenshots if relevant
@@ -351,11 +360,13 @@ GROUP BY user_id
 #### Lists
 
 Use numbered lists for sequential steps:
+
 1. First do this
 2. Then do this
 3. Finally do this
 
 Use bullet points for non-sequential items:
+
 - Feature A
 - Feature B
 - Feature C
@@ -363,6 +374,7 @@ Use bullet points for non-sequential items:
 ### Common Terms
 
 Maintain consistency:
+
 - **Lightdash** (capital L, not lightdash)
 - **dbt** (lowercase, not DBT)
 - **dashboard** (lowercase, not Dashboard)
