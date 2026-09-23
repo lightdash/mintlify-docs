@@ -22,6 +22,7 @@ A connection is scoped to a project and stores:
 - **Allowed methods** - which of `GET`, `POST`, `PUT`, `PATCH`, `DELETE` the app can use. New connections default to `GET` only; broaden the set only for APIs that actually need writes.
 - **Allowed paths** - optional path prefixes that further restrict where under the base URL the app can call.
 - **Auth** - see [Auth types](#auth-types) below.
+- **Forward viewer identity** - see [Forwarding viewer identity](#forwarding-viewer-identity) below.
 - **Who can link it** - **Admins only**, or **Data app and chart type builders** so editors can attach the connection from a data app or Chart Studio.
 - **Public images** - the **Allow public images in linked apps** toggle lets linked apps and chart types load images straight from the origin, in `<img>` tags or CSS. Off by default; enable it only for trusted public image or tile hosts.
 - **Instructions** - see [Usage instructions](#usage-instructions) below.
@@ -39,6 +40,22 @@ Pick the auth method that matches the target API. The secret is encrypted at res
 - **OAuth 2.0 client credentials** - provide a token URL, client ID, client secret, and optional scopes. Choose **Authorization header** or **Request body** to match the OAuth server's client authentication requirements. The proxy obtains and caches an access token server-side, then sends it to the API as a bearer token. A private token endpoint needs its own operator-approved hostname and CIDR when it differs from the API host.
 
 In every case the injected credential is added by the proxy at request time; the generated app only ever sees the connection alias and the response body.
+
+## Forwarding viewer identity
+
+Enable **Forward viewer identity** below **Custom headers** when adding or editing a connection to let the external service apply per-user access rules. This setting is off by default for each connection. When enabled, Lightdash adds these headers alongside the connection's credentials:
+
+| Header | Value |
+| --- | --- |
+| `X-Lightdash-User-Email` | The viewer's email, when available |
+| `X-Lightdash-User-Id` | The viewer's Lightdash user UUID, when available |
+| `X-Lightdash-App-Id` | The app UUID |
+| `X-Lightdash-Organization-Id` | The connection's organization UUID |
+| `X-Lightdash-Project-Id` | The connection's project UUID |
+
+Lightdash sets these headers server-side; app code cannot override them, and their names are reserved in custom and API-key headers. Missing identity attributes are omitted. Connection tests use the testing administrator's identity and omit the app ID.
+
+The headers are unsigned. Enable forwarding only for services you trust with viewer information. Before using the headers for authorization, the receiving service must authenticate Lightdash through the connection credentials or a trusted network boundary.
 
 ## Testing a connection
 
