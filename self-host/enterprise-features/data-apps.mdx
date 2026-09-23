@@ -92,6 +92,33 @@ Restart the backend. The "Data apps" entry will appear in the **New** menu for u
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
+| `APP_RUNTIME_EXTERNAL_CONNECTION_ALLOWED_PRIVATE_HOST_CIDRS` | Empty | Allows [external connections to trusted private destinations](#private-network-external-connections) using comma-separated `hostname@CIDR` entries. |
+
+### Private-network external connections
+
+[External connections](/data-apps/external-connections) block private and internal network addresses by default. To let a data app call a trusted internal HTTPS API, set `APP_RUNTIME_EXTERNAL_CONNECTION_ALLOWED_PRIVATE_HOST_CIDRS` in the Lightdash backend's deployment environment:
+
+```bash
+APP_RUNTIME_EXTERNAL_CONNECTION_ALLOWED_PRIVATE_HOST_CIDRS="api.internal.example@10.20.0.0/16,auth.internal.example@10.30.1.5/32"
+```
+
+This example allows private addresses in `10.20.0.0/16` for `api.internal.example` and only `10.30.1.5` for `auth.internal.example`. Use the hostnames and narrowest address ranges needed by your services. Restart the backend after changing the variable; malformed entries cause a configuration error at startup.
+
+- Each entry pairs an exact hostname with an IPv4 or IPv6 CIDR. Do not include a URL scheme, port, path, or wildcard. Hostnames are case-insensitive and a trailing DNS dot is ignored.
+- Repeat a hostname to approve multiple ranges, for example `api.internal.example@10.20.0.0/16,api.internal.example@fd12:3456::/48`.
+- A private destination must match both the hostname and one of its CIDRs. Lightdash checks every DNS answer and rejects the request if any private address is outside the approved ranges. Public addresses keep their existing behavior.
+- For OAuth 2.0 client credentials, approve the token endpoint's hostname and private address range separately if it differs from the API host.
+- The backend must already have network access and DNS resolution for both services. HTTPS remains required, including a valid certificate trusted by the backend. This setting does not create network routes or disable certificate verification.
+
+After restarting, create the connection under **Project Settings → Data app connections** with the API's HTTPS base URL, authentication, and allowed methods and paths. Use the wizard's test request to verify it before linking an app. See [testing a connection](/data-apps/external-connections#testing-a-connection).
+
+<Warning>
+  This is an instance-wide trust policy for external connections across all projects. A hostname entry covers every HTTPS port, and explicitly approved ranges can include sensitive internal services, loopback, or cloud metadata addresses. Only approve destinations you trust with data from linked apps, and keep connection methods and paths appropriately restricted.
+</Warning>
+
+Leaving the variable unset or empty preserves the existing private-network block. The exception applies only to requests through external connections, including connection tests and OAuth client-credentials token requests. Connection permissions, credential handling, DNS pinning, redirect blocking, request limits, and rate limits remain in place. Direct browser image loading, sandbox networking, and other backend requests are unaffected.
+
+If a test returns `blocked_ip`, check the exact hostname and every address it resolves to from the backend against the configured CIDRs. For `Failed to obtain OAuth access token`, also check the token endpoint's entry, network access, certificate, and client credentials.
 
 ## Costs
 
