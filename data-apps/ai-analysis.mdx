@@ -1,0 +1,126 @@
+---
+title: "AI analysis"
+sidebarTitle: "AI analysis"
+description: "Summarize what a data app shows, flag notable data points, and let an agent investigate why"
+tag: "Experimental"
+---
+
+<Info>
+  <Badge icon="test-pipe-2" color="orange" size="sm" shape="pill">Experimental</Badge> AI analysis is off by default. It needs [AI agents](/agents/set-up-agents#enable-ai-features) enabled for your organization and the `enable-data-app-analysis` feature flag, which Lightdash support turns on for Cloud organizations on request. [What Experimental means](/support/feature-maturity-levels).
+</Info>
+
+AI analysis reads the results a data app has loaded for the viewer's current filters and tells them what stands out: a headline, a short summary, a list of notable data points, and what the data could not show. For any notable point, an AI agent can then investigate the likely causes using data beyond the page.
+
+Nothing about this is written into the app. Lightdash runs the analysis over the queries the app already executed, so every result respects the viewer's permissions and user attributes, and an app can pick the analysis up and render it in place without a single line of AI code of its own.
+
+## Turn it on
+
+An organization admin enables AI analysis under **Settings → Data apps → AI analysis**. The page is only shown once the feature flag is on.
+
+- **AI analysis** turns it on for every data app in the organization. It sends query results a viewer already has access to, to your configured AI provider. If you have [brought your own provider keys](/agents/set-up-agents#bring-your-own-ai-providers-and-models), the calls go through your account; otherwise they run on Lightdash's key.
+- **Analyse on load** is the default for apps: run the analysis when a viewer opens an app, without a click. Stored analyses of identical results are reused, so a busy app does not re-run the model on every open. Any app can override the default from its **⋯** menu under **Analyse on load**: use the organization default, on, or off.
+- **Continue investigations in Ask AI** lets viewers carry an investigation on as an Ask AI thread. Turn it off to keep viewers at the written explanation.
+
+Self-hosted instances add `enable-data-app-analysis` to `LIGHTDASH_ENABLE_FEATURE_FLAGS`; see [feature flags](/self-host/customize-deployment/environment-variables#feature-flags).
+
+### Limits
+
+The same page sets caps on how much analysis the organization can run. Each is a number or, for the daily caps, empty for no cap.
+
+| Setting | Default | What it bounds |
+| --- | --- | --- |
+| Analyses per day | 300 | Runs of the model over a view, organization-wide, per UTC day. Reused analyses do not count. |
+| Investigations per day | 100 | Agent investigations, organization-wide, per UTC day. |
+| Prompts per day | 500 | Questions apps ask through `useAiPrompt`, organization-wide, per UTC day. |
+| Maximum steps per investigation | 12 | Model steps the agent may take before it must answer. |
+| Maximum warehouse queries per investigation | 15 | Queries the agent may run; when the budget runs out the explanation is marked partial. |
+
+On Lightdash's key the daily caps cannot be raised above the defaults. On your own key they apply as you set them. Once a daily cap is reached, the panel says so and analysis resumes the next day.
+
+Independently of those caps, each viewer is limited per app to 6 analyses, 3 investigations, and 20 prompts a minute. An analysis served from storage is free. When the limit is hit, an analysis a viewer asked for says when to retry; an automatic one on load stays quiet and tries again on the next view change. Investigations are also capped at three minutes each.
+
+## Analyse a view
+
+Open a data app and click the sparkles icon in the header, labelled **Analyse this view**. It opens the **AI analysis** panel on the right. If the organization has analysis off, the icon's tooltip and the panel say so, and organization admins get a link straight to the setting.
+
+<Frame>
+  <img src="/images/data-apps/ai-analysis/analyse-this-view-button.png" alt="The data app header, with the sparkles button and its Analyse this view tooltip" />
+</Frame>
+
+1. Pick an **agent for investigations**. The analysis itself needs no agent; the agent is what investigates a finding later, so any agent with access to the app's data will do. Your choice is remembered per app.
+2. Click **Analyse this view**. The panel reads every query the app ran for the current filters. Queries on tabs you are not looking at count too, as long as the app has loaded them. Apps built on a current SDK report exactly which queries are on screen, so the analysis covers what you see.
+
+When it finishes you get:
+
+- A **headline** with the main finding and a **summary** an executive can read without the charts.
+- **Findings**, each with a severity of High, Medium, Positive, or Info. High and Medium point at something worth a look, Positive at a good surprise, and Info at context the summary relies on. A finding that refers to one row names the row; a finding about a whole table names only the table. Hovering a finding highlights the chart it came from when the app supports [data lineage](/data-apps#network-inspector).
+- **Limitations**, such as a missing comparison period or truncated results. They are what keeps the summary honest, so read them before acting on the headline.
+
+<Frame>
+  <img src="/images/data-apps/ai-analysis/ai-analysis-panel.png" alt="The AI analysis panel: agent picker, Re-analyse button, headline, summary and the first finding" />
+</Frame>
+
+An analysis with no findings is a normal outcome. The headline says so.
+
+If you change a filter or move to a different tab after analysing, the panel flags that the view changed and offers **Re-analyse**. The earlier result stays visible until you do.
+
+If the results behind the view have expired since the app loaded them, Lightdash reloads the app once so its queries run again, then analyses the fresh view. Should that fail too, the panel asks you to refresh the app yourself.
+
+### Reuse
+
+Lightdash stores every analysis with the app version and a fingerprint of the results it read. Opening a view whose results match an analysis someone already ran shows that analysis straight away instead of running the model again, and the same applies when you return to the app later. Findings are shared this way; investigations are personal and are never copied between viewers. **Re-analyse** always runs afresh.
+
+Stored analyses and investigations are deleted after 30 days. A view opened after that is analysed again.
+
+## Investigate a finding
+
+Click **Investigate** on a finding. The agent you picked runs in the background with read-only tools: it can search the semantic layer, run queries, read saved charts and dashboards, and read the agent's knowledge documents. It cannot save content, change anything, or reach external systems. A run is bounded by the organization's [limits](#limits); if the query budget runs out, the explanation says the answer is partial.
+
+The explanation arrives as Markdown with a summary, a **Possible drivers** list with evidence for each, an **Evidence** list of what was checked, and a confidence line. It stays attached to the finding for you and is restored when you reopen the app.
+
+Viewers who have no access to any agent in the project still get the analysis. The panel explains that findings cannot be investigated, and apps hide their Investigate actions for them.
+
+### Continue in Ask AI
+
+When the organization allows it, a finished investigation has a **Continue in Ask AI** button. It opens the investigation as a thread in Ask AI with the agent's reasoning already in place, so you can keep asking questions. The thread stays read-only for its whole life: every later prompt keeps the investigation's tool set, so it cannot save charts, write back, or start a [deep research](/agents/deep-research) run, whatever the agent is otherwise allowed to do.
+
+## Show the analysis inside the app
+
+Viewers do not have to open the panel. Ask the app agent to add AI analysis and the app renders the same analysis in place:
+
+- **"Add AI analysis"** gives the full set: a summary block at the top of the page, markers on the flagged data points of every chart, **Investigate with AI** in every data point's menu, and the investigation card under the chart.
+- **"Just an executive summary"** gives the summary block alone.
+- **"Mark anomalies on the charts"** gives the markers, the menu entry, and the card.
+
+The summary block has an **Analyse** button of its own and shows a **Regenerate** button once a result exists. Markers are painted on High, Medium, and Positive findings only, coloured by severity, and one metric's finding never marks another series of the same chart. Hovering a marked point shows the finding under the value, and the point's menu opens the investigation, or reopens it once one exists.
+
+All of this renders nothing when AI analysis is off, so an app built with it works unchanged for organizations that have not turned it on. While you build, the app builder shows an **AI analysis off** chip next to the prompt when the app renders analysis but the organization has it off, so you are not left wondering why nothing appears; admins can click it to turn analysis on.
+
+<Note>
+  Apps built before AI analysis existed do not pick it up on their own. Ask the agent to add it, which creates a new version of the app. If an app was wired to a model provider through an [external connection](/data-apps/external-connections) as a stopgap, ask the agent to replace that with AI analysis: it drops the author's key from the app and puts the organization's consent and the viewer's permissions back in charge.
+</Note>
+
+### For app code
+
+If you [edit app code locally](/data-apps/download-data-apps-as-code), two hooks from `@lightdash/query-sdk` expose the analysis:
+
+- `useInsights()` returns the view's analysis, and `useInsights(result)` narrows it to the findings on one `useLightdash` query, with a `matches(row, fieldId)` helper for marking data points. The template ships ready-made components under `src/components/insights/` for the summary block, markers, menu entry, and investigation card.
+- `useAiPrompt()` lets the app ask its own short question about results it has already loaded, for an author-written takeaway under a chart or an explanation of a clicked row. Answers are plain text. Prompts are capped at 2,000 characters and count against the prompt limits above.
+
+Neither hook sends rows anywhere: the app names the query, and Lightdash reads the results from the viewer's own query history. Both report the feature as unavailable, and render nothing, outside a Lightdash host that has analysis on. The app template's `references/ai-analysis.md` documents both in full.
+
+## Where it works
+
+AI analysis is for people viewing a data app in Lightdash while signed in. It is not available, and apps built with it show nothing extra, in:
+
+- **Scheduled deliveries** and Google Sheets syncs, which render the app under the creator's account.
+- **Embedded apps**, which run under an embed token.
+- **Local preview** with `lightdash apps preview`, where there is no Lightdash host to run the analysis.
+
+## What is sent to the model
+
+- **Analysis** sends the query results the app loaded for the viewer, with their field names and the app's instructions, to the AI provider configured for your organization.
+- **Investigation** runs the agent you picked, with the same data access that agent has anywhere else.
+- **App prompts** send the results the app named, and the author's question.
+
+Results a viewer cannot see never reach the model, because the analysis only ever reads queries that viewer ran. Analyses are stored in your Lightdash database alongside the app for 30 days. Every run is recorded against the app, the viewer, the operation, and the model, so usage can be attributed.
