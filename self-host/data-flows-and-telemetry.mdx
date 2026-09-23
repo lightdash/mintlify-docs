@@ -14,7 +14,7 @@ This page is for self-hosted Lightdash. Lightdash Cloud is fully managed by Ligh
 - **Warehouse credentials, dbt or Lightdash YAML definitions, generated SQL, query results, dashboard and chart definitions, and underlying warehouse data are processed inside your deployment.** None of these are sent to Lightdash through product telemetry.
 - **Product telemetry is enabled by default** and points at Lightdash's RudderStack endpoint (`https://analytics.lightdash.com`) using a built-in write key. It can be [disabled with a single environment variable](#configuration-2-disable-outbound-rudderstack-telemetry), or [redirected to your own RudderStack instance](#configuration-3-send-telemetry-to-your-own-rudderstack).
 - **Enterprise Edition validates its license key against Keygen on every server start.** The request contains the license key only — no warehouse credentials, no query text, no business data. See [License validation request](#license-validation-request) for the exact payload.
-- **Optional integrations** (SSO, SMTP, Slack, GitHub, object storage, AI providers, MCP, sandbox providers, Sentry, and the organization roadmap) talk directly to the endpoints you configure. They are not proxied through Lightdash Cloud.
+- **Optional integrations** (SSO, SMTP, Slack, GitHub, object storage, AI providers, MCP, sandbox providers, and Sentry) talk directly to the endpoints you configure. They are not proxied through Lightdash Cloud. The [organization roadmap](/self-host/customize-deployment/organization-roadmap) is on for every Enterprise instance whose license validates at boot and calls `https://roadmap.lightdash.com`.
 
 Everything below is grounded in the current Lightdash source code and applies to a standard self-hosted deployment on the [official Helm chart](https://github.com/lightdash/helm-charts) or Docker Compose.
 
@@ -196,7 +196,7 @@ Enterprise Edition (`LIGHTDASH_LICENSE_KEY` set) validates the license against [
 
 The request contains the license key only. It does **not** contain warehouse credentials, dbt project data, query text, query results, chart or dashboard definitions, or any organization business data.
 
-Keygen is the only Lightdash-operated external service required for Enterprise features. If you also enable the optional [organization roadmap](/self-host/customize-deployment/organization-roadmap), the backend additionally calls `https://roadmap.lightdash.com` — see the [egress matrix](#egress-matrix) below.
+Keygen is the only Lightdash-operated external service required for Enterprise features. Once the license validates, the backend also calls `https://roadmap.lightdash.com` to serve the [organization roadmap](/self-host/customize-deployment/organization-roadmap) — see the [egress matrix](#egress-matrix) below.
 
 For full license setup steps and troubleshooting, see [Enterprise features and licensing](/self-host/enterprise-features).
 
@@ -223,7 +223,7 @@ Every default and optional outbound destination from a self-hosted Lightdash dep
 | --- | --- | --- | --- | --- | --- |
 | `analytics.lightdash.com` | Default RudderStack telemetry endpoint | Optional (on by default) | Backend, scheduler, workers, browser | Event stream — see [Telemetry payload](#telemetry-payload) | `RUDDERSTACK_ANALYTICS_DISABLED=true`, or redirect with `RUDDERSTACK_WRITE_KEY` + `RUDDERSTACK_DATA_PLANE_URL` |
 | `api.keygen.sh` | Enterprise license validation on server start and every 24h | **Required** for Enterprise Edition. Not called at all in Community Edition. | Backend, scheduler, workers | License key inside a JSON `meta.key` field | Remove `LIGHTDASH_LICENSE_KEY` (Community only), or run the [validation proxy](https://roadmap.lightdash.com) in front |
-| `roadmap.lightdash.com` | Optional [organization roadmap](/self-host/customize-deployment/organization-roadmap), and optional license-validation proxy | Optional | Backend | Roadmap requests: organization UUID as a path segment and license key in the `lightdash-license-key` header. Proxy requests: license key in a JSON `key` field. No query text or business data. | Do not enable the roadmap feature; leave `LIGHTDASH_LICENSE_VALIDATION_PROXY_ENABLED` unset so license validation goes directly to `api.keygen.sh` |
+| `roadmap.lightdash.com` | [Organization roadmap](/self-host/customize-deployment/organization-roadmap) on every Enterprise instance whose license validated at boot, and optional license-validation proxy | Optional | Backend | Roadmap requests: organization UUID as a path segment and license key in the `lightdash-license-key` header. Proxy requests: license key in a JSON `key` field. No query text or business data. | Remove `LIGHTDASH_LICENSE_KEY` (Community only) to stop roadmap requests; leave `LIGHTDASH_LICENSE_VALIDATION_PROXY_ENABLED` unset so license validation goes directly to `api.keygen.sh` |
 | Customer data warehouse | Every query, dbt compile, warehouse worker | **Required** | Backend, scheduler, warehouse NATS workers | SQL queries, receives query results in return | Warehouse connection config — kept internal to the deployment |
 | Application Postgres | All persistent state (users, projects, encrypted secrets, dashboards, results cache metadata) | **Required** | Backend, scheduler, workers | Full application data | [`PGHOST`](/self-host/customize-deployment/configure-lightdash-to-use-an-external-database) and related variables |
 | Object storage (S3 / S3-compatible) | Results cache, exports, images, headless browser artifacts, data-app bundles | **Required** | Backend, scheduler, headless browser | Encrypted results parquet, generated CSVs/PDFs/PNGs, data-app static bundles | [`S3_*`](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage) variables |
@@ -255,7 +255,7 @@ Community Edition (no `LIGHTDASH_LICENSE_KEY`) does not call `api.keygen.sh` or 
   </Step>
   <Step title="Allow-list the domains you actually need">
     - `api.keygen.sh` — Enterprise Edition only, required.
-    - `roadmap.lightdash.com` — only if you enable the organization roadmap.
+    - `roadmap.lightdash.com` — for the organization roadmap on Enterprise Edition.
     - `analytics.lightdash.com` — only if you leave default telemetry on.
     - Your warehouse endpoint, S3 endpoint, IdP, SMTP host, AI provider endpoints, Slack, GitHub, and sandbox provider endpoints — whichever features you use.
 
