@@ -281,6 +281,9 @@ you:
 ```bash
 ./sandboxes/data-apps/build-cloud-run-image.sh <image-tag> --push
 ```
+
+If your copy of the script still assigns `/app` to `user` with `chown`, use the
+corrected manual recipe below instead.
 </Note>
 
 The Docker build context copies `lightdash-query-sdk.tgz`, a generated artifact that a
@@ -312,9 +315,9 @@ tar -xzf "$STAGE"/computesdk-cloud-run-*.tgz \
   -C "$STAGE" package/dist/gateway.mjs
 mv "$STAGE/package/dist/gateway.mjs" "$STAGE/gateway.mjs"
 
-# E2B's builder injects a `user` account that plain Docker bases lack:
-# create it, and keep the chown so /app stays owned by that user
-sed 's|^RUN chown -R user:user /app|RUN useradd -m -s /bin/bash user 2>/dev/null \|\| true \&\& chown -R user:user /app|' \
+# Create E2B's user account, but keep /app owned by the root gateway user
+# so the Cloud Run sandbox can write to it.
+sed 's|^RUN chown -R user:user /app|RUN useradd -m -s /bin/bash user|' \
   e2b.Dockerfile > "$STAGE/Dockerfile"
 
 cat >> "$STAGE/Dockerfile" <<'EOF'
@@ -454,7 +457,10 @@ Lightdash — you configure it yourself:
 
 
 To update the sandbox toolchain, rebuild the gateway image and redeploy the Cloud Run
-service.
+service. The gateway image must keep `/app` owned by root. If an older build recipe
+assigned it to `user`, data app builds can fail with `Permission denied` for
+`/app/src/design`. Rebuild with the corrected recipe above and redeploy the gateway;
+upgrading Lightdash alone does not update the gateway image.
 
 ## Local Docker provider (development)
 
