@@ -8,199 +8,115 @@ tag: "Experimental"
   <Badge icon="test-pipe-2" color="orange" size="sm" shape="pill">Experimental</Badge> Multiple warehouse connections are behind the `multi-connection-projects` feature flag, and the flow and wording on this page may change between releases. Contact [Lightdash support](mailto:support@lightdash.com) to enable it for your organization. Self-hosted instances need an [Enterprise license](/self-host/enterprise-features) and `multi-connection-projects` in `LIGHTDASH_ENABLE_FEATURE_FLAGS`. [What Experimental means](/support/feature-maturity-levels).
 </Info>
 
-A Lightdash project normally talks to one warehouse. With multiple connections, one project can query several warehouses of the same type, for example a primary database and a reporting replica. Each explore, SQL chart and virtual view runs on one connection, and you choose which.
+Use multiple connections when one project needs data from several databases of the same warehouse type, such as a production database and a read replica. If you only need more dbt projects on the same warehouse, use [multiple dbt sources](/integrations/dbt/projects#connecting-multiple-dbt-sources) instead.
 
-Everything that exists when you switch stays on the project's current connection, which becomes the **primary** connection. You then add **extra** connections and move work onto them: a [dbt source](#run-a-dbt-source-on-another-connection), a [SQL runner query](#query-a-connection-in-the-sql-runner), or a [CLI deploy](#deploy-from-the-cli). The rest of the page covers [dashboards and deliveries](#explores-charts-and-dashboards), [personal credentials](#personal-warehouse-credentials), [content as code](#content-as-code-and-promotion), [removing a connection](#remove-a-connection) and the [limitations](#limitations).
+When you switch, the current connection becomes the **primary** connection and everything that already exists stays on it. Each explore, SQL chart and virtual view runs on one connection.
 
-## When to use it
-
-Use multiple connections when the data for one team lives in more than one database of the same warehouse type. Common cases:
-
-- A production database plus a read replica or reporting copy.
-- Separate databases per business unit, such as finance and operations, that you want to explore and put on one dashboard.
-- A dbt project that builds into a different database from the rest of the project.
-
-If you only need more dbt projects on the same warehouse, use [multiple dbt sources](/integrations/dbt/projects#connecting-multiple-dbt-sources) instead.
-
-## Before you start
+## Requirements and limits
 
 - You need permission to manage the project.
-- The primary connection must be Postgres or Athena. Every extra connection uses the same warehouse type as the primary.
-- Preview projects can't switch. Only a regular project can.
-- A project whose warehouse uses [organization credentials](/workspace-admin/organization-credentials) can't switch.
-- The switch is one way. You can remove extra connections later, but the app has no way to switch the project back.
-
-When one of these blocks the switch, the **Enable multiple connections** button is disabled and its tooltip gives the reason.
+- Only Postgres and Athena projects can switch, and every extra connection uses the primary's warehouse type. You can't change that type while extra connections exist.
+- Preview projects can't switch, and neither can a project whose warehouse uses [organization credentials](/workspace-admin/organization-credentials).
+- The switch is one way. You can remove extra connections, but the app can't switch the project back.
+- One query can't combine tables from two connections.
+- When the feature flag is off, no project can switch or add a connection. Projects that already switched keep working.
 
 ## Enable multiple connections
 
-<Steps>
-  <Step title="Open the Connections card">
-    Go to **Project settings → Connection settings** and scroll to the **Connections** card below the warehouse and dbt forms. Click **Enable multiple connections**.
+In **Project settings → Connection settings**, click **Enable multiple connections** on the **Connections** card. If the button is disabled, its tooltip says why.
 
-    <Frame>
-      <img src="/images/workspace-admin/multiple-warehouse-connections/enable-card.png" alt="The Connections card on a single-connection project, with the Enable multiple connections button marked 1" />
-    </Frame>
-  </Step>
-  <Step title="Name the current connection and add the first extra one">
-    In **Name of the current connection**, give the current warehouse a name, such as `Primary warehouse`. This name appears in pickers and badges across the project.
+<Frame>
+  <img src="/images/workspace-admin/multiple-warehouse-connections/enable-card.png" alt="The Connections card on a single-connection project, with the Enable multiple connections button highlighted" />
+</Frame>
 
-    Then fill in the first extra connection: its **Name** and the usual warehouse fields for your warehouse type. Click **Review the switch**. Lightdash tests the new connection before it shows the review.
-  </Step>
-  <Step title="Review the switch">
-    The review step writes nothing. It shows:
+Name the current connection, add the first extra connection, and click **Review the switch**. Lightdash tests the new connection before it shows the review.
 
-    1. The connection it adds, and that its connection test passed.
-    2. What stays on the current connection: explores, SQL charts, dbt sources, scheduled deliveries and dashboards, with counts.
-    3. A warning that there is no way back to a single connection.
-    4. The **Enable multiple connections** button that makes the change.
-
-    <Frame>
-      <img src="/images/workspace-admin/multiple-warehouse-connections/switch-review.png" alt="The review step of the Enable multiple connections dialog, with the added connection, the list of content that stays on the current connection, the no-way-back warning and the confirm button marked 1 to 4" />
-    </Frame>
-
-    If the project requires personal credentials, the review also says how many people keep theirs for the primary connection. Each person picks credentials for the extra connection the first time they use it.
-  </Step>
-  <Step title="Confirm">
-    Click **Enable multiple connections**. Lightdash tests the connection again and switches the project. If anything fails, the project stays on one connection and nothing changes.
-
-    <Check>
-      The **Connections** card now lists both connections, and the SQL runner shows a connection picker.
-    </Check>
-  </Step>
-</Steps>
+<Frame>
+  <img src="/images/workspace-admin/multiple-warehouse-connections/switch-review.png" alt="The review step of the Enable multiple connections dialog, listing the added connection, the content that stays on the current connection and the no-way-back warning" />
+</Frame>
 
 ## Manage connections
 
-After the switch, the **Connections** card lists every connection. The primary one has an **Original** badge (1). Each row has a menu (2), and **Add connection** (3) adds another extra connection.
-
 <Frame>
-  <img src="/images/workspace-admin/multiple-warehouse-connections/connections-panel.png" alt="The Connections card listing Primary warehouse with an Original badge and Reporting replica, with the badge, a row menu and the Add connection button marked 1 to 3" />
+  <img src="/images/workspace-admin/multiple-warehouse-connections/connections-panel.png" alt="The Connections card listing Primary warehouse with an Original badge and Reporting replica, with the row menu and Add connection highlighted" />
 </Frame>
 
-The row menu has these actions:
-
-- **Edit** changes an extra connection's details. Leave a secret blank to keep the saved one. Lightdash tests the connection before it saves. To edit the primary connection, use the warehouse form on the same page.
-- **Rename** changes the name of any connection, including the primary. The new name shows up at once in pickers and badges.
-- **SQL runner databases** sets which databases the SQL runner lists for that connection. Turn on **List all databases** to list every database the connection can read, up to 100, or name them in **Additional databases**.
-- **Remove** removes an extra connection. See [Remove a connection](#remove-a-connection).
+**Edit** applies to extra connections. Edit the primary with the warehouse form on the same page. **SQL runner databases** sets which databases the SQL runner lists for a connection, up to 100.
 
 ## Run a dbt source on another connection
 
-Explores come from dbt sources, and each dbt source runs on one connection. The primary dbt source always runs on the primary connection. Each [additional dbt source](/integrations/dbt/projects#connecting-multiple-dbt-sources) has a connection select in the **dbt sources** panel on the same settings page.
+The primary dbt source always runs on the primary connection. Each [additional dbt source](/integrations/dbt/projects#connecting-multiple-dbt-sources) can run on any connection, and its explores move on the next compile.
 
 <Frame>
-  <img src="/images/workspace-admin/multiple-warehouse-connections/dbt-source-connection.png" alt="The dbt sources panel: the primary source says Always runs on Primary warehouse, an additional source has a connection select set to Reporting replica, and a note offers Compile now" />
+  <img src="/images/workspace-admin/multiple-warehouse-connections/dbt-source-connection.png" alt="The dbt sources panel with an additional source set to Reporting replica and a note offering Compile now" />
 </Frame>
-
-1. The primary source shows **Always runs on** and the primary connection's name.
-2. Pick a connection for an additional source.
-3. A note says that the source's explores move to the new connection on the next compile, and that they keep running on the old connection until then. Click **Compile now** to compile straight away. The note closes when the compile finishes.
 
 Two connections can't produce explores with the same name. If they do, the compile fails and names both connections.
 
 ## Query a connection in the SQL runner
 
-On a project with multiple connections, the SQL runner has a connection picker. Queries, autocomplete, results, downloads and saved charts all use the active connection.
-
 <Frame>
-  <img src="/images/workspace-admin/multiple-warehouse-connections/sql-runner-connection.png" alt="The SQL runner with Reporting replica picked as the connection, both connections in the table tree with an Active badge on Reporting replica, and the share link button, marked 1 to 3" />
+  <img src="/images/workspace-admin/multiple-warehouse-connections/sql-runner-connection.png" alt="The SQL runner with Reporting replica as the active connection, both connections in the table tree, and the share link button highlighted" />
 </Frame>
 
-1. **Connection** picks the active connection. The SQL runner remembers the last connection you used in each project, in this browser. If you haven't picked one yet, none is selected and the sidebar says "Choose a connection to browse its tables".
-2. The table tree lists every connection, with its databases, schemas and tables. The active connection has an **Active** badge. You can expand another connection to browse it without switching.
-3. The share link keeps the connection. Someone who opens it gets the same connection, whatever they used last.
+Queries, saved charts and virtual views use the active connection. The SQL runner remembers your last connection for each project in this browser. Share links keep their connection, and **Open in SQL Runner** from an explore opens on that explore's connection.
 
-When you change the active connection, the results clear. This keeps results from two warehouses from mixing. If the editor has SQL you typed and you click a table on another connection, the SQL runner asks before it changes anything: **Switch and replace SQL**, or keep the current connection.
-
-A SQL chart or virtual view saves on the active connection. To move a saved SQL chart, open it, pick the other connection and save. Run it before you save to check that the SQL works on the new warehouse. A virtual view can't move. Create a new one on the other connection instead.
-
-### Open an explore's SQL in the SQL runner
-
-**Open in SQL Runner** in an explore's SQL panel opens the SQL runner on that explore's connection, not on the one you used last. An explore on the primary connection opens there.
+To move a SQL chart, open it, pick the other connection and save. Run it first to check that the SQL works there. A virtual view can't move, so create a new one on the other connection.
 
 ## Explores, charts and dashboards
 
-Once a project has two or more connections, each explore shows a connection badge in the explore list and in the explorer header. The explore list also gets a connection filter.
-
 <Frame>
-  <img src="/images/workspace-admin/multiple-warehouse-connections/explore-connection-filter.png" alt="The explore list with the connection filter open, listing All connections, Primary warehouse and Reporting replica, and a Primary warehouse badge next to an explore, marked 1 and 2" />
+  <img src="/images/workspace-admin/multiple-warehouse-connections/explore-connection-filter.png" alt="The explore list with the connection filter open and a connection badge next to an explore" />
 </Frame>
 
-Saved charts run on their explore's connection, and SQL charts run on their own connection. A dashboard can mix tiles from different connections. Each tile shows its connection and runs its query there.
+A dashboard can mix connections. Each tile, with its underlying data, downloads and scheduled deliveries, runs on the tile's own connection. Embedded dashboards run the same way without the connection badges.
 
 <Frame>
-  <img src="/images/workspace-admin/multiple-warehouse-connections/dashboard-connection-badges.png" alt="A dashboard with a tile badged Reporting replica next to a tile badged Primary warehouse, marked 1 and 2" />
+  <img src="/images/workspace-admin/multiple-warehouse-connections/dashboard-connection-badges.png" alt="A dashboard with a tile on Reporting replica next to a tile on Primary warehouse" />
 </Frame>
-
-Underlying data, downloads and scheduled deliveries follow the same rule. A delivery of a mixed dashboard runs each tile on its own connection. Embedded dashboards run the same way and don't show the badges.
 
 ## Personal warehouse credentials
 
-An extra connection follows the primary connection's **Require users to provide their own credentials** setting. On a Postgres project, the extra connection's form has no toggle for it. The form says "Require users to provide their own credentials follows the primary connection."
-
-When the primary requires personal credentials, each person needs credentials for every connection they query. The credentials switcher in the navigation bar has one section per connection, and each section lists only credentials of that warehouse type. If someone has exactly one matching credential that no other connection uses, Lightdash picks it for them. Otherwise they choose one in the switcher or create one with **Create new**.
+Extra connections follow the primary's **Require users to provide their own credentials** setting. When it is on, people need [personal credentials](/personal-settings/personal-warehouse-connections) for each connection they query, and the credentials switcher in the navigation bar has one section per connection.
 
 <Frame>
-  <img src="/images/workspace-admin/multiple-warehouse-connections/credentials-message.png" alt="The SQL runner on Reporting replica without personal credentials: Could not load tables in the tree, a message naming the connection, and the credentials switcher in the navigation bar, marked 1 to 3" />
+  <img src="/images/workspace-admin/multiple-warehouse-connections/credentials-message.png" alt="The SQL runner on Reporting replica without personal credentials, with the error message and the credentials switcher highlighted" />
 </Frame>
-
-Without credentials for a connection, the SQL runner can't load its tables (1). The sidebar names the connection and points to the credentials switcher (2) in the navigation bar (3). See [personal warehouse connections](/personal-settings/personal-warehouse-connections) for how to add credentials.
 
 ## Deploy from the CLI
 
-A `lightdash deploy` without a source keeps deploying to the primary connection. To deploy a dbt project that builds into an extra connection, choose its dbt source by name:
+`lightdash deploy` without a source deploys to the primary connection. To deploy explores to an extra connection, name the dbt source that runs there:
 
 ```bash
 lightdash deploy --source "Replica models"
 ```
 
-The explores take the connection of that source, and the other sources keep their explores. `lightdash preview` and `lightdash start-preview` take the same flag, and [`lightdash config set-source`](/workflow/cli/reference#lightdash-config-set-source) stores a source for the active project. The CLI checks that your dbt target's database matches the connection. If it doesn't, the deploy stops with an error that names the connection and both databases. See the [CLI reference](/workflow/cli/reference#lightdash-deploy) for the options.
+The other sources keep their explores. `lightdash preview` and `lightdash start-preview` take the same flag, and [`lightdash config set-source`](/workflow/cli/reference#lightdash-config-set-source) stores a default. The deploy stops if your dbt target's database doesn't match the connection. See the [CLI reference](/workflow/cli/reference#lightdash-deploy).
 
-Preview projects copy all the connections of the project they come from, and the copied explores and SQL charts use the copies.
+Preview projects copy every connection, and their explores and SQL charts use the copies.
 
 ## Content as code and promotion
 
-A downloaded SQL chart or virtual view on an extra connection has a `connection:` field with the connection's name. Content on the primary connection has no `connection:` field.
+SQL charts and virtual views on an extra connection download with the connection's name, for example `connection: Reporting replica`. Content on the primary has no `connection:` field.
 
-```yaml
-connection: Reporting replica
+An upload can't move content to another connection. A file that names another connection, or drops the field, fails:
+
+```text
+The connection of SQL chart "<slug>" is "<connection>" and cannot change on upload. Move it in the SQL runner, then download it again.
 ```
 
-On upload, Lightdash looks up the name before it writes anything. An unknown name fails with `This project has no connection named "<name>".`
-
-An upload can't move content to another connection:
-
-- A SQL chart on an extra connection keeps its connection. A file with no `connection:` field, or with another name, fails with `The connection of SQL chart "<slug>" is "<connection>" and cannot change on upload. Move it in the SQL runner, then download it again.`
-- A virtual view fails the same way, with `Create a new virtual view on the other connection.`
-
-[Promoting](/explore/promote-content) a SQL chart matches its connection by name in the upstream project. If the upstream project has no connection with that name, the promotion stops and names it.
+[Promotion](/explore/promote-content) matches SQL chart connections by name and stops if the upstream project has no connection with that name.
 
 ## Remove a connection
 
-You can remove an extra connection when nothing uses it. The primary connection can't be removed. If explores, dbt sources, SQL charts or running queries still use the connection, Lightdash refuses and lists them.
+You can remove an extra connection only when no explores, dbt sources, SQL charts or running queries use it. The primary can't be removed. Move that content first, or contact [Lightdash support](mailto:support@lightdash.com) if you can't. When the last extra connection goes, the project works like a single-connection project again.
 
 <Frame>
-  <img src="/images/workspace-admin/multiple-warehouse-connections/removal-refused.png" alt="The Remove connection dialog refusing to remove Reporting replica, with the error naming the SQL chart that uses it marked 1" />
+  <img src="/images/workspace-admin/multiple-warehouse-connections/removal-refused.png" alt="The Remove connection dialog refusing to remove Reporting replica because a SQL chart uses it" />
 </Frame>
 
-Move the content first: rebind the dbt source and compile, then move or delete the SQL charts. If you can't move some content, contact [Lightdash support](mailto:support@lightdash.com).
-
-If someone has the SQL runner open on a connection that another admin removes, a notice says the connection was removed from the project. Their SQL stays in the editor. When the last extra connection is removed, the project works like a single-connection project again.
-
-### When an extra connection breaks
-
-If an extra connection fails during a compile, for example after a password change, its explores stay as they were. The compile shows a **Connections failed to compile** warning with each connection and the reason. If the primary connection fails, the compile fails as it does on any project.
+If an extra connection fails during a compile, its explores stay as they were and a warning names the connection. If the primary fails, the compile fails as usual.
 
 <Frame>
-  <img src="/images/workspace-admin/multiple-warehouse-connections/compile-warning.png" alt="A Connections failed to compile notification saying that the Reporting replica connection failed to compile and its previous explores are kept, marked 1" />
+  <img src="/images/workspace-admin/multiple-warehouse-connections/compile-warning.png" alt="A Connections failed to compile warning for Reporting replica, saying its previous explores are kept" />
 </Frame>
-
-## Limitations
-
-- Only Postgres and Athena projects can have multiple connections, and all of a project's connections use the same warehouse type.
-- The primary connection can't use organization credentials, and you can't change its warehouse type while extra connections exist.
-- A project can't go back to a single connection from the app.
-- A query runs on one connection, so one query can't combine tables from two connections.
-- A virtual view can't move to another connection.
-- When the feature flag is off, no project can switch and no project can add a connection. Projects that already switched keep working, and you can still remove their extra connections.
