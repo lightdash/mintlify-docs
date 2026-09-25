@@ -1,0 +1,132 @@
+---
+title: Custom agent skills
+description: Turn repeatable prompts into reusable workflows that agents can load automatically or run on demand
+---
+
+Custom skills are reusable prompts for repeatable work. They capture the detailed instructions you would otherwise type each time you ask an agent to complete a task: what to do, how to do it, which checks to make, and what the result should include.
+
+If you find yourself copying the same lengthy prompt into conversations, turn it into a skill. For example, you can create skills for investigating a KPI change, analyzing a conversion funnel, checking data quality, or preparing a weekly business review.
+
+## Choose between instructions and skills
+
+Agent instructions and skills both guide how an agent works, but they apply at different times:
+
+| | Best used for |
+| --- | --- |
+| **Instructions** | Always-on behavior that should apply to every conversation |
+| **Knowledge documents** | Business context and reference material the agent should know |
+| **Skills** | A reusable prompt or procedure for a particular task |
+
+For example, “Use concise language and explain unfamiliar terms” belongs in the agent's instructions because it applies to every response. A multi-step prompt for investigating a KPI drop belongs in a skill because the agent only needs it for that analysis.
+
+If part of your agent's instructions has grown into a self-contained workflow that only applies to certain requests, move that workflow into a skill.
+
+Skills do not replace agent instructions. Keep the agent's shared defaults in its instructions, then use skills to add focused workflows when a request calls for them. Knowledge documents provide the supporting business context and reference material those workflows may need.
+
+<Note>
+  This page covers custom skills for Lightdash AI agents. To give coding agents guidance for editing Lightdash projects, see [Agent skills](/workflow/install-agent-skills).
+</Note>
+
+## Create or attach a skill
+
+Custom skills live in a shared organization library. Attach a skill to each agent that should be able to use it.
+
+Developers and admins can create, edit, and attach skills. Anyone who can use an agent can use the skills attached to it.
+
+<Steps>
+  <Step title="Open the agent's settings">
+    Go to **Ask AI**, choose the agent, and open its **Setup** page. Create the agent first if it has not been saved yet.
+  </Step>
+  <Step title="Add a skill">
+    In **Skills**, click **Add skill**. Choose an existing skill from the organization library, or select **Create new skill**.
+  </Step>
+  <Step title="Describe the workflow">
+    Enter a name, description, and instructions. The name becomes the slash command, so use a short name such as `investigate-kpi-change`. The description should explain both what the skill does and when the agent should use it.
+  </Step>
+  <Step title="Save the skill">
+    Click **Create skill**. Lightdash adds it to the organization library and attaches it to the current agent.
+  </Step>
+</Steps>
+
+To attach the skill to another agent, open that agent's **Skills** section, click **Library**, and select it. Editing a shared skill saves a new version for every agent that uses it. The skill's name cannot be changed after creation.
+
+**Remove from this agent** only detaches the skill from that agent. It does not remove the skill from the organization library or from other agents.
+
+## Use a skill
+
+An agent can use an attached skill in two ways:
+
+- **Automatically** — ask your question normally. When the request matches a skill's description, the agent can load the instructions and follow them.
+- **On demand** — type `/` in the message composer, search by name or description, and select a skill. Add the task details after the command, for example `/investigate-kpi-change weekly active users in EMEA`. You can invoke one skill per message.
+
+Text after the slash command is passed to the skill as its arguments. In the skill instructions, use `$ARGUMENTS` where those details should appear.
+
+## Write effective skills
+
+Start with a prompt you already repeat or a workflow an experienced analyst already follows. Spell out the sequence, the checks they make, and the mistakes they know to avoid.
+
+For example, instead of writing:
+
+```text
+Analyze churn carefully and look for interesting trends.
+```
+
+give the agent a concrete process:
+
+```text
+When investigating churn:
+
+1. Compare churn with the previous equivalent period.
+2. Break it down by plan, customer tenure, and acquisition channel.
+3. Check whether the change is concentrated in a specific cohort.
+4. Check for pricing or product changes during the period.
+5. Do not compare incomplete months with complete months.
+```
+
+Include the details the agent cannot infer on its own, such as which metric to use, which accounts to exclude, or how your team handles incomplete periods. Give sensible defaults, and define what a complete analysis should include so the agent knows when to stop.
+
+Keep each skill focused on one coherent workflow. If several analyses follow the same process, prefer one reusable skill over separate versions for every metric or team.
+
+### Example `SKILL.md`
+
+Lightdash stores each skill as a `SKILL.md` file. The editor creates this file for you, but seeing the structure can help you write clearer instructions:
+
+```markdown
+---
+name: investigate-kpi-change
+description: Investigate unexpected metric changes and identify the segments contributing most to the change. Use when a metric increases, decreases, spikes, or drops.
+argument-hint: <metric and time period>
+---
+
+# Investigate a KPI change
+
+Use $ARGUMENTS as the metric and period to investigate.
+
+1. Confirm the metric and time period.
+2. Compare it with the previous equivalent period.
+3. Break the change down by the dimensions most likely to explain it.
+4. Identify which segments contribute most to the change.
+5. Check whether the change is broad-based or concentrated.
+6. Summarize the main contributors with supporting values.
+
+## Checks
+
+- Use metrics defined in the Lightdash semantic layer.
+- Apply the same filters and date ranges when comparing segments.
+- Do not compare incomplete periods with complete periods.
+- Distinguish correlation from explanation.
+```
+
+The `name` and `description` are required. Names use lowercase letters, numbers, and single hyphens. A clear description is especially important because the agent uses it to decide when to load the skill automatically.
+
+<Warning>
+  A skill changes how an agent works; it does not grant new permissions. The agent can only use its configured tools and data access. Lightdash-hosted skills cannot run shell commands or read files from a filesystem.
+</Warning>
+
+## Use skills through MCP
+
+The [Lightdash MCP server](/agents/lightdash-mcp#skills) exposes custom skills to compatible AI clients. When an agent is active in the MCP session, the client can discover the skills attached to that agent. Without an active agent, it can discover the organization skills the caller has permission to view.
+
+## Manage skills as code
+
+Use [agents as code](/agents/agents-as-code#skills-as-code) to review skills in Git and move them between environments. A skill folder contains its `SKILL.md` and can include supporting Markdown files under `resources/`.

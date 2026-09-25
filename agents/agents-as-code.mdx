@@ -10,6 +10,7 @@ You can serialize a project's AI agents to YAML with the Lightdash CLI, keep the
 Use agents as code when you want to:
 
 - Review agent instructions, tags, model settings, and [evaluation suites](/agents/create-evaluation-suites) in pull requests before they reach production
+- Version the [custom skills](/agents/custom-agent-skills) an agent depends on alongside its configuration
 - Copy a working agent from one project to another (for example, from a preview into production) without recreating it in the UI
 - Roll agent config back to a known-good version using Git history
 - Bootstrap new projects with the same set of agents you use elsewhere
@@ -29,6 +30,11 @@ lightdash/
 ├── ai-agents/
 │   ├── orders-support-agent.yml
 │   └── revenue-analyst.yml
+├── skills/
+│   └── investigate-kpi-change/
+│       ├── SKILL.md
+│       └── resources/
+│           └── metric-definitions.md
 ├── charts/
 └── dashboards/
 ```
@@ -109,6 +115,8 @@ modelConfig:
   modelName: gpt-4o
   modelProvider: openai
   reasoning: false
+skills:
+  - investigate-kpi-change
 evaluations:
   - title: Orders regression suite
     prompts:
@@ -136,6 +144,7 @@ evaluations:
 | `enableUserContext` | boolean | Whether the agent receives the asking user's identity for [personalized answers](/agents/data-access#personalizing-answers-to-who-is-asking). |
 | `modelConfig` | object \| null | Default model settings: `modelName`, `modelProvider`, and optional `reasoning` flag. When `null`, the agent inherits the [organization default](/agents/set-up-agents#set-an-organization-default-ai-model). |
 | `threadRetentionHours` | number \| null (optional) | Per-agent [thread retention](/agents/thread-retention) window. Only applies when the feature is enabled for your organization — see [agents as code semantics](/agents/thread-retention#agents-as-code). |
+| `skills` | string[] (optional) | Names of custom skills attached to the agent. Omitting the field preserves existing bindings; a present list replaces them. |
 | `evaluations` | object[] (optional) | Evaluation suite definitions to create or update by title. Downloads include this field even when the agent has no suites (`evaluations: []`). |
 
 ### Evaluation suites
@@ -164,6 +173,36 @@ Evaluation suite syncing does not delete undeclared suites. Removing a suite fro
 
 Uploads fail with a non-zero exit code before changing the agent if a file contains duplicate suite titles, an empty title, or an empty prompt. An upload also fails when the target agent has multiple existing suites that match a declared title, because Lightdash cannot choose which suite to update.
 
+## Skills as code
+
+Custom skills are organization assets, but you can keep the skills an agent depends on in the same project checkout. Download the agents and their attached skills together:
+
+```bash
+lightdash download --include-agents --include-skills
+```
+
+Lightdash writes each skill to `lightdash/skills/<name>/`. The folder must contain `SKILL.md` and can contain Markdown resources directly under `resources/`.
+
+To download named skills without downloading agents, use:
+
+```bash
+lightdash download --skills investigate-kpi-change weekly-business-review
+```
+
+A normal `lightdash upload` uploads local skill folders before agent files, then resolves each agent's `skills` list by name. Use `--skills <names...>` to limit a filtered upload to named skills.
+
+Removing a local skill folder does not delete the organization skill. Deletion is explicit:
+
+```bash
+lightdash upload --delete-skills obsolete-skill
+```
+
+<Warning>
+  Deleting a skill detaches it from every agent in the organization. Check its bindings before using `--delete-skills`.
+</Warning>
+
+Use `lightdash download --organization` when you want the complete organization skill library alongside other organization-level content. See [custom agent skills](/agents/custom-agent-skills) for the authoring format and invocation behavior.
+
 ## What is not versioned
 
 Some pieces of an agent are runtime state and are deliberately kept out of the YAML file — they stay in the target environment and are preserved across create/update/no-op uploads:
@@ -175,7 +214,7 @@ Some pieces of an agent are runtime state and are deliberately kept out of the Y
 - **MCP server references.** [MCP server](/agents/connect-external-mcp-servers) references stay in the target project.
 - **Uploaded knowledge documents.** Uploaded [documents](/agents/set-up-agents#knowledge-documents-optional) are preserved across upload but are not written into the YAML file itself.
 
-This split lets you promote agent behavior (instructions, tags, model config, capability flags) through Git while still letting each environment own the things that don't make sense to copy — production Slack channels, per-project MCP servers, per-environment access lists.
+This split lets you promote agent behavior (instructions, tags, model config, skill bindings, and capability flags) through Git while still letting each environment own the things that don't make sense to copy — production Slack channels, per-project MCP servers, and per-environment access lists.
 
 ## Lifecycle examples
 
