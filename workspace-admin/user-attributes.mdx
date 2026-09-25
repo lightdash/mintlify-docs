@@ -177,9 +177,9 @@ sql_filter: ${TABLE}.sales_region IN (${lightdash.attributes.sales_region})
 
 You can use `user attributes` to limit some dimensions to some users.
 
-<Info>
-  Users without access to this dimension will not see it, as well as the **metrics derived from it**. .
-</Info>
+<Note>
+  Users without access to this dimension will not see it, or the metrics defined under that column. Model-level metrics that reference the column are not hidden — see [metrics and column access control](#metrics-and-column-access-control).
+</Note>
 
 In the example below, only users with `is_admin` attribute `true` can use the `salary` dimension on `user` table.
 
@@ -223,7 +223,7 @@ dimensions:
 ```
 </CodeGroup>
 
-If a user without access to this dimension runs a query that contains this dimension, they will get a `Forbidden` error. Also, if the user runs a query that contains a metric derived from this dimension, they won't see the metric on the explore page and won't be able to query from it.
+If a user without access to this dimension runs a query that contains this dimension, they will get a `Forbidden` error. Metrics defined under this column's `metrics` are hidden and blocked the same way.
 
 You can add multiple attributes for a single dimension. There are two ways to do this:
 
@@ -317,6 +317,80 @@ dimensions:
 <Info>
   Column filtering using `required_attributes` does not take into account intrinsic attributes of a user - `email`.
 </Info>
+
+### Metrics and column access control
+
+Metrics do not accept `required_attributes` or `any_attributes`. A metric's access control comes from where it's defined:
+
+- **Column-level metrics**, defined under a column's `metrics`, inherit the `required_attributes` and `any_attributes` of that column's dimension.
+- **Model-level metrics**, defined under the model's `metrics`, inherit nothing from the columns they reference. A model-level metric whose `sql` reads a restricted column stays visible and queryable.
+
+To restrict a model-level metric, either:
+
+- set `required_attributes` or `any_attributes` on the [table](#table-filtering-with-required_attributes), or
+- define the metric under one of the restricted columns instead. If the metric reads several columns, give them all the same requirement.
+
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: orders
+    config:
+      meta:
+        metrics:
+          revenue_per_order: # model-level: not restricted by the revenue column
+            type: number
+            sql: ${total_revenue} / ${order_count}
+    columns:
+      - name: revenue
+        config:
+          meta:
+            dimension:
+              required_attributes:
+                is_finance: "true"
+            metrics:
+              total_revenue: # column-level: restricted with the revenue column
+                type: sum
+```
+
+```yaml dbt v1.9 and earlier
+models:
+  - name: orders
+    meta:
+      metrics:
+        revenue_per_order: # model-level: not restricted by the revenue column
+          type: number
+          sql: ${total_revenue} / ${order_count}
+    columns:
+      - name: revenue
+        meta:
+          dimension:
+            required_attributes:
+              is_finance: "true"
+          metrics:
+            total_revenue: # column-level: restricted with the revenue column
+              type: sum
+```
+
+```yaml Lightdash YAML
+type: model
+name: orders
+
+metrics:
+  revenue_per_order: # model-level: not restricted by the revenue dimension
+    type: number
+    sql: ${total_revenue} / ${order_count}
+
+dimensions:
+  - name: revenue
+    type: number
+    sql: ${TABLE}.revenue
+    required_attributes:
+      is_finance: "true"
+    metrics:
+      total_revenue: # dimension-level: restricted with the revenue dimension
+        type: sum
+```
+</CodeGroup>
 
 ### Column filtering with `any_attributes`
 
