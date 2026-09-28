@@ -1,7 +1,7 @@
 ---
-title: "dbt Projects"
-sidebarTitle: dbt
-description: "Every way to sync your dbt project into Lightdash, and how to connect multiple dbt sources"
+title: "Syncing dbt projects"
+sidebarTitle: "Syncing dbt projects"
+description: "Sync your dbt project to Lightdash by deploying with the CLI or refreshing from a Git connection"
 doc-type: reference
 ---
 
@@ -11,14 +11,69 @@ doc-type: reference
 
 ## Syncing your dbt project to Lightdash
 
-There are five ways to sync changes from dbt into Lightdash. They differ in **where the code comes from**, **where compilation happens**, **which `profiles.yml` / target governs the result**, and **whether they respect the project's UI Connection Settings**.
+There are two approaches to syncing dbt into Lightdash. Each one has several methods, covered in [CLI deploy methods](#cli-deploy-methods) and [Git connection methods](#git-connection-methods).
+
+|                                  | CLI deploy                                                                                   | Git connection                                                                                      |
+| -------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| How it works                     | You compile the dbt project with `lightdash deploy` and push the resulting manifest to Lightdash | Lightdash pulls the connected branch, compiles it server-side, and refreshes the project            |
+| dbt code source                  | Local working copy or CI checkout                                                            | Connected branch in GitHub, GitLab, Azure DevOps, Bitbucket, or dbt Cloud                           |
+| Uncommitted changes              | Included when you deploy from a laptop                                                       | Not included                                                                                        |
+| Connection settings used         | Local or CI `profiles.yml`                                                                   | UI Connection Settings                                                                              |
+| Remote git connection required?  | No                                                                                           | Yes                                                                                                 |
+| Multiple dbt sources             | Not supported                                                                                | Supported                                                                                           |
+| Methods                          | From a laptop, from CI                                                                       | **Refresh dbt** button, `lightdash refresh` from CI, refresh API, `lightdash deploy` from a laptop or CI |
+
+<Tip>
+  **New to Lightdash?** Start with CLI deploy to quickly test your setup, then switch to a Git connection for production use.
+</Tip>
+
+### Which method should I use?
+
+| If you need...                        | Use                                   |
+| ------------------------------------- | ------------------------------------- |
+| Quick local testing / debugging       | CLI (`lightdash deploy`)              |
+| Production deployment                 | Git connection + UI/API refresh       |
+| Multiple dbt sources                  | Git connection (required)             |
+| CI/CD without duplicating credentials | Git connection + `lightdash refresh`  |
+| Include uncommitted changes           | CLI only                              |
+
+For a property-by-property comparison of every method, see [Detailed comparison](#detailed-comparison).
+
+### Common workflows
+
+#### Just getting started
+
+Use [`lightdash deploy` from your laptop](#cli-deploy-methods) for first-time setup. Move to one of the automated workflows below as soon as the project is stable.
+
+#### Production team (git-connected)
+
+For projects with Lightdash connected to GitHub, GitLab, Azure DevOps, Bitbucket, or dbt Cloud:
+
+- **PR workflow** → `lightdash start-preview` + `lightdash validate` in CI
+- **Post-merge to `main`** → `lightdash refresh` from CI, or the refresh API
+- **Manual refresh** → the **Refresh dbt** button, for ad-hoc syncs
+
+#### No git connection
+
+For projects loaded through the CLI only, without a remote git connection:
+
+- **Production sync** → `lightdash deploy` from CI
+- **Previews** → `lightdash start-preview` in CI
+
+Not sure whether to use `lightdash deploy` or `lightdash refresh`? Read about the [differences between the two commands](/workflow/cli/reference#lightdash-deploy-vs-lightdash-refresh) in the CLI reference.
+
+<Note>
+  When you create a project, **Connect via CLI** sets it up for CLI deploy, and **Connect manually** lets you pick a dbt connection type such as GitHub or GitLab for a Git connection. You can change the dbt connection type later in **Project settings**.
+</Note>
 
 For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://github.com/lightdash/cli-actions) repo.
 
-### Sync mechanisms
+## CLI deploy methods
+
+`lightdash deploy` compiles the dbt project wherever the CLI runs and replaces the project's Explores with the result. It ignores the project's UI Connection Settings and uses the local or CI `profiles.yml` instead. For command details, see [`lightdash deploy`](/workflow/cli/deploy).
 
 <AccordionGroup>
-  <Accordion title="1. lightdash deploy from a developer's laptop">
+  <Accordion title="lightdash deploy from a developer's laptop">
     Compiles the dbt project locally and pushes the resulting `manifest.json` to Lightdash.
 
     | Property                              | Value                                                                       |
@@ -35,10 +90,14 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
     **Use cases:** initial project setup, debugging, one-off manual deploys.
 
     **Trade-offs:** bypasses PR review; relies on per-developer `profiles.yml`; high footgun risk if a developer's prod target accidentally points at a non-prod warehouse.
+
+    <Warning>
+      Don't use `lightdash deploy` from your local environment as the primary way you update Lightdash. Small mistakes can lead to production issues.
+    </Warning>
   </Accordion>
 
-  <Accordion title="2. lightdash deploy from CI">
-    Same as #1, but runs inside a CI workflow (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket Pipelines, etc.) with credentials stored as CI secrets.
+  <Accordion title="lightdash deploy from CI">
+    Same as deploying from a laptop, but runs inside a CI workflow (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket Pipelines, etc.) with credentials stored as CI secrets.
 
     | Property                              | Value                                                                                                                                  |
     | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -59,9 +118,21 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
     <Warning>
       Never commit a `profiles.yml` with plaintext credentials. Either use an `env_var()` template committed to the repo, or write the file to disk at runtime from a CI secret.
     </Warning>
-  </Accordion>
 
-  <Accordion title='3. "Refresh dbt" button in the Lightdash UI'>
+    To set this up, see [continuous deployment example workflows](/workflow/set-up-ci-cd#deploy-changes-to-lightdash).
+  </Accordion>
+</AccordionGroup>
+
+## Git connection methods
+
+The project is connected to a remote git source (GitHub, GitLab, Azure DevOps, Bitbucket, or dbt Cloud) in Project Settings. Every method triggers the same server-side refresh: Lightdash pulls the connected branch, compiles it using the UI Connection Settings, and updates the project. The methods differ only in how you trigger that refresh.
+
+You can also run [`lightdash deploy`](#cli-deploy-methods) against a git-connected project. It compiles locally or in CI instead of pulling the connected branch, and its result stays in place until the next refresh. Don't use it on projects with [multiple dbt sources](#connecting-multiple-dbt-sources).
+
+Push and merge your changes to the branch your Lightdash project is connected to before you trigger a refresh.
+
+<AccordionGroup>
+  <Accordion title='"Refresh dbt" button in the Lightdash UI'>
     Lightdash fetches the dbt code from the configured remote, compiles it server-side, and updates the project.
 
     | Property                              | Value                                                                                                                          |
@@ -78,9 +149,17 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
     **Use cases:** ad-hoc refresh after a merge; quick UI-driven sync without leaving the browser.
 
     **Trade-offs:** manual; relies on a human remembering to click it.
+
+    The button is on the **Query from tables** page.
+
+    <Frame>
+      ![The Refresh dbt button on the Query from tables page](/images/integrations/dbt/projects/dbt-refresh.png)
+    </Frame>
+
+    If you've changed the underlying data (for example, adding a new column in your `model.sql` file or changing the SQL logic of a dimension), run `dbt run -m yourmodel` before you click **Refresh dbt**.
   </Accordion>
 
-  <Accordion title="4. lightdash refresh from CI">
+  <Accordion title="lightdash refresh from CI">
     Calls the same endpoint as the "Refresh dbt" button, but programmatically from CI (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket Pipelines, etc.). Lightdash does the work server-side using the project's UI Connection Settings.
 
     | Property                              | Value                                                                                       |
@@ -100,8 +179,8 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
     **Trade-offs:** can't push uncommitted changes (only what's in the connected branch); won't catch issues pre-merge — pair with a separate `lightdash validate` PR workflow if you want that.
   </Accordion>
 
-  <Accordion title="5. Pinging the refresh API directly from CI">
-    Same as #4, but bypasses the Lightdash CLI entirely — just a `curl` to the API. Works from any CI system (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket Pipelines, etc.).
+  <Accordion title="Refresh API from CI">
+    Same as `lightdash refresh` from CI, but bypasses the Lightdash CLI entirely — just a `curl` to the API. Works from any CI system (GitHub Actions, GitLab CI, Azure Pipelines, Bitbucket Pipelines, etc.).
 
     | Property                              | Value                                                                       |
     | ------------------------------------- | --------------------------------------------------------------------------- |
@@ -118,16 +197,20 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
 
     **Use cases:** the simplest possible automated refresh — no dependencies to install. Useful for teams who don't want a Node toolchain in CI.
 
-    **Trade-offs:** same as #4. The refresh is async (returns a `jobUuid`); for stronger guarantees, poll `GET /api/v1/jobs/{jobUuid}` to confirm completion before exiting the workflow.
+    **Trade-offs:** same as `lightdash refresh` from CI. The refresh is async (returns a `jobUuid`); for stronger guarantees, poll `GET /api/v1/jobs/{jobUuid}` to confirm completion before exiting the workflow.
   </Accordion>
 </AccordionGroup>
 
-### Decision matrix
+
+## Detailed comparison
+
+<Accordion title="Compare every sync method">
 
 <div className="sticky-first-col">
 
-|                                       | #1 `lightdash deploy` — local CLI | #2 `lightdash deploy` — CI | #3 "Refresh dbt" — UI button | #4 `lightdash refresh` — CI | #5 `POST /refresh` API — CI |
+|                                       | `lightdash deploy` — laptop     | `lightdash deploy` — CI            | "Refresh dbt" — UI button | `lightdash refresh` — CI      | `POST /refresh` API — CI       |
 | ------------------------------------- | ------------------------------- | ---------------------------------- | ------------------ | ----------------------------- | ------------------------------ |
+| Approach                              | CLI deploy                      | CLI deploy                         | Git connection     | Git connection                | Git connection                 |
 | Automated?                            | No                              | Yes                                | No                 | Yes                           | Yes                            |
 | Pushes uncommitted local changes?     | Yes                             | No                                 | No                 | No                            | No                             |
 | Needs dbt + warehouse creds in CI?    | N/A                             | Yes                                | No                 | No                            | No                             |
@@ -139,70 +222,25 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
 
 </div>
 
-### Recommended setups
+</Accordion>
 
-**Most teams** (Lightdash connected to GitHub, GitLab, Azure DevOps, Bitbucket, or dbt Cloud):
+## Things to know
 
-- **PR workflow** → `lightdash start-preview` + `lightdash validate` (mechanism #2 with `start-preview`)
-- **Post-merge to `main`** → `lightdash refresh` (#4) or the refresh API (#5)
-- **Manual UI refresh** (#3) available for ad-hoc syncs
-
-**Teams without a remote git connection** (project loaded via local CLI only):
-
-- **Production sync** → `lightdash deploy` in CI (#2)
-- **Previews** → `lightdash start-preview` in CI
-
-**Teams just getting started:**
-
-- Local `lightdash deploy` (#1) for first-time setup, then graduate to one of the automated patterns above as soon as the project is stable.
-
-Not sure whether to use `lightdash deploy` or `lightdash refresh`? Read about the [differences between the two commands](/workflow/cli/reference#lightdash-deploy-vs-lightdash-refresh) in the CLI reference.
-
-### Things to know
-
-`lightdash deploy` does not use the UI **Target name** setting. It uses the local `profiles.yml` default, or whatever `--target` overrides it with — only mechanisms #3, #4, and #5 respect the UI Target name.
+`lightdash deploy` does not use the UI **Target name** setting. It uses the local `profiles.yml` default, or whatever `--target` overrides it with. Only the Git connection methods respect the UI Target name.
 
 `lightdash refresh` requires a remote git connection. It fails with a `ParameterError` if the project's `dbtConnection.type` is `NONE`.
 
-Refresh is async. Both #4 and #5 return a `jobUuid` and the work continues server-side. If your CI needs to know the refresh succeeded, poll `GET /api/v1/jobs/{jobUuid}` before exiting the workflow.
+Refresh is async. `lightdash refresh` and the refresh API both return a `jobUuid` and the work continues server-side. If your CI needs to know the refresh succeeded, poll `GET /api/v1/jobs/{jobUuid}` before exiting the workflow.
 
 <Warning>
-  **Never commit `profiles.yml` with credentials.** For mechanism #2, use either a secret-written-to-file approach or an `env_var()` template — but never check in plaintext credentials.
+  **Never commit `profiles.yml` with credentials.** For `lightdash deploy` from CI, use either a secret-written-to-file approach or an `env_var()` template. Never check in plaintext credentials.
 </Warning>
 
-Mechanisms #4 and #5 are underused. Most CI examples lead with `lightdash deploy`, which is the heaviest option in CI because it duplicates dbt and warehouse credentials into the runner. The refresh-based patterns are simpler and often a better fit when the project is git-connected.
+`lightdash refresh` and the refresh API are underused. Most CI examples lead with `lightdash deploy`, which is the heaviest option in CI because it duplicates dbt and warehouse credentials into the runner. The refresh-based methods are simpler and often a better fit when the project is git-connected.
 
 <Warning>
-  **Projects with [multiple dbt sources](#connecting-multiple-dbt-sources) must not use `lightdash deploy`.** Mechanisms #1 and #2 replace the project's Explores with only the local repo's models. Use #3, #4, or #5 instead.
+  **Projects with [multiple dbt sources](#connecting-multiple-dbt-sources) must not use `lightdash deploy`.** CLI deploy methods replace the project's Explores with only the local repo's models. Use a Git connection method instead.
 </Warning>
-
-### How to trigger each sync
-
-#### Click "Refresh dbt" in Lightdash
-
-The button can be found on the Query from tables page.
-
-<Frame>
-  ![screenshot-refresh-dbt](/images/integrations/dbt/projects/dbt-refresh.png)
-</Frame>
-
-_If you're using a git connection (like GitHub, GitLab, or Bitbucket), you'll need to push + merge your changes to the branch that your Lightdash project is connected to before you press `Refresh dbt`._
-
-<Info>
-If you've made any changes to the underlying data (for example, adding a new column in your `model.sql` file or changing the SQL logic of a dimension), then you need to run `dbt run -m yourmodel` before you click `Refresh dbt` in Lightdash.
-</Info>
-
-#### Push code from the CLI
-
-If you're using the [Lightdash CLI](/workflow/cli/install), you can use `lightdash deploy` to deploy your changes to Lightdash. [Read more about how to use `lightdash deploy`](/workflow/cli/deploy).
-
-<Warning>
-  We don't recommend using `lightdash deploy` from your local environment as the primary way you update Lightdash since small mistakes can lead to production issues.
-</Warning>
-
-#### Set up continuous deployment
-
-[Read how to do that and check out our example workflow files](/workflow/set-up-ci-cd#deploy-changes-to-lightdash).
 
 ## Connecting multiple dbt sources
 
@@ -270,10 +308,10 @@ On refresh, Lightdash compiles every source and merges the resulting manifests i
 
 ### How refreshes work
 
-Every refresh — [sync mechanisms 3, 4, and 5](#sync-mechanisms), plus **Test & deploy** in Project Settings — re-fetches and compiles all sources and merges them into one Explore set. If any single source fails (clone, manifest parsing, credentials, model-name collision), the whole refresh fails with an error naming that source. There are no partial deploys.
+Every refresh — [Git connection methods](#git-connection-methods), plus **Test & deploy** in Project Settings — re-fetches and compiles all sources and merges them into one Explore set. If any single source fails (clone, manifest parsing, credentials, model-name collision), the whole refresh fails with an error naming that source. There are no partial deploys.
 
 <Warning>
-  **Do not use `lightdash deploy` against a multi-source project.** The CLI compiles the local repo and writes those Explores directly, without merging in the other sources — a CLI deploy will replace the project's Explores with only the local repo's models until the next server-side refresh. Teams using multiple dbt sources should sync via mechanism #3, #4, or #5, and must not run `lightdash deploy` in CI against a multi-source project.
+  **Do not use `lightdash deploy` against a multi-source project.** The CLI compiles the local repo and writes those Explores directly, without merging in the other sources — a CLI deploy will replace the project's Explores with only the local repo's models until the next server-side refresh. Teams using multiple dbt sources should sync via a [Git connection method](#git-connection-methods) and must not run `lightdash deploy` in CI against a multi-source project.
 </Warning>
 
 ### Preview projects
