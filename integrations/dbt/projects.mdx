@@ -23,11 +23,18 @@ For a detailed comparison of every sync mechanism, see the [decision matrix](#de
 
 ## Syncing your dbt project to Lightdash
 
-There are five ways to sync changes from dbt into Lightdash. They differ in **where the code comes from**, **where compilation happens**, **which `profiles.yml` / target governs the result**, and **whether they respect the project's UI Connection Settings**.
+There are two approaches to syncing dbt into Lightdash:
+
+- **[CLI deploy](#cli-deploy)**: you compile the dbt project yourself with `lightdash deploy` and push the resulting manifest to Lightdash. No remote git connection is needed.
+- **[Git connection](#git-connection)**: Lightdash pulls the dbt code from a connected git repository or dbt Cloud, compiles it server-side, and refreshes the project when you trigger a refresh.
+
+Each approach has sub-methods, numbered #1 to #5 below. They differ in **where the code comes from**, **where compilation happens**, **which `profiles.yml` / target governs the result**, and **whether they respect the project's UI Connection Settings**.
 
 For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://github.com/lightdash/cli-actions) repo.
 
-### Sync mechanisms
+### CLI deploy
+
+`lightdash deploy` compiles the dbt project wherever the CLI runs and replaces the project's Explores with the result. It ignores the project's UI Connection Settings and uses the local or CI `profiles.yml` instead.
 
 <AccordionGroup>
   <Accordion title="1. lightdash deploy from a developer's laptop">
@@ -72,7 +79,13 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
       Never commit a `profiles.yml` with plaintext credentials. Either use an `env_var()` template committed to the repo, or write the file to disk at runtime from a CI secret.
     </Warning>
   </Accordion>
+</AccordionGroup>
 
+### Git connection
+
+The project is connected to a remote git source (GitHub, GitLab, Azure DevOps, Bitbucket, or dbt Cloud) in Project Settings. Every sub-method triggers the same server-side refresh: Lightdash pulls the connected branch, compiles it using the UI Connection Settings, and updates the project. The sub-methods differ only in how you trigger that refresh.
+
+<AccordionGroup>
   <Accordion title='3. "Refresh dbt" button in the Lightdash UI'>
     Lightdash fetches the dbt code from the configured remote, compiles it server-side, and updates the project.
 
@@ -282,7 +295,7 @@ On refresh, Lightdash compiles every source and merges the resulting manifests i
 
 ### How refreshes work
 
-Every refresh — [sync mechanisms 3, 4, and 5](#sync-mechanisms), plus **Test & deploy** in Project Settings — re-fetches and compiles all sources and merges them into one Explore set. If any single source fails (clone, manifest parsing, credentials, model-name collision), the whole refresh fails with an error naming that source. There are no partial deploys.
+Every refresh — [Git connection sync methods 3, 4, and 5](#git-connection), plus **Test & deploy** in Project Settings — re-fetches and compiles all sources and merges them into one Explore set. If any single source fails (clone, manifest parsing, credentials, model-name collision), the whole refresh fails with an error naming that source. There are no partial deploys.
 
 <Warning>
   **Do not use `lightdash deploy` against a multi-source project.** The CLI compiles the local repo and writes those Explores directly, without merging in the other sources — a CLI deploy will replace the project's Explores with only the local repo's models until the next server-side refresh. Teams using multiple dbt sources should sync via mechanism #3, #4, or #5, and must not run `lightdash deploy` in CI against a multi-source project.
