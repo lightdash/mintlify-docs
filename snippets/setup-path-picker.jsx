@@ -7,8 +7,8 @@
     move, and keep facts (IPs, token scopes, commands) on their own pages. */}
 
 export const SetupPathPicker = () => {
-  const CONNECT = "/get-started/quickstart/connect-project";
-  const PREPARE = "/get-started/quickstart/prepare-your-dbt-project";
+  const CONNECT = "/integrations/connect-project";
+  const PREPARE = "/integrations/dbt";
   const CICD = "/workflow/set-up-ci-cd";
 
   const QUESTIONS = {
@@ -132,7 +132,7 @@ export const SetupPathPicker = () => {
     steps.push({
       title: "Invite whoever owns warehouse access",
       body: "They can pick up setup from here when you're ready.",
-      href: "/get-started/quickstart/invite-new-users",
+      href: "/workspace-admin/invite-new-users",
       link: "Invite your team",
     });
   }
@@ -158,7 +158,7 @@ export const SetupPathPicker = () => {
           ? {
               title: "Set up an SSH tunnel",
               body: "Route the connection through a bastion host in your network.",
-              href: "/get-started/quickstart/connect-through-ssh-tunnel",
+              href: "/integrations/connect-through-ssh-tunnel",
               link: "Connect through an SSH tunnel",
             }
           : {
@@ -190,10 +190,10 @@ export const SetupPathPicker = () => {
       });
     } else {
       steps.push({
-        title: "Prepare your dbt project",
+        title: "Set up your dbt project",
         body: "Install the CLI, log in, and generate Tables for the models you want in Lightdash.",
-        href: PREPARE,
-        link: "Prepare your dbt project",
+        href: `${PREPARE}#set-up-a-dbt-project`,
+        link: "Set up a dbt project",
       });
     }
 
@@ -204,7 +204,7 @@ export const SetupPathPicker = () => {
           sync === "git"
             ? "The fastest way to see your project. You'll switch it to a git connection next."
             : "Deploy from your machine using your local profile.",
-        href: isYaml ? "/semantic-layer/yaml" : `${PREPARE}#step-4-create-your-project`,
+        href: isYaml ? "/semantic-layer/yaml" : `${PREPARE}#create-your-project`,
         link: isYaml ? "Deploy Lightdash YAML" : "Create your project",
       });
       steps.push({
@@ -212,7 +212,7 @@ export const SetupPathPicker = () => {
         body: isYaml
           ? "Lightdash YAML projects deploy without credentials; add them in project settings."
           : "Replace the credentials copied from your local profile with a shared service account.",
-        href: isYaml ? `${CONNECT}#1-connect-to-a-warehouse` : `${PREPARE}#next-steps-update-your-project-connection-settings`,
+        href: `${CONNECT}#1-connect-to-a-warehouse`,
         link: "Update connection settings",
       });
     }
@@ -253,7 +253,7 @@ export const SetupPathPicker = () => {
     steps.push({
       title: "Invite your team",
       body: "Set allowed email domains and default roles.",
-      href: "/get-started/quickstart/invite-new-users",
+      href: "/workspace-admin/invite-new-users",
       link: "Invite your team",
     });
     steps.push({
