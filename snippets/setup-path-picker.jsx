@@ -64,6 +64,13 @@ export const SetupPathPicker = () => {
         { id: "dbtcloud", title: "Connect dbt Cloud", hint: "Only if you need dbt Cloud-only features", dbtOnly: true },
       ],
     },
+    start: {
+      label: "How do you want to start?",
+      options: [
+        { id: "cli-first", title: "Deploy from the CLI first", hint: "See your project in minutes, then switch it to git" },
+        { id: "git-first", title: "Connect git from the start", hint: "Create the project in the app, connected to your repo" },
+      ],
+    },
     git: {
       label: "Which git host?",
       options: [
@@ -82,6 +89,7 @@ export const SetupPathPicker = () => {
     wh: "snowflake",
     net: "public",
     sync: "git",
+    start: "cli-first",
     git: "github",
   });
 
@@ -101,7 +109,8 @@ export const SetupPathPicker = () => {
   visible.push("model");
   if (needsWarehouse) visible.push("wh", "net");
   if (hasProject) visible.push("sync");
-  if (hasProject && sync === "git") visible.push("git");
+  if (hasProject && sync === "git") visible.push("start", "git");
+  const cliFirst = sync === "cli" || (sync === "git" && a.start === "cli-first");
 
   /* Each step: title, one line of context, and the canonical page for it. */
   const steps = [];
@@ -197,9 +206,9 @@ export const SetupPathPicker = () => {
       });
     }
 
-    if (sync === "cli" || sync === "git") {
+    if (cliFirst) {
       steps.push({
-        title: sync === "git" ? "Create your first project from the CLI (optional)" : "Create your project from the CLI",
+        title: "Create your project from the CLI",
         body:
           sync === "git"
             ? "The fastest way to see your project. You'll switch it to a git connection next."
@@ -217,11 +226,26 @@ export const SetupPathPicker = () => {
       });
     }
 
+    if (sync === "git" && !cliFirst) {
+      steps.push({
+        title: "Create your project in the app",
+        body: "Go to Organization settings, then All projects, and click Create new.",
+        href: `${CONNECT}#open-up-your-lightdash-instance-to-get-started`,
+        link: "Create a project",
+      });
+      steps.push({
+        title: `Connect ${whTitle} with a service account`,
+        body: "Enter the warehouse credentials Lightdash uses to run queries.",
+        href: `${CONNECT}#1-connect-to-a-warehouse`,
+        link: "Warehouse connection settings",
+      });
+    }
+
     if (sync === "git") {
       steps.push({
-        title: `Connect ${git.title}`,
+        title: cliFirst ? `Switch to a ${git.title} connection` : `Connect ${git.title}`,
         body: "Point Lightdash at your repository, branch, and project directory.",
-        href: `${CONNECT}#${git.anchor}`,
+        href: isYaml ? "/semantic-layer/yaml#connect-through-github" : `${CONNECT}#${git.anchor}`,
         link: `${git.title} connection settings`,
       });
       steps.push({
@@ -302,7 +326,7 @@ export const SetupPathPicker = () => {
             </div>
             {key === "sync" ? (
               <p className="setup-path-note">
-                Not sure? Most teams start with the CLI, then connect git for production.{" "}
+                Not sure? Most teams deploy from the CLI first, then connect git for production.{" "}
                 <a href="/integrations/dbt/projects#which-method-should-i-use">Compare sync methods</a>
               </p>
             ) : null}
