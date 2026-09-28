@@ -1,12 +1,14 @@
 ---
 title: "Lightdash for Google Sheets™"
 sidebarTitle: "Google Sheets add-on"
-description: "Build Lightdash queries from a sidebar inside Google Sheets and keep the results refreshable"
+description: "Import saved charts or build refreshable Google Sheets reports with sorting, totals, and row groups"
 ---
 
-Lightdash for Google Sheets™ is an add-on that runs inside Google Sheets™ as a sidebar so you can build queries from your Lightdash instance without leaving the spreadsheet. Each query you run becomes a **range** in the sheet that you can refresh in place, edit, or remove later. The add-on connects to your instance with OAuth and uses your existing Lightdash permissions, user attributes, and caching.
+Lightdash for Google Sheets™ is an add-on that runs inside Google Sheets™ as a sidebar so you can build queries or import saved Lightdash charts without leaving the spreadsheet. Each query you run becomes a **range** in the sheet that you can refresh in place, edit, or remove later. The add-on connects to your instance with OAuth and uses your existing Lightdash permissions, user attributes, and caching.
 
 Install the add-on from the [Google Workspace Marketplace](https://workspace.google.com/marketplace/app/lightdash/598569222430), then open it from **Extensions → Lightdash → Open sidebar**.
+
+Start by [building a query](#build-a-query) or [importing a saved chart](#import-a-saved-chart), then configure [sorting](#sorting-and-row-limits), [totals](#totals), or [collapsible row groups](#row-groups).
 
 <Frame>
   <img src="/images/integrations/google-sheets/add-on-range.png" alt="A Lightdash range in Google Sheets with the sidebar showing its query, refresh, edit, and remove actions" />
@@ -14,11 +16,11 @@ Install the add-on from the [Google Workspace Marketplace](https://workspace.goo
 
 ## Ranges
 
-A range is the block of cells a query wrote to, plus the query behind it. The sidebar opens on the list of ranges in the spreadsheet.
+A range is the block of cells a query wrote to, plus the query behind it. The sidebar opens on the list of ranges, grouped by worksheet in tab order. Each worksheet heading shows its name and range count. Ranges whose cells can no longer be found appear under **Missing ranges**, where you can remove them.
 
-- **Refresh in place**: re-running a range writes fresh results over the same cells. If the result grew, the range expands into empty cells below or to the right, or shifts whatever is in the way within its own columns and rows. If it shrank, the leftover cells are cleared.
-- **Several per sheet**: put ranges side by side or on different tabs and refresh them individually, or use **Refresh all** from the sidebar or the **Lightdash** menu.
-- **Protected, not locked**: each range is a named range with a warning-only protection. Editing a cell inside one shows a "Heads up" prompt rather than blocking the edit, so shared sheets stay editable.
+- **Refresh in place**: re-running a range writes fresh results over the same cells. If the result grew, the range expands into empty cells below or to the right, or shifts content within its own columns and rows, provided that would not push another Lightdash range. Reports with [row groups](#row-groups) have additional space requirements. If the result shrank, the leftover cells are cleared.
+- **Several per sheet**: put ranges side by side or on different tabs and refresh them individually, or use **Refresh all** from the sidebar or the **Lightdash** menu. For reports with row groups, follow the [placement requirements](#row-groups).
+- **Accidental-edit warnings**: each range has warning-only protection. Editing a protected cell shows a "Heads up" prompt, and you can choose to continue. For reports with row groups, only the headers are protected so the collapse controls work without warnings.
 - **Usable in formulas**: the named range (for example `Lightdash_orders`) works anywhere you'd reference cells, such as `=SUM(Lightdash_orders)`.
 - **Survives edits around it**: inserting or deleting rows and columns elsewhere in the sheet keeps the range attached to its cells.
 - **Shared with collaborators**: ranges are stored in the spreadsheet, so anyone who opens it sees the same list. Refreshing needs a Lightdash login, so each person connects their own account. Ranges are not carried over by **File → Make a copy**.
@@ -26,11 +28,71 @@ A range is the block of cells a query wrote to, plus the query behind it. The si
 ## Build a query
 
 1. Select the cell where the results should start and choose **New query**.
-2. Pick a project, then an explore, and add dimensions and metrics. Drag a dimension into **Columns** to pivot.
-3. Adjust filters. Filters defined in your dbt models are respected: `required_filters` are prefilled and can't be removed (values are still editable), while `default_filters` are prefilled but can be adjusted or removed. Add your own dimension and metric filters on top.
+2. Pick a project, then an Explore, and add dimensions and metrics. Drag a dimension into **Columns** to pivot. The project and Explore pickers are searchable.
+3. Adjust [filters](#filters) and [sorting and the row limit](#sorting-and-row-limits). Enable [totals](#totals) or [row groups](#row-groups) if needed.
 4. Choose **Insert**. The sidebar shows where the results will go and follows your selection while you build. If the selected cell is inside an existing range, pick a cell outside it first.
 
 Results are written with a bold header row and light banding, starting at the selected cell. If those cells already hold data, the sidebar asks before overwriting them.
+
+The field picker follows your model's nested groups and custom group labels. Collapse groups to reduce the list, or search by field, table, or group name. Searching expands matching groups; clearing the search restores the groups you collapsed.
+
+### Filters
+
+Filters defined in your dbt models are respected: `required_filters` are prefilled and can't be removed (values are still editable), while `default_filters` are prefilled but can be adjusted or removed. Add your own dimension and metric filters with **+ Add filter**, then search the field picker to choose a field.
+
+For **is** and **is not** filters on text, numeric, or boolean dimensions, search the suggested values and select one or more. Selections appear as removable chips. Use **Select all** or **Select all matches** to select the available results, and **Clear all** to remove the selection. Model-defined suggestions and labels are respected.
+
+The picker shows up to 100 suggestions. When more values are available, narrow your search to enable bulk selection. You can also type a value and press **Enter** to add it, including when suggestions cannot load.
+
+## Import a saved chart
+
+Use an existing saved Explore chart as the starting point for a report:
+
+1. Choose **Import saved chart** from the Ranges page.
+2. Paste the chart URL from your connected Lightdash instance and choose **Load chart**.
+3. Review or adjust the query in the builder, select a destination cell, and choose **Insert**.
+
+The range takes the chart's name and preserves its supported fields, column order, filters, sorting, timezone, row limit, and pivot layout. Loading a chart or cancelling the import does not write cells or create a range.
+
+After insertion, refreshing uses the query saved with the range. Later edits to the original Lightdash chart are not synced, and chart styling is not imported. Reordering fields in the builder replaces the imported column order with the builder's layout order.
+
+Only saved Explore charts that the builder can represent are supported. Import rejects merged results, parameters, custom metrics or dimensions, table calculations, custom formatting overrides, OR filters, advanced filter options, unavailable or hidden fields, and unsupported sorts. The chart must also fit the [row limit](#sorting-and-row-limits). The error identifies what needs changing before you can import it.
+
+Use a saved chart URL without filter overrides, other query parameters, or a fragment. The `fromDashboard` navigation parameter is accepted. Nested AND filters are supported.
+
+## Sorting and row limits
+
+Under **Sort**, choose a selected field and ascending or descending order. Use **+ Add sort** for additional rules and the arrows to change their priority. Sorting is saved with the range and reused when editing, refreshing, or refreshing all ranges. Removing a field also removes its sort rule.
+
+Flat reports can sort by selected dimensions and metrics. Pivots can sort by row dimensions; without explicit rules, pivot rows sort ascending. When [row grouping](#row-groups) is enabled, the order of fields in **Rows** sets the sort priority, and you can choose a direction for each level.
+
+Select **Row limit** below the insert or update button to set the limit from 1 to 5,000 rows; the default is 500. Sorting applies before the limit, so sorting a metric descending with a limit of 100 returns the top 100 results. The add-on fetches all result pages up to the configured limit before writing to the sheet. Group labels and totals rows are additional to the detail-row limit and displayed row count.
+
+## Totals
+
+Use the checkboxes under **Totals** to include totals in the report:
+
+| Option | Result | Requires |
+| --- | --- | --- |
+| **Column totals** | A bold totals row at the bottom | A metric in **Values** and a dimension in **Rows** |
+| **Row totals** | A total column per metric on the right | A metric in **Values** and a dimension in **Columns** |
+| Both | Row and column totals, including grand totals | Both requirements above |
+
+Lightdash calculates totals in the warehouse using the metric definitions, including averages, ratios, and distinct counts. Totals cover all matching data after filters, regardless of the displayed row limit or pivot-column cap. A total can therefore include data that is not visible in the sheet.
+
+Totals are off until enabled and are saved with the range. Empty results do not add a totals row. If your Lightdash instance cannot calculate a requested total, or returns incomplete totals, the report fails before writing cells. Retry or turn off totals.
+
+## Row groups
+
+Enable **Group rows** with 2–9 dimensions in **Rows** to expand and collapse detail using the native Sheets **+ / −** controls. The order of row fields defines the hierarchy, and each group has a bold label. Both flat reports and pivots support grouping.
+
+Metrics are optional. When selected, Lightdash calculates subtotals for the group rows using the metric definitions and filters. Subtotals can include matching detail beyond the row limit. If your Lightdash instance cannot calculate the required subtotals, the update stops before cells or groups change.
+
+New groups start expanded. Refresh preserves the collapsed state of groups with the same fields and values. Grand totals stay outside the collapsible groups. Turning grouping off or removing the range removes its groups and reveals their detail rows.
+
+Groups hide entire worksheet rows. Use separate rows or worksheets for independent reports: the add-on refuses grouping beside other content or managed ranges, and refuses to overwrite unrelated row groups. Grouped reports need empty space to grow; they do not shift surrounding content. If row groups are manually restructured, ungroup the affected rows before refreshing.
+
+A range supports up to 200 groups. If a report exceeds that limit, add filters or reduce its row limit.
 
 ## Manage a range
 
