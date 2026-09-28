@@ -102,9 +102,47 @@ When you use "Sign in with Google" - Lightdash will execute queries against bigq
   When the `new-onboarding` feature flag is enabled, new BigQuery projects default to **Sign in with Google** and the setup wizard suggests smart defaults after you authenticate: a recommended **Project ID** based on your Google account's BigQuery activity, and the largest available **Dataset** (marked with a *Recommended · largest* badge in the picker). You can override either at any time.
 </Info>
 
-##### Trusted App
+<Accordion title="BigQuery tokens expiring">
+  If your Google Workspace uses [Google Cloud session control](https://support.google.com/a/answer/9368756), users are asked to reconnect their Google account every session (16 hours by default). An admin can change this for Lightdash in one of two ways.
 
-If your Google Workspace uses [Google Cloud session control](https://support.google.com/a/answer/9368756), users are asked to reconnect their Google account every session (16 hours by default). A Google Workspace admin can avoid this by marking the Lightdash OAuth app as **Trusted** under **Security → API controls → Manage Third-Party App Access**, then selecting **Exempt trusted apps** under **Google Cloud session control** (this applies to all trusted apps, not just Lightdash). Marking an app as **Trusted** also allows it any Google scope it requests without admin approval. [See more](https://knowledge.workspace.google.com/admin/apps/control-which-apps-access-google-workspace-data).
+  **Set a session length for Lightdash only (recommended)**
+
+  A Google Cloud admin can set a per-app session length with [Access Context Manager](https://docs.cloud.google.com/access-context-manager/docs/session-controls-for-reauthentication). This doesn't trust Lightdash or affect other apps. It applies to members of a Google Group, so add your Lightdash users to one first.
+
+  Create a binding file that targets the Lightdash OAuth client. Set `sessionLength` to between `3600s` and `86400s`, or to `0s` with `sessionLengthEnabled: false` to exempt Lightdash from session control:
+
+  ```yaml
+  scopedAccessSettings:
+    - scope:
+        clientScope:
+          restrictedClientApplication:
+            clientId: 550976420660-kr9mochv2btveg9sr7rpeqe08mo2hvk5.apps.googleusercontent.com # Lightdash Cloud only
+      activeSettings:
+        sessionSettings:
+          sessionLength: 86400s
+          sessionReauthMethod: LOGIN
+          sessionLengthEnabled: true
+  ```
+
+  The client ID above is for Lightdash Cloud. On a self-hosted instance, use the value of `AUTH_GOOGLE_OAUTH2_CLIENT_ID`.
+
+  Then bind it to the group:
+
+  ```bash
+  gcloud access-context-manager cloud-bindings create \
+    --organization=ORG_ID \
+    --group-key=GROUP_ID \
+    --binding-file=lightdash-session.yaml
+  ```
+
+  `GROUP_ID` is the group's ID, not its email address. `gcloud identity groups describe GROUP_EMAIL --format="value(name)"` returns it as `groups/GROUP_ID`.
+
+  This binding overrides the Admin console session setting for members of the group and isn't shown in the Admin console. If your organization already has Access Context Manager bindings for the same group, only the most recently created one applies, so add the Lightdash scope to that binding instead.
+
+  **Trust Lightdash (simpler)**
+
+  A Google Workspace admin can mark the Lightdash OAuth app as **Trusted** under **Security → API controls → Manage Third-Party App Access**, then select **Exempt trusted apps** under **Google Cloud session control** (this applies to all trusted apps, not just Lightdash). Marking an app as **Trusted** also allows it any Google scope it requests without admin approval. [See more](https://knowledge.workspace.google.com/admin/apps/control-which-apps-access-google-workspace-data).
+</Accordion>
 
 ##### Service account (JSON Key File)
 
