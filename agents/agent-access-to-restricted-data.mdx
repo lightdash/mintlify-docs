@@ -1,0 +1,70 @@
+---
+title: "Agent access to restricted data"
+sidebarTitle: "Restricted data"
+description: "How to run agents over explores that user attributes restrict, so answers stay governed and say who they cover"
+doc-type: guide
+---
+
+import RawSqlOutsideSemanticLayer from '/snippets/raw-sql-outside-semantic-layer.mdx';
+
+A common setup: aggregate explores are open to everyone, and the record-level explore underneath them is restricted by role through [user attributes](/workspace-admin/user-attributes). A regional sales team can ask "what was pipeline in EMEA last quarter?" freely, but "which accounts in EMEA have open opportunities?" only returns the accounts the asking user is allowed to see. The trouble is that a question can sound aggregate and still run on the restricted explore: "how many open opportunities do EMEA reps have?" is answered from the account grain, so its denominator quietly depends on who is asking.
+
+This guide is about running agents over that kind of data without either leaking rows or misleading people about what a number covers. The recommendations: keep the boundary in the semantic layer, make the agent say who a restricted answer includes, treat convenience scopes as their own explores, keep raw SQL away from restricted roles, and don't try to build suppression rules into the semantic layer.
+
+## Keep the boundary in the semantic layer
+
+Restrict the record-level explore with [`sql_filter`, `required_attributes` or `any_attributes`](/workspace-admin/user-attributes#using-user-attributes-in-lightdash) in the model, not with agent instructions. An agent answering in its default mode [inherits the asking user's attributes](/agents/data-access#user-attributes-and-permissions) on every query, so one restriction covers Explore, dashboards, and every agent that can see the explore. Instructions such as "only show users their own region" are guidance to a model, and a model can misread guidance. They are also invisible to Explore, so two users with the same access would see different rows depending on which door they came in through.
+
+Use [agent tags](/agents/data-access#limiting-access-to-specific-explores-and-fields) for the other half of the problem: an agent that never sees the record-level explore cannot be talked into querying it. A "Regional overview" agent tagged onto the aggregate explores and a separate "Account desk" agent for the restricted one is simpler to reason about than one agent that has to know when to be careful.
+
+## Make the agent say who is included
+
+When a number's denominator depends on the asking user's attributes, the answer should say so. A user with a broad role sees the full population, a user with a narrow one sees a subset, and neither is told unless you tell the agent to say it.
+
+Where to put that instruction depends on how many agents need it:
+
+- **One agent**: add it to the agent's [instructions](/agents/set-up-agents#instructions). For example: "Answers from the opportunities explore only cover accounts the person asking is allowed to see. State the population covered in one clause, such as 'across the accounts you have access to', whenever you answer from it."
+- **Every agent that touches the explore**: add a `context` entry to [`lightdash.project_context.yml`](/agents/agent-context), scoped with `objects` to the restricted explore. Any agent reasoning about that explore picks it up, and it survives agents being added or renamed.
+
+```yaml lightdash.project_context.yml
+version: 1
+entries:
+  - id: opportunities-scope-disclosure
+    kind: context
+    content: "fct_opportunities is filtered by the asking user's territory attributes. When answering from it, say which population the numbers cover, for example 'across the accounts you have access to'."
+    objects: ["fct_opportunities"]
+```
+
+Describe the population, not the mechanism. "Across the accounts you have access to" is enough; the attribute names and values are implementation detail nobody needs in an answer.
+
+## Treat convenience scopes as their own explores
+
+"My accounts", "my team", "my open tickets" are not restrictions: a manager may be allowed to see the whole region and still mean their own book when they say "my". Model the scope explicitly so the agent has something concrete to select, rather than hoping it infers the right filter.
+
+The simplest shape is a dedicated explore whose `sql_filter` keys on the asking user's verified email:
+
+```yaml
+models:
+  - name: my_accounts
+    description: Accounts owned by the person asking. One row per account.
+    meta:
+      sql_filter: ${TABLE}.owner_email = ${lightdash.user.email}
+      ai_hint:
+        - Use this explore when the user says "my accounts", "my book" or "my customers". It is already filtered to their own accounts; do not add an owner filter.
+```
+
+The [`ai_hint`](/semantic-layer/writing-descriptions#layer-ai-hints-on-top-of-descriptions) is what maps the phrase to the explore; without it the agent has to guess between `accounts` and `my_accounts`. If ownership lives in another table, a join with [`sql_on`](/workspace-admin/user-attributes#filtering-joins-with-sql%5Fon) referencing `${lightdash.user.email}` does the same job. What you cannot do is put the reference inside a dimension's own `sql:`. User attributes are [only accepted in `sql_filter`, `required_attributes`, `any_attributes` and `sql_on`](/workspace-admin/user-attributes#using-user-attributes-in-lightdash).
+
+Keep the convenience explore separate from the restricted one. The user's access rules still apply on top of it, so "my accounts" never widens what they can see.
+
+## Keep raw SQL away from restricted roles
+
+<RawSqlOutsideSemanticLayer />
+
+In practice: give restricted roles Viewer, Interactive Viewer or Editor, or a [custom role](/workspace-admin/custom-roles) without `manage:SqlRunner`, and the agent follows your semantic layer restrictions for them no matter what its instructions say. Reserve SQL Runner access for the people who own the model, and if any of them must also be restricted in the warehouse, require personal warehouse credentials on the project.
+
+## Don't build suppression into the semantic layer
+
+It is tempting to go further: hide any result where fewer than five records contribute, mask a column for rows outside the user's team, and so on. Lightdash has no minimum-group-size suppression, and per-row masking of a column is not possible either, since user attributes cannot appear in a dimension's `sql:`. An agent also composes filters freely, so a rule that lives in a handful of metrics does not cover the slice a user asks for next.
+
+The model that holds up is the one described above: open aggregate explores, and a record-level explore restricted to the roles that are allowed to see individual records. If a particular metric genuinely needs a threshold, compute it in dbt so the suppression is fixed in the warehouse regardless of which filters ran, for example a metric that returns null when its group is below the threshold, and expose only that metric on the open explore.

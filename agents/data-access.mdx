@@ -4,7 +4,21 @@ description: How agents reach your data, and how to scope them with tags and use
 doc-type: reference
 ---
 
+import RawSqlOutsideSemanticLayer from '/snippets/raw-sql-outside-semantic-layer.mdx';
+
 AI agents offer flexible data access control to balance insights with privacy and security. By default, agents have data access enabled, and you can disable it per agent when you want metadata-only behavior.
+
+## Who can see what
+
+Three controls decide what an agent can reach on behalf of the person asking, and they stack:
+
+| Layer | What it decides | Where it's set |
+| --- | --- | --- |
+| Agent tags | Which explores and fields the agent can see at all | [Tags in your models and in the agent settings](#limiting-access-to-specific-explores-and-fields) |
+| User attributes | Which rows, columns and tables the asking user gets from those explores | [`sql_filter`, `required_attributes` and `any_attributes` in your models](#user-attributes-and-permissions) |
+| Raw SQL | Whether the asking user can run SQL outside the semantic layer | The user's `manage:SqlRunner` ability and the per-thread [SQL mode](/agents/use-ai-agents#sql-mode) toggle |
+
+The first two apply to every answer the agent builds from the semantic layer, which is its default mode. The third sits outside the semantic layer: raw SQL is not filtered by user attributes, and only users who could already open the SQL Runner can turn it on. Agent [instructions](/agents/set-up-agents#instructions) shape how the agent reasons and answers; they never widen what it can reach. For a worked setup over explores that some users can only partly see, read [Agent access to restricted data](/agents/agent-access-to-restricted-data).
 
 ## Data access modes
 
@@ -401,7 +415,7 @@ Result: If agent has `["ai-enabled"]` tag:
 
 ## User attributes and permissions
 
-AI agents automatically respect all data access controls configured through [user attributes](/workspace-admin/user-attributes). This ensures that agents only access data that the user is authorized to see, maintaining your existing security policies.
+When an agent answers from the semantic layer, which is its default mode, it respects all data access controls configured through [user attributes](/workspace-admin/user-attributes). This ensures that agents only access data that the user is authorized to see, maintaining your existing security policies. The exception is raw SQL, covered [below](#raw-sql-is-outside-the-semantic-layer).
 
 ### How user attributes flow through AI queries
 
@@ -472,9 +486,9 @@ For a user with `sales_region: 'EMEA'` and no `can_view_pii` attribute:
 
 - **Metadata mode:** Even in metadata-only mode, agents respect user attributes when showing available fields
 - **Data access mode:** When data access is enabled, query results are filtered by user attributes
-- **Query generation:** Agents cannot generate queries that bypass user attribute restrictions
-- **Error handling:** If an agent attempts to access restricted data, the query fails with a permissions error
+- **Query generation:** Semantic queries the agent generates cannot bypass user attribute restrictions
+- **Error handling:** If an agent attempts to access restricted data through the semantic layer, the query fails with a permissions error
 
-<Warning>
-Custom SQL in table calculations or SQL Runner can potentially bypass user attribute filters. AI agents use the standard query interface and cannot bypass these restrictions.
-</Warning>
+### Raw SQL is outside the semantic layer
+
+<RawSqlOutsideSemanticLayer />
