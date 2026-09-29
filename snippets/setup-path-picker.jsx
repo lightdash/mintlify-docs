@@ -299,9 +299,9 @@ export const SetupPathPicker = () => {
         link: `${git.title} connection settings`,
       });
       steps.push({
-        title: "Automate refreshes",
+        title: "Set up CI/CD",
         body: "Preview and validate on pull requests, and refresh Lightdash after each merge.",
-        href: `${CICD}#refresh-your-lightdash-project`,
+        href: CICD,
         link: "Set up CI/CD",
       });
     }
