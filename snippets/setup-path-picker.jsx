@@ -14,6 +14,7 @@ export const SetupPathPicker = () => {
   const QUESTIONS = {
     host: {
       label: "Where does Lightdash run?",
+      binary: true,
       options: [
         { id: "cloud", title: "Lightdash Cloud", hint: "Hosted by Lightdash" },
         { id: "self", title: "Self-hosted", hint: "You deploy and run it" },
@@ -21,6 +22,7 @@ export const SetupPathPicker = () => {
     },
     edition: {
       label: "Which edition are you deploying?",
+      binary: true,
       options: [
         { id: "oss", title: "Open source", hint: "Core features" },
         { id: "ee", title: "Enterprise", hint: "Needs a license key" },
@@ -51,6 +53,7 @@ export const SetupPathPicker = () => {
     },
     net: {
       label: "Can Lightdash reach your warehouse?",
+      binary: true,
       options: [
         { id: "public", title: "Yes, over the internet", hint: "Possibly behind an IP allow-list" },
         { id: "private", title: "No, it's in a private network", hint: "VPC or on-prem" },
@@ -66,6 +69,7 @@ export const SetupPathPicker = () => {
     },
     start: {
       label: "How do you want to start?",
+      binary: true,
       options: [
         { id: "cli-first", title: "Deploy from the CLI first", hint: "See your project in minutes, then switch it to git" },
         { id: "git-first", title: "Connect git from the start", hint: "Create the project in the app, connected to your repo" },
@@ -301,50 +305,92 @@ export const SetupPathPicker = () => {
     return a[key];
   };
 
-  return (
-    <div className="setup-path not-prose">
-      <div className="setup-path-questions">
-        {visible.map((key) => (
-          <fieldset key={key} className="setup-path-question">
-            <legend>{QUESTIONS[key].label}</legend>
-            <div className={key === "wh" ? "setup-path-options is-compact" : "setup-path-options"}>
-              {optionsFor(key).map((o) => (
-                <button
-                  key={o.id}
-                  type="button"
-                  className="setup-path-option"
-                  aria-pressed={selected(key) === o.id}
-                  onClick={() => set(key, o.id)}
-                >
-                  <span className="setup-path-option-title">
-                    {o.title}
-                    {o.beta ? <span className="setup-path-beta">Beta</span> : null}
-                  </span>
-                  {o.hint ? <span className="setup-path-option-hint">{o.hint}</span> : null}
-                </button>
-              ))}
-            </div>
-            {key === "sync" ? (
-              <p className="setup-path-note">
-                Not sure? Most teams deploy from the CLI first, then connect git for production.{" "}
-                <a href="/integrations/dbt/projects#which-method-should-i-use">Compare sync methods</a>
-              </p>
-            ) : null}
-          </fieldset>
+  /* Binary questions use native radio inputs for accessibility */
+  const BinaryQuestion = ({ qKey, question }) => (
+    <fieldset className="not-prose m-0 border-0 p-0 min-w-0">
+      <legend className="text-sm font-semibold mb-2 p-0">{question.label}</legend>
+      <div className="flex gap-2">
+        {optionsFor(qKey).map((o) => (
+          <label
+            key={o.id}
+            className={`flex-1 grid gap-0.5 text-left py-2.5 px-3 rounded-lg cursor-pointer border transition-colors ${
+              selected(qKey) === o.id
+                ? "border-primary bg-primary/10 shadow-[inset_0_0_0_1px_var(--tw-shadow-color)] shadow-primary"
+                : "border-gray-300/25 hover:border-primary"
+            }`}
+          >
+            <input
+              type="radio"
+              name={qKey}
+              value={o.id}
+              checked={selected(qKey) === o.id}
+              onChange={() => set(qKey, o.id)}
+              className="sr-only"
+            />
+            <span className="text-sm font-medium">{o.title}</span>
+            {o.hint ? <span className="text-xs leading-tight opacity-70">{o.hint}</span> : null}
+          </label>
         ))}
       </div>
+    </fieldset>
+  );
 
-      <div className="setup-path-route" aria-live="polite">
-        <p className="setup-path-route-title">Your setup path</p>
-        <ol>
+  /* Multi-option questions use buttons with aria-pressed */
+  const MultiQuestion = ({ qKey, question }) => (
+    <fieldset className="not-prose m-0 border-0 p-0 min-w-0">
+      <legend className="text-sm font-semibold mb-2 p-0">{question.label}</legend>
+      <div className={`grid gap-2 ${qKey === "wh" ? "grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))]" : "grid-cols-[repeat(auto-fill,minmax(10rem,1fr))]"}`}>
+        {optionsFor(qKey).map((o) => (
+          <button
+            key={o.id}
+            type="button"
+            className={`grid gap-0.5 content-start text-left py-2.5 px-3 rounded-lg cursor-pointer border transition-colors ${
+              selected(qKey) === o.id
+                ? "border-primary bg-primary/10 shadow-[inset_0_0_0_1px_var(--tw-shadow-color)] shadow-primary"
+                : "border-gray-300/25 hover:border-primary"
+            }`}
+            aria-pressed={selected(qKey) === o.id}
+            onClick={() => set(qKey, o.id)}
+          >
+            <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
+              {o.title}
+              {o.beta ? <Badge color="purple" size="sm" shape="pill">Beta</Badge> : null}
+            </span>
+            {o.hint ? <span className="text-xs leading-tight opacity-70">{o.hint}</span> : null}
+          </button>
+        ))}
+      </div>
+      {qKey === "sync" ? (
+        <p className="text-[0.8125rem] mt-2 opacity-85">
+          Not sure? Most teams deploy from the CLI first, then connect git for production.{" "}
+          <a href="/integrations/dbt/projects#which-method-should-i-use" className="text-primary font-medium">Compare sync methods</a>
+        </p>
+      ) : null}
+    </fieldset>
+  );
+
+  return (
+    <div className="grid gap-6 my-6">
+      <div className="grid gap-5">
+        {visible.map((key) =>
+          QUESTIONS[key].binary ? (
+            <BinaryQuestion key={key} qKey={key} question={QUESTIONS[key]} />
+          ) : (
+            <MultiQuestion key={key} qKey={key} question={QUESTIONS[key]} />
+          )
+        )}
+      </div>
+
+      <div className="p-4 border border-gray-300/25 rounded-xl" aria-live="polite">
+        <p className="text-xs font-semibold tracking-wide uppercase mt-0 mb-3 opacity-70">Your setup path</p>
+        <Steps titleSize="p">
           {steps.map((s) => (
-            <li key={s.title}>
-              <span className="setup-path-step-title">{s.title}</span>
-              <span className="setup-path-step-body">{s.body}</span>
-              <a href={s.href}>{s.link} →</a>
-            </li>
+            <Step key={s.title} title={s.title}>
+              <p className="text-[0.8125rem] leading-5 opacity-80 my-0">{s.body}</p>
+              <a href={s.href} className="text-primary text-[0.8125rem] font-medium">{s.link} →</a>
+            </Step>
           ))}
-        </ol>
+        </Steps>
       </div>
     </div>
   );
