@@ -73,7 +73,7 @@ export const SetupPathPicker = () => {
     sync: {
       label: "How will Lightdash get your project?",
       options: [
-        { id: "git", title: "Connect your git repo", hint: "Refresh from the UI or CI; write-back PRs; recommended for production" },
+        { id: "git", title: "Connect your git repo", hint: "Refresh from the UI or CI; write-back PRs", recommended: true },
         { id: "cli", title: "Deploy from the CLI only", hint: "Fastest start; no repo access needed; changes need a redeploy" },
         { id: "dbtcloud", title: "Connect dbt Cloud", hint: "Only if you need dbt Cloud-only features", dbtOnly: true },
       ],
@@ -398,6 +398,7 @@ export const SetupPathPicker = () => {
           >
             <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
               {o.title}
+              {o.recommended ? <span className="text-primary text-xs font-medium">(Recommended)</span> : null}
               {o.beta ? <Badge color="purple" size="sm" shape="pill">Beta</Badge> : null}
             </span>
             {o.hint ? <span className="text-xs leading-tight opacity-70">{o.hint}</span> : null}
