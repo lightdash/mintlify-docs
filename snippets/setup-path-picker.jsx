@@ -15,7 +15,7 @@ export const SetupPathPicker = () => {
     host: "cloud",
     edition: "oss",
     model: "dbt",
-    wh: "snowflake",
+    wh: "",
     net: "public",
     sync: "cli-then-git",
     git: "github",
@@ -49,6 +49,7 @@ export const SetupPathPicker = () => {
     },
     wh: {
       label: "Which warehouse?",
+      dropdown: true,
       options: [
         { id: "bigquery", title: "BigQuery" },
         { id: "snowflake", title: "Snowflake" },
@@ -143,7 +144,8 @@ export const SetupPathPicker = () => {
   const sync = isYaml && a.sync === "dbtcloud" ? "cli-then-git" : a.sync;
   const gitOption = QUESTIONS.git.options.find((o) => o.id === a.git);
   const git = isYaml && !gitOption.yaml ? QUESTIONS.git.options[0] : gitOption;
-  const whTitle = QUESTIONS.wh.options.find((o) => o.id === a.wh).title;
+  const whOption = QUESTIONS.wh.options.find((o) => o.id === a.wh);
+  const whTitle = whOption ? whOption.title : null;
   const sshSupported = a.wh === "postgres" || a.wh === "redshift";
 
   const visible = ["host"];
@@ -190,12 +192,21 @@ export const SetupPathPicker = () => {
   }
 
   if (needsWarehouse) {
-    steps.push({
-      title: `Prepare ${whTitle} access`,
-      body: "Create a read-only service user or role for Lightdash and pick an authentication method.",
-      href: `${CONNECT}#${a.wh}`,
-      link: `${whTitle} connection settings`,
-    });
+    steps.push(
+      whTitle
+        ? {
+            title: `Prepare ${whTitle} access`,
+            body: "Create a read-only service user or role for Lightdash and pick an authentication method.",
+            href: `${CONNECT}#${a.wh}`,
+            link: `${whTitle} connection settings`,
+          }
+        : {
+            title: "Connect your warehouse",
+            body: "Create a read-only service user or role for Lightdash and pick an authentication method.",
+            href: `${CONNECT}#1-connect-to-a-warehouse`,
+            link: "Warehouse connection settings",
+          }
+    );
     if (a.net === "public" && a.host === "cloud") {
       steps.push({
         title: "Allow-list Lightdash's IP address",
@@ -215,7 +226,9 @@ export const SetupPathPicker = () => {
             }
           : {
               title: "Talk to us about private networking",
-              body: `SSH tunnels support Postgres and Redshift only. For ${whTitle}, contact support about your network setup.`,
+              body: whTitle
+                ? `SSH tunnels support Postgres and Redshift only. For ${whTitle}, contact support about your network setup.`
+                : "SSH tunnels support Postgres and Redshift only. Contact support about your network setup.",
               href: "/support",
               link: "Get support",
             },
@@ -277,7 +290,7 @@ export const SetupPathPicker = () => {
         link: "Create a project",
       });
       steps.push({
-        title: `Connect ${whTitle} with a service account`,
+        title: whTitle ? `Connect ${whTitle} with a service account` : "Connect your warehouse with a service account",
         body: "Enter the warehouse credentials Lightdash uses to run queries.",
         href: `${CONNECT}#1-connect-to-a-warehouse`,
         link: "Warehouse connection settings",
@@ -371,6 +384,25 @@ export const SetupPathPicker = () => {
     </fieldset>
   );
 
+  /* Dropdown question for long option lists */
+  const DropdownQuestion = ({ qKey, question }) => (
+    <fieldset className="not-prose m-0 border-0 p-0 min-w-0">
+      <legend className="text-sm font-semibold mb-2 p-0">{question.label}</legend>
+      <select
+        value={selected(qKey)}
+        onChange={(e) => set(qKey, e.target.value)}
+        className="w-full max-w-xs py-2.5 px-3 rounded-lg border border-gray-300/25 bg-transparent text-sm font-medium cursor-pointer focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+      >
+        <option value="" disabled>Select a warehouse</option>
+        {optionsFor(qKey).map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.title}
+          </option>
+        ))}
+      </select>
+    </fieldset>
+  );
+
   /* Multi-option questions use buttons with aria-pressed */
   const MultiQuestion = ({ qKey, question }) => (
     <fieldset className="not-prose m-0 border-0 p-0 min-w-0">
@@ -416,13 +448,12 @@ export const SetupPathPicker = () => {
   return (
     <div className="grid gap-6 my-6">
       <div className="grid gap-5">
-        {visible.map((key) =>
-          QUESTIONS[key].binary ? (
-            <BinaryQuestion key={key} qKey={key} question={QUESTIONS[key]} />
-          ) : (
-            <MultiQuestion key={key} qKey={key} question={QUESTIONS[key]} />
-          )
-        )}
+        {visible.map((key) => {
+          const q = QUESTIONS[key];
+          if (q.binary) return <BinaryQuestion key={key} qKey={key} question={q} />;
+          if (q.dropdown) return <DropdownQuestion key={key} qKey={key} question={q} />;
+          return <MultiQuestion key={key} qKey={key} question={q} />;
+        })}
       </div>
 
       <div className="p-4 border border-gray-300/25 rounded-xl" aria-live="polite">
