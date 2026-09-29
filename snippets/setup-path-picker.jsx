@@ -11,6 +11,17 @@ export const SetupPathPicker = () => {
   const PREPARE = "/integrations/dbt";
   const CICD = "/workflow/set-up-ci-cd";
 
+  const DEFAULTS = {
+    host: "cloud",
+    edition: "oss",
+    model: "dbt",
+    wh: "snowflake",
+    net: "public",
+    sync: "git",
+    start: "cli-first",
+    git: "github",
+  };
+
   const QUESTIONS = {
     host: {
       label: "Where does Lightdash run?",
@@ -86,16 +97,51 @@ export const SetupPathPicker = () => {
     },
   };
 
-  const [answers, setAnswers] = useState({
-    host: "cloud",
-    edition: "oss",
-    model: "dbt",
-    wh: "snowflake",
-    net: "public",
-    sync: "git",
-    start: "cli-first",
-    git: "github",
-  });
+  /* Read initial state from URL, falling back to defaults */
+  const getInitialAnswers = () => {
+    if (typeof window === "undefined") return DEFAULTS;
+    const params = new URLSearchParams(window.location.search);
+    const initial = { ...DEFAULTS };
+    Object.keys(DEFAULTS).forEach((key) => {
+      const value = params.get(key);
+      if (value) initial[key] = value;
+    });
+    return initial;
+  };
+
+  const [answers, setAnswers] = useState(getInitialAnswers);
+  const [copied, setCopied] = useState(false);
+
+  /* Sync state to URL after 500ms of inactivity to reduce analytics noise */
+  const isFirstRender = useRef(true);
+  const debounceRef = useRef(null);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const params = new URLSearchParams();
+      Object.entries(answers).forEach(([key, value]) => {
+        if (value !== DEFAULTS[key]) params.set(key, value);
+      });
+      const query = params.toString();
+      const newUrl = query
+        ? `${window.location.pathname}?${query}`
+        : window.location.pathname;
+      window.history.replaceState(null, "", newUrl);
+    }, 500);
+    return () => clearTimeout(debounceRef.current);
+  }, [answers]);
+
+  const copyLink = () => {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(window.location.href).catch(() => {});
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const set = (key, value) => setAnswers((prev) => ({ ...prev, [key]: value }));
   const a = answers;
@@ -305,31 +351,28 @@ export const SetupPathPicker = () => {
     return a[key];
   };
 
-  /* Binary questions use native radio inputs for accessibility */
+  /* Binary questions use buttons styled as radio cards for accessibility without scroll jump */
   const BinaryQuestion = ({ qKey, question }) => (
     <fieldset className="not-prose m-0 border-0 p-0 min-w-0">
       <legend className="text-sm font-semibold mb-2 p-0">{question.label}</legend>
-      <div className="flex gap-2">
+      <div className="flex gap-2" role="radiogroup">
         {optionsFor(qKey).map((o) => (
-          <label
+          <button
             key={o.id}
+            type="button"
+            role="radio"
+            aria-checked={selected(qKey) === o.id}
             className={`flex-1 grid gap-0.5 text-left py-2.5 px-3 rounded-lg cursor-pointer border transition-colors ${
               selected(qKey) === o.id
                 ? "border-primary bg-primary/10 shadow-[inset_0_0_0_1px_var(--tw-shadow-color)] shadow-primary"
                 : "border-gray-300/25 hover:border-primary"
             }`}
+            onClick={() => set(qKey, o.id)}
+            onMouseDown={(e) => e.preventDefault()}
           >
-            <input
-              type="radio"
-              name={qKey}
-              value={o.id}
-              checked={selected(qKey) === o.id}
-              onChange={() => set(qKey, o.id)}
-              className="sr-only"
-            />
             <span className="text-sm font-medium">{o.title}</span>
             {o.hint ? <span className="text-xs leading-tight opacity-70">{o.hint}</span> : null}
-          </label>
+          </button>
         ))}
       </div>
     </fieldset>
@@ -351,6 +394,7 @@ export const SetupPathPicker = () => {
             }`}
             aria-pressed={selected(qKey) === o.id}
             onClick={() => set(qKey, o.id)}
+            onMouseDown={(e) => e.preventDefault()}
           >
             <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
               {o.title}
@@ -382,7 +426,30 @@ export const SetupPathPicker = () => {
       </div>
 
       <div className="p-4 border border-gray-300/25 rounded-xl" aria-live="polite">
-        <p className="text-xs font-semibold tracking-wide uppercase mt-0 mb-3 opacity-70">Your setup path</p>
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold tracking-wide uppercase m-0 opacity-70">Your setup path</p>
+          <button
+            type="button"
+            onClick={copyLink}
+            className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline cursor-pointer bg-transparent border-0 p-0"
+          >
+            {copied ? (
+              <>
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+                Copied!
+              </>
+            ) : (
+              <>
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+                Copy link to my setup
+              </>
+            )}
+          </button>
+        </div>
         <Steps titleSize="p">
           {steps.map((s) => (
             <Step key={s.title} title={s.title}>
