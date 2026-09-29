@@ -17,8 +17,7 @@ export const SetupPathPicker = () => {
     model: "dbt",
     wh: "snowflake",
     net: "public",
-    sync: "git",
-    start: "cli-first",
+    sync: "cli-then-git",
     git: "github",
   };
 
@@ -73,17 +72,10 @@ export const SetupPathPicker = () => {
     sync: {
       label: "How will Lightdash get your project?",
       options: [
-        { id: "git", title: "Connect your git repo", hint: "Refresh from the UI or CI; write-back PRs", recommended: true },
-        { id: "cli", title: "Deploy from the CLI only", hint: "Fastest start; no repo access needed; changes need a redeploy" },
-        { id: "dbtcloud", title: "Connect dbt Cloud", hint: "Only for dbt Cloud-specific features like cross-project refs", dbtOnly: true },
-      ],
-    },
-    start: {
-      label: "Start with the CLI?",
-      binary: true,
-      options: [
-        { id: "cli-first", title: "Yes, deploy from the CLI first", hint: "See your project in minutes, then switch it to git" },
-        { id: "git-first", title: "No, connect git from the start", hint: "Create the project in the app, connected to your repo" },
+        { id: "cli-then-git", title: "CLI first, then connect git", hint: "Fastest start; switch to git for production", recommended: true },
+        { id: "git", title: "Connect git from the start", hint: "Create the project in the app, connected to your repo", recommended: true },
+        { id: "cli", title: "CLI only", hint: "Quick POC or no repo access; changes need a redeploy" },
+        { id: "dbtcloud", title: "Connect dbt Cloud", hint: "Connect via git instead unless you need dbt Cloud-only features", dbtOnly: true },
       ],
     },
     git: {
@@ -148,7 +140,7 @@ export const SetupPathPicker = () => {
   const hasProject = a.model === "dbt" || a.model === "yaml";
   const needsWarehouse = a.model !== "demo";
   const isYaml = a.model === "yaml";
-  const sync = isYaml && a.sync === "dbtcloud" ? "git" : a.sync;
+  const sync = isYaml && a.sync === "dbtcloud" ? "cli-then-git" : a.sync;
   const gitOption = QUESTIONS.git.options.find((o) => o.id === a.git);
   const git = isYaml && !gitOption.yaml ? QUESTIONS.git.options[0] : gitOption;
   const whTitle = QUESTIONS.wh.options.find((o) => o.id === a.wh).title;
@@ -159,8 +151,9 @@ export const SetupPathPicker = () => {
   visible.push("model");
   if (needsWarehouse) visible.push("wh", "net");
   if (hasProject) visible.push("sync");
-  if (hasProject && sync === "git") visible.push("start", "git");
-  const cliFirst = sync === "cli" || (sync === "git" && a.start === "cli-first");
+  const usesGit = sync === "cli-then-git" || sync === "git";
+  if (hasProject && usesGit) visible.push("git");
+  const cliFirst = sync === "cli" || sync === "cli-then-git";
 
   /* Each step: title, one line of context, and the canonical page for it. */
   const steps = [];
@@ -260,7 +253,7 @@ export const SetupPathPicker = () => {
       steps.push({
         title: "Create your project from the CLI",
         body:
-          sync === "git"
+          sync === "cli-then-git"
             ? "The fastest way to see your project. You'll switch it to a git connection next."
             : "Deploy from your machine using your local profile.",
         href: isYaml ? "/semantic-layer/yaml" : `${PREPARE}#create-your-project`,
@@ -276,7 +269,7 @@ export const SetupPathPicker = () => {
       });
     }
 
-    if (sync === "git" && !cliFirst) {
+    if (sync === "git") {
       steps.push({
         title: "Create your project in the app",
         body: "Go to Organization settings, then All projects, and click Create new.",
@@ -291,7 +284,7 @@ export const SetupPathPicker = () => {
       });
     }
 
-    if (sync === "git") {
+    if (usesGit) {
       steps.push({
         title: cliFirst ? `Switch to a ${git.title} connection` : `Connect ${git.title}`,
         body: "Point Lightdash at your repository, branch, and project directory.",
@@ -407,13 +400,13 @@ export const SetupPathPicker = () => {
       </div>
       {qKey === "sync" && sync !== "dbtcloud" ? (
         <p className="text-[0.8125rem] mt-2 opacity-85">
-          Git is recommended for production. Use CLI-only for a quick POC or if you can't grant repo access.{" "}
+          A git connection is recommended for production.{" "}
           <a href="/integrations/dbt/projects#which-method-should-i-use" className="text-primary font-medium">Compare sync methods</a>
         </p>
       ) : null}
       {qKey === "sync" && sync === "dbtcloud" ? (
         <p className="text-[0.8125rem] mt-2 opacity-85">
-          <strong className="text-amber-600 dark:text-amber-500">We recommend connecting via git repository</strong> unless you specifically need dbt Cloud-only features like cross-project references. Git connections also require your dbt Cloud environment version to be set to "Compatible".{" "}
+          <strong className="text-amber-600 dark:text-amber-500">We recommend connecting via git repository</strong> even if you use dbt Cloud — unless you specifically need dbt Cloud-only features like cross-project references. If you connect via git, set your dbt Cloud environment version to "Compatible".{" "}
           <a href="/integrations/connect-project#i-m-using-dbt-cloud-should-i-connect-using-my-git-repository-or-through-dbt-cloud" className="text-primary font-medium">Learn more</a>
         </p>
       ) : null}
