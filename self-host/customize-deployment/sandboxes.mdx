@@ -117,7 +117,7 @@ backend already runs in**:
   below. The data app Dockerfile copies `lightdash-query-sdk.tgz`, a generated artifact
   that a fresh checkout does not contain — build and pack it into `sandboxes/data-apps/`
   first with `./sandboxes/data-apps/pack-query-sdk.sh`, using the toolchain listed in
-  [Build the image yourself](#build-the-image-yourself) under the Cloud Run provider.
+  [Build the gateway image](#2-build-the-gateway-image) under the Cloud Run provider.
   The writeback Dockerfile has no such prerequisite.
 - **Control-plane permissions on your backend's existing IAM role** — add `RunMicrovm`,
   `GetMicrovm`, `SuspendMicrovm`, `ResumeMicrovm`, `TerminateMicrovm`, and
@@ -208,7 +208,7 @@ in**, using the [`aca` CLI](https://aka.ms/aca/sandboxes/dev) or the
   app Dockerfile copies `lightdash-query-sdk.tgz`, a generated artifact that a fresh
   checkout does not contain — build and pack it into `sandboxes/data-apps/` first with
   `./sandboxes/data-apps/pack-query-sdk.sh`, using the toolchain listed in
-  [Build the image yourself](#build-the-image-yourself) under the Cloud Run provider.
+  [Build the gateway image](#2-build-the-gateway-image) under the Cloud Run provider.
   The writeback Dockerfile has no such prerequisite.
 - **A workload identity with the data-plane role** — grant your backend's managed identity
   the **Container Apps SandboxGroup Data Owner** role on each sandbox group. Lightdash uses
@@ -264,14 +264,41 @@ AI writeback is not supported.
 
 ### 1. Enable the Google Cloud APIs
 
-Enable Cloud Run, plus Artifact Registry if you copy the gateway image into it:
+Enable Cloud Run, plus Artifact Registry if you push the gateway image there:
 
 ```bash
 gcloud services enable run.googleapis.com artifactregistry.googleapis.com \
   --project <your-project>
 ```
 
-### 2. Get the gateway image
+### 2. Build the gateway image
+
+Build the gateway image from a checkout of the Lightdash repository and push it to your
+own registry, such as Artifact Registry. To skip the build, you can
+[get the published image from Docker Hub](#or-get-the-image-from-docker-hub) instead.
+
+You need:
+
+- A checkout of the Lightdash repository at the version you deploy.
+- The Node version in `.nvmrc` and the pnpm version in the root `package.json`.
+- Repository dependencies installed with `sfw pnpm install --frozen-lockfile` from the
+  repository root.
+- Docker with Buildx running.
+
+From the repository root, build and push the image:
+
+```bash
+TARGET=<region>-docker.pkg.dev/<your-project>/<repo>/lightdash-sandbox-gateway:<lightdash-version>
+
+gcloud auth configure-docker <region>-docker.pkg.dev
+
+./sandboxes/data-apps/build-cloud-run-image.sh "$TARGET" --push
+```
+
+The script builds and packs the query SDK from your checkout, includes the pinned
+ComputeSDK gateway, and keeps `/app` owned by root, as Cloud Run requires.
+
+#### Or get the image from Docker Hub
 
 Every Lightdash release from 2.362.0 onward publishes a prebuilt Cloud Run gateway image
 to Docker Hub:
@@ -294,11 +321,11 @@ The rolling `:latest` tag tracks the newest release.
 
 <Note>
 Images exist for Lightdash 2.362.0 and later only. For an earlier version, upgrade
-Lightdash or [build the image yourself](#build-the-image-yourself).
+Lightdash or [build the image yourself](#2-build-the-gateway-image).
 </Note>
 
 We recommend copying the image into your own registry, such as Artifact Registry, so you
-can scan and approve it before deploying. Then deploy it by digest. For example:
+can scan and approve it before deploying. For example:
 
 ```bash
 VERSION=<lightdash-version>
@@ -318,53 +345,31 @@ Or copy it directly with [`crane`](https://github.com/google/go-containerregistr
 crane copy lightdash/lightdash-data-app-sandbox-cloud-run:$VERSION "$TARGET"
 ```
 
-Get the digest of the copied image:
-
-```bash
-gcloud artifacts docker images describe "$TARGET" \
-  --format='value(image_summary.digest)'
-```
-
 The image is published with SBOM and provenance attestations. Inspect them with:
 
 ```bash
 docker buildx imagetools inspect lightdash/lightdash-data-app-sandbox-cloud-run:$VERSION
 ```
 
-<Accordion title="Build the image yourself" id="build-the-image-yourself">
+#### Get the image digest
 
-Build from source only if you modify the query SDK or the data app template, or you run a
-Lightdash version earlier than 2.362.0.
-
-You need:
-
-- A checkout of the Lightdash repository at the version you deploy.
-- The Node version in `.nvmrc` and the pnpm version in the root `package.json`.
-- Repository dependencies installed with `sfw pnpm install --frozen-lockfile` from the
-  repository root.
-- Docker with Buildx running.
-
-From the repository root, build and push the image:
+Whichever option you use, get the digest of the image in your registry so you can deploy
+by digest:
 
 ```bash
-./sandboxes/data-apps/build-cloud-run-image.sh \
-  <registry>/<project>/lightdash-sandbox-gateway:<lightdash-version> --push
+gcloud artifacts docker images describe "$TARGET" \
+  --format='value(image_summary.digest)'
 ```
-
-The script builds and packs the query SDK from your checkout, includes the pinned
-ComputeSDK gateway, and keeps `/app` owned by root. Use the pushed image in the next step.
-
-</Accordion>
 
 ### 3. Deploy the gateway
 
-Generate a shared secret and deploy the image you copied, ideally by digest:
+Generate a shared secret and deploy the image from your registry, ideally by digest:
 
 ```bash
 SANDBOX_SECRET=$(openssl rand -hex 32)
 
 gcloud beta run deploy lightdash-sandbox-gateway \
-  --image <region>-docker.pkg.dev/<your-project>/<repo>/lightdash-data-app-sandbox-cloud-run@sha256:<digest> \
+  --image <region>-docker.pkg.dev/<your-project>/<repo>/<image>@sha256:<digest> \
   --region <region> \
   --project <your-project> \
   --sandbox-launcher \
@@ -468,9 +473,9 @@ Lightdash — you configure it yourself:
 
 ### Upgrading
 
-When you upgrade Lightdash, redeploy the gateway with the image for the new version. Copy
-the new tag into your registry, get its digest, and rerun the deploy command from
-[step 3](#3-deploy-the-gateway).
+When you upgrade Lightdash, redeploy the gateway with the image for the new version.
+Rebuild from a checkout of the new version, or copy the new version's tag from Docker Hub.
+Then get its digest and rerun the deploy command from [step 3](#3-deploy-the-gateway).
 
 Cloud Run always runs the deployed gateway image. It ignores `E2B_TEMPLATE_TAG`, so
 upgrading Lightdash alone doesn't change what runs in the sandbox.
