@@ -57,8 +57,8 @@ There are several places in Lightdash where you can customise behaviour based on
 User attributes can be used in these specific contexts within the model.yaml file:
 
 - `sql_filter:` - For row filtering at the model level
-- `required_attributes:` - For column and table access control (AND logic - all conditions must match)
-- `any_attributes:` - For column and table access control (OR logic - at least one condition must match)
+- `required_attributes:` - For table, column, and metric access control (AND logic - all conditions must match)
+- `any_attributes:` - For table, column, and metric access control (OR logic - at least one condition must match)
 - `sql_on:` - For filtering joins
 
 User attributes can also be used in:
@@ -177,9 +177,9 @@ sql_filter: ${TABLE}.sales_region IN (${lightdash.attributes.sales_region})
 
 You can use `user attributes` to limit some dimensions to some users.
 
-<Info>
-  Users without access to this dimension will not see it, as well as the **metrics derived from it**. .
-</Info>
+<Note>
+  Users without access to this dimension will not see it, or the metrics defined under that column unless those metrics set their own attributes. Model-level metrics that reference the column are not hidden — see [metric access control](#metric-access-control).
+</Note>
 
 In the example below, only users with `is_admin` attribute `true` can use the `salary` dimension on `user` table.
 
@@ -223,7 +223,7 @@ dimensions:
 ```
 </CodeGroup>
 
-If a user without access to this dimension runs a query that contains this dimension, they will get a `Forbidden` error. Also, if the user runs a query that contains a metric derived from this dimension, they won't see the metric on the explore page and won't be able to query from it.
+If a user without access to this dimension runs a query that contains this dimension, they will get a `Forbidden` error. Metrics defined under this column's `metrics` are hidden and blocked the same way, unless they [set their own attributes](#metric-access-control).
 
 You can add multiple attributes for a single dimension. There are two ways to do this:
 
@@ -317,6 +317,95 @@ dimensions:
 <Info>
   Column filtering using `required_attributes` does not take into account intrinsic attributes of a user - `email`.
 </Info>
+
+### Metric access control
+
+Metrics accept `required_attributes` and `any_attributes`, with the same AND and OR logic as dimensions. Where a metric is defined changes what it inherits:
+
+- **Model-level metrics**, defined under the model's `metrics`, use only their own `required_attributes` and `any_attributes`. They inherit nothing from the columns they reference: a model-level metric whose `sql` reads a restricted column stays visible unless you set attributes on the metric or the [table](#table-filtering-with-required_attributes).
+- **Column-level metrics**, defined under a column's `metrics`, inherit the `required_attributes` and `any_attributes` of that column's dimension. Setting either key on the metric replaces the inherited value for that key; the other key is still inherited.
+
+Overriding lets you expose an aggregate without exposing the column. In the example below, only users with `is_finance: "true"` can see the `salary` column, `total_salary`, and `payroll_per_head`. `average_salary` replaces the inherited rule, so any user with `role` set to `finance` or `manager` can see it.
+
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: employees
+    config:
+      meta:
+        metrics:
+          payroll_per_head: # model-level: restricted by its own attributes
+            type: number
+            sql: ${total_salary} / ${employee_count}
+            required_attributes:
+              is_finance: "true"
+    columns:
+      - name: salary
+        config:
+          meta:
+            dimension:
+              required_attributes:
+                is_finance: "true"
+            metrics:
+              total_salary: # inherits is_finance: "true"
+                type: sum
+              average_salary: # overrides required_attributes
+                type: average
+                required_attributes:
+                  role: ["finance", "manager"]
+```
+
+```yaml dbt v1.9 and earlier
+models:
+  - name: employees
+    meta:
+      metrics:
+        payroll_per_head: # model-level: restricted by its own attributes
+          type: number
+          sql: ${total_salary} / ${employee_count}
+          required_attributes:
+            is_finance: "true"
+    columns:
+      - name: salary
+        meta:
+          dimension:
+            required_attributes:
+              is_finance: "true"
+          metrics:
+            total_salary: # inherits is_finance: "true"
+              type: sum
+            average_salary: # overrides required_attributes
+              type: average
+              required_attributes:
+                role: ["finance", "manager"]
+```
+
+```yaml Lightdash YAML
+type: model
+name: employees
+
+metrics:
+  payroll_per_head: # model-level: restricted by its own attributes
+    type: number
+    sql: ${total_salary} / ${employee_count}
+    required_attributes:
+      is_finance: "true"
+
+dimensions:
+  - name: salary
+    type: number
+    sql: ${TABLE}.salary
+    required_attributes:
+      is_finance: "true"
+    metrics:
+      total_salary: # inherits is_finance: "true"
+        type: sum
+      average_salary: # overrides required_attributes
+        type: average
+        required_attributes:
+          role: ["finance", "manager"]
+```
+</CodeGroup>
 
 ### Column filtering with `any_attributes`
 
