@@ -73,17 +73,17 @@ export const SetupPathPicker = () => {
     sync: {
       label: "How will Lightdash get your project?",
       options: [
-        { id: "cli", title: "Deploy from the CLI", hint: "Fastest start; no repo access needed; changes need a redeploy" },
-        { id: "git", title: "Connect your git repo", hint: "Refresh from the UI or CI; write-back PRs; for production" },
+        { id: "git", title: "Connect your git repo", hint: "Refresh from the UI or CI; write-back PRs; recommended for production" },
+        { id: "cli", title: "Deploy from the CLI only", hint: "Fastest start; no repo access needed; changes need a redeploy" },
         { id: "dbtcloud", title: "Connect dbt Cloud", hint: "Only if you need dbt Cloud-only features", dbtOnly: true },
       ],
     },
     start: {
-      label: "How do you want to start?",
+      label: "Start with the CLI?",
       binary: true,
       options: [
-        { id: "cli-first", title: "Deploy from the CLI first", hint: "See your project in minutes, then switch it to git" },
-        { id: "git-first", title: "Connect git from the start", hint: "Create the project in the app, connected to your repo" },
+        { id: "cli-first", title: "Yes, deploy from the CLI first", hint: "See your project in minutes, then switch it to git" },
+        { id: "git-first", title: "No, connect git from the start", hint: "Create the project in the app, connected to your repo" },
       ],
     },
     git: {
@@ -406,7 +406,7 @@ export const SetupPathPicker = () => {
       </div>
       {qKey === "sync" ? (
         <p className="text-[0.8125rem] mt-2 opacity-85">
-          Not sure? Most teams deploy from the CLI first, then connect git for production.{" "}
+          Git is recommended for production. Use CLI-only for a quick POC or if you can't grant repo access.{" "}
           <a href="/integrations/dbt/projects#which-method-should-i-use" className="text-primary font-medium">Compare sync methods</a>
         </p>
       ) : null}
