@@ -116,8 +116,9 @@ backend already runs in**:
   `/ready` hook on port 8080. Each registration returns an **image ARN** for the config
   below. The data app Dockerfile copies `lightdash-query-sdk.tgz`, a generated artifact
   that a fresh checkout does not contain — build and pack it into `sandboxes/data-apps/`
-  first, as shown in [Build the gateway image](#2-build-the-gateway-image) under the
-  Cloud Run provider. The writeback Dockerfile has no such prerequisite.
+  first with `./sandboxes/data-apps/pack-query-sdk.sh`, using the toolchain listed in
+  [Build the gateway image](#2-build-the-gateway-image) under the Cloud Run provider.
+  The writeback Dockerfile has no such prerequisite.
 - **Control-plane permissions on your backend's existing IAM role** — add `RunMicrovm`,
   `GetMicrovm`, `SuspendMicrovm`, `ResumeMicrovm`, `TerminateMicrovm`, and
   `CreateMicrovmAuthToken`.
@@ -205,9 +206,10 @@ in**, using the [`aca` CLI](https://aka.ms/aca/sandboxes/dev) or the
   Registration returns a disk image **ID** for the config below. (Unlike the AWS provider,
   there is no in-VM agent to build — Sandboxes expose a native command/file API.) The data
   app Dockerfile copies `lightdash-query-sdk.tgz`, a generated artifact that a fresh
-  checkout does not contain — build and pack it into `sandboxes/data-apps/` first, as
-  shown in [Build the gateway image](#2-build-the-gateway-image) under the Cloud Run
-  provider. The writeback Dockerfile has no such prerequisite.
+  checkout does not contain — build and pack it into `sandboxes/data-apps/` first with
+  `./sandboxes/data-apps/pack-query-sdk.sh`, using the toolchain listed in
+  [Build the gateway image](#2-build-the-gateway-image) under the Cloud Run provider.
+  The writeback Dockerfile has no such prerequisite.
 - **A workload identity with the data-plane role** — grant your backend's managed identity
   the **Container Apps SandboxGroup Data Owner** role on each sandbox group. Lightdash uses
   `DefaultAzureCredential` (workload identity on AKS, or the standard Azure credential chain)
@@ -256,107 +258,118 @@ AI writeback is not supported.
 - A Google Cloud project with billing enabled.
 - A recent version of the `gcloud` CLI that supports
   `gcloud beta run deploy --sandbox-launcher`.
-- A checkout of the Lightdash repository.
-- Node and pnpm at the repository-pinned versions (`.nvmrc` and the `packageManager`
-  field in `package.json`), to build the query SDK.
 - [External object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage)
   configured for Lightdash.
 - An Anthropic API key.
 
 ### 1. Enable the Google Cloud APIs
 
+Enable Cloud Run, plus Artifact Registry if you push the gateway image there:
+
 ```bash
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com \
+gcloud services enable run.googleapis.com artifactregistry.googleapis.com \
   --project <your-project>
 ```
 
 ### 2. Build the gateway image
 
-<Note>
-Newer Lightdash releases include a build script that does all of this in one step. If
-`sandboxes/data-apps/build-cloud-run-image.sh` exists in your checkout, prefer it over
-the manual recipe below — it prepares the SDK tarball and pins the gateway version for
-you:
+Build the gateway image from a checkout of the Lightdash repository and push it to your
+own registry, such as Artifact Registry. To skip the build, you can
+[get the published image from Docker Hub](#or-get-the-image-from-docker-hub) instead.
+
+You need:
+
+- A checkout of the Lightdash repository at the version you deploy.
+- The Node version in `.nvmrc` and the pnpm version in the root `package.json`.
+- Repository dependencies installed with `sfw pnpm install --frozen-lockfile` from the
+  repository root.
+- Docker with Buildx running.
+
+From the repository root, build and push the image:
 
 ```bash
-./sandboxes/data-apps/build-cloud-run-image.sh <image-tag> --push
+TARGET=<region>-docker.pkg.dev/<your-project>/<repo>/lightdash-sandbox-gateway:<lightdash-version>
+
+gcloud auth configure-docker <region>-docker.pkg.dev
+
+./sandboxes/data-apps/build-cloud-run-image.sh "$TARGET" --push
 ```
 
-If your copy of the script still assigns `/app` to `user` with `chown`, use the
-corrected manual recipe below instead.
+The script builds and packs the query SDK from your checkout, includes the pinned
+ComputeSDK gateway, and keeps `/app` owned by root, as Cloud Run requires.
+
+#### Or get the image from Docker Hub
+
+Every Lightdash release from 2.362.0 onward publishes a prebuilt Cloud Run gateway image
+to Docker Hub:
+
+```text
+lightdash/lightdash-data-app-sandbox-cloud-run:<lightdash-version>
+```
+
+The image is public, so you can pull it without a Docker Hub account. It is built for
+`linux/amd64` only. It contains:
+
+- The ComputeSDK Cloud Run gateway. The default command is `node /gateway/gateway.mjs`.
+- The data app template in `/app`, with its dependencies preinstalled. `/app` is already
+  owned by root, as Cloud Run requires.
+- The `@lightdash/query-sdk` version that matches the release.
+- Node, pnpm, and the coding agents used for generation.
+
+Use the tag that matches the Lightdash version running on your backend and scheduler.
+The rolling `:latest` tag tracks the newest release.
+
+<Note>
+Images exist for Lightdash 2.362.0 and later only. For an earlier version, upgrade
+Lightdash or [build the image yourself](#2-build-the-gateway-image).
 </Note>
 
-The Docker build context copies `lightdash-query-sdk.tgz`, a generated artifact that a
-fresh checkout does not contain, so the recipe builds and packs it first. Use the
-repository-pinned toolchain: the Node version in `.nvmrc` and the pnpm version in the
-`packageManager` field of `package.json` (for example, `nvm use` and `corepack enable`
-from the repository root).
-
-From the root of the Lightdash repository, run:
+We recommend copying the image into your own registry, such as Artifact Registry, so you
+can scan and approve it before deploying. For example:
 
 ```bash
-set -euo pipefail
+VERSION=<lightdash-version>
+TARGET=<region>-docker.pkg.dev/<your-project>/<repo>/lightdash-data-app-sandbox-cloud-run:$VERSION
 
-# Install workspace dependencies
-pnpm install --frozen-lockfile
+gcloud auth configure-docker <region>-docker.pkg.dev
 
-cd sandboxes/data-apps
-
-# Build and pack @lightdash/query-sdk — the Dockerfile copies this tarball
-pnpm -C ../../packages/query-sdk build
-pnpm -C ../../packages/query-sdk pack --pack-destination "$(pwd)"
-mv lightdash-query-sdk-*.tgz lightdash-query-sdk.tgz
-
-# Stage the Docker context with the gateway
-STAGE=$(mktemp -d)
-cp -R template lightdash-query-sdk.tgz "$STAGE/"
-npm pack @computesdk/cloud-run --pack-destination "$STAGE" >/dev/null
-tar -xzf "$STAGE"/computesdk-cloud-run-*.tgz \
-  -C "$STAGE" package/dist/gateway.mjs
-mv "$STAGE/package/dist/gateway.mjs" "$STAGE/gateway.mjs"
-
-# Create E2B's user account, but keep /app owned by the root gateway user
-# so the Cloud Run sandbox can write to it.
-sed 's|^RUN chown -R user:user /app|RUN useradd -m -s /bin/bash user|' \
-  e2b.Dockerfile > "$STAGE/Dockerfile"
-
-cat >> "$STAGE/Dockerfile" <<'EOF'
-
-COPY gateway.mjs /gateway/gateway.mjs
-ENV NODE_ENV=production
-CMD ["node", "/gateway/gateway.mjs"]
-EOF
-
-gcloud builds submit "$STAGE" \
-  --tag gcr.io/<your-project>/lightdash-sandbox-gateway:latest \
-  --project <your-project>
+docker pull --platform linux/amd64 \
+  lightdash/lightdash-data-app-sandbox-cloud-run:$VERSION
+docker tag lightdash/lightdash-data-app-sandbox-cloud-run:$VERSION "$TARGET"
+docker push "$TARGET"
 ```
 
-Instead of building the SDK from your local source, you can download the published
-tarball from npm. Pin it to the version in your checkout so the sandbox template and SDK
-stay in step — don't use an unpinned `latest`. This replaces `pnpm install` and the two
-`pnpm` commands above (run it from `sandboxes/data-apps`):
+Or copy it directly with [`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/crane):
 
 ```bash
-SDK_VERSION=$(node -p "require('../../packages/query-sdk/package.json').version")
-npm pack "@lightdash/query-sdk@${SDK_VERSION}"
-mv "lightdash-query-sdk-${SDK_VERSION}.tgz" lightdash-query-sdk.tgz
+crane copy lightdash/lightdash-data-app-sandbox-cloud-run:$VERSION "$TARGET"
 ```
 
-This downloads a prebuilt archive from the npm registry — it does not build your local
-source, so any local changes under `packages/query-sdk/` are not included. If the version
-in your checkout hasn't been published yet (for example, on an unreleased development
-branch), build from source instead.
+The image is published with SBOM and provenance attestations. Inspect them with:
+
+```bash
+docker buildx imagetools inspect lightdash/lightdash-data-app-sandbox-cloud-run:$VERSION
+```
+
+#### Get the image digest
+
+Whichever option you use, get the digest of the image in your registry so you can deploy
+by digest:
+
+```bash
+gcloud artifacts docker images describe "$TARGET" \
+  --format='value(image_summary.digest)'
+```
 
 ### 3. Deploy the gateway
 
-Generate a shared secret and deploy the image:
+Generate a shared secret and deploy the image from your registry, ideally by digest:
 
 ```bash
 SANDBOX_SECRET=$(openssl rand -hex 32)
 
 gcloud beta run deploy lightdash-sandbox-gateway \
-  --image gcr.io/<your-project>/lightdash-sandbox-gateway:latest \
+  --image <region>-docker.pkg.dev/<your-project>/<repo>/<image>@sha256:<digest> \
   --region <region> \
   --project <your-project> \
   --sandbox-launcher \
@@ -373,8 +386,8 @@ gcloud beta run deploy lightdash-sandbox-gateway \
 ```
 
 Save `SANDBOX_SECRET` securely. You need the same value when configuring Lightdash.
-Although the Cloud Run service allows unauthenticated requests, the gateway requires this
-secret for every sandbox operation.
+Although the Cloud Run service allows unauthenticated requests, the gateway rejects any
+sandbox operation that doesn't include this secret.
 
 Keep the service at one instance. Active sandboxes run inside that instance and are lost
 if Cloud Run replaces it during a generation.
@@ -449,18 +462,26 @@ Lightdash — you configure it yourself:
    control. For a domain-level allowlist, add
    [Secure Web Proxy](https://cloud.google.com/secure-web-proxy/docs/overview): create a
    deny-all-egress firewall rule that only allows traffic to the proxy, and allowlist the
-   domains the sandboxes and the gateway need — at minimum `api.anthropic.com`,
-   `registry.npmjs.org`, and your object storage endpoint. Secure Web Proxy is an
+   domains the sandboxes and the gateway need — at minimum `api.anthropic.com` and your
+   object storage endpoint. Standard data app generation and builds don't download npm
+   packages. Allow `registry.npmjs.org`, or the hosts in
+   `LIGHTDASH_APP_DEPENDENCY_REGISTRY_HOSTS`, only if your data apps use custom npm
+   dependencies, which install at build time. Secure Web Proxy is an
    explicit proxy: clients must be configured to use it (bake proxy settings into the
    gateway image — sandboxes share its root filesystem), and the deny-all firewall drops
    anything that bypasses it.
 
+### Upgrading
 
-To update the sandbox toolchain, rebuild the gateway image and redeploy the Cloud Run
-service. The gateway image must keep `/app` owned by root. If an older build recipe
-assigned it to `user`, data app builds can fail with `Permission denied` for
-`/app/src/design`. Rebuild with the corrected recipe above and redeploy the gateway;
-upgrading Lightdash alone does not update the gateway image.
+When you upgrade Lightdash, redeploy the gateway with the image for the new version.
+Rebuild from a checkout of the new version, or copy the new version's tag from Docker Hub.
+Then get its digest and rerun the deploy command from [step 3](#3-deploy-the-gateway).
+
+Cloud Run always runs the deployed gateway image. It ignores `E2B_TEMPLATE_TAG`, so
+upgrading Lightdash alone doesn't change what runs in the sandbox.
+
+Redeploying replaces the single gateway instance, so active sandboxes are lost. Upgrade
+during a quiet period. To roll back, redeploy the previous version's tag or digest.
 
 ## Local Docker provider (development)
 
