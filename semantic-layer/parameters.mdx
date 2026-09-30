@@ -908,7 +908,64 @@ To save parameter values in a dashboard:
 3. Set the parameter values as desired
 4. Save the dashboard
 
-The parameter values will be saved with the dashboard and will be applied to all charts on the dashboard that have parameterized fields.
+The parameter values will be saved with the dashboard and will be applied to every chart on the dashboard that references those parameters, in place of the values saved with each chart. For how dashboard controls map to parameters and how each tile picks its value, see [Parameters on dashboards](#parameters-on-dashboards).
+
+
+## Parameters on dashboards
+
+A dashboard shows a control for each parameter that its charts reference, at the top of the dashboard alongside the [dashboard filters](/explore/dashboards/filter). On a dashboard with tabs, a control only appears on the tabs whose tiles use it. Changing a control's value re-runs every tile whose chart references that parameter.
+
+
+### One control per parameter
+
+Whether tiles share a control depends on where the parameter is defined:
+
+- A **project-level parameter** has a single name, such as `volume_currency`. Every tile whose chart references `${lightdash.parameters.volume_currency}` shares one control, whichever model the chart is built on.
+- A **model-level parameter** is identified by its model name plus its parameter name, such as `orders.volume_currency`. Parameters with the same name on different models are separate parameters, and each one gets its own control.
+
+So if five models each define a `volume_currency` parameter, and the dashboard has tiles built on all five, the dashboard shows five `volume_currency` controls, one per model. Each control only changes the tiles whose charts reference that model's parameter. Each control shows its parameter's `label`, so if the five models use the same label, the controls look identical.
+
+A dashboard parameter control can't be mapped to parameters from other models, and parameters have no equivalent of a dashboard filter's [`Tiles` tab](/explore/dashboards/filter#saved-filters): a parameter's dashboard value applies to every tile whose chart references it. Follow the issues for [mapping one control to parameters from several models](https://github.com/lightdash/lightdash/issues/30208) and [choosing which tiles a dashboard parameter applies to](https://github.com/lightdash/lightdash/issues/23822) for progress.
+
+
+### Sharing one control across models
+
+When a parameter means the same thing on several models, such as a reporting currency or a region, define it once as a [project-level parameter](#how-to-define-parameters) in `lightdash.config.yml` instead of on each model. Then reference it by its project-level name from every model's SQL:
+
+```sql
+-- Model-level: one parameter per model, and one dashboard control for each
+${lightdash.parameters.orders.volume_currency}
+${lightdash.parameters.payments.volume_currency}
+
+-- Project-level: one parameter, and one dashboard control for every tile
+${lightdash.parameters.volume_currency}
+```
+
+The dashboard then shows a single `volume_currency` control that drives every tile. Keep model-level parameters for settings that only make sense on one model.
+
+Charts and dashboards store saved values by parameter name, so values saved for `orders.volume_currency` don't carry over to `volume_currency`. After the move, set the value again on any chart or dashboard that saved one, and save it.
+
+
+### How each tile gets its value
+
+For each parameter a tile's chart references, the tile uses the first of these that is set:
+
+1. The dashboard value: the value picked in the dashboard's control, otherwise the value [saved with the dashboard](#saving-values-in-dashboards)
+2. The parameter's `default`, from its project-level or model-level definition
+3. The value [saved with the chart](#saving-values-in-charts)
+
+A parameter with a `default` therefore applies that default to every tile until the dashboard sets a value, including tiles whose charts were saved with a different value. A parameter without a `default` lets each tile keep its chart's saved value until the dashboard sets one.
+
+To see the values a tile ran with, click the parameters icon in the tile header. Each value is labelled `from dashboard`, `from chart`, or `default`.
+
+Viewers can change parameter values without editing the dashboard. Their changes aren't saved to the dashboard: they're kept in the dashboard URL, so sharing the link shares the values. Clearing a value returns the control to the dashboard's saved value, if it has one. To change the saved values, edit the dashboard, set the values, and save it.
+
+
+### Parameters vs dashboard filters
+
+A [dashboard filter](/explore/dashboards/filter) constrains the values of a field. It adds a condition on that field, and from the filter's `Tiles` tab you can remove it from a tile or point it at a different field on each tile. A parameter substitutes a value into SQL wherever it is referenced (a dimension, metric, join, or `sql_from`) and appears as a control on the dashboard for every tile whose chart uses it.
+
+Use a dashboard filter to restrict the rows a field returns. Use a parameter to change the SQL logic itself, such as the currency amounts are shown in, the date grain, or which KPI a metric returns (see [metric-based parameters](#metric-based-parameters)).
 
 
 ## Using parameters well
