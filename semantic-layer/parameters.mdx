@@ -884,6 +884,38 @@ The value tracks the granularity actually used to compile the query, so it stays
 Parameter values can be saved at both the chart and dashboard levels.
 
 
+### How parameter values resolve on dashboards
+
+A dashboard value takes priority over a chart's saved value. If there is no dashboard value, the parameter's definition determines whether the chart's saved value can be used.
+
+For each parameter used by a tile, Lightdash checks these sources in order:
+
+| Priority | Value source |
+| --- | --- |
+| 1 | The current dashboard value, including a viewer's override |
+| 2 | The value saved with the dashboard |
+| 3 | The chart's saved value, **only when the parameter definition has no default** |
+| 4 | The value saved with a virtual view, if the tile uses one |
+| 5 | The model-level default |
+| 6 | The project-level default |
+
+When the parameter definition has a default, Lightdash skips the chart's saved value and uses the fallback sources in rows 4–6. A model-level definition takes priority over a project-level definition with the same name. A virtual view's saved value can take priority over a model or project default.
+
+For example, suppose two charts save `status` values of `Cancelled` and `Expired`, and the parameter has a default of `all`. With no dashboard value or virtual-view saved value, both charts use `all`. If the parameter has no default, each chart uses its own saved value: one uses `Cancelled` and the other uses `Expired`. Setting `status` on the dashboard overrides both charts.
+
+If none of these sources supplies a value, a tile that requires the parameter cannot run until a value is provided. A tile's parameter popover shows the value it ran with and whether it came from the dashboard, chart, or defaults. The dashboard control can show **any value** when the tiles use their individual chart-saved values.
+
+#### Clearing and saving dashboard values
+
+When viewing a dashboard or an embedded dashboard, clearing a parameter or selecting **Clear all** resets the current override. A value saved with the dashboard is restored; otherwise, tiles use the defaults or chart-saved values described above.
+
+While editing, clearing a value stages its removal from the dashboard. Save the dashboard to make the removal permanent. Until you save, tiles can still use the dashboard's previously saved value.
+
+Embedded dashboards and scheduled deliveries use the same resolution rules. Viewer changes and parameter values configured for a scheduled delivery override the saved dashboard values. A dynamic `today` default is evaluated when the query runs, using the project's query timezone.
+
+These rules apply to dashboard tiles. Standalone charts and embedded charts continue to use their chart-saved values ahead of virtual-view values and model or project defaults.
+
+
 ### Saving values in charts
 
 When you create a chart using parameters, you can save the specific parameter values with the chart. This means that when someone views the chart, they'll see the data filtered according to the saved parameter values.
@@ -894,7 +926,7 @@ To save parameter values with a chart:
 2. Set the parameter values as desired
 3. Save the chart
 
-The parameter values will be saved with the chart and will be applied whenever the chart is viewed.
+The parameter values will be saved with the chart and applied when the chart is viewed on its own. On a dashboard, [dashboard parameter resolution](#how-parameter-values-resolve-on-dashboards) determines whether the chart's saved values apply.
 
 
 ### Saving values in dashboards
@@ -908,7 +940,7 @@ To save parameter values in a dashboard:
 3. Set the parameter values as desired
 4. Save the dashboard
 
-The parameter values will be saved with the dashboard and will be applied to all charts on the dashboard that have parameterized fields.
+The parameter values will be saved with the dashboard and applied to tiles that use those parameters. Viewers can override them without changing the saved values; see [dashboard parameter resolution](#how-parameter-values-resolve-on-dashboards).
 
 
 ## Using parameters well
