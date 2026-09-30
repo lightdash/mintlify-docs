@@ -59,6 +59,8 @@ Click the check icon to save, or the cross to cancel. If someone else saved the 
 
 Type `/chart` and press Enter, or click the chart icon next to the title. The **Add chart** dialog is a full [Explore view](/explore/explore-view): pick a table, choose metrics and dimensions, configure the chart, and click **Apply to Document**. The chart is inserted where your cursor was.
 
+Charts can use [custom chart types](/visualizations/custom-charts) installed in the project, from the [chart library](/visualizations/chart-library) or [Chart Studio](/visualizations/chart-studio). A document keeps the chart type version each chart was saved with, so a new version of the chart type doesn't change the document's charts.
+
 <Frame>
   <img src="/images/explore/documents/slash-chart.png" alt="The slash menu filtered by typing /chart, showing the Chart option under a paragraph" />
 </Frame>
@@ -77,7 +79,7 @@ Charts sit between blocks of text; they can't be placed inside a list, quote, or
 
 ## Create and edit with AI
 
-[AI agents](/agents/enable-content-tools) with content editing turned on, and [Lightdash MCP](/agents/lightdash-mcp#editing-content) clients such as Claude or Cursor, can write a new document or rewrite an existing one when you ask them to. Their changes are saved as new versions, like edits made in the editor, and appear in the document's [version history](#version-history).
+[AI agents](/agents/enable-content-tools) with content editing turned on, and [Lightdash MCP](/agents/lightdash-mcp#editing-content) clients such as Claude or Cursor, can write a new document or rewrite an existing one when you ask them to. Their changes are saved as new versions, like edits made in the editor, and appear in the document's [version history](#version-history). AI agents can also use the project's custom chart types in the charts they add.
 
 ## Manage a document
 
@@ -105,3 +107,43 @@ Every save creates a new version. Open **⋯** → **Version history** to see th
 Click a version to preview it read-only, charts included; the charts run their saved queries against current data. The address bar updates, so you can share a link to a specific version. Click the cross next to the title to return to the document.
 
 Version history is for reviewing past versions. To bring back earlier content, copy it from the version preview into the document and save.
+
+## Download and upload with the CLI
+
+The [Lightdash CLI](/workflow/cli/reference) downloads and uploads documents as code, alongside your charts and dashboards. Each document is one YAML file named by its slug, in the same format as **View as code**.
+
+```bash
+# Download every document you can view
+lightdash download --include-documents
+
+# Download specific documents
+lightdash download --documents quarterly-review churn-deep-dive
+
+# Upload edited documents
+lightdash upload --documents quarterly-review
+```
+
+Documents are written to `lightdash/documents/<slug>.yml`:
+
+```yaml
+content:
+  cells:
+    - content:
+        markdown: "# Findings"
+      type: markdown
+description: ""
+name: Quarterly review
+schemaVersion: 1
+slug: quarterly-review
+spaceSlug: reports/finance
+```
+
+On upload, each file is matched to a document by its slug:
+
+- A new slug creates a document in the space named by `spaceSlug`. The space must already exist — upload it first.
+- An unchanged file is skipped.
+- A changed file saves a new version, so the previous content stays in [version history](#version-history). Changing `spaceSlug` moves the document.
+- If someone saves the document while the upload runs, the upload fails for that document instead of overwriting their change.
+
+Downloading needs permission to use content as code in the project, which Editors, Developers, and Admins have. Uploading also needs permission to edit the document, or to create documents in its space.
+
