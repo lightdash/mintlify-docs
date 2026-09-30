@@ -63,8 +63,15 @@ Keep the convenience explore separate from the restricted one. The user's access
 
 In practice: give restricted roles Viewer, Interactive Viewer or Editor, or a [custom role](/workspace-admin/custom-roles) without `manage:SqlRunner`. The agent then follows your semantic layer restrictions for them, whatever its instructions say. Reserve SQL Runner access for the people who own the model. If any of them also need restricting, require personal warehouse credentials on the project.
 
-## Don't build suppression into the semantic layer
+## Protect small groups by limiting the grain, not the filters
 
-It's tempting to go further: hide any result with fewer than five contributing records, mask a column for rows outside the user's team, and so on. Lightdash has no minimum-group-size suppression, and per-row masking of a column isn't possible either, because user attributes can't appear in a dimension's `sql:`. An agent also composes filters freely, so a rule that lives in a handful of metrics doesn't cover the next slice a user asks for.
+An open aggregate explore with enough filters can single out one record. "Churn for enterprise accounts in Lisbon that signed in March" may be a group of one, and the number is then that account's data, even though the record-level explore never ran.
 
-Stick with the model above: open aggregate explores, and a record-level explore restricted to the roles allowed to see individual records. If one metric genuinely needs a threshold, compute it in dbt so the suppression is fixed in the warehouse regardless of which filters ran, for example a metric that returns null when its group is below the threshold, and expose only that metric on the open explore.
+Lightdash has no minimum group size for results, and no per-row masking of a column, because user attributes can't appear in a dimension's `sql:`. Baking a threshold into a few metrics doesn't help much either: an agent composes filters freely, and the next slice won't go through those metrics.
+
+Two levers work:
+
+- **Keep identifying records on the restricted explore.** The open explores should carry the aggregates people need and nothing that identifies a single record.
+- **Keep identifying dimensions off the open agent.** Use [field-level agent tags](/agents/data-access#limiting-access-to-specific-explores-and-fields) so the open agent can't slice by high-cardinality or sensitive dimensions such as signup date, programme status, or postcode. Fewer ways to slice means fewer groups of one.
+
+If one metric genuinely needs a threshold, compute it in dbt so the suppression is fixed in the warehouse regardless of which filters ran, for example a metric that returns null when its group is below the threshold, and expose only that metric on the open explore.
