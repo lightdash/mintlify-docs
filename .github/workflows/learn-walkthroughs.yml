@@ -4,9 +4,9 @@ name: Learn walkthrough citations
 # (data-tour-docs="explore/spaces.mdx#create-a-space:1"). A docs change that
 # moves or deletes a cited page, heading or sentence breaks them. This check
 # runs the walkthrough checker from lightdash main against this pull request's
-# docs and fails only on errors the pull request introduces. Text changes to
-# cited sentences are fine: a sync pull request in lightdash carries them into
-# the product (CS-347).
+# docs and fails only on errors the pull request introduces. It also checks
+# generation and curriculum ordering. Releases refresh valid text changes
+# into the product (CS-347).
 
 on:
   pull_request:
@@ -16,6 +16,7 @@ on:
       - '**.mdx'
       - 'docs.json'
       - '.github/workflows/learn-walkthroughs.yml'
+      - '.github/workflows/learn-walkthroughs.test.mjs'
   workflow_dispatch:
 
 permissions:
@@ -47,6 +48,10 @@ jobs:
           path: lightdash
           persist-credentials: false
 
+      - name: Docs change selection tests
+        working-directory: docs
+        run: node --test .github/workflows/learn-walkthroughs.test.mjs
+
       - name: Does this pull request touch a cited page?
         id: cited
         env:
@@ -61,9 +66,9 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git -C docs diff --name-only "$BASE_SHA" "$HEAD_SHA" | sort -u > changed.txt
+          git -C docs diff --no-renames --name-only "$BASE_SHA...$HEAD_SHA" | sort -u > changed.txt
           touched=$(comm -12 cited.txt changed.txt)
-          if [[ -n "$touched" ]]; then
+          if [[ -n "$touched" ]] || grep -qx docs.json changed.txt; then
             echo "Cited pages changed:"
             echo "$touched"
             echo "run=true" >> "$GITHUB_OUTPUT"
@@ -96,12 +101,27 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           check() {
+            git -C lightdash restore --source=HEAD -- packages/frontend/src/features/scopeTours/generated.ts packages/frontend/src/features/scopeTours/curriculum.ts
             LIGHTDASH_DOCS_DIR="$GITHUB_WORKSPACE/docs" \
               pnpm -C lightdash exec tsx scripts/scope-tours/check.ts --json > "$1.json" 2> "$1.log" || true
             if ! node -e 'JSON.parse(require("fs").readFileSync(process.argv[1]))' "$1.json" 2>/dev/null; then
               # The checker threw instead of reporting; keep its message as one error.
               node -e 'const fs=require("fs");fs.writeFileSync(process.argv[1]+".json",JSON.stringify([{level:"error",file:"checker",message:fs.readFileSync(process.argv[1]+".log","utf8").trim().split("\n").slice(-3).join(" ")}]))' "$1"
             fi
+            for command in scope-tours:generate scope-tours:order; do
+              if ! LIGHTDASH_DOCS_DIR="$GITHUB_WORKSPACE/docs" pnpm -C lightdash "$command" > "$1-$command.log" 2>&1; then
+                node - "$1.json" "$1-$command.log" "$command" <<'NODE'
+          const fs = require('node:fs');
+          const [report, log, command] = process.argv.slice(2);
+          const findings = JSON.parse(fs.readFileSync(report, 'utf8'));
+          const lines = fs.readFileSync(log, 'utf8').trim().split('\n');
+          const message = lines.find((line) => /^Error:/.test(line)) ?? lines.slice(-3).join(' ');
+          findings.push({level: 'error', file: command, message});
+          fs.writeFileSync(report, JSON.stringify(findings));
+          NODE
+                break
+              fi
+            done
           }
 
           check head
@@ -121,16 +141,16 @@ jobs:
           const added = [...new Map(read('head.json').filter((x) => !before.has(key(x))).map((x) => [key(x), x])).values()];
           const summary = [];
           if (added.length === 0) {
-            summary.push('## Learn walkthrough citations', '', 'No walkthrough citation broken by this pull request.');
+            summary.push('## Learn walkthrough citations', '', 'No walkthrough validation error introduced by this pull request.');
           } else {
             summary.push(
               '## Learn walkthrough citations',
               '',
-              `This pull request breaks ${added.length} Learn walkthrough citation(s) in lightdash/lightdash. A walkthrough step quotes a docs sentence by page, heading and sentence number, so moving or deleting one leaves the step with nothing to show.`,
+              `This pull request introduces ${added.length} Learn walkthrough validation error(s) in lightdash/lightdash. Walkthroughs depend on cited pages, headings, sentences and the docs navigation.`,
               '',
               ...added.map((x) => `- \`${x.file}${x.line ? `:${x.line}` : ''}\`: ${x.message}`),
               '',
-              'Keep the cited page, heading or sentence in place, or ask the Customer Success team (owners of Lightdash University) to re-cite the walkthrough in lightdash before this merges. Guide: https://github.com/lightdash/lightdash/blob/main/docs/learn/maintaining-walkthroughs.md',
+              'Keep the cited page, heading, sentence and navigation entry in place, or ask the Customer Success team (owners of Lightdash University) to re-cite the walkthrough in lightdash before this merges. Guide: https://github.com/lightdash/lightdash/blob/main/docs/learn/maintaining-walkthroughs.md',
             );
             for (const x of added) {
               console.log(`::error title=Learn walkthrough citation::${x.file}${x.line ? `:${x.line}` : ''}: ${x.message}`);
