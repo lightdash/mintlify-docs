@@ -100,6 +100,28 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
+          # Reuse the product citation parser, checking every reference even
+          # when building the full set of tours stops at an existing error.
+          cat > "$RUNNER_TEMP/check-citations.cjs" <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const {docsParagraph, findMarkers, frontendSrc, listTsx, LESSON_SOURCE} = require(path.join(process.cwd(), 'scripts/scope-tours/lib.ts'));
+          const {SANDBOX_LESSONS} = require(path.join(process.cwd(), 'packages/frontend/src/features/learn/sandboxLessons.ts'));
+          const citations = listTsx(frontendSrc).flatMap((file) => findMarkers(file).flatMap((marker) =>
+            [marker.docs, marker.resultDocs].filter(Boolean).map((ref) => ({file: marker.file, line: marker.line, ref}))));
+          for (const lesson of SANDBOX_LESSONS) {
+            for (const field of ['intro', 'fileDocs', 'snippetDocs', 'commandDocs', 'outputDocs', 'resultDocs']) {
+              for (const ref of [lesson[field]].flat().filter(Boolean)) citations.push({file: LESSON_SOURCE, ref});
+            }
+          }
+          const findings = [];
+          for (const {file, line, ref} of citations) {
+            try { docsParagraph(ref); }
+            catch (error) { findings.push({level: 'error', file, line, message: `${ref}: ${error.message}`}); }
+          }
+          console.log(JSON.stringify(findings));
+          NODE
+
           check() {
             git -C lightdash restore --source=HEAD -- packages/frontend/src/features/scopeTours/generated.ts packages/frontend/src/features/scopeTours/curriculum.ts
             LIGHTDASH_DOCS_DIR="$GITHUB_WORKSPACE/docs" \
@@ -108,6 +130,13 @@ jobs:
               # The checker threw instead of reporting; keep its message as one error.
               node -e 'const fs=require("fs");fs.writeFileSync(process.argv[1]+".json",JSON.stringify([{level:"error",file:"checker",message:fs.readFileSync(process.argv[1]+".log","utf8").trim().split("\n").slice(-3).join(" ")}]))' "$1"
             fi
+            LIGHTDASH_DOCS_DIR="$GITHUB_WORKSPACE/docs" \
+              pnpm -C lightdash exec tsx "$RUNNER_TEMP/check-citations.cjs" > "$1-citations.json"
+            node - "$1.json" "$1-citations.json" <<'NODE'
+          const fs = require('node:fs');
+          const [report, citations] = process.argv.slice(2);
+          fs.writeFileSync(report, JSON.stringify([...JSON.parse(fs.readFileSync(report)), ...JSON.parse(fs.readFileSync(citations))]));
+          NODE
             for command in scope-tours:generate scope-tours:order; do
               if ! LIGHTDASH_DOCS_DIR="$GITHUB_WORKSPACE/docs" pnpm -C lightdash "$command" > "$1-$command.log" 2>&1; then
                 node - "$1.json" "$1-$command.log" "$command" <<'NODE'
@@ -119,7 +148,6 @@ jobs:
           findings.push({level: 'error', file: command, message});
           fs.writeFileSync(report, JSON.stringify(findings));
           NODE
-                break
               fi
             done
           }

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
+    chmodSync,
     mkdirSync,
     mkdtempSync,
     readFileSync,
@@ -105,4 +106,158 @@ for (const kind of ['rename', 'navigation', 'unrelated']) {
             rmSync(cwd, { recursive: true, force: true });
         }
     });
+}
+
+for (const kind of ['citation', 'navigation', 'unchanged']) {
+    test(
+        kind === 'unchanged'
+            ? 'existing generation errors alone do not block docs'
+            : `existing generation error cannot hide a new ${kind} error`,
+        () => {
+            const cwd = mkdtempSync(path.join(tmpdir(), 'docs-validation-'));
+            try {
+                const docs = path.join(cwd, 'docs');
+                const product = path.join(cwd, 'lightdash');
+                const bin = path.join(cwd, 'bin');
+                mkdirSync(docs);
+                mkdirSync(bin);
+                mkdirSync(path.join(product, 'scripts/scope-tours'), {
+                    recursive: true,
+                });
+                mkdirSync(
+                    path.join(product, 'packages/frontend/src/features/learn'),
+                    { recursive: true },
+                );
+                mkdirSync(
+                    path.join(
+                        product,
+                        'packages/frontend/src/features/scopeTours',
+                    ),
+                    {
+                        recursive: true,
+                    },
+                );
+                for (const artifact of ['generated.ts', 'curriculum.ts'])
+                    writeFileSync(
+                        path.join(
+                            product,
+                            'packages/frontend/src/features/scopeTours',
+                            artifact,
+                        ),
+                        'committed',
+                    );
+                writeFileSync(
+                    path.join(product, 'scripts/scope-tours/lib.ts'),
+                    `
+exports.frontendSrc = 'frontend';
+exports.LESSON_SOURCE = 'lessons';
+exports.listTsx = () => ['marker'];
+exports.findMarkers = () => [{file:'marker', docs:'old.mdx#missing:1', resultDocs:'new.mdx#intro:1'}];
+exports.docsParagraph = (ref) => {
+  if (ref.startsWith('old') || require('fs').readFileSync(process.env.LIGHTDASH_DOCS_DIR+'/new.mdx','utf8') === 'broken') throw new Error('Docs anchor not found: '+ref);
+};
+`,
+                );
+                writeFileSync(
+                    path.join(
+                        product,
+                        'packages/frontend/src/features/learn/sandboxLessons.ts',
+                    ),
+                    'exports.SANDBOX_LESSONS = [];',
+                );
+                const git = (dir, ...args) =>
+                    execFileSync('git', args, {
+                        cwd: dir,
+                        encoding: 'utf8',
+                    }).trim();
+                const commit = (dir) => {
+                    git(dir, 'add', '.');
+                    git(
+                        dir,
+                        '-c',
+                        'user.name=Test',
+                        '-c',
+                        'user.email=test@example.com',
+                        'commit',
+                        '-qm',
+                        'fixture',
+                    );
+                };
+                git(product, 'init', '-q');
+                commit(product);
+                git(docs, 'init', '-q');
+                writeFileSync(path.join(docs, 'new.mdx'), 'valid');
+                writeFileSync(path.join(docs, 'docs.json'), 'valid');
+                commit(docs);
+                const base = git(docs, 'rev-parse', 'HEAD');
+                writeFileSync(
+                    path.join(
+                        docs,
+                        kind === 'citation'
+                            ? 'new.mdx'
+                            : kind === 'navigation'
+                              ? 'docs.json'
+                              : 'unrelated.mdx',
+                    ),
+                    'broken',
+                );
+                commit(docs);
+                writeFileSync(
+                    path.join(bin, 'pnpm'),
+                    `#!/bin/bash
+set -eu
+cd "$2"
+shift 2
+if [ "$1" = exec ]; then
+  if [ "$3" = scripts/scope-tours/check.ts ]; then echo '[{"level":"error","file":"checker","message":"old broken citation"}]'; exit 1; fi
+  node "$3"
+elif [ "$1" = scope-tours:generate ]; then
+  echo 'Error: old broken citation'; exit 1
+elif [ "$1" = scope-tours:order ]; then
+  if [ "$(cat "$LIGHTDASH_DOCS_DIR/docs.json")" = broken ]; then echo 'Error: Not in the docs sidebar (docs.json): new'; exit 1; fi
+fi
+`,
+                );
+                chmodSync(path.join(bin, 'pnpm'), 0o755);
+                const checkStep = workflow.split(
+                    '      - name: Check walkthroughs against the base and this pull request',
+                )[1];
+                const checkScript = checkStep
+                    .split('        run: |\n')[1]
+                    .replace(/^ {10}/gm, '');
+                const result = spawnSync(
+                    'bash',
+                    ['-e', '-o', 'pipefail', '-c', checkScript],
+                    {
+                        cwd,
+                        encoding: 'utf8',
+                        env: {
+                            ...process.env,
+                            PATH: `${bin}:${process.env.PATH}`,
+                            EVENT_NAME: 'pull_request',
+                            BASE_SHA: base,
+                            GITHUB_WORKSPACE: cwd,
+                            RUNNER_TEMP: cwd,
+                            GITHUB_STEP_SUMMARY: path.join(cwd, 'summary'),
+                        },
+                    },
+                );
+                assert.equal(
+                    result.status,
+                    kind === 'unchanged' ? 0 : 1,
+                    result.stdout + result.stderr,
+                );
+                assert.match(
+                    readFileSync(path.join(cwd, 'summary'), 'utf8'),
+                    kind === 'citation'
+                        ? /new.mdx#intro/
+                        : kind === 'navigation'
+                          ? /Not in the docs sidebar/
+                          : /No walkthrough validation error introduced/,
+                );
+            } finally {
+                rmSync(cwd, { recursive: true, force: true });
+            }
+        },
+    );
 }
