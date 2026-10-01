@@ -1,0 +1,158 @@
+---
+title: "How to translate embedded dashboards"
+sidebarTitle: "Translating dashboards"
+description: "Serve an embedded dashboard in each viewer's own language, including the values inside the cells"
+doc-type: tutorial
+---
+
+import EmbedAvailability from '/snippets/embedding-availability.mdx';
+
+<EmbedAvailability />
+
+A fully translated dashboard is two jobs rather than one.
+
+Everything a dashboard **labels** is translated in the browser by the React SDK. That covers chart titles, column headers, axis names, tile titles, filter labels and Lightdash's own buttons and menus.
+
+Everything a dashboard **shows** is translated in your warehouse. The status words inside the cells arrive at the SDK as query results rather than as text it can override, so no amount of SDK configuration will reach them.
+
+If you do the first job and not the second, your charts and headers read correctly in every language while your tables stay full of English values.
+
+This guide covers both halves and how to drive them from one language setting. The props themselves are documented in the [React SDK reference](/embed/react-sdk#localization).
+
+## The surfaces you need to cover
+
+| What the viewer reads | Where it is translated | How |
+| --- | --- | --- |
+| Chart names, descriptions, tile titles, tab names, column headers, axis names, filter labels | Browser | [`contentOverrides`](/embed/react-sdk#translating-your-content-with-contentoverrides) |
+| Dashboard parameter labels | Browser | `contentOverrides.parameters`, written by hand |
+| Filter operators, the filter popover, date zoom, tile menus, export buttons | Browser | [`uiOverrides`](/embed/react-sdk#translating-the-lightdash-ui-with-uioverrides) |
+| The values inside the cells, such as `PRE_INVOICED` | Warehouse | A dictionary column resolved by a dimension |
+| Your own navigation around the embed | Your app | Your app's existing translation setup |
+
+## Getting the viewer's language to both halves
+
+The browser half and the warehouse half need the same answer to "which language is this viewer reading in", and they reach it by different routes.
+
+You can store the language as a [user attribute](/workspace-admin/user-attributes) in Lightdash and assign it to users or groups. That works well for people who open Lightdash directly.
+
+For embedded viewers, your own application usually already knows the answer, because the viewer picked a language there. Passing that value through avoids a second language setting that drifts out of step with the first.
+
+Put the locale in the embed token as a user attribute, which is the channel that carries it into warehouse queries.
+
+```ts
+{
+  content: { type: 'dashboard', dashboardUuid: '...' },
+  user: { externalId: 'user-42' },
+  userAttributes: { language: locale },
+  expiresIn: '1 hour'
+}
+```
+
+Then pass the matching translations to the SDK, and include the locale in the React `key`.
+
+```tsx
+<Lightdash.Dashboard
+  instanceUrl={instanceUrl}
+  token={token}
+  contentOverrides={languageMap.contentOverrides}
+  uiOverrides={languageMap.uiOverrides}
+  key={`${dashboardUuid}-${locale}`}
+/>
+```
+
+A user attribute is baked into the token when it is minted, so changing language has to mint a new token. Keying the component on the locale is what makes the component remount and pick the new token up.
+
+<Warning>
+Give the `language` attribute a [default value](/workspace-admin/user-attributes#setting-a-default-value-for-your-user-attribute). A dimension that reads an attribute the viewer does not have raises an error, and anyone signing in to Lightdash directly has no embed token to supply one.
+</Warning>
+
+## Translating your content
+
+The CLI generates a translation map for each chart and dashboard, which you fill in per locale and pass as `contentOverrides`. The format, the `--language-map` flag and the i18next workflow are covered in the [React SDK reference](/embed/react-sdk#translation-maps).
+
+Three things about the map are worth planning for before you translate 100 charts.
+
+**The download covers charts and dashboards, and nothing else.** The `uiOverrides` key set ships as the `SdkUiOverrides` type in `@lightdash/sdk` rather than in the download, and the `parameters` section is not generated at all. If your build regenerates the map from the download on every run, carry those sections over explicitly, otherwise a build will quietly drop them.
+
+**Only labels that are saved on the chart or dashboard can be overridden.** A column that nobody has renamed has no entry in the map, because the map is built from the names your content actually stores. Setting a label in your dbt YAML and saving the chart with it gives the column an entry to translate.
+
+**Some keys are positional and some are keyed by the English string.** Filter labels are keyed by their source label, so renaming a filter in Lightdash invalidates its translation until you regenerate the map. Tiles and tabs are positional, so reordering them shifts the titles. Regenerating the map after structural edits keeps both correct.
+
+### Parameter labels
+
+Dashboard parameters are translated through a `parameters` section that you write by hand, since no download produces it. This needs Lightdash 2.96.0 or later for the override to be read.
+
+The key is the parameter name as Lightdash resolves it. A model-level parameter is `model_name.parameter_name`, matching the reference syntax in [parameters](/semantic-layer/parameters#how-to-reference-parameters-in-sql).
+
+```json
+{
+  "parameters": {
+    "orders.resource_view": {
+      "label": "Trip profitability"
+    }
+  }
+}
+```
+
+A key that matches no parameter is ignored without an error, so a typo costs you the translation silently. Adding a parameter to a model means adding its label here too.
+
+<Note>
+Only `label` is read today. A parameter's `description`, which appears in its tooltip, and its `options` values stay in English in every locale. Progress is tracked in [#29356](https://github.com/lightdash/lightdash/issues/29356).
+</Note>
+
+## Translating the values in your warehouse
+
+Values arrive as query results, so they are translated where they are produced. The approach below keeps translations in your dbt project, which is also where your dashboards and language maps live.
+
+Start with a seed holding one row per raw value, with a column per locale.
+
+```csv
+enum_key,en,nl,fr
+PRE_INVOICED,Pre-invoiced,Voorgefactureerd,Pré-facturé
+TO_PLAN,To plan,Te plannen,À planifier
+```
+
+Join it in your model to expose a dictionary for the column, then add a visible dimension that picks the viewer's language out of it.
+
+```yaml
+columns:
+  - name: order_status
+    label: "Order status (raw)"
+    config:
+      meta:
+        dimension:
+          type: string
+        additional_dimensions:
+          order_status_translated:
+            type: string
+            label: "Order status"
+            sql: >-
+              COALESCE(
+                ${TABLE}.order_status_dict[${lightdash.attributes.language}],
+                ${TABLE}.order_status_dict['en'],
+                ${TABLE}.order_status
+              )
+```
+
+The two fallbacks matter. The first catches a locale you have not translated yet, and the second catches a value that is not in the seed, so a new status shows its raw value rather than an empty cell.
+
+Keep the raw column in the explore and label it so people can tell the two apart. Charts and filters use the translated dimension, while the raw column stays available for anyone writing SQL against stable values.
+
+<Warning>
+Assign the `language` attribute in one place, either on the user or on the group, rather than both. Lightdash treats a user's own values and their groups' values as [one set](/workspace-admin/user-attributes#how-user-and-group-attribute-values-interact), so assigning it twice substitutes two literals where your SQL expects one.
+</Warning>
+
+### Filters on a translated dimension
+
+Interactive filters work on the translated dimension, because the viewer picks from values that are already in their language.
+
+Saved filter presets do not. A preset stores the value that was current when it was saved, so it matches only the viewers reading in that language. For a preset that should apply to everyone, filter on something language independent instead, such as the raw column or a boolean flag on the model.
+
+The same reasoning applies to a pivoted chart. The legend comes from a value saved on the chart, so it is translated through the language map, while the filter pill beside it resolves through the warehouse dictionary. Generating those language map entries from the same seed keeps the two in step.
+
+## What is not translatable yet
+
+- Parameter descriptions and option values ([#29356](https://github.com/lightdash/lightdash/issues/29356))
+- The "No data available" text on a chart with no results ([#29607](https://github.com/lightdash/lightdash/issues/29607))
+- Field labels that live only on the explore rather than on a saved chart ([#27759](https://github.com/lightdash/lightdash/issues/27759))
+- Any content in an [iframe embed](/embed/iframe), since both translation props are React SDK only
