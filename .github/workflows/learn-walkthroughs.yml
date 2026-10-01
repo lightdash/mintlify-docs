@@ -163,7 +163,11 @@ jobs:
 
           node - <<'NODE'
           const fs = require('node:fs');
-          const read = (f) => JSON.parse(fs.readFileSync(f, 'utf8')).filter((x) => x.level === 'error');
+          const navigationPrefix = 'Error: Not in the docs sidebar (docs.json): ';
+          const read = (f) => JSON.parse(fs.readFileSync(f, 'utf8')).filter((x) => x.level === 'error').flatMap((x) => {
+            if (x.file !== 'scope-tours:order' || !x.message.startsWith(navigationPrefix)) return [x];
+            return x.message.slice(navigationPrefix.length).split(', ').map((page) => ({...x, message: navigationPrefix + page}));
+          });
           const key = (x) => `${x.file}: ${x.message}`;
           const before = new Set(read('base.json').map(key));
           const added = [...new Map(read('head.json').filter((x) => !before.has(key(x))).map((x) => [key(x), x])).values()];

@@ -261,3 +261,52 @@ fi
         },
     );
 }
+
+for (const [kind, pages, status] of [
+    ['partial fix', ['explore/homepage'], 0],
+    ['reordering', ['explore/homepage', 'explore/spaces'], 0],
+    ['new missing page', ['explore/homepage', 'explore/new'], 1],
+]) {
+    test(`navigation comparison handles ${kind}`, () => {
+        const cwd = mkdtempSync(path.join(tmpdir(), 'docs-navigation-'));
+        try {
+            const finding = (pages) => [
+                {
+                    level: 'error',
+                    file: 'scope-tours:order',
+                    message: `Error: Not in the docs sidebar (docs.json): ${pages.join(', ')}`,
+                },
+            ];
+            writeFileSync(
+                path.join(cwd, 'base.json'),
+                JSON.stringify(finding(['explore/spaces', 'explore/homepage'])),
+            );
+            writeFileSync(
+                path.join(cwd, 'head.json'),
+                JSON.stringify(finding(pages)),
+            );
+            const comparison = workflow
+                .split("          node - <<'NODE'\n")[1]
+                .split('\n          NODE')[0]
+                .replace(/^ {10}/gm, '');
+            const summary = path.join(cwd, 'summary');
+            const result = spawnSync('node', ['-e', comparison], {
+                cwd,
+                encoding: 'utf8',
+                env: { ...process.env, GITHUB_STEP_SUMMARY: summary },
+            });
+            assert.equal(result.status, status, result.stdout + result.stderr);
+            if (status === 0)
+                assert.match(
+                    readFileSync(summary, 'utf8'),
+                    /No walkthrough validation error introduced/,
+                );
+            else {
+                assert.match(result.stdout, /explore\/new/);
+                assert.doesNotMatch(result.stdout, /explore\/homepage/);
+            }
+        } finally {
+            rmSync(cwd, { recursive: true, force: true });
+        }
+    });
+}
