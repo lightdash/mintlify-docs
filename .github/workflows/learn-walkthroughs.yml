@@ -1,0 +1,193 @@
+name: Learn walkthrough citations
+
+# Learn walkthroughs in lightdash/lightdash quote sentences from these docs
+# (data-tour-docs="explore/spaces.mdx#create-a-space:1"). A docs change that
+# moves or deletes a cited page, heading or sentence breaks them. This check
+# runs the walkthrough checker from lightdash main against this pull request's
+# docs and fails only on errors the pull request introduces. It also checks
+# generation and curriculum ordering. Releases refresh valid text changes
+# into the product (CS-347).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - '**.mdx'
+      - 'docs.json'
+      - '.github/workflows/learn-walkthroughs.yml'
+      - '.github/workflows/learn-walkthroughs.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: learn-walkthroughs-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  citations:
+    name: Learn walkthrough citations
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout docs
+        uses: actions/checkout@v7
+        with:
+          path: docs
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Checkout lightdash
+        uses: actions/checkout@v7
+        with:
+          repository: lightdash/lightdash
+          path: lightdash
+          persist-credentials: false
+
+      - name: Docs change selection tests
+        working-directory: docs
+        run: node --test .github/workflows/learn-walkthroughs.test.mjs
+
+      - name: Does this pull request touch a cited page?
+        id: cited
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          grep -rhoE '[A-Za-z0-9_./-]+\.mdx' lightdash/packages/frontend/src \
+            | sed 's#^\./##' | sort -u > cited.txt
+          echo "$(wc -l < cited.txt) docs page(s) cited by walkthroughs"
+          if [[ "$EVENT_NAME" != 'pull_request' ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git -C docs diff --no-renames --name-only "$BASE_SHA...$HEAD_SHA" | sort -u > changed.txt
+          touched=$(comm -12 cited.txt changed.txt)
+          if [[ -n "$touched" ]] || grep -qx docs.json changed.txt; then
+            echo "Cited pages changed:"
+            echo "$touched"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No cited page changed; nothing to check."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node.js
+        if: steps.cited.outputs.run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Install lightdash dependencies
+        if: steps.cited.outputs.run == 'true'
+        working-directory: lightdash
+        env:
+          COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+          CYPRESS_INSTALL_BINARY: '0'
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile --prefer-offline --network-concurrency=16
+          pnpm common-build
+
+      - name: Check walkthroughs against the base and this pull request
+        if: steps.cited.outputs.run == 'true'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # Reuse the product citation parser, checking every reference even
+          # when building the full set of tours stops at an existing error.
+          cat > "$RUNNER_TEMP/check-citations.cjs" <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const {docsParagraph, findMarkers, frontendSrc, listTsx, LESSON_SOURCE} = require(path.join(process.cwd(), 'scripts/scope-tours/lib.ts'));
+          const {SANDBOX_LESSONS} = require(path.join(process.cwd(), 'packages/frontend/src/features/learn/sandboxLessons.ts'));
+          const citations = listTsx(frontendSrc).flatMap((file) => findMarkers(file).flatMap((marker) =>
+            [marker.docs, marker.resultDocs].filter(Boolean).map((ref) => ({file: marker.file, line: marker.line, ref}))));
+          for (const lesson of SANDBOX_LESSONS) {
+            for (const field of ['intro', 'fileDocs', 'snippetDocs', 'commandDocs', 'outputDocs', 'resultDocs']) {
+              for (const ref of [lesson[field]].flat().filter(Boolean)) citations.push({file: LESSON_SOURCE, ref});
+            }
+          }
+          const findings = [];
+          for (const {file, line, ref} of citations) {
+            try { docsParagraph(ref); }
+            catch (error) { findings.push({level: 'error', file, line, message: `${ref}: ${error.message}`}); }
+          }
+          console.log(JSON.stringify(findings));
+          NODE
+
+          check() {
+            git -C lightdash restore --source=HEAD -- packages/frontend/src/features/scopeTours/generated.ts packages/frontend/src/features/scopeTours/curriculum.ts
+            LIGHTDASH_DOCS_DIR="$GITHUB_WORKSPACE/docs" \
+              pnpm -C lightdash exec tsx scripts/scope-tours/check.ts --json > "$1.json" 2> "$1.log" || true
+            if ! node -e 'JSON.parse(require("fs").readFileSync(process.argv[1]))' "$1.json" 2>/dev/null; then
+              # The checker threw instead of reporting; keep its message as one error.
+              node -e 'const fs=require("fs");fs.writeFileSync(process.argv[1]+".json",JSON.stringify([{level:"error",file:"checker",message:fs.readFileSync(process.argv[1]+".log","utf8").trim().split("\n").slice(-3).join(" ")}]))' "$1"
+            fi
+            LIGHTDASH_DOCS_DIR="$GITHUB_WORKSPACE/docs" \
+              pnpm -C lightdash exec tsx "$RUNNER_TEMP/check-citations.cjs" > "$1-citations.json"
+            node - "$1.json" "$1-citations.json" <<'NODE'
+          const fs = require('node:fs');
+          const [report, citations] = process.argv.slice(2);
+          fs.writeFileSync(report, JSON.stringify([...JSON.parse(fs.readFileSync(report)), ...JSON.parse(fs.readFileSync(citations))]));
+          NODE
+            for command in scope-tours:generate scope-tours:order; do
+              if ! LIGHTDASH_DOCS_DIR="$GITHUB_WORKSPACE/docs" pnpm -C lightdash "$command" > "$1-$command.log" 2>&1; then
+                node - "$1.json" "$1-$command.log" "$command" <<'NODE'
+          const fs = require('node:fs');
+          const [report, log, command] = process.argv.slice(2);
+          const findings = JSON.parse(fs.readFileSync(report, 'utf8'));
+          const lines = fs.readFileSync(log, 'utf8').trim().split('\n');
+          const message = lines.find((line) => /^Error:/.test(line)) ?? lines.slice(-3).join(' ');
+          findings.push({level: 'error', file: command, message});
+          fs.writeFileSync(report, JSON.stringify(findings));
+          NODE
+              fi
+            done
+          }
+
+          check head
+          if [[ "$EVENT_NAME" == 'pull_request' ]]; then
+            git -C docs checkout -q "$BASE_SHA"
+            check base
+            git -C docs checkout -q -
+          else
+            echo '[]' > base.json
+          fi
+
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const navigationPrefix = 'Error: Not in the docs sidebar (docs.json): ';
+          const read = (f) => JSON.parse(fs.readFileSync(f, 'utf8')).filter((x) => x.level === 'error').flatMap((x) => {
+            if (x.file !== 'scope-tours:order' || !x.message.startsWith(navigationPrefix)) return [x];
+            return x.message.slice(navigationPrefix.length).split(', ').map((page) => ({...x, message: navigationPrefix + page}));
+          });
+          const key = (x) => `${x.file}: ${x.message}`;
+          const before = new Set(read('base.json').map(key));
+          const added = [...new Map(read('head.json').filter((x) => !before.has(key(x))).map((x) => [key(x), x])).values()];
+          const summary = [];
+          if (added.length === 0) {
+            summary.push('## Learn walkthrough citations', '', 'No walkthrough validation error introduced by this pull request.');
+          } else {
+            summary.push(
+              '## Learn walkthrough citations',
+              '',
+              `This pull request introduces ${added.length} Learn walkthrough validation error(s) in lightdash/lightdash. Walkthroughs depend on cited pages, headings, sentences and the docs navigation.`,
+              '',
+              ...added.map((x) => `- \`${x.file}${x.line ? `:${x.line}` : ''}\`: ${x.message}`),
+              '',
+              'Keep the cited page, heading, sentence and navigation entry in place, or ask the Customer Success team (owners of Lightdash University) to re-cite the walkthrough in lightdash before this merges. Guide: https://github.com/lightdash/lightdash/blob/main/docs/learn/maintaining-walkthroughs.md',
+            );
+            for (const x of added) {
+              console.log(`::error title=Learn walkthrough citation::${x.file}${x.line ? `:${x.line}` : ''}: ${x.message}`);
+            }
+          }
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary.join('\n') + '\n');
+          process.exit(added.length > 0 ? 1 : 0);
+          NODE
