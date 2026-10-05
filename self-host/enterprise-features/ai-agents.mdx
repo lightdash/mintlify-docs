@@ -12,7 +12,7 @@ description: "Enable AI Analyst and AI agents on a self-hosted Lightdash instanc
 ## Prerequisites
 
 - **Enterprise license** — `LIGHTDASH_LICENSE_KEY` must be set on your instance.
-- **A model provider** — OpenAI, Anthropic, Azure AI, OpenRouter, or AWS Bedrock. OpenAI and Anthropic are the most tested.
+- **A model provider** — OpenAI, Anthropic, Google Gemini, Google Vertex AI, Azure AI, OpenRouter, or AWS Bedrock. OpenAI and Anthropic are the most tested.
 - **Enough context budget on the chosen model** — AI Analyst sends the project's dbt catalog with every request.
 
 ## Enable AI Analyst
@@ -24,7 +24,7 @@ AI_COPILOT_ENABLED=true
 OPENAI_API_KEY=<your-openai-api-key>
 ```
 
-AI Analyst starts using the provider as soon as the backend restarts. To use a different provider, set `AI_DEFAULT_PROVIDER` (`openai`, `anthropic`, `azure`, `openrouter`, or `bedrock`) and the matching credentials — see [model providers](#model-providers) below. Optionally, set `ASK_AI_BUTTON_ENABLED=true` to add an "Ask AI" entry point in the app UI; without it, users reach agents from `/ai-agents`.
+AI Analyst starts using the provider as soon as the backend restarts. To use a different provider, set `AI_DEFAULT_PROVIDER` (`openai`, `anthropic`, `google`, `vertex`, `azure`, `openrouter`, or `bedrock`) and the matching credentials — see [model providers](#model-providers) below. Optionally, set `ASK_AI_BUTTON_ENABLED=true` to add an "Ask AI" entry point in the app UI; without it, users reach agents from `/ai-agents`.
 
 ## Model providers
 
@@ -38,9 +38,17 @@ Behind an OpenAI-compatible LLM gateway (LiteLLM, an internal proxy), also set `
 
 ### Anthropic
 
-Set `AI_DEFAULT_PROVIDER=anthropic` and provide `ANTHROPIC_API_KEY`. `claude-sonnet-5` is the default model; override it with `ANTHROPIC_MODEL_NAME`. All options: [Anthropic configuration](/self-host/customize-deployment/environment-variables#anthropic-configuration).
+Set `AI_DEFAULT_PROVIDER=anthropic` and provide `ANTHROPIC_API_KEY`. `claude-sonnet-5-5` is the default model; override it with `ANTHROPIC_MODEL_NAME`. All options: [Anthropic configuration](/self-host/customize-deployment/environment-variables#anthropic-configuration).
 
 To send Anthropic traffic through a corporate gateway, add `ANTHROPIC_BASE_URL`. See [Corporate LLM gateways](#corporate-llm-gateways) for the required URL, authentication, and API paths.
+
+### Google Gemini
+
+Set `AI_DEFAULT_PROVIDER=google` and `GEMINI_API_KEY`. The default model is `gemini-3.8-flash`; override it with `GEMINI_MODEL_NAME`. Use `GEMINI_BASE_URL` for a compatible gateway. All options: [Google Gemini configuration](/self-host/customize-deployment/environment-variables#google-gemini-configuration).
+
+### Google Vertex AI
+
+Set `AI_DEFAULT_PROVIDER=vertex` and either `GOOGLE_VERTEX_API_KEY` or `GOOGLE_VERTEX_PROJECT` with Application Default Credentials available to the backend and scheduler. The default location is `global` and model is `gemini-3.8-flash`; override the model with `GOOGLE_VERTEX_MODEL_NAME`. All options: [Google Vertex AI configuration](/self-host/customize-deployment/environment-variables#google-vertex-ai-configuration).
 
 ### Azure AI
 
@@ -140,7 +148,7 @@ Verified answers use vector embeddings to match new questions to previously vali
 
 ## Autopilot
 
-[Autopilot](/agents/autopilot) runs scheduled maintenance for each enabled project using the AI SDK runtime. It needs AI Analyst enabled and a provider configured through the [instance model settings](#model-providers) or [organization AI providers and models](/agents/set-up-agents#bring-your-own-ai-providers-and-models). It uses the organization's visible, available default model, then the configured provider default if available, then another available model. Azure uses its configured deployment directly. There is no per-project model override.
+[Autopilot](/agents/autopilot) runs scheduled maintenance for each enabled project using the AI SDK runtime. No runtime selector or separate Autopilot provider credentials are needed. It needs AI Analyst enabled and a provider configured through the [instance model settings](#model-providers) or [organization AI providers and models](/agents/set-up-agents#bring-your-own-ai-providers-and-models). It uses the organization's visible, available default model, then the configured provider default if available, then another available model. Azure uses its configured deployment directly. There is no per-project model override.
 
 Every provider with credentials configured is available to AI Analyst and Autopilot, not only `AI_DEFAULT_PROVIDER`. Lightdash only calls a provider when the selected model belongs to it. To keep Autopilot on one provider, set the organization default model in **Settings → Ask AI → General** to one of that provider's models. Use a provider's `*_AVAILABLE_MODELS` variable to limit which of its models can be selected.
 
@@ -166,7 +174,7 @@ Autopilot only flags or deletes content on models that are qualified for it. Eve
 
 | Provider | Models |
 | --- | --- |
-| Anthropic | Claude Opus 5.5, Claude Opus 5, Claude Opus 4.8, Claude Opus 4.7, Claude Sonnet 5 |
+| Anthropic | Claude Opus 5.5, Claude Opus 5, Claude Opus 4.8, Claude Opus 4.7, Claude Sonnet 5.5, Claude Sonnet 5 |
 | Amazon Bedrock | Claude Opus 5, Claude Opus 4.7, Claude Sonnet 5 |
 | OpenAI | GPT-5.6 Sol, GPT-5.5, GPT-5.4 |
 
@@ -174,7 +182,7 @@ The default models for OpenAI (`gpt-6-sol`) and Bedrock (`claude-sonnet-4-5`) ar
 
 On Anthropic, Autopilot switches to the newest of Claude Opus 5.5, 4.8 and 4.7 your organization may use, unless the organization default is already one of them. On Bedrock it does the same with Claude Opus 5.5 and 4.7. Other providers follow the organization default. Claude Opus 5.5 on Bedrock is not qualified, so a Bedrock organization that can use it runs in observe mode unless you qualify it in `MANAGED_AGENT_VALIDATED_MODELS` or leave it out of `BEDROCK_AVAILABLE_MODELS`.
 
-Azure deployments, Google, OpenRouter and any model not listed above start in observe mode. To qualify one, set `MANAGED_AGENT_VALIDATED_MODELS` to a JSON array of exact provider/model pairs with a mode of `observe`, `flag`, or `cleanup`. Setting the variable replaces the built-in list, so include the built-in models you still want; an empty value qualifies no model. Duplicate qualifications use the most restrictive mode; malformed configuration rejects startup. Qualify a model on disposable representative content before increasing its permissions; use the exact IDs shown in Autopilot, including Azure deployment names or Bedrock inference-profile prefixes.
+Azure deployments, Google Gemini, Google Vertex AI, OpenRouter and any model not listed above start in observe mode. To qualify one, set `MANAGED_AGENT_VALIDATED_MODELS` to a JSON array of exact provider/model pairs with a mode of `observe`, `flag`, or `cleanup`. Setting the variable replaces the built-in list, so include the built-in models you still want; an empty value qualifies no model. Duplicate qualifications use the most restrictive mode; malformed configuration rejects startup. Qualify a model on disposable representative content before increasing its permissions; use the exact IDs shown in Autopilot, including Azure deployment names or Bedrock inference-profile prefixes.
 
 Autopilot uses the more restrictive of the project's requested cleanup mode and the model's qualification. A downgrade appears in setup and the run summary. **Observe mode does not mean read-only:** chart creation and repair still follow the project's capability toggles. Disable those capabilities as well when evaluating without content changes.
 
@@ -183,7 +191,7 @@ Autopilot uses the more restrictive of the project's requested cleanup mode and 
 Lightdash 2.262.0 removed the hosted runtime. From that version Autopilot always runs on your configured AI provider.
 
 - **Nothing to change to keep Autopilot running.** Provider credentials come from the shared AI configuration described above. Keep the schedule and timeout settings, and review the step limit and model qualifications.
-- **Remove the old settings.** The hosted-runtime credential, the remote skill list and `MANAGED_AGENT_RUNTIME` are ignored. Lightdash logs a warning at startup for each one that is still set.
+- **Remove the old settings.** `MANAGED_AGENT_RUNTIME`, `MANAGED_AGENT_ANTHROPIC_API_KEY`, and `MANAGED_AGENT_SKILL_IDS` are retired and ignored. Compatibility warnings may appear at startup while these variables remain set.
 - **No configuration rollback.** Setting `MANAGED_AGENT_RUNTIME=anthropic-managed` cannot restore the hosted runner. To roll back, redeploy a release before 2.262.0 with the credentials it needs.
 
 On releases 2.255.0 to 2.261.x both runtimes exist and the AI SDK runner is the default. `MANAGED_AGENT_RUNTIME` selects the runner there and must match on the API and scheduler processes.
