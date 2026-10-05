@@ -1,0 +1,207 @@
+---
+title: "Connect Athena with web identity"
+sidebarTitle: "Athena with web identity"
+description: "Connect to Amazon Athena without storing AWS keys, using an IAM role that trusts Lightdash"
+doc-type: tutorial
+tag: "Beta"
+---
+
+<Info>
+  <Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> Web identity authentication is gated by a feature flag. Contact Lightdash support to enable it for your organization. [What Beta means](/support/feature-maturity-levels).
+</Info>
+
+Web identity lets Lightdash query Athena without any AWS access keys. You create an IAM role in your AWS account that trusts Lightdash's identity. When Lightdash runs a query, it signs in with that identity and exchanges it for short-lived credentials on your role through `sts:AssumeRoleWithWebIdentity`. Lightdash stores no AWS secrets, and you can revoke access at any time by editing or deleting the role.
+
+The role's trust policy pins two values that Lightdash shows in the connection form:
+
+- **Subject**: your Lightdash instance's identity. It is the same for every connection on the instance.
+- **Audience**: a value Lightdash generates for your connection and ties to your organization. No other organization can use it, so a role that requires it can only be used by your connection.
+
+## Before you start
+
+You need:
+
+- Permission to create IAM roles and policies in the AWS account that runs Athena.
+- The Athena settings for the connection: region, catalog, database, and the S3 staging directory for query results. See [Athena connection settings](/integrations/connect-project#athena).
+
+## Connect Athena
+
+<Steps>
+  <Step title="Choose web identity in Lightdash">
+    In your project's connection settings, choose **Athena** as the warehouse type, then choose **Web Identity (No Keys)** as the **Authentication Type**.
+
+    Lightdash generates an **Audience** and shows the **Subject**. Select **Show trust policy** to see the trust policy filled in with both values, and copy it.
+  </Step>
+
+  <Step title="Create the IAM role">
+    In the AWS IAM console, create a role with a **Custom trust policy** and paste the trust policy from Lightdash. It has this shape:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Principal": { "Federated": "accounts.google.com" },
+          "Action": "sts:AssumeRoleWithWebIdentity",
+          "Condition": {
+            "StringEquals": {
+              "accounts.google.com:sub": "<SUBJECT>",
+              "accounts.google.com:aud": "<SUBJECT>",
+              "accounts.google.com:oaud": "<AUDIENCE>"
+            }
+          }
+        }
+      ]
+    }
+    ```
+
+    <Warning>
+      Use the **Custom trust policy** JSON editor, not the **Web identity** option in the role wizard. The wizard puts the audience in `accounts.google.com:aud`, which doesn't match the token Lightdash sends. Keep all three conditions: without `sub` and `oaud`, other identities or other Lightdash organizations could use the role.
+    </Warning>
+  </Step>
+
+  <Step title="Give the role access to Athena">
+    Attach a permissions policy that lets the role run queries, read the Glue catalog and your data, and write query results. Replace the bucket names, region, and account ID with your own:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "Athena",
+          "Effect": "Allow",
+          "Action": [
+            "athena:StartQueryExecution",
+            "athena:GetQueryExecution",
+            "athena:GetQueryResults",
+            "athena:GetWorkGroup",
+            "athena:ListDatabases",
+            "athena:ListTableMetadata",
+            "athena:GetTableMetadata"
+          ],
+          "Resource": [
+            "arn:aws:athena:<REGION>:<ACCOUNT_ID>:workgroup/*",
+            "arn:aws:athena:<REGION>:<ACCOUNT_ID>:datacatalog/*"
+          ]
+        },
+        {
+          "Sid": "GlueCatalog",
+          "Effect": "Allow",
+          "Action": [
+            "glue:GetDatabase",
+            "glue:GetDatabases",
+            "glue:GetTable",
+            "glue:GetTables",
+            "glue:GetPartition",
+            "glue:GetPartitions"
+          ],
+          "Resource": "*"
+        },
+        {
+          "Sid": "ReadData",
+          "Effect": "Allow",
+          "Action": ["s3:GetObject", "s3:ListBucket", "s3:GetBucketLocation"],
+          "Resource": [
+            "arn:aws:s3:::<DATA_BUCKET>",
+            "arn:aws:s3:::<DATA_BUCKET>/*"
+          ]
+        },
+        {
+          "Sid": "QueryResults",
+          "Effect": "Allow",
+          "Action": [
+            "s3:GetObject",
+            "s3:PutObject",
+            "s3:ListBucket",
+            "s3:GetBucketLocation",
+            "s3:AbortMultipartUpload"
+          ],
+          "Resource": [
+            "arn:aws:s3:::<RESULTS_BUCKET>",
+            "arn:aws:s3:::<RESULTS_BUCKET>/*"
+          ]
+        }
+      ]
+    }
+    ```
+
+    If your tables are encrypted with a customer-managed KMS key, also allow `kms:Decrypt` on that key. Narrow the Glue resources to your catalog, databases, and tables if your security policy requires it.
+  </Step>
+
+  <Step title="Finish the connection">
+    Back in Lightdash, paste the role's ARN into **IAM Role ARN**, fill in the rest of the [Athena settings](/integrations/connect-project#athena), and save.
+
+    Lightdash tests the connection before saving. The test also checks that the role refuses an audience Lightdash never issued. If the role accepts one, the trust policy doesn't require your audience and the test fails until you add the `accounts.google.com:oaud` condition.
+  </Step>
+</Steps>
+
+## Create the role with Terraform
+
+Copy the subject and audience from the connection form:
+
+```hcl
+variable "lightdash_subject" {
+  description = "Subject shown in the Lightdash Athena connection form"
+  type        = string
+}
+
+variable "lightdash_audience" {
+  description = "Audience shown in the Lightdash Athena connection form"
+  type        = string
+}
+
+data "aws_iam_policy_document" "lightdash_trust" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+
+    principals {
+      type        = "Federated"
+      identifiers = ["accounts.google.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "accounts.google.com:sub"
+      values   = [var.lightdash_subject]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "accounts.google.com:aud"
+      values   = [var.lightdash_subject]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "accounts.google.com:oaud"
+      values   = [var.lightdash_audience]
+    }
+  }
+}
+
+resource "aws_iam_role" "lightdash_athena" {
+  name               = "lightdash-athena"
+  assume_role_policy = data.aws_iam_policy_document.lightdash_trust.json
+}
+```
+
+Attach the permissions policy from the previous section to `aws_iam_role.lightdash_athena`.
+
+## Generate a new audience
+
+Select **Generate new audience** to replace the connection's audience, for example if it was shared more widely than intended. After you save, the connection stops working until the role's trust policy uses the new audience, so update the trust policy at the same time.
+
+## Personal credentials
+
+If the project requires user credentials, each user connects with their own AWS access keys. Their queries run as their own IAM user, not through the project's role.
+
+## Troubleshooting
+
+| Message | What to check |
+| --- | --- |
+| AWS didn't allow Lightdash to use the role | The role's trust policy has the subject and audience shown in the connection form, under `accounts.google.com:sub`, `accounts.google.com:aud`, and `accounts.google.com:oaud`. |
+| The trust policy doesn't require `accounts.google.com:oaud` | Add the `oaud` condition with your connection's audience, then test again. |
+| This connection's audience isn't valid for your organization | Generate a new audience, then update the role's trust policy. |
+| Web identity isn't turned on for this Lightdash instance | Web identity isn't enabled for your organization. Contact Lightdash support, or choose another authentication type. |
+| Access denied on a query, after the connection succeeds | The role's permissions policy is missing an Athena, Glue, or S3 action, or a bucket. Check AWS CloudTrail for the denied action. |
