@@ -122,23 +122,27 @@ jobs:
           console.log(JSON.stringify(findings));
           NODE
 
+          lightdash_pnpm() (
+            # Corepack selects the pinned pnpm version from the initial directory.
+            cd "$GITHUB_WORKSPACE/lightdash"
+            LIGHTDASH_DOCS_DIR="$GITHUB_WORKSPACE/docs" pnpm "$@"
+          )
+
           check() {
             git -C lightdash restore --source=HEAD -- packages/frontend/src/features/scopeTours/generated.ts packages/frontend/src/features/scopeTours/curriculum.ts
-            LIGHTDASH_DOCS_DIR="$GITHUB_WORKSPACE/docs" \
-              pnpm -C lightdash exec tsx scripts/scope-tours/check.ts --json > "$1.json" 2> "$1.log" || true
+            lightdash_pnpm exec tsx scripts/scope-tours/check.ts --json > "$1.json" 2> "$1.log" || true
             if ! node -e 'JSON.parse(require("fs").readFileSync(process.argv[1]))' "$1.json" 2>/dev/null; then
               # The checker threw instead of reporting; keep its message as one error.
               node -e 'const fs=require("fs");fs.writeFileSync(process.argv[1]+".json",JSON.stringify([{level:"error",file:"checker",message:fs.readFileSync(process.argv[1]+".log","utf8").trim().split("\n").slice(-3).join(" ")}]))' "$1"
             fi
-            LIGHTDASH_DOCS_DIR="$GITHUB_WORKSPACE/docs" \
-              pnpm -C lightdash exec tsx "$RUNNER_TEMP/check-citations.cjs" > "$1-citations.json"
+            lightdash_pnpm exec tsx "$RUNNER_TEMP/check-citations.cjs" > "$1-citations.json"
             node - "$1.json" "$1-citations.json" <<'NODE'
           const fs = require('node:fs');
           const [report, citations] = process.argv.slice(2);
           fs.writeFileSync(report, JSON.stringify([...JSON.parse(fs.readFileSync(report)), ...JSON.parse(fs.readFileSync(citations))]));
           NODE
             for command in scope-tours:generate scope-tours:order; do
-              if ! LIGHTDASH_DOCS_DIR="$GITHUB_WORKSPACE/docs" pnpm -C lightdash "$command" > "$1-$command.log" 2>&1; then
+              if ! lightdash_pnpm "$command" > "$1-$command.log" 2>&1; then
                 node - "$1.json" "$1-$command.log" "$command" <<'NODE'
           const fs = require('node:fs');
           const [report, log, command] = process.argv.slice(2);
