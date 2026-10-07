@@ -1,0 +1,126 @@
+---
+title: "Usage analytics project"
+description: "Explore adoption, content, apps, AI and query performance across your organization"
+tag: "Beta"
+---
+
+<Info>
+  <Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> The analytics project requires access to be enabled for your organization and organization administration permissions. Contact the Lightdash team to request access. Self-hosted operators must also complete the [deployment setup](/self-host/enterprise-features/usage-analytics). [What Beta means](/support/feature-maturity-levels).
+</Info>
+
+The **Lightdash analytics** project brings your organization's usage data into Lightdash. Start with the built-in dashboards, explore the underlying metrics, or save your own charts. You do not need to connect a warehouse or maintain a dbt project for it.
+
+This project is separate from the [project-level User Activity dashboard](/workspace-admin/usage-analytics#user-activity-dashboard). It covers captured activity across your organization, rather than one project's fixed report.
+
+Use this page to [create the project](#create-your-analytics-project), [update its content](#update-models-and-dashboards), [choose a dashboard](#built-in-dashboards), or [build your own analysis](#build-your-own-analysis).
+
+## Create your analytics project
+
+1. Sign in with organization administration permissions.
+2. Open **Settings → Lightdash analytics**.
+3. Click **Create**. Lightdash creates the project and installs its built-in models, charts and dashboards.
+4. Open a dashboard from the settings page, or click **Explore** to browse the available tables.
+
+The project is restricted to organization administrators, even if someone has access to other projects. It can include user identities and usage from across the organization.
+
+Creating the project does not create historical events. Read [Data freshness and history](#data-freshness-and-history) if a chart is empty after setup.
+
+## Update models and dashboards
+
+When **Sync content** is available in **Settings → Lightdash analytics**, click it to install the built-in content supplied by your instance's release. Sync updates the models and built-in charts and dashboards in the existing project. You do not need to delete or recreate the project.
+
+Duplicate a built-in dashboard before customizing it. Sync replaces edits to built-in content; custom dashboards and separate copies are kept.
+
+Sync updates content definitions. It does not collect events, run the nightly data refresh, or add data from before capture was enabled.
+
+## Built-in dashboards
+
+Each dashboard groups related questions into tabs. The collection available to you depends on your deployed release and the content installed in your analytics project.
+
+| Dashboard | What to use it for |
+| --- | --- |
+| **Adoption** | Active people, dashboard audiences, app loads and Ask AI usage over time. |
+| **People** | Activity by person, usage trends and the channels people use. |
+| **Content** | Content audiences, verification, ownership, observed use and known dependencies. |
+| **Apps** | App loads, people using apps, app creation and AI consumption. |
+| **Agents & AI** | Agent requests, technical outcomes, feedback, retries and model consumption. |
+| **Queries** | Query response times, failures, workload origins, caching and semantic field usage. |
+| **Tools & operations** | MCP tool calls, clients, errors, latency and exports. |
+
+Chart descriptions explain the measure and its limits. Open a chart's **Explore from here** action to inspect its fields and filters before adapting it.
+
+## Build your own analysis
+
+Choose the Explore that matches what you want to count. An event, an app load, a person and an AI model call are different measures.
+
+| Explore | What it measures |
+| --- | --- |
+| **User activity** | Daily activity grouped by user and event, with totals for captured queries, downloads, app views, AI usage and tool calls. |
+| **Content reach** | Captured dashboard and chart views, identified viewers and observed return visits. |
+| **Content health** | Content inventory, including items with no observed activity, plus ownership, verification and known dependencies. |
+| **Data app reach** | App loads and distinct identified viewers, with the surface where each load occurred. |
+| **Data app events** | Captured app lifecycle and usage events. |
+| **Agent requests** | Human prompts, request outcomes, retries, feedback and associated consumption. |
+| **AI usage** | Individual AI model calls and reported token usage, grouped by feature, provider or model. |
+| **Agent steps** | Individual steps within agent execution. One request can involve several steps. |
+| **Agent request events** | The captured request lifecycle events underlying Agent requests. |
+| **Query events** | Captured query outcomes, timing, context and cache use. |
+| **Semantic usage** | Direct metric and dimension references captured from queries. |
+| **Export events** | Captured result-download events and formats. |
+| **Tool activity** | MCP calls by tool, client, source and actor, including known outcomes and latency. |
+
+### Who uses which dashboards and apps?
+
+Start with **Adoption → People & content** for dashboard audiences and **Adoption → Data apps** for app usage.
+
+For a custom dashboard-usage table, open **Content reach**. Select **User name**, **Content name**, **Event ts → Day** and **Qualifying views**, and filter **Content type** to `dashboard`.
+
+For app usage, open **Data app reach**. Select **User name**, **App name**, **Event ts → Day**, **Total loads** and **Distinct viewers**. Use **View context** to distinguish standalone apps, dashboards, charts and builder previews. To follow the Adoption dashboard's app-usage scope, select `standalone`, `dashboard` and `chart`.
+
+These are separate Explores. Put their charts on the same dashboard to review them together; there is no combined dashboard-and-app viewer table in this collection. **User activity** can compare event categories by person and date, but does not supply the same per-content detail.
+
+### How is Ask AI usage changing?
+
+Start with **Adoption → Ask AI**, including **Ask AI questions each day** and **People asking AI each week**.
+
+To build the trend yourself, open **Agent requests**:
+
+1. Filter **Surface** to `web_app` for Ask AI in the Lightdash web app.
+2. Select **Requested at → Day** or **Week**.
+3. Add **Total requests** and **Distinct requesters**.
+4. Add **Agent name** or **User name** to compare agents or people.
+
+Total requests includes captured follow-up prompts and requests that are pending or failed. Use request status to narrow the analysis. Other surfaces, such as Slack, are outside the `web_app` filter.
+
+Use **AI usage** for model calls and token consumption. Its `ai.usage` event represents a model call, not a question: one question can make several calls, and other AI features also make calls. Filter by **Feature** when comparing consumption. Tokens are not monetary cost or a complete measure of spending in external assistants.
+
+## Data freshness and history
+
+Usage data is collected after capture is enabled for your organization. The scheduled refresh processes closed UTC days at **00:30 UTC** and updates the snapshots used for names and content inventory. Allow that job to finish before expecting the previous day's data; these dashboards are not real-time monitors.
+
+Available history depends on when each event stream started capturing and how long its files are retained. Upgrading or syncing does not reconstruct earlier visits, missing identities or historical ownership. Names and inventory metadata can reflect the latest snapshot rather than the value at the event's time.
+
+Keep these distinctions in mind when reading a chart:
+
+- **Views and loads are observed activity.** Dashboard/chart views count qualifying backend fetches; app loads include reloads. They do not prove a person read the content or that an app rendered successfully.
+- **Distinct users are not additive.** A person can appear on several days or use several items. Recalculate the distinct count for the whole period instead of adding daily or per-item counts.
+- **No observed use is not proof of safe deletion.** Check the capture window and content dependencies before removing an item.
+- **Missing values are unknown.** Historical errors, timings or identities may not have been captured; a blank value is not necessarily zero.
+
+## Troubleshooting
+
+### I cannot see Lightdash analytics in Settings
+
+Check that your organization has access enabled and that your account has organization administration permissions. On a self-hosted instance, also check the [deployment prerequisites](/self-host/enterprise-features/usage-analytics).
+
+### A dashboard is empty or missing fields
+
+Check the selected dates, whether the relevant activity occurred after capture began, and whether the nightly refresh has completed. Use **Sync content** when it is offered to update the installed definitions. Sync does not force a data refresh. If a field remains missing after an instance upgrade, contact the Lightdash team.
+
+### Who is “Unknown user”?
+
+The event could not be matched to a name in the current user snapshot. It does not identify a particular type of actor.
+
+Use **Explore from here** and add **User UUID** alongside **User name**. A UUID distinguishes an identified actor whose name is unavailable from activity without a captured user UUID. Inspect **Event name**, **View context**, **Source** or **Actor type** where the Explore provides them. Do not assume every unknown user is an anonymous embed viewer or an AI agent.
+
+Keep UUIDs in the grouping when two people or content items share a name. You can hide the UUID column in the visualization while retaining separate groups.
