@@ -297,6 +297,8 @@ Charts that render with a [custom chart type](/visualizations/chart-studio) refe
 
 Selecting virtual views, data apps, or custom chart types on their own, rather than through a dashboard, is opt-in on both commands — see [`lightdash download`](/workflow/cli/reference#lightdash-download) and [`lightdash upload`](/workflow/cli/reference#lightdash-upload) for those flags.
 
+Published homepages are opt-in on download with `--include-homepages`, `--homepages <names...>`, or `--include-all`, and a bare `lightdash upload` includes any files under `lightdash/homepages/` unless you pass `--skip-homepages`. See [Homepages as code](#homepages-as-code).
+
 ## Rename a chart slug
 
 Use `lightdash slug-update` when you want to change a chart's URL slug without creating a new chart or breaking existing links:
@@ -923,6 +925,149 @@ And the matching tile entry on a dashboard:
 AI agent configuration can also be managed as code and promoted between projects with the same `lightdash download` / `lightdash upload` workflow used for charts and dashboards. This is useful for keeping agent instructions and tags under review in Git, and for copying a working agent from a preview or staging project into production.
 
 Agent config as code is **opt-in**: a bare `lightdash download` does not include agents. See [AI agents as code](/agents/agents-as-code) for the full guide, including the YAML schema, CLI flags, and what runtime state stays in the target environment.
+
+## Homepages as code
+
+Published [Homepage](/explore/homepage) layouts can be downloaded as YAML, reviewed in Git, and uploaded to another project with the same `lightdash download` / `lightdash upload` workflow used for charts and dashboards. Homepages are project-scoped, so they travel with project content rather than through `--organization` mode.
+
+Homepages as code requires Lightdash Enterprise with Homepage enabled for the organization, and the same **Manage project homepage** permission used by the builder on both the source and destination projects, in addition to the content-as-code permission. The CLI never enables Homepage for an organization: turn it on in the destination before uploading.
+
+### When to use it
+
+- Promote a published homepage from a staging or preview project to production together with the dashboards it links to.
+- Review layout and audience changes in a pull request before they go live.
+- Keep a team homepage's layout in Git next to the content it curates.
+
+### Download and upload
+
+Homepages are **opt-in** on download: a bare `lightdash download` does not include them.
+
+```bash
+# Download every published homepage in the project
+lightdash download --include-homepages
+
+# Download one homepage by its exact name
+lightdash download --homepages "Team homepage"
+
+# --include-all includes homepages alongside other optional content
+lightdash download --include-all
+```
+
+Only published layouts are exported. A homepage that has never been published, or a name that does not exist in the project, fails the download. Each homepage is written to `lightdash/homepages/<name>.yml`, named after the homepage with spaces preserved, so `Team homepage` becomes `lightdash/homepages/Team homepage.yml`. With `--include-all`, homepages are skipped with a warning when Homepage is not enabled or you lack permission; `--include-homepages` and `--homepages` fail instead.
+
+A bare `lightdash upload` includes every file under `lightdash/homepages/`. Homepages are uploaded last, after the charts, dashboards, spaces, and data apps they reference, so a homepage and the content it links to can be uploaded in one command. If any earlier upload step fails, the homepage step is blocked.
+
+```bash
+# Upload everything, saving homepages as drafts
+lightdash upload
+
+# Upload one homepage and publish it with its exported audience
+lightdash upload --homepages "Team homepage" --publish
+
+# Leave homepage files out of an upload
+lightdash upload --skip-homepages
+```
+
+- `--homepages <names...>` uploads only those homepage files. Content they reference must already exist in the destination, because a filtered upload does not bring dependencies with it.
+- Uploads save the layout as a **draft** by default. Viewers keep seeing the currently published version until you publish from the builder or upload again with `--publish`.
+- `--publish` publishes the uploaded layout and applies the file's `publication` block: default status, group assignments, and role assignments. It requires a `publication` block that is not `null`.
+- `--skip-homepages` excludes homepage files from the upload.
+
+Each homepage is reported as created, updated, or unchanged, matched by exact name. Uploads never delete homepages: remove a homepage in the builder.
+
+### YAML contract
+
+Each homepage serializes to a single file under `lightdash/homepages/<name>.yml`. The CLI writes keys in alphabetical order:
+
+```yaml
+config:
+  rows:
+    - blocks:
+        - config:
+            density: compact
+            subtitle: Finance reporting, refreshed every morning.
+          id: greeting
+          type: greeting
+      id: row-hero
+    - blocks:
+        - config:
+            actions:
+              - primary: true
+                type: ask-ai
+              - dashboardSlug: revenue-overview
+                label: Revenue overview
+                type: dashboard
+              - type: browse-dashboards
+          id: quick-actions
+          type: quick-actions
+        - config:
+            items:
+              - contentType: dashboard
+                slug: revenue-overview
+              - contentType: chart
+                slug: monthly-recurring-revenue
+              - contentType: space
+                slug: finance
+            layout: card
+            source: manual
+            title: Start here
+          id: start-here
+          type: collection
+      id: row-content
+    - blocks:
+        - config:
+            content: |
+              ## Month-end close
+
+              Check the [close checklist](lightdash://dashboards/month-end-close/view) before signing off.
+          id: close-notes
+          type: markdown
+      id: row-notes
+  version: 1
+contentType: homepage
+name: Team homepage
+publication:
+  groups:
+    - name: Finance
+      priority: 0
+  isDefault: false
+  roles:
+    - editor
+version: 1
+```
+
+| Field | Description |
+| --- | --- |
+| `contentType` | Always `homepage`. |
+| `version` | Format version. Currently always `1`. |
+| `name` | The homepage's exact name. This is the portable identity: a homepage is matched to an existing homepage in the destination project by exact name, whatever the file is called. Duplicate names in a project are rejected on download and upload. Renaming a homepage in YAML creates a separate homepage; the original is left intact. |
+| `config.version` | Layout version. Currently always `1`. |
+| `config.rows` | The published layout. Each row has an `id` and up to two `blocks`. Each block has an `id`, a `type`, and a `config` with the same options as the builder, for the same 11 [block types](/explore/homepage#blocks): `greeting`, `ask-ai-hero`, `quick-actions`, `cta`, `metrics`, `collection`, `resources`, `announcements`, `favorites`, `recent`, and `markdown`. |
+| `publication` | The homepage's audience, or `null`. `isDefault` is `true` for the project's default homepage. `groups` lists organization groups by exact name with a `priority`, where `0` wins when a viewer belongs to more than one assigned group. `roles` lists project roles: `viewer`, `interactive_viewer`, `editor`, `developer`, or `admin`. Download always writes the block from the current assignments. On upload it is applied only with `--publish`, and groups must resolve to exactly one group in the destination organization. |
+
+Content references inside blocks use slugs rather than UUIDs. Hand-picked `collection` items carry `contentType` and `slug`, `quick-actions` and `cta` entries that open a dashboard or space carry `dashboardSlug` or `spaceSlug`, and `resources` items that show a data app carry `appSlug`. Each slug must resolve to exactly one item in the destination project, or the file fails with a missing or ambiguous reference.
+
+### Links to project content
+
+Links inside `markdown` content, `resources` URLs, and `cta` link targets that point at content in the same project are rewritten on download to a `lightdash://` URL, and become links in the destination project on upload:
+
+| Content | Link form |
+| --- | --- |
+| Dashboard | `lightdash://dashboards/<slug>/view` |
+| Chart | `lightdash://saved/<slug>/view` |
+| Space | `lightdash://spaces/<slug>` |
+| Data app | `lightdash://apps/<slug>` |
+| Document | `lightdash://documents/<slug>` |
+
+A `/view` suffix is kept when the original link had one. Links to other sites, and links to content in other projects, are left unchanged. Live collection rules such as **Most viewed** or **Pinned** are exported as rules and keep resolving in the destination.
+
+### What is not exported
+
+- **Announcement posts.** An `announcements` block is exported as a block, but the posts in it stay in the source project. Uploading never publishes announcements.
+- **Personalized results.** Favorites, recently viewed content, and viewer-specific collection sources are resolved per viewer and are never written to disk.
+- **Data app thumbnails.** Resource items that show a data app carry `appSlug` instead of a signed thumbnail URL, and the destination renders the live thumbnail.
+- **Organization homepage settings.** Whether Homepage is enabled and which opening the organization chose are not part of a homepage file.
+- **Drafts.** Only the published layout is exported.
 
 ## Organization content as code
 
