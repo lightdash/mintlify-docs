@@ -88,15 +88,22 @@ jobs:
         working-directory: lightdash
         env:
           COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+          COREPACK_DEFAULT_TO_LATEST: '0'
           CYPRESS_INSTALL_BINARY: '0'
         run: |
           corepack enable
+          # The check step runs `pnpm -C lightdash` from the workspace root, where
+          # corepack sees no packageManager field and would otherwise pick the
+          # latest pnpm, which refuses to run the pinned version. Make the
+          # pinned version the out-of-project default instead.
+          corepack install -g "$(node -p "require('./package.json').packageManager")"
           pnpm install --frozen-lockfile --prefer-offline --network-concurrency=16
           pnpm common-build
 
       - name: Check walkthroughs against the base and this pull request
         if: steps.cited.outputs.run == 'true'
         env:
+          COREPACK_DEFAULT_TO_LATEST: '0'
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
