@@ -78,7 +78,22 @@ Lightdash can route AI Analyst, Autopilot, and Data app model traffic through an
 - `ANTHROPIC_BASE_URL` for an Anthropic Messages gateway.
 - `BEDROCK_BASE_URL` for a Bedrock-compatible gateway.
 
-The gateway URL must include a scheme and must not contain credentials, query parameters, or a fragment. The Lightdash backend and any Data app sandbox must be able to resolve and reach the gateway hostname.
+The gateway URL must include a scheme and must not contain credentials, query parameters, or a fragment. Each caller must be able to resolve and reach its configured gateway hostname.
+
+### Separate gateway routes for Data apps
+
+If the backend reaches your gateway through a service mesh while Data app sandboxes use a different route, such as a PrivateLink endpoint, configure a sandbox-only base URL:
+
+```bash
+ANTHROPIC_BASE_URL=https://mesh.example.com/anthropic
+DATA_APPS_ANTHROPIC_BASE_URL=https://private.example.com/anthropic
+```
+
+The Data app coding agent uses the `DATA_APPS_` override when set and falls back to the shared provider URL when it is unset or empty. The same option is available for Bedrock and OpenAI; see the [environment variable reference](/self-host/customize-deployment/environment-variables#data-app-gateway-overrides) for all three variables. Anthropic URLs use the base before `/v1`; OpenAI URLs retain their API path, commonly `/v1`.
+
+These overrides apply to instance-managed credentials only. Organizations using their own AI keys retain their resolved provider endpoints. Backend AI requests, AI writeback, and onboarding keep their existing routing. Provider selection and credentials stay unchanged; the sandbox URL must accept the existing coding agent's authentication and API protocol. Provider `*_CUSTOM_HEADERS` are not forwarded to the coding agent.
+
+Restart the Lightdash backend and scheduler workers after changing these environment variables. Check [sandbox gateway egress](/self-host/customize-deployment/sandboxes#llm-gateway-egress), including the requirements for existing sandboxes.
 
 ### Anthropic-compatible gateway
 
