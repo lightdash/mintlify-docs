@@ -29,6 +29,11 @@ Jump to [the organization rule](#choose-who-agents-run-as), [Snowflake agent sig
 
 Organization admins set one rule for each warehouse type. A rule applies to every connection of that type in every project.
 
+A separate identity is always required. When you pick **A separate agent sign-in for each person** or **The AI service account**, Lightdash refuses every agent query that cannot run as that identity. It never falls back to the person's own credentials. Put the identity in place before you switch the rule:
+
+- **Snowflake:** each person who uses agents connects their agent. See [Connect your agent](#connect-your-agent).
+- **BigQuery:** an admin adds an AI service account key on every BigQuery project connection. See [Set up the AI service account](#set-up-the-ai-service-account).
+
 <Steps>
   <Step title="Open Warehouse credentials">
     Go to **Organization settings → Warehouse credentials** and find the **Agent identity** card. The card has one row for Snowflake and one for BigQuery.
@@ -36,23 +41,17 @@ Organization admins set one rule for each warehouse type. A rule applies to ever
   <Step title="Choose the identity">
     In the row for your warehouse, choose an identity in the select after "When AI agents query …, they run as". The text under the select explains the identity you chose.
   </Step>
-  <Step title="Decide whether to require it">
-    Turn on **Refuse agent queries without this identity.** to make the rule required.
-  </Step>
 </Steps>
 
 Each change saves at once, and an "Agent identity saved." notification confirms it.
 
+{/* TODO screenshot: recapture the Agent identity card from the #30702 preview. The Refuse agent queries without this identity switch is removed, and the card lists BigQuery projects without an AI service account key. Swap in the image from the #30702 PR body and update the alt text. */}
+
 <Frame>
-  <img src="/images/agents/agent-identity/agent-identity-card.png" alt="The Agent identity card with a row for Snowflake set to Same credentials as the user, and a row for BigQuery set to The AI service account with Refuse agent queries without this identity turned on" />
+  <img src="/images/agents/agent-identity/agent-identity-card.png" alt="The Agent identity card with a row for Snowflake set to Same credentials as the user, and a row for BigQuery set to The AI service account" />
 </Frame>
 
-The Required switch decides what happens when the identity is not available:
-
-- **Off.** Agents use the chosen identity when it is available, and the person's own credentials when it is not. A saved BigQuery key that BigQuery rejects is the exception: see [What agents and people see](#what-agents-and-people-see).
-- **On.** Lightdash refuses agent queries that cannot run as the chosen identity. It never falls back to another identity.
-
-With **Same credentials as the user**, the Required switch is off and cannot be changed.
+With **Same credentials as the user**, Lightdash never refuses an agent query for a missing identity.
 
 Changing the rule does not create warehouse grants or policies. Set those up in your warehouse for the identity you choose.
 
@@ -80,29 +79,9 @@ A query tag alone does not prove that Snowflake verified the session. The agent 
 
 The agent sign-in is separate from the person's normal [Sign in with Snowflake](/integrations/connect-project#sign-in-with-snowflake) connection. A person can have both.
 
-### Set the Snowflake rule
-
-In the **Agent identity** card, set the Snowflake row to **A separate agent sign-in for each person**. See [Choose who agents run as](#choose-who-agents-run-as).
-
-Without Required, people who connected their agent run in agent sessions. Agents for everyone else use the person's own credentials.
-
-With Required on:
-
-- Every AI query on a Snowflake connection must run through the person's agent connection. Lightdash refuses queries from people who have not connected.
-- This covers chat, [MCP](/agents/lightdash-mcp), [Slack](/integrations/slack) and data app sample queries.
-- Every Snowflake connection form shows "Agent identity required by your organisation", with a link to the organization settings.
-
-<Frame>
-  <img src="/images/agents/agent-identity/snowflake-connection-requirement.png" alt="The Type field of a Snowflake connection form with the read-only note Agent identity required by your organisation and an Organisation settings link" />
-</Frame>
-
-The rule does not create Snowflake policies. Without policies, agent sessions read the same data as the person. See [Write Snowflake policies for agent sessions](#write-snowflake-policies-for-agent-sessions).
-
-Changing the Snowflake row back to **Same credentials as the user** does not revoke Snowflake tokens that people already issued.
-
 ### Connect your agent
 
-Each person who uses agents connects their own agent once.
+Each person who uses agents connects their own agent once. People can connect before an admin changes the Snowflake rule, so ask them to connect first.
 
 <Steps>
   <Step title="Open My warehouse connections">
@@ -122,13 +101,31 @@ The section then shows "Agent connected" and a **Disconnect** button.
   <img src="/images/agents/agent-identity/my-warehouse-connections-agent-connection.png" alt="My warehouse connections with the Agent connection section and a Connect agent button" />
 </Frame>
 
-To remove the agent connection, select **Disconnect**. When the Snowflake rule is required, AI features lock again for that person until they reconnect.
+To remove the agent connection, select **Disconnect**. While the Snowflake rule is **A separate agent sign-in for each person**, AI features lock again for that person until they reconnect.
 
 This connection is separate from your [personal warehouse connections](/personal-settings/personal-warehouse-connections). Dashboards and the SQL Runner keep using your normal credentials.
 
-### Before you connect
+### Set the Snowflake rule
 
-While the Snowflake rule is required and a person has not connected their agent:
+When people have connected their agents, set the Snowflake row of the **Agent identity** card to **A separate agent sign-in for each person**. See [Choose who agents run as](#choose-who-agents-run-as).
+
+While the rule is set:
+
+- Every AI query on a Snowflake connection must run through the person's agent connection. Lightdash refuses queries from people who have not connected.
+- This covers chat, [MCP](/agents/lightdash-mcp), [Slack](/integrations/slack) and data app sample queries.
+- Every Snowflake connection form shows "Agent identity required by your organisation", with a link to the organization settings.
+
+<Frame>
+  <img src="/images/agents/agent-identity/snowflake-connection-requirement.png" alt="The Type field of a Snowflake connection form with the read-only note Agent identity required by your organisation and an Organisation settings link" />
+</Frame>
+
+The rule does not create Snowflake policies. Without policies, agent sessions read the same data as the person. See [Write Snowflake policies for agent sessions](#write-snowflake-policies-for-agent-sessions).
+
+Changing the Snowflake row back to **Same credentials as the user** does not revoke Snowflake tokens that people already issued.
+
+### Until a person connects
+
+While the Snowflake rule is **A separate agent sign-in for each person** and a person has not connected their agent:
 
 - AI composers are hidden for Snowflake projects. This includes the Ask AI launcher, the homepage ask box and AI help in other parts of the app.
 - The agent chat shows a **Connect your agent to your warehouse** card with a **Connect agent** button. It opens the same Snowflake sign-in.
@@ -260,21 +257,23 @@ The AI service account replaces only the credentials of the connection. The proj
     Select **Save**. An "AI service account saved." notification confirms it.
   </Step>
   <Step title="Set the BigQuery rule">
-    An organization admin sets the BigQuery row of the **Agent identity** card to **The AI service account**, and decides whether to require it. See [Choose who agents run as](#choose-who-agents-run-as).
+    Add a key on every BigQuery project connection first. Then an organization admin sets the BigQuery row of the **Agent identity** card to **The AI service account**. See [Choose who agents run as](#choose-who-agents-run-as).
   </Step>
 </Steps>
 
 {/* TODO screenshot: Project settings → Connection, the AI service account card on a BigQuery project with a saved key (Service account key file, Last updated, Replace, Test, Remove) and the "Connected as …" Test result. Save as /images/agents/agent-identity/ai-service-account-card.png */}
 
-The card shows the organization's BigQuery rule, "Required by your organisation." when the rule is required, and an **Organisation settings** link. After you save a key, the card shows when it was last updated, with **Replace**, **Test** and **Remove** buttons.
+The card shows the organization's BigQuery rule and an **Organisation settings** link. After you save a key, the card shows when it was last updated, with **Replace**, **Test** and **Remove** buttons.
 
 Lightdash does not check that the AI service account differs from the account of the connection. Use the Test result to confirm it.
 
 ### One key for each project connection
 
-Each project connection holds its own AI service account. Add a key on every BigQuery project where agents should run as the AI service account. You can use the same key file on more than one project.
+Each project connection holds its own AI service account. While the BigQuery rule is **The AI service account**, agents are refused on every BigQuery project that has no key. Add a key on every BigQuery project connection. You can use the same key file on more than one project.
 
-Preview projects do not copy the AI service account from their source project. When the BigQuery rule is required, agents are refused on a preview project until an admin adds a key to it.
+The **Agent identity** card lists the BigQuery projects that have no AI service account key yet.
+
+Preview projects do not copy the AI service account from their source project. Agents are refused on a preview project until an admin adds a key to it.
 
 ### What agents and people see
 
@@ -288,14 +287,11 @@ When the BigQuery rule is **The AI service account**:
   <img src="/images/agents/agent-identity/my-warehouse-connections-bigquery.png" alt="My warehouse connections with the Agent connection section reading BigQuery: Agents run as the project's AI service account. Nothing to connect." />
 </Frame>
 
-When a project has no AI service account:
+When a project has no AI service account, Lightdash refuses the agent query and blocks AI composers on the project. Chat, MCP and Slack show: "AI agents on this connection run as the AI service account, and none is set up. Ask an admin to add it on the project connection." The AI service account card shows a warning for admins.
 
-- **Without Required**, agents use the person's own credentials. The AI service account card shows "AI agents use the same credentials as the user until an AI service account is added."
-- **With Required**, Lightdash refuses the agent query and blocks AI composers on the project. Chat, MCP and Slack show: "AI agents on this connection run as the AI service account, and none is set up. Ask an admin to add it on the project connection." The AI service account card shows a warning for admins.
+When BigQuery rejects the saved key, Lightdash refuses the agent query with: "The AI service account on this connection could not sign in. Ask an admin to check it on the project connection." Replace the key on the AI service account card.
 
-If BigQuery rejects the saved key, Lightdash refuses the agent query even when the rule is not required. The message is: "The AI service account on this connection could not sign in. Ask an admin to check it on the project connection." Replace the key on the AI service account card.
-
-To remove the key, select **Remove** on the card and confirm. When the rule is required, agent queries on that project are refused until an admin adds a key again.
+To remove the key, select **Remove** on the card and confirm. Agent queries on that project are refused until an admin adds a key again.
 
 ### Verify on BigQuery
 
