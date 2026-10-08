@@ -3,6 +3,8 @@ title: "AI agents"
 description: "Enable AI Analyst and AI agents on a self-hosted Lightdash instance"
 ---
 
+import SnowflakeAgentOauthEnv from '/snippets/self-host/snowflake-agent-oauth-env.mdx';
+
 <Info>
   <Badge icon="building-plus" color="blue" size="sm" shape="pill">Enterprise</Badge> AI Analyst and AI agents need a valid `LIGHTDASH_LICENSE_KEY` set on your instance before any of the configuration below takes effect. See [enterprise features](/self-host/enterprise-features) for applying the key.
 </Info>
@@ -195,6 +197,61 @@ Lightdash 2.262.0 removed the hosted runtime. From that version Autopilot always
 - **No configuration rollback.** Setting `MANAGED_AGENT_RUNTIME=anthropic-managed` cannot restore the hosted runner. To roll back, redeploy a release before 2.262.0 with the credentials it needs.
 
 On releases 2.255.0 to 2.261.x both runtimes exist and the AI SDK runner is the default. `MANAGED_AGENT_RUNTIME` selects the runner there and must match on the API and scheduler processes.
+
+## Agent identity on Snowflake
+
+<Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> [Agent identity](/agents/agent-identity) lets Snowflake verify that a query comes from an agent session, so Snowflake policies can treat agents differently from people. Agents sign in through a separate Snowflake OAuth integration. The normal [Sign in with Snowflake](/integrations/connect-project#sign-in-with-snowflake) integration stays separate.
+
+You need:
+
+- **Enterprise license** — `LIGHTDASH_LICENSE_KEY` must be set on your instance.
+- **One Snowflake account** — the instance has one agent integration for one Snowflake account. A project on a second Snowflake account cannot complete the agent connection. Use the same account for the integration and the project connection.
+
+<Steps>
+  <Step title="Create the integration in Snowflake">
+    Replace `<siteUrl>` with your instance URL, without a final slash:
+
+    ```sql
+    CREATE SECURITY INTEGRATION LIGHTDASH_AGENT
+      TYPE = OAUTH
+      OAUTH_CLIENT = CUSTOM
+      OAUTH_CLIENT_TYPE = 'CONFIDENTIAL'
+      OAUTH_REDIRECT_URI = '<siteUrl>/api/v1/oauth/redirect/snowflake-ai'
+      ENABLED = TRUE
+      IS_AGENTIC = TRUE
+      OAUTH_ISSUE_REFRESH_TOKENS = TRUE
+      OAUTH_REFRESH_TOKEN_VALIDITY = 7776000;
+    SELECT SYSTEM$SHOW_OAUTH_CLIENT_SECRETS('LIGHTDASH_AGENT');
+    ```
+
+    The second statement returns the client ID and client secret. The sign-in requests the `refresh_token` scope, so keep `OAUTH_ISSUE_REFRESH_TOKENS = TRUE`.
+  </Step>
+  <Step title="Set the environment variables">
+    Set these on the instance. Keep the client secret in your deployment secret store.
+
+    <SnowflakeAgentOauthEnv />
+  </Step>
+  <Step title="Enable the feature flag">
+    Add `agent-identity` to `LIGHTDASH_ENABLE_FEATURE_FLAGS` on every backend/API replica and on any scheduler or worker process that executes AI agent jobs:
+
+    ```bash
+    LIGHTDASH_ENABLE_FEATURE_FLAGS=agent-identity
+    ```
+
+    Append `agent-identity` if the list already contains other flags, and remove it from `LIGHTDASH_DISABLE_FEATURE_FLAGS` if present.
+  </Step>
+  <Step title="Restart">
+    Restart the affected processes. Lightdash reads these variables at startup.
+  </Step>
+</Steps>
+
+An organization admin then turns on **Require agent identity** and each person connects their agent. See [Require agent identity for your organization](/agents/agent-identity#require-agent-identity-for-your-organization).
+
+<Warning>
+  To test over `http://localhost`, add `OAUTH_ALLOW_NON_TLS_REDIRECT_URI = TRUE` to the integration. This is for local development only. Do not set it in production.
+</Warning>
+
+Each agent query writes one structured info log line with the message `Agent query` before it runs in the warehouse. Set `LIGHTDASH_LOG_FORMAT=JSON` to keep the fields: `queryUuid`, `projectUuid`, `warehouseConnectionUuid`, `userUuid`, `identity` (`marked_person` or `connected_person`), `principalKind`, `principalRef` and `context`. Lightdash does not store these audits in a table. See [logging](/self-host/customize-deployment/environment-variables#logging).
 
 ## Costs
 
