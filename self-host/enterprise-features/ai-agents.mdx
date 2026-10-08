@@ -213,14 +213,36 @@ Lightdash 2.262.0 removed the hosted runtime. From that version Autopilot always
 
 On releases 2.255.0 to 2.261.x both runtimes exist and the AI SDK runner is the default. `MANAGED_AGENT_RUNTIME` selects the runner there and must match on the API and scheduler processes.
 
-## Agent identity on Snowflake
+## Agent identity
 
-<Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> [Agent identity](/agents/agent-identity) lets Snowflake verify that a query comes from an agent session, so Snowflake policies can treat agents differently from people. Agents sign in through a separate Snowflake OAuth integration. The normal [Sign in with Snowflake](/integrations/connect-project#sign-in-with-snowflake) integration stays separate.
+<Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> [Agent identity](/agents/agent-identity) lets an organization admin choose who AI agents run as on Snowflake and BigQuery. It needs an Enterprise license: `LIGHTDASH_LICENSE_KEY` must be set on your instance.
 
-You need:
+<Steps>
+  <Step title="Enable the feature flag">
+    Add `agent-identity` to `LIGHTDASH_ENABLE_FEATURE_FLAGS` on every backend/API replica and on any scheduler or worker process that executes AI agent jobs:
 
-- **Enterprise license** — `LIGHTDASH_LICENSE_KEY` must be set on your instance.
-- **One Snowflake account** — the instance has one agent integration for one Snowflake account. A project on a second Snowflake account cannot complete the agent connection. Use the same account for the integration and the project connection.
+    ```bash
+    LIGHTDASH_ENABLE_FEATURE_FLAGS=agent-identity
+    ```
+
+    Append `agent-identity` if the list already contains other flags, and remove it from `LIGHTDASH_DISABLE_FEATURE_FLAGS` if present.
+  </Step>
+  <Step title="Restart">
+    Restart the affected processes. Lightdash reads these variables at startup.
+  </Step>
+</Steps>
+
+The BigQuery AI service account needs no other instance setup. A project admin adds its key on each project connection. See [BigQuery: the AI service account](/agents/agent-identity#bigquery-the-ai-service-account).
+
+Agent sign-in on Snowflake also needs the Snowflake agent integration. See [Agent identity on Snowflake](#agent-identity-on-snowflake).
+
+Each agent query writes one structured info log line with the message `Agent query` before it runs in the warehouse. Set `LIGHTDASH_LOG_FORMAT=JSON` to keep the fields: `queryUuid`, `projectUuid`, `warehouseConnectionUuid`, `userUuid`, `identity` (`marked_person`, `connected_person` or `ai_service_account`), `actorKind`, `principalKind`, `credentialUuid`, `identityUuid`, `principalRef` and `context`. Lightdash does not store these audits in a table. See [logging](/self-host/customize-deployment/environment-variables#logging).
+
+### Agent identity on Snowflake
+
+Agent sign-in lets Snowflake verify that a query comes from an agent session, so Snowflake policies can treat agents differently from people. Agents sign in through a separate Snowflake OAuth integration. The normal [Sign in with Snowflake](/integrations/connect-project#sign-in-with-snowflake) integration stays separate.
+
+The instance has one agent integration for one Snowflake account. A project on a second Snowflake account cannot complete the agent connection. Use the same account for the integration and the project connection.
 
 <Steps>
   <Step title="Create the integration in Snowflake">
@@ -246,27 +268,16 @@ You need:
 
     <SnowflakeAgentOauthEnv />
   </Step>
-  <Step title="Enable the feature flag">
-    Add `agent-identity` to `LIGHTDASH_ENABLE_FEATURE_FLAGS` on every backend/API replica and on any scheduler or worker process that executes AI agent jobs:
-
-    ```bash
-    LIGHTDASH_ENABLE_FEATURE_FLAGS=agent-identity
-    ```
-
-    Append `agent-identity` if the list already contains other flags, and remove it from `LIGHTDASH_DISABLE_FEATURE_FLAGS` if present.
-  </Step>
   <Step title="Restart">
     Restart the affected processes. Lightdash reads these variables at startup.
   </Step>
 </Steps>
 
-An organization admin then turns on **Require agent identity** and each person connects their agent. See [Require agent identity for your organization](/agents/agent-identity#require-agent-identity-for-your-organization).
+An organization admin then sets the Snowflake row of the **Agent identity** card to **A separate agent sign-in for each person**, and each person connects their agent. See [Snowflake: a separate agent sign-in for each person](/agents/agent-identity#snowflake-a-separate-agent-sign-in-for-each-person).
 
 <Warning>
   To test over `http://localhost`, add `OAUTH_ALLOW_NON_TLS_REDIRECT_URI = TRUE` to the integration. This is for local development only. Do not set it in production.
 </Warning>
-
-Each agent query writes one structured info log line with the message `Agent query` before it runs in the warehouse. Set `LIGHTDASH_LOG_FORMAT=JSON` to keep the fields: `queryUuid`, `projectUuid`, `warehouseConnectionUuid`, `userUuid`, `identity` (`marked_person` or `connected_person`), `principalKind`, `principalRef` and `context`. Lightdash does not store these audits in a table. See [logging](/self-host/customize-deployment/environment-variables#logging).
 
 ## Costs
 
