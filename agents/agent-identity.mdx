@@ -230,7 +230,7 @@ Finally, query a protected table through an agent and as the person. Check that 
 With this identity, agent queries on a BigQuery project run as a separate Google Cloud service account. An admin adds the account's key to the project connection. BigQuery then applies that account's grants to every agent query, so you decide what agents can read with ordinary BigQuery permissions.
 
 <Warning>
-  Every person's agent gets the same access: the grants of the AI service account. BigQuery does not apply each person's own row-level access policies or column masking to agent queries. Grant the AI service account only the data that every agent user may see.
+  Every person's agent gets the same access: the grants of the AI service account. BigQuery does not apply each person's own row-level access policies or column masking to agent queries. Grant the AI service account only the data that every agent user may see. You can write row access policies and masking rules that target the AI service account itself. See [Decide what agents can read](#decide-what-agents-can-read).
 </Warning>
 
 The AI service account replaces only the credentials of the connection. The project, dataset and location stay from the connection.
@@ -242,7 +242,7 @@ The AI service account replaces only the credentials of the connection. The proj
     In Google Cloud, create a service account for agents. Use a different account from the one the project connection uses, so agents get their own grants. See [Create service accounts](https://cloud.google.com/iam/docs/service-accounts-create).
   </Step>
   <Step title="Grant read access">
-    Grant the account `roles/bigquery.dataViewer` on each dataset that agents may read. Grant it `roles/bigquery.jobUser` on the Google Cloud project of the connection, so that it can run queries. Do not grant data roles on the whole project unless agents may read every dataset in it. See [BigQuery IAM roles](https://cloud.google.com/bigquery/docs/access-control).
+    Grant the account `roles/bigquery.jobUser` on the Google Cloud project of the connection, so that it can run queries. Then grant it read access only to the data that agents may use, for example `roles/bigquery.dataViewer` on each dataset. Do not grant data roles on the whole project unless agents may read every dataset in it. See [Decide what agents can read](#decide-what-agents-can-read) and [BigQuery IAM roles](https://cloud.google.com/bigquery/docs/access-control).
   </Step>
   <Step title="Create a JSON key">
     Create a JSON key for the account and download the key file. See [Create and delete service account keys](https://cloud.google.com/iam/docs/keys-create-delete).
@@ -266,6 +266,85 @@ The AI service account replaces only the credentials of the connection. The proj
 The card shows the organization's BigQuery rule and an **Organisation settings** link. After you save a key, the card shows when it was last updated, with **Replace**, **Test** and **Remove** buttons.
 
 Lightdash does not check that the AI service account differs from the account of the connection. Use the Test result to confirm it.
+
+### Decide what agents can read
+
+The AI service account reads only what you grant it. BigQuery checks those grants on every agent query, so you restrict agents with BigQuery permissions and policies on the AI service account. You can combine the levels below.
+
+The examples use `lightdash-agents@my-project.iam.gserviceaccount.com` for the AI service account and `lightdash@my-project.iam.gserviceaccount.com` for the connection's own account. Replace them with your accounts.
+
+<Warning>
+  Agents query the same explores, and so the same tables, as people. Put each restriction on the tables behind those explores. A question that needs data the AI service account cannot read fails with an access denied error in chat, MCP and Slack. Keep the explores that agents use within what the AI service account can read. To hide explores and fields from agents, use [agent tags](/agents/data-access#limiting-access-to-specific-explores-and-fields).
+</Warning>
+
+#### Datasets
+
+Grant `roles/bigquery.dataViewer` only on the datasets that agents may use:
+
+```sql
+GRANT `roles/bigquery.dataViewer`
+ON SCHEMA `my-project`.jaffle_shop
+TO "serviceAccount:lightdash-agents@my-project.iam.gserviceaccount.com";
+```
+
+The account can then query every table in that dataset, and no table in a dataset where it has no grant. See [GRANT statement](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-control-language#grant_statement).
+
+#### Tables
+
+To give agents only some tables in a dataset, grant Data Viewer on each table instead of on the dataset:
+
+```sql
+GRANT `roles/bigquery.dataViewer`
+ON TABLE `my-project`.jaffle_shop.orders
+TO "serviceAccount:lightdash-agents@my-project.iam.gserviceaccount.com";
+```
+
+See [table-level access control](https://cloud.google.com/bigquery/docs/table-access-controls-intro).
+
+#### Columns
+
+Policy tags protect individual columns. You create a taxonomy with a policy tag, for example `pii`, and attach it to the sensitive columns. Then you choose what the AI service account sees in those columns:
+
+- **Masked values.** Add a data policy with a masking rule to the policy tag. Grant the AI service account the Masked Reader role, `roles/bigquerydatapolicy.maskedReader`, on the data policy. The account then reads masked values: for example `NULL` with the Nullify rule, or an empty string for a `STRING` column with the Default masking value rule. This is the BigQuery equivalent of the Snowflake `REDACTED` example.
+- **No access.** Do not grant the AI service account the Fine-Grained Reader role, `roles/datacatalog.categoryFineGrainedReader`, or the Masked Reader role. A query that selects the column fails with an error. Agent questions that do not use the column still work.
+
+For example, with the Nullify rule on the `email` column of `protected_records`:
+
+| Account | Role | `SELECT email FROM protected_records` |
+| --- | --- | --- |
+| The connection's own account | Fine-Grained Reader on the policy tag | The real email addresses |
+| The AI service account | Masked Reader on the data policy | `NULL` in every row |
+| The AI service account | Neither role | An access denied error |
+
+When a policy tag has a data policy, or its taxonomy enforces access control, every account that reads the column needs one of the two roles. Grant Fine-Grained Reader on the policy tag to the connection's own account, and to people who query with their own Google accounts. Otherwise their dashboards fail on that column too.
+
+See [column-level access control](https://cloud.google.com/bigquery/docs/column-level-security-intro) and [dynamic data masking](https://cloud.google.com/bigquery/docs/column-data-masking-intro).
+
+#### Rows
+
+A row access policy limits the rows that the AI service account can read. The account still needs Data Viewer on the table:
+
+```sql
+CREATE ROW ACCESS POLICY agent_rows
+ON `my-project.jaffle_shop.protected_records`
+GRANT TO ('serviceAccount:lightdash-agents@my-project.iam.gserviceaccount.com')
+FILTER USING (is_sensitive = FALSE);
+```
+
+<Warning>
+  When a table has a row access policy, accounts that no policy grants see no rows. This includes the connection's own account. Add a policy with the `TRUE` filter for that account, and for people who query with their own Google accounts.
+</Warning>
+
+```sql
+CREATE ROW ACCESS POLICY connection_all_rows
+ON `my-project.jaffle_shop.protected_records`
+GRANT TO ('serviceAccount:lightdash@my-project.iam.gserviceaccount.com')
+FILTER USING (TRUE);
+```
+
+See [row-level security](https://cloud.google.com/bigquery/docs/row-level-security-intro), [manage row access policies](https://cloud.google.com/bigquery/docs/managing-row-level-security) and [the `TRUE` filter](https://cloud.google.com/bigquery/docs/using-row-level-security-with-features#the_true_filter).
+
+Column-level access control, dynamic data masking and row-level security need BigQuery Enterprise or Enterprise Plus edition, or on-demand pricing. See [BigQuery editions](https://cloud.google.com/bigquery/docs/editions-intro).
 
 ### One key for each project connection
 
