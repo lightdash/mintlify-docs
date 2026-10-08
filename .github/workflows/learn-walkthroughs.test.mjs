@@ -206,8 +206,11 @@ exports.docsParagraph = (ref) => {
                     path.join(bin, 'pnpm'),
                     `#!/bin/bash
 set -eu
-cd "$2"
-shift 2
+# Corepack resolves the pinned version before pnpm processes any -C argument.
+if [ "$PWD" != "$GITHUB_WORKSPACE/lightdash" ]; then
+  echo 'Corepack must start inside the Lightdash checkout' >&2
+  exit 42
+fi
 if [ "$1" = exec ]; then
   if [ "$3" = scripts/scope-tours/check.ts ]; then echo '[{"level":"error","file":"checker","message":"old broken citation"}]'; exit 1; fi
   node "$3"

@@ -1,0 +1,37 @@
+---
+title: "Usage analytics"
+description: "Configure storage and collection for a self-hosted usage analytics project"
+tag: "Beta"
+---
+
+<Info>
+  <Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> This setup requires a self-hosted Enterprise Edition deployment with a valid license. Use a release that includes organization-scoped usage capture; contact the Lightdash team to confirm support for your release. [What Beta means](/support/feature-maturity-levels).
+</Info>
+
+The [usage analytics project](/workspace-admin/usage-analytics-project) reads captured events and inventory snapshots from your deployment's object storage. It does not require a customer warehouse or a dbt project.
+
+## Configure the deployment
+
+1. [Upgrade Lightdash](/self-host/upgrade-runbook) and keep the backend, scheduler and workers on the same release.
+2. Apply the [enterprise license](/self-host/enterprise-features#apply-the-license-key) to all Lightdash components.
+3. Configure [S3-compatible object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage). Usage storage inherits the base S3 configuration. To use a separate bucket or credentials, set the [usage analytics storage variables](/self-host/customize-deployment/environment-variables#usage-analytics-storage). The base S3 configuration is still required.
+4. Ensure the backend, scheduler and any query workers can reach the storage endpoint. The capture and refresh processes need to list, read, write and delete usage objects; analytics queries need authenticated reads. Keep the bucket private and configure credentials through your deployment's secret management.
+5. Keep the [scheduler](/self-host/customize-deployment/scheduler) running to process captured data and publish inventory snapshots.
+
+Apply configuration consistently to the backend, scheduler and workers, then roll out those components. Do not apply a short-lived query-results cleanup policy to usage data you intend to retain.
+
+## Enable collection
+
+Collection and processing require the **organization-level** `analytics-project` feature flag. Ask the Lightdash team to help enable the intended organization. Enabling it only for an individual user does not enable organization-wide collection.
+
+For a dedicated deployment where you intend to enable every organization, append `analytics-project` to the existing comma-separated [`LIGHTDASH_ENABLE_FEATURE_FLAGS`](/self-host/customize-deployment/environment-variables#feature-flags) setting on all components, preserving other entries. This setting applies to every organization on the instance; use organization-level configuration for a selective rollout.
+
+`USAGE_EVENTS_ENABLED` is not used by releases with organization-scoped capture. The license, storage configuration and organization flag control collection. [RudderStack telemetry](/self-host/data-flows-and-telemetry) is a separate system: disabling it does not disable usage analytics.
+
+## Verify setup
+
+Generate activity in the enabled organization, then allow the [scheduled data refresh](/workspace-admin/usage-analytics-project#data-freshness-and-history) to complete. Check scheduler logs for usage compaction or storage errors. Successful project creation verifies access to storage, but does not prove that events have been collected or processed.
+
+An organization administrator can then [create the analytics project](/workspace-admin/usage-analytics-project#create-your-analytics-project) and run a chart for a closed day with known activity. Check that the user, content and date match that activity. To update installed dashboards after an upgrade, follow [Update models and dashboards](/workspace-admin/usage-analytics-project#update-models-and-dashboards).
+
+Usage files can contain user identities and content metadata. Restrict bucket access and choose a retention policy that matches your organization's requirements. Disabling the feature stops future eligible capture and processing; it does not delete previously stored files.
