@@ -7,12 +7,12 @@ tag: "Beta"
 ---
 
 <Info>
-  <Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> Deep research is available wherever [AI agents](/agents/set-up-agents) are enabled, including eligible AI trials. Lightdash Cloud enables the feature flag by default. Self-hosted deployments need the same Enterprise Edition license and AI provider configuration required by AI agents, and must enable the `ai-deep-research` feature flag. [What Beta means](/support/feature-maturity-levels).
+  <Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> Deep research is available wherever [AI agents](/agents/set-up-agents) and [Documents](/explore/documents) are enabled, including eligible AI trials. Reports are published as Documents, so the `documents` feature flag must be on. Self-hosted deployments need the same Enterprise Edition license and AI provider configuration required by AI agents, and must add `documents` to [`LIGHTDASH_ENABLE_FEATURE_FLAGS`](/self-host/customize-deployment/environment-variables#feature-flags). [What Beta means](/support/feature-maturity-levels).
 </Info>
 
 Deep research is a long-running mode for Lightdash AI agents. It is designed for questions that need several queries, competing explanations, and a reusable report rather than one immediate answer.
 
-The agent investigates in the background using its Lightdash context and configured sources. It returns a structured report with verified charts, evidence-led findings, and explicit caveats where the data limits the conclusion.
+The agent investigates in the background using its Lightdash context and configured sources. It publishes a structured report as a [Document](/explore/documents), with verified charts, evidence-led findings, and explicit caveats where the data limits the conclusion.
 
 <Frame>
   <img
@@ -40,7 +40,7 @@ flowchart LR
     C --> B
     B --> D["Verified queries and their results"]
     D --> E["Report written from that evidence"]
-    E --> F["Report and live charts"]
+    E --> F["Document with live charts"]
 ```
 
 Deep research uses the selected AI agent's configuration, including its instructions, semantic-layer access, knowledge documents, project and repository context, and enabled tools. It automatically inherits the organization's research limits and every MCP server attached to the agent; there is no per-run depth or source selection. Lightdash retries transient MCP discovery and provider timeouts with a bounded backoff. If an attached MCP server remains unavailable, the run preserves completed evidence and continues with healthy MCP servers and built-in tools where possible.
@@ -70,7 +70,7 @@ Because the run executes on the server, you can close the tab or leave the threa
 
 ## Organization-wide settings and limits
 
-When AI agents and the `ai-deep-research` feature flag are enabled, organization admins can go to **Organization settings** → **Ask AI** → **Deep research** to configure the safety limits inherited by every run:
+When AI agents and the `documents` feature flag are enabled, organization admins can go to **Organization settings** → **Ask AI** → **Deep research** to configure the safety limits inherited by every run:
 
 - **Maximum steps** — model steps the coordinator may take before it must finish
 - **Maximum tool calls** — total tool calls across the coordinator and its workers
@@ -112,13 +112,13 @@ The run card stays next to the question that started it and shows the latest pha
     The agent is gathering context, querying the data, or writing the report. Select **View activity** to inspect recent progress.
   </Accordion>
   <Accordion title="Completed">
-    The full report is ready and saved in the thread.
+    The report is published as a personal Document and linked from the run card.
   </Accordion>
   <Accordion title="Partially completed">
     The run reached a resource limit or recoverable error. Lightdash still wrote the report from the evidence gathered before it stopped. Select **Resume research** to continue unfinished work from the preserved evidence without rerunning successful queries.
   </Accordion>
   <Accordion title="Failed">
-    The run could not produce a valid report. If it preserved usable evidence, select **Resume research** to continue unfinished work. Otherwise, the run card provides guidance to start over.
+    The run could not produce or publish a valid report. If it preserved usable evidence, select **Resume research** to continue unfinished work. Otherwise, the run card provides guidance to start over.
   </Accordion>
   <Accordion title="Cancelled">
     The creator stopped the run before it finished.
@@ -131,7 +131,7 @@ Only one deep research run can be active in a thread at a time. While it is acti
 
 ## Read the report
 
-Select **Open full report** from a completed or partially completed run card. Reports include a contents rail on larger screens so you can jump between findings. A report contains:
+Select the Document card on a completed or partially completed run. The report opens in the side panel; use the open link to view it full page. The report is a **personal Document**: only you and organization admins can see it until you save it to a Space. Use **Save to Space** to share it with others.
 
 <Frame>
   <img
@@ -140,22 +140,24 @@ Select **Open full report** from a completed or partially completed run card. Re
   />
 </Frame>
 
-- A short generated title and a direct introduction
+The Document is named after the report's title, and each finding is a top-level section, so the contents rail lets you jump between findings. A report contains:
+
+- A short introduction
 - Finding sections led by verified charts, followed by concise supporting narrative
 - A conclusion and inline caveats where data coverage, freshness, or the semantic layer limits the conclusion
-- Citations for external evidence when the report uses it
+- Links to external evidence when the report uses it
 
-Before publishing, Lightdash validates every chart reference in the report. If a reference is malformed, duplicated, missing, or cannot be verified, Lightdash removes that reference while preserving valid findings and narrative. The run activity and report warning identify adjusted or omitted content.
+Before publishing, Lightdash validates every chart in the report. If a chart is malformed, duplicated, missing, or cannot be verified, Lightdash leaves it out while preserving valid findings and narrative, and the report notes that evidence was omitted.
 
 ### Report charts
 
-Warehouse-backed charts are read-only inside the report. They keep inspection interactions such as tooltips, legends, highlights, and useful zoom, but do not offer report-side drill, filter, edit, or save actions.
+Every report chart is a standard Document chart built from one verified warehouse query the run actually executed. It runs live against the warehouse, so it shows current data, and you can edit or explore it like any other chart in a Document.
 
-Every report chart is backed by one verified warehouse query the run actually executed. When you open or revisit a report, Lightdash runs that query through the normal async query path, so the chart shows current warehouse data rather than a persisted result snapshot. Select **Open in Explore** to continue investigating with the equivalent query, filters, fields, and visualization state in a new tab.
+### Keeping reports
 
-### Report retention
+A published report is an ordinary Document: it does not expire, and deleting or retrying the run does not affect it. Delete or move it like any other Document.
 
-Deep research report content and report-chart access expire **30 days after the run completes**. The run's question, status, and completion date remain in the thread. After expiry, select **Run again** to start a new investigation from the original question using the agent's current configuration and the organization's current limits.
+Reports from runs that finished before Documents publishing stay available in their thread for 30 days after the run completed.
 
 The regular chat agent can use the status and report from deep research runs in the same conversation when answering follow-up questions. Ask it to clarify a finding, compare evidence, or explain a limitation without pasting the report back into the chat.
 
@@ -170,9 +172,9 @@ The regular chat agent can use the status and report from deep research runs in 
 
 ## Access requirements
 
-Your organization must have the AI Agents entitlement or an eligible trial, the `ai-deep-research` feature flag enabled, and **Enable AI features for users** turned on in **Organization settings** → **Ask AI** → **General**. Self-hosted deployments must also configure an AI provider as described in [AI agents](/self-host/enterprise-features/ai-agents).
+Your organization must have the AI Agents entitlement or an eligible trial, the `documents` feature flag enabled, and **Enable AI features for users** turned on in **Organization settings** → **Ask AI** → **General**. Self-hosted deployments must also configure an AI provider as described in [AI agents](/self-host/enterprise-features/ai-agents).
 
-Deep research is enabled by default on Lightdash Cloud. Self-hosted deployments must enable the `ai-deep-research` feature flag.
+On Lightdash Cloud, ask your Lightdash contact to turn on Documents for your organization. Self-hosted deployments must add `documents` to `LIGHTDASH_ENABLE_FEATURE_FLAGS`. The older `ai-deep-research` flag has no effect.
 
 Starting a run requires the Enterprise **Start Deep Research runs** scope (`create:AiDeepResearch`) for the project. Developer and Admin roles receive this scope by default. Add it explicitly to any [custom role](/workspace-admin/custom-roles) that should be allowed to start runs.
 
@@ -214,4 +216,4 @@ No. It uses the selected agent's configured tools. Warehouse queries run without
 
 **Can I continue chatting after the report is ready?**
 
-Yes. The report remains available in the thread for 30 days, and the same agent can use it as context for follow-up questions.
+Yes. The same agent can read the published report as context for follow-up questions in the thread.
