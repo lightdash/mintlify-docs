@@ -103,6 +103,8 @@ For examples and command-specific options, click through the command in the tabl
 | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 |[`lightdash login`](/workflow/cli/reference#lightdash-login)                           | Log in to a Lightdash instance using email/password or a token                     |
 |[`lightdash connect-snowflake`](/workflow/cli/reference#lightdash-connect-snowflake)   | Sign in to Snowflake via SSO and deposit a durable credential into the setup wizard |
+|[`lightdash agent connect`](/workflow/cli/reference#lightdash-agent-connect)           | Connect your agent to the warehouse with a browser sign-in                         |
+|[`lightdash agent status`](/workflow/cli/reference#lightdash-agent-status)             | Show your agent connection status for a project                                    |
 |[`lightdash config set-project`](/workflow/cli/reference#lightdash-config-set-project) | Choose or set the Lightdash project you are working on                             |
 |[`lightdash config get-project`](/workflow/cli/reference#lightdash-config-get-project) | Get the current active project                                                     |
 |[`lightdash config rename-project`](/workflow/cli/reference#lightdash-config-rename-project) | Rename the currently selected project                                        |
@@ -222,6 +224,70 @@ lightdash connect-snowflake \
   --code 8f3c9a2b1e4d \
   --account ecomstore-xy12345
 ```
+
+### `lightdash agent connect`
+
+Connects your agent to the warehouse with a browser sign-in, so that agents can run as you. Use it when your organization requires a [separate agent sign-in for each person](/agents/agent-identity#snowflake-a-separate-agent-sign-in-for-each-person). It opens the same Snowflake sign-in as **Connect agent** in the app.
+
+```console
+lightdash agent connect
+```
+
+**Options:**
+
+- `--project <project uuid or slug>`
+  - The project to connect for. Defaults to the active project.
+- `--oauth-port <port>`
+  - The port of the local callback server. Defaults to `LIGHTDASH_OAUTH_PORT`, or a random free port.
+- `--timeout <seconds>`
+  - How long the connect link stays valid while the CLI waits for your approval. Default: `180` (3 minutes).
+
+The command:
+
+1. Says why your agent needs to sign in.
+2. Prints the connect link and opens it in your browser. If the browser does not open, open the link yourself. You can approve on a different machine.
+3. Shows a countdown to the end of the link and waits for you to approve.
+4. Prints the identity that agents now run as and the end date of the agent session, then "Run your last command again."
+
+```text
+Your agent needs to sign in to Snowflake as you, once.
+
+  Open: https://app.lightdash.cloud/agent/connect?project=<project-uuid>&redirect=http%3A%2F%2Flocalhost%3A4321%2Fdone&entryPoint=cli
+  Opened in your browser.
+  Link expires in 3:00 (at 14:12).
+
+Waiting for you to approve in the browser…
+Connected. Agents now run as you@example.com in an agent session until 7 Jan 2027.
+Run your last command again.
+```
+
+In an interactive terminal, the waiting line is a spinner with the countdown, for example `⠏ Waiting for you to approve in the browser… (link expires in 2:59)`. In CI, or when the output is not a terminal, the command prints plain lines.
+
+When the link expires before you approve, the command exits with code 1:
+
+```text
+The link expired before you approved it. Run `lightdash agent connect` to get a new link.
+```
+
+When the connection fails, the command gives the reason and how to try again. For example:
+
+```text
+Connection failed: Your Snowflake sign-in is not an agent session. Ask your Snowflake admin to set IS_AGENTIC = TRUE on the security integration used for AI. Run `lightdash agent connect` to try again.
+```
+
+When the project does not need an agent connection, the command prints "Agent connection is not required for this project" and stops.
+
+The CLI checks the connection for its own Lightdash user. If the browser is signed in to Lightdash as a different user, the command says so. Sign in to the browser as the same user, then run the command again.
+
+### `lightdash agent status`
+
+Shows your agent connection status for a project. When your agent is not connected, it shows the reason and the connect link.
+
+```console
+lightdash agent status --project <project uuid or slug>
+```
+
+`--project` is optional and defaults to the active project.
 
 ### `lightdash config set-project`
 
