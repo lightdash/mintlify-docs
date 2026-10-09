@@ -287,13 +287,17 @@ BigQuery key refusals, Snowflake session check refusals and AI service account t
 
 Agent sign-in lets Snowflake verify that a query comes from an agent session, so Snowflake policies can treat agents differently from people. Agents sign in through a separate Snowflake OAuth integration. The normal [Sign in with Snowflake](/integrations/connect-project#sign-in-with-snowflake) integration stays separate.
 
-The instance has one agent integration for one Snowflake account. A project on a second Snowflake account cannot complete the agent connection. Use the same account for the integration and the project connection.
+An organization admin sets up the integration in the app, with no instance setup. On **Organization settings → Agent identity**, they choose **A separate agent sign-in for each person**, run the SQL in Snowflake, and paste the account URL, client ID and client secret. See [Set up the Snowflake agent integration](/agents/agent-identity#set-up-the-snowflake-agent-integration). Lightdash encrypts the saved secret with `LIGHTDASH_SECRET`.
 
-An organization admin starts the setup in the app: on **Organization settings → Agent identity**, they choose **A separate agent sign-in for each person** in the Snowflake row. The setup steps show the SQL below with the redirect URL of your instance already filled in, and list each environment variable as "Set" or "Missing". The admin gives you the client ID and secret. You set the variables and restart.
+Each organization has one agent integration for one Snowflake account. A project on a second Snowflake account cannot complete the agent connection. Use the same account for the integration and the project connection.
+
+#### Set the client for the whole instance
+
+As a fallback, you can set one OAuth client for the whole instance with environment variables. Organizations that have no saved client use it. A client that an organization admin saves in the app overrides it for that organization.
 
 <Steps>
   <Step title="Create the integration in Snowflake">
-    Copy the SQL from the setup steps in the app, or replace `<siteHost>` below with the scheme and host of your instance, for example `https://lightdash.example.com`. The redirect URL always uses the host root, also when `SITE_URL` has a path:
+    Replace `<siteHost>` below with the scheme and host of your instance, for example `https://lightdash.example.com`. The redirect URL always uses the host root, also when `SITE_URL` has a path:
 
     ```sql
     CREATE SECURITY INTEGRATION LIGHTDASH_AGENT
@@ -320,9 +324,9 @@ An organization admin starts the setup in the app: on **Organization settings �
   </Step>
 </Steps>
 
-The admin then selects **Verify integration**, and **Turn on** when the required checks pass. Lightdash does not save the agent sign-in rule while these variables are missing. Each person then connects their agent. See [Set up the Snowflake agent integration](/agents/agent-identity#set-up-the-snowflake-agent-integration).
+An organization admin then selects **Verify integration**, and **Turn on** when the required checks pass. Lightdash does not save the agent sign-in rule while the organization has no saved client and these variables are missing.
 
-Lightdash refreshes each agent sign-in while the Snowflake grant lasts. `OAUTH_REFRESH_TOKEN_VALIDITY` sets the length of the grant, in seconds. When Snowflake rejects the OAuth client, people see "The warehouse OAuth client was rejected. Ask an administrator to check the agent sign-in settings." Check that the integration is enabled and that the client ID and secret on the instance match it. See [How long the agent connection lasts](/agents/agent-identity#how-long-the-agent-connection-lasts).
+Lightdash refreshes each agent sign-in while the Snowflake grant lasts. `OAUTH_REFRESH_TOKEN_VALIDITY` sets the length of the grant, in seconds. When Snowflake rejects the OAuth client, people see "The warehouse OAuth client was rejected. Ask an administrator to check the agent sign-in settings." Check that the integration is enabled and that the saved client, or the client in the environment variables, matches it. See [How long the agent connection lasts](/agents/agent-identity#how-long-the-agent-connection-lasts).
 
 The `agent-identity-silent-refresh` feature flag controls the background refresh. It is on by default. To go back to the earlier behaviour, add it to `LIGHTDASH_DISABLE_FEATURE_FLAGS` and restart. The earlier behaviour asks people to connect again when the stored end date passes, and also after a temporary refresh failure.
 
