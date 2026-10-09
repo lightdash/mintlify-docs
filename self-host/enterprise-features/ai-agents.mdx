@@ -3,7 +3,6 @@ title: "AI agents"
 description: "Enable AI Analyst and AI agents on a self-hosted Lightdash instance"
 ---
 
-import SnowflakeAgentOauthEnv from '/snippets/self-host/snowflake-agent-oauth-env.mdx';
 
 <Info>
   <Badge icon="building-plus" color="blue" size="sm" shape="pill">Enterprise</Badge> AI Analyst and AI agents need a valid `LIGHTDASH_LICENSE_KEY` set on your instance before any of the configuration below takes effect. See [enterprise features](/self-host/enterprise-features) for applying the key.
@@ -232,7 +231,7 @@ On releases 2.255.0 to 2.261.x both runtimes exist and the AI SDK runner is the 
   </Step>
 </Steps>
 
-The AI service account on BigQuery and Databricks needs no other instance setup. A project admin adds it on the **Agent identity** page of each project's settings. See [BigQuery: the AI service account](/agents/agent-identity#bigquery-the-ai-service-account) and [Databricks: the AI service account](/agents/agent-identity#databricks-the-ai-service-account).
+The AI service account on Snowflake, BigQuery and Databricks needs no other instance setup. A project admin adds it on the **Agent identity** page of each project's settings. See [Snowflake](/agents/agent-identity#snowflake-the-ai-service-account), [BigQuery](/agents/agent-identity#bigquery-the-ai-service-account) and [Databricks](/agents/agent-identity#databricks-the-ai-service-account).
 
 Agent sign-in on Snowflake also needs the Snowflake agent integration. See [Agent identity on Snowflake](#agent-identity-on-snowflake).
 
@@ -291,42 +290,11 @@ An organization admin sets up the integration in the app, with no instance setup
 
 Each organization has one agent integration for one Snowflake account. A project on a second Snowflake account cannot complete the agent connection. Use the same account for the integration and the project connection.
 
-#### Set the client for the whole instance
+The setup SQL in the app has the redirect URL of your instance: `<siteHost>/api/v1/oauth/redirect/snowflake-ai`, where `<siteHost>` is the scheme and host of `SITE_URL`. It always uses the host root, also when `SITE_URL` has a path. The sign-in requests the `refresh_token` scope, so keep `OAUTH_ISSUE_REFRESH_TOKENS = TRUE` on the integration.
 
-As a fallback, you can set one OAuth client for the whole instance with environment variables. Organizations that have no saved client use it. A client that an organization admin saves in the app overrides it for that organization.
+An organization admin then selects **Verify integration**, and **Turn on** when the required checks pass. Lightdash does not save the agent sign-in rule while the organization has no saved client.
 
-<Steps>
-  <Step title="Create the integration in Snowflake">
-    Replace `<siteHost>` below with the scheme and host of your instance, for example `https://lightdash.example.com`. The redirect URL always uses the host root, also when `SITE_URL` has a path:
-
-    ```sql
-    CREATE SECURITY INTEGRATION LIGHTDASH_AGENT
-      TYPE = OAUTH
-      OAUTH_CLIENT = CUSTOM
-      OAUTH_CLIENT_TYPE = 'CONFIDENTIAL'
-      OAUTH_REDIRECT_URI = '<siteHost>/api/v1/oauth/redirect/snowflake-ai'
-      ENABLED = TRUE
-      IS_AGENTIC = TRUE
-      OAUTH_ISSUE_REFRESH_TOKENS = TRUE
-      OAUTH_REFRESH_TOKEN_VALIDITY = 7776000;
-    SELECT SYSTEM$SHOW_OAUTH_CLIENT_SECRETS('LIGHTDASH_AGENT');
-    ```
-
-    The second statement returns the client ID and client secret. The sign-in requests the `refresh_token` scope, so keep `OAUTH_ISSUE_REFRESH_TOKENS = TRUE`.
-  </Step>
-  <Step title="Set the environment variables">
-    Set these on the instance. Keep the client secret in your deployment secret store.
-
-    <SnowflakeAgentOauthEnv />
-  </Step>
-  <Step title="Restart">
-    Restart the affected processes. Lightdash reads these variables at startup.
-  </Step>
-</Steps>
-
-An organization admin then selects **Verify integration**, and **Turn on** when the required checks pass. Lightdash does not save the agent sign-in rule while the organization has no saved client and these variables are missing.
-
-Lightdash refreshes each agent sign-in while the Snowflake grant lasts. `OAUTH_REFRESH_TOKEN_VALIDITY` sets the length of the grant, in seconds. When Snowflake rejects the OAuth client, people see "The warehouse OAuth client was rejected. Ask an administrator to check the agent sign-in settings." Check that the integration is enabled and that the saved client, or the client in the environment variables, matches it. See [How long the agent connection lasts](/agents/agent-identity#how-long-the-agent-connection-lasts).
+Lightdash refreshes each agent sign-in while the Snowflake grant lasts. `OAUTH_REFRESH_TOKEN_VALIDITY` sets the length of the grant, in seconds. When Snowflake rejects the OAuth client, people see "The warehouse OAuth client was rejected. Ask an administrator to check the agent sign-in settings." Check that the integration is enabled and that the client saved on **Organization settings → Agent identity** matches it. See [How long the agent connection lasts](/agents/agent-identity#how-long-the-agent-connection-lasts).
 
 The `agent-identity-silent-refresh` feature flag controls the background refresh. It is on by default. To go back to the earlier behaviour, add it to `LIGHTDASH_DISABLE_FEATURE_FLAGS` and restart. The earlier behaviour asks people to connect again when the stored end date passes, and also after a temporary refresh failure.
 
