@@ -1,84 +1,85 @@
 ---
-title: "Agent identity on Snowflake"
+title: "Agent identity"
 sidebarTitle: "Agent identity"
-description: "Let Snowflake verify agent sessions, so your warehouse policies decide what agents can read"
+description: "Choose who AI agents run as on Snowflake and BigQuery, so the warehouse decides what agents can read"
 tag: "Beta"
 ---
 
 <Info>
-  <Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> <Badge icon="building-plus" color="blue" size="sm" shape="pill">Enterprise</Badge> Agent identity is behind the `agent-identity` feature flag. On Lightdash Cloud, ask Lightdash support to turn it on for your organization. On a self-hosted instance, [enable the flag and set up the Snowflake agent integration](/self-host/enterprise-features/ai-agents#agent-identity-on-snowflake). [What Beta means](/support/feature-maturity-levels).
+  <Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> <Badge icon="building-plus" color="blue" size="sm" shape="pill">Enterprise</Badge> Agent identity is behind the `agent-identity` feature flag. On Lightdash Cloud, ask Lightdash support to turn it on for your organization. On a self-hosted instance, [enable the flag](/self-host/enterprise-features/ai-agents#agent-identity). Agent sign-in on Snowflake also needs the Snowflake agent integration. [What Beta means](/support/feature-maturity-levels).
 </Info>
 
-AI agents run SQL in your warehouse. Without agent identity, the warehouse sees the same user for an agent query and for that person's dashboard query. It cannot treat the two differently.
+AI agents run SQL in your warehouse. By default, an agent query uses the same credentials as the person who asked. The warehouse cannot tell the agent from the person, so it applies the same rules to both.
 
-Agent identity fixes this in two parts:
+Agent identity lets an organization admin choose a different identity for agent queries. The warehouse then sees agent queries as that identity, and your warehouse grants and policies decide what agents can read. Lightdash's own controls still apply on top. See [Data access control](/agents/data-access).
 
-- **Lightdash marks every agent query.** The mark is on every warehouse and needs no setting. On Snowflake, the mark is in the query tag.
-- **Snowflake verifies agent sessions.** Your organization can require each person to connect their agent through a separate Snowflake OAuth sign-in. Snowflake then knows that the session is an agent session. Your row access policies, masking policies, session policies and views can act on that.
+Agent identity is available on the warehouses that can enforce it: Snowflake and BigQuery.
 
-The result: the warehouse, not Lightdash, enforces what agents may read. A person can see a value in a dashboard while their agent sees `REDACTED`. Lightdash's own controls still apply on top. See [Data access control](/agents/data-access).
+| Identity | Snowflake | BigQuery | What the warehouse sees |
+| --- | --- | --- | --- |
+| Same credentials as the user | <Icon icon="check" /> | <Icon icon="check" /> | The person. This is the default. |
+| A separate agent sign-in for each person | <Icon icon="check" /> | <Icon icon="x" className="matrix-no" /> | The person, in a session that Snowflake verifies as an agent session. |
+| The AI service account | <Icon icon="x" className="matrix-no" /> | <Icon icon="check" /> | One service account that an admin adds to the project connection. |
 
-The verified agent session is available only for Snowflake. Connections to other warehouses get the query mark but are not affected by the organization rule.
+Lightdash also tags agent queries, so you can find them in query history. On Snowflake, the tag is in `query_tag`. On BigQuery, agent jobs carry the label `agent: true`. The tag is not an identity: warehouse policies can't act on it.
 
-Jump to [organization setup](#require-agent-identity-for-your-organization), [connecting your agent](#connect-your-agent), [Snowflake policies](#write-snowflake-policies-for-agent-sessions) or [verification](#verify-the-result).
+Jump to [the organization rule](#choose-who-agents-run-as), [Snowflake agent sign-in](#snowflake-a-separate-agent-sign-in-for-each-person) or [the BigQuery AI service account](#bigquery-the-ai-service-account).
 
-## Who sees what
+## Choose who agents run as
+
+Organization admins set one rule for each warehouse type. A rule applies to every connection of that type in every project.
+
+A separate identity is always required. When you pick **A separate agent sign-in for each person** or **The AI service account**, Lightdash refuses every agent query that cannot run as that identity. It never falls back to the person's own credentials. Put the identity in place before you switch the rule:
+
+- **Snowflake:** each person who uses agents connects their agent. See [Connect your agent](#connect-your-agent).
+- **BigQuery:** an admin adds an AI service account key on every BigQuery project connection. See [Set up the AI service account](#set-up-the-ai-service-account).
+
+<Steps>
+  <Step title="Open Warehouse credentials">
+    Go to **Organization settings → Warehouse credentials** and find the **Agent identity** card. The card has one row for Snowflake and one for BigQuery.
+  </Step>
+  <Step title="Choose the identity">
+    In the row for your warehouse, choose an identity in the select after "When AI agents query …, they run as". The text under the select explains the identity you chose.
+  </Step>
+</Steps>
+
+Each change saves at once, and an "Agent identity saved." notification confirms it.
+
+<Frame>
+  <img src="/images/agents/agent-identity/agent-identity-card.png" alt="The Agent identity card with a row for Snowflake set to Same credentials as the user, and a row for BigQuery set to The AI service account with the note 1 project has no AI service account: Jaffle shop. Agents are refused on it until a project admin adds one." />
+</Frame>
+
+With **Same credentials as the user**, Lightdash never refuses an agent query for a missing identity.
+
+Changing the rule does not create warehouse grants or policies. Set those up in your warehouse for the identity you choose.
+
+## Snowflake: a separate agent sign-in for each person
+
+With this identity, each person connects their agent through a separate Snowflake OAuth sign-in. Snowflake then knows that the session is an agent session. Your row access policies, masking policies, session policies and views can act on that.
+
+The result: Snowflake, not Lightdash, enforces what agents may read. A person can see a value in a dashboard while their agent sees `REDACTED`.
+
+### Who sees what
 
 | Signal | Where it appears | What it tells you |
 | --- | --- | --- |
-| Agent mark | `query_tag` in Snowflake query history | Lightdash ran the query for an agent. |
+| Agent tag | `query_tag` in Snowflake query history | Lightdash ran the query for an agent. |
 | Agent session | `SYS_CONTEXT('SNOWFLAKE$CURRENT', 'IS_AGENT_ACTIVATED')` inside the session | Snowflake verified the session as an agent session. Policies read this value. |
 | Agent type | `agent_type = 'EXTERNAL_AGENT'` in `SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY` | Snowflake ran the query in a verified agent session. |
 
 A query tag alone does not prove that Snowflake verified the session. The agent session value and `agent_type` do.
 
-## Before you start
+### Before you start
 
-- **The Snowflake agent integration is set up for your instance.** On Lightdash Cloud, Lightdash support sets it up. On a self-hosted instance, follow [Agent identity on Snowflake](/self-host/enterprise-features/ai-agents#agent-identity-on-snowflake).
+- **The Snowflake agent integration is set up for your instance.** On Lightdash Cloud, Lightdash support sets it up. On a self-hosted instance, follow [Agent identity on Snowflake](/self-host/enterprise-features/ai-agents#agent-identity-on-snowflake). Without the integration, **A separate agent sign-in for each person** is disabled in the select, and the Snowflake row shows the `CREATE SECURITY INTEGRATION` statement for your instance.
 - **Your project uses the same Snowflake account as the integration.** An instance has one agent integration for one Snowflake account. A project on a second Snowflake account cannot complete the agent connection.
 - **Each person has an allowed default role.** Snowflake blocks the `ACCOUNTADMIN`, `SECURITYADMIN`, `ORGADMIN` and `GLOBALORGADMIN` roles from OAuth sessions. The agent sign-in uses the person's default role. Each person who uses agents needs a default role outside that list.
 
 The agent sign-in is separate from the person's normal [Sign in with Snowflake](/integrations/connect-project#sign-in-with-snowflake) connection. A person can have both.
 
-## Require agent identity for your organization
+### Connect your agent
 
-Organization admins set one rule for the whole organization. It applies to every Snowflake connection in every project.
-
-<Steps>
-  <Step title="Open Warehouse credentials">
-    Go to **Organization settings → Warehouse credentials** and find the **Agent identity** card.
-  </Step>
-  <Step title="Turn on Require agent identity">
-    Turn on **Require agent identity**. The switch saves the rule at once.
-  </Step>
-  <Step title="Check the notification">
-    A success notification confirms the save.
-  </Step>
-</Steps>
-
-<Frame>
-  <img src="/images/agents/agent-identity/require-agent-identity-switch.png" alt="The Agent identity card on the Warehouse credentials page, with the Require agent identity switch turned on" />
-</Frame>
-
-If the instance has no Snowflake agent integration, the switch is disabled. The card shows the `CREATE SECURITY INTEGRATION` statement for your instance instead.
-
-While the rule is on:
-
-- Every AI query on a Snowflake connection must run through the person's agent connection. Lightdash refuses queries from people who have not connected.
-- This covers chat, [MCP](/agents/lightdash-mcp), [Slack](/integrations/slack) and data app sample queries.
-- Every Snowflake connection form shows "Agent identity required by your organisation", with a link to the organization settings.
-
-<Frame>
-  <img src="/images/agents/agent-identity/snowflake-connection-requirement.png" alt="The Type field of a Snowflake connection form with the read-only note Agent identity required by your organisation and an Organisation settings link" />
-</Frame>
-
-The switch does not create Snowflake policies. Without policies, agent sessions read the same data as the person. See [Write Snowflake policies for agent sessions](#write-snowflake-policies-for-agent-sessions).
-
-Turning the rule off lets agents use the person's normal credentials again, with the agent mark. It does not revoke Snowflake tokens that people already issued.
-
-## Connect your agent
-
-Each person who uses agents connects their own agent once.
+Each person who uses agents connects their own agent once. People can connect before an admin changes the Snowflake rule, so ask them to connect first.
 
 <Steps>
   <Step title="Open My warehouse connections">
@@ -98,23 +99,48 @@ The section then shows "Agent connected" and a **Disconnect** button.
   <img src="/images/agents/agent-identity/my-warehouse-connections-agent-connection.png" alt="My warehouse connections with the Agent connection section and a Connect agent button" />
 </Frame>
 
-To remove the agent connection, select **Disconnect**. AI features lock again for that person until they reconnect.
+To remove the agent connection, select **Disconnect**. While the Snowflake rule is **A separate agent sign-in for each person**, AI features lock again for that person until they reconnect.
 
 This connection is separate from your [personal warehouse connections](/personal-settings/personal-warehouse-connections). Dashboards and the SQL Runner keep using your normal credentials.
 
-## Before you connect
+### Set the Snowflake rule
 
-While the rule is on and a person has not connected their agent:
+When people have connected their agents, set the Snowflake row of the **Agent identity** card to **A separate agent sign-in for each person**. See [Choose who agents run as](#choose-who-agents-run-as).
 
-- AI composers are hidden for Snowflake projects. This includes the Ask AI launcher, the homepage ask box and AI help in other parts of the app.
-- The agent chat shows a **Connect your agent to your warehouse** card with a **Connect agent** button. It opens the same Snowflake sign-in.
-- MCP and Slack refuse the query with: "Connect your agent to the warehouse once so it can run as you."
+While the rule is set:
+
+- Every AI query on a Snowflake connection must run through the person's agent connection. Lightdash refuses queries from people who have not connected.
+- This covers chat, [MCP](/agents/lightdash-mcp), [Slack](/integrations/slack) and data app sample queries.
+- Every Snowflake connection form shows "Agent identity required by your organisation", with a link to the organization settings.
+
+<Frame>
+  <img src="/images/agents/agent-identity/snowflake-connection-requirement.png" alt="The Type field of a Snowflake connection form with the read-only note Agent identity required by your organisation and an Organisation settings link" />
+</Frame>
+
+The rule does not create Snowflake policies. Without policies, agent sessions read the same data as the person. See [Write Snowflake policies for agent sessions](#write-snowflake-policies-for-agent-sessions).
+
+Changing the Snowflake row back to **Same credentials as the user** does not revoke Snowflake tokens that people already issued.
+
+### Until a person connects
+
+While the Snowflake rule is **A separate agent sign-in for each person** and a person has not connected their agent, Lightdash refuses their AI queries on Snowflake projects. The refusal message is "Connect your agent to the warehouse once so it can run as you." When the agent connection has expired, the message is "Your agent connection expired. Connect again."
+
+Each surface shows the person how to connect:
+
+- **In the app,** AI composers are hidden for Snowflake projects. This includes the Ask AI launcher, the homepage ask box and AI help in other parts of the app. The agent chat shows a **Connect your agent to your warehouse** card with a **Connect agent** button.
+- **In Slack,** the agent reply shows the refusal message and a **Connect agent** button.
+- **In MCP,** the tool result shows the refusal message and a link to connect, and tells the agent to run the same call again after the person connects. The `connect_agent` tool returns the person's connection status and the same link, so an MCP client can offer it before the first query.
+- **In the CLI,** `lightdash agent status` shows the refusal message and the link. `lightdash agent connect` opens the link in the browser and waits until the person approves the sign-in.
+
+Every **Connect agent** button and link opens the same Snowflake sign-in as **Connect agent** in My warehouse connections.
+
+When a refusal needs an admin instead, for example because the last check of the agent connection failed, the Slack reply shows an **Open agent settings** button. It opens **Organization settings → Warehouse credentials**.
 
 <Frame>
   <img src="/images/agents/agent-identity/connect-agent-chat-card.png" alt="The Connect your agent to your warehouse card with a Connect agent button" />
 </Frame>
 
-## Write Snowflake policies for agent sessions
+### Write Snowflake policies for agent sessions
 
 Snowflake owns the data rules. Your policies decide what agent sessions may read.
 
@@ -124,7 +150,7 @@ Snowflake owns the data rules. Your policies decide what agent sessions may read
 
 Each example reads `SYS_CONTEXT('SNOWFLAKE$CURRENT', 'IS_AGENT_ACTIVATED')`. The value is true only in a verified agent session.
 
-### Hide rows from agents
+#### Hide rows from agents
 
 A row access policy can exclude sensitive rows from agent sessions:
 
@@ -137,7 +163,7 @@ ALTER TABLE protected_records
   ADD ROW ACCESS POLICY agent_rows ON (is_sensitive);
 ```
 
-### Mask values from agents
+#### Mask values from agents
 
 A masking policy can hide a value from agent sessions:
 
@@ -152,7 +178,7 @@ ALTER TABLE protected_records MODIFY COLUMN email
   SET MASKING POLICY agent_mask;
 ```
 
-### Use a view on Snowflake Standard Edition
+#### Use a view on Snowflake Standard Edition
 
 Row access and masking policies need Snowflake Enterprise Edition. On Standard Edition, a view gives the same result for the columns it covers:
 
@@ -166,7 +192,7 @@ FROM customers;
 
 Point your dbt model at the view, not the table.
 
-### Limit what an agent session can do
+#### Limit what an agent session can do
 
 A session policy can limit the privileges of an agent session:
 
@@ -180,7 +206,7 @@ The restricted scope limits the privileges the role already has. It does not gra
 
 For the full Snowflake reference, see [agent identity](https://docs.snowflake.com/en/user-guide/agent-identity) and [restricted session scopes](https://docs.snowflake.com/en/user-guide/restricted-session-scope).
 
-## Verify the result
+### Verify on Snowflake
 
 Run the same check in an agent session and in a normal session for the same person. For the agent session, ask an agent to run the SQL, for example in [SQL mode](/agents/use-ai-agents#sql-mode) or through the MCP `run_sql` tool. For the normal session, run it in a Snowflake worksheet as that person.
 
@@ -200,6 +226,182 @@ WHERE start_time >= DATEADD('hour', -1, CURRENT_TIMESTAMP())
 ORDER BY start_time DESC;
 ```
 
-The agent query has `agent_type = 'EXTERNAL_AGENT'` and the Lightdash agent mark in `query_tag`. `QUERY_HISTORY` has an ingestion delay, so new queries can take a while to appear. See [QUERY_HISTORY](https://docs.snowflake.com/en/sql-reference/account-usage/query_history).
+The agent query has `agent_type = 'EXTERNAL_AGENT'` and the Lightdash agent tag in `query_tag`. `QUERY_HISTORY` has an ingestion delay, so new queries can take a while to appear. See [QUERY_HISTORY](https://docs.snowflake.com/en/sql-reference/account-usage/query_history).
 
 Finally, query a protected table through an agent and as the person. Check that your row access, masking and session policies give the restrictions you expect.
+
+## BigQuery: the AI service account
+
+With this identity, agent queries on a BigQuery project run as a separate Google Cloud service account. An admin adds the account's key to the project connection. BigQuery then applies that account's grants to every agent query, so you decide what agents can read with ordinary BigQuery permissions.
+
+<Warning>
+  Every person's agent gets the same access: the grants of the AI service account. BigQuery does not apply each person's own row-level access policies or column masking to agent queries. Grant the AI service account only the data that every agent user may see. You can write row access policies and masking rules that target the AI service account itself. See [Decide what agents can read](#decide-what-agents-can-read).
+</Warning>
+
+The AI service account replaces only the credentials of the connection. The project, dataset and location stay from the connection.
+
+### Set up the AI service account
+
+<Steps>
+  <Step title="Create a service account">
+    In Google Cloud, create a service account for agents. Use a different account from the one the project connection uses, so agents get their own grants. See [Create service accounts](https://cloud.google.com/iam/docs/service-accounts-create).
+  </Step>
+  <Step title="Grant read access">
+    Grant the account `roles/bigquery.jobUser` on the Google Cloud project of the connection, so that it can run queries. Then grant it read access only to the data that agents may use, for example `roles/bigquery.dataViewer` on each dataset. Do not grant data roles on the whole project unless agents may read every dataset in it. See [Decide what agents can read](#decide-what-agents-can-read) and [BigQuery IAM roles](https://cloud.google.com/bigquery/docs/access-control).
+  </Step>
+  <Step title="Create a JSON key">
+    Create a JSON key for the account and download the key file. See [Create and delete service account keys](https://cloud.google.com/iam/docs/keys-create-delete).
+  </Step>
+  <Step title="Add the key in Lightdash">
+    A project admin goes to **Project settings → Connection** and finds the **AI service account** card below the connection form. Select **Add an AI service account**, then select the JSON key file in **Service account key file**.
+  </Step>
+  <Step title="Test the key">
+    Select **Test**. Lightdash runs `SELECT SESSION_USER()` with the key and shows "Signs in as" followed by the account that BigQuery returns. Check that this is the AI service account and not the connection's own account. Test saves nothing.
+  </Step>
+  <Step title="Save">
+    Select **Save**. An "AI service account saved." notification confirms it.
+  </Step>
+  <Step title="Set the BigQuery rule">
+    Add a key on every BigQuery project connection first. Then an organization admin sets the BigQuery row of the **Agent identity** card to **The AI service account**. See [Choose who agents run as](#choose-who-agents-run-as).
+  </Step>
+</Steps>
+
+<Frame>
+  <img src="/images/agents/agent-identity/ai-service-account-card.png" alt="The AI service account card on a BigQuery connection: When AI agents query BigQuery, they run as the AI service account. Required by your organisation, an Organisation settings link, a Signs in as line with the account blurred, and the saved Service account key file with Replace, Test and Remove buttons" />
+</Frame>
+
+The card shows the organization's BigQuery rule, "Required by your organisation." and an **Organisation settings** link. After you save a key, the card shows when it was last updated, with **Replace**, **Test** and **Remove** buttons. After a successful Test, it shows "Signs in as" followed by the account.
+
+Lightdash does not check that the AI service account differs from the account of the connection. Use the Test result to confirm it.
+
+### Decide what agents can read
+
+The AI service account reads only what you grant it. BigQuery checks those grants on every agent query, so you restrict agents with BigQuery permissions and policies on the AI service account. You can combine the levels below.
+
+The examples use `lightdash-agents@my-project.iam.gserviceaccount.com` for the AI service account and `lightdash@my-project.iam.gserviceaccount.com` for the connection's own account. Replace them with your accounts.
+
+<Warning>
+  Agents query the same explores, and so the same tables, as people. Put each restriction on the tables behind those explores. A question that needs data the AI service account cannot read fails with an access denied error in chat, MCP and Slack. Keep the explores that agents use within what the AI service account can read. To hide explores and fields from agents, use [agent tags](/agents/data-access#limiting-access-to-specific-explores-and-fields).
+</Warning>
+
+#### Datasets
+
+Grant `roles/bigquery.dataViewer` only on the datasets that agents may use:
+
+```sql
+GRANT `roles/bigquery.dataViewer`
+ON SCHEMA `my-project`.jaffle_shop
+TO "serviceAccount:lightdash-agents@my-project.iam.gserviceaccount.com";
+```
+
+The account can then query every table in that dataset, and no table in a dataset where it has no grant. See [GRANT statement](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-control-language#grant_statement).
+
+#### Tables
+
+To give agents only some tables in a dataset, grant Data Viewer on each table instead of on the dataset:
+
+```sql
+GRANT `roles/bigquery.dataViewer`
+ON TABLE `my-project`.jaffle_shop.orders
+TO "serviceAccount:lightdash-agents@my-project.iam.gserviceaccount.com";
+```
+
+See [table-level access control](https://cloud.google.com/bigquery/docs/table-access-controls-intro).
+
+#### Columns
+
+Policy tags protect individual columns. You create a taxonomy with a policy tag, for example `pii`, and attach it to the sensitive columns. Then you choose what the AI service account sees in those columns:
+
+- **Masked values.** Add a data policy with a masking rule to the policy tag. Grant the AI service account the Masked Reader role, `roles/bigquerydatapolicy.maskedReader`, on the data policy. The account then reads masked values: for example `NULL` with the Nullify rule, or an empty string for a `STRING` column with the Default masking value rule. This is the BigQuery equivalent of the Snowflake `REDACTED` example.
+- **No access.** Do not grant the AI service account the Fine-Grained Reader role, `roles/datacatalog.categoryFineGrainedReader`, or the Masked Reader role. A query that selects the column fails with an error. Agent questions that do not use the column still work.
+
+For example, with the Nullify rule on the `email` column of `protected_records`:
+
+| Account | Role | `SELECT email FROM protected_records` |
+| --- | --- | --- |
+| The connection's own account | Fine-Grained Reader on the policy tag | The real email addresses |
+| The AI service account | Masked Reader on the data policy | `NULL` in every row |
+| The AI service account | Neither role | An access denied error |
+
+When a policy tag has a data policy, or its taxonomy enforces access control, every account that reads the column needs one of the two roles. Grant Fine-Grained Reader on the policy tag to the connection's own account, and to people who query with their own Google accounts. Otherwise their dashboards fail on that column too.
+
+See [column-level access control](https://cloud.google.com/bigquery/docs/column-level-security-intro) and [dynamic data masking](https://cloud.google.com/bigquery/docs/column-data-masking-intro).
+
+#### Rows
+
+A row access policy limits the rows that the AI service account can read. The account still needs Data Viewer on the table:
+
+```sql
+CREATE ROW ACCESS POLICY agent_rows
+ON `my-project.jaffle_shop.protected_records`
+GRANT TO ('serviceAccount:lightdash-agents@my-project.iam.gserviceaccount.com')
+FILTER USING (is_sensitive = FALSE);
+```
+
+<Warning>
+  When a table has a row access policy, accounts that no policy grants see no rows. This includes the connection's own account. Add a policy with the `TRUE` filter for that account, and for people who query with their own Google accounts.
+</Warning>
+
+```sql
+CREATE ROW ACCESS POLICY connection_all_rows
+ON `my-project.jaffle_shop.protected_records`
+GRANT TO ('serviceAccount:lightdash@my-project.iam.gserviceaccount.com')
+FILTER USING (TRUE);
+```
+
+See [row-level security](https://cloud.google.com/bigquery/docs/row-level-security-intro), [manage row access policies](https://cloud.google.com/bigquery/docs/managing-row-level-security) and [the `TRUE` filter](https://cloud.google.com/bigquery/docs/using-row-level-security-with-features#the_true_filter).
+
+Column-level access control, dynamic data masking and row-level security need BigQuery Enterprise or Enterprise Plus edition, or on-demand pricing. See [BigQuery editions](https://cloud.google.com/bigquery/docs/editions-intro).
+
+### One key for each project connection
+
+Each project connection holds its own AI service account. While the BigQuery rule is **The AI service account**, agents are refused on every BigQuery project that has no key. Add a key on every BigQuery project connection. You can use the same key file on more than one project.
+
+The BigQuery row of the **Agent identity** card lists the projects that have no AI service account yet, for example "1 project has no AI service account: Jaffle shop. Agents are refused on it until a project admin adds one." It names up to three projects, each with a link to its connection settings, and counts the rest.
+
+Preview projects do not copy the AI service account from their source project. Agents are refused on a preview project until an admin adds a key to it.
+
+### What agents and people see
+
+When the BigQuery rule is **The AI service account**:
+
+- Chat, [MCP](/agents/lightdash-mcp), [Slack](/integrations/slack) and data app sample queries on BigQuery run as the AI service account.
+- BigQuery agent jobs carry the label `agent: true` and skip the BigQuery query cache. Lightdash does not reuse cached results for these queries.
+- **Settings → My warehouse connections** shows "BigQuery: Agents run as the project's AI service account. Nothing to connect." People have nothing to set up.
+
+<Frame>
+  <img src="/images/agents/agent-identity/my-warehouse-connections-bigquery.png" alt="My warehouse connections with the Agent connection section reading BigQuery: Agents run as the project's AI service account. Nothing to connect." />
+</Frame>
+
+When a project has no AI service account, Lightdash refuses the agent query and blocks AI composers on the project. Chat, MCP and Slack show: "AI agents on this connection run as the AI service account, and none is set up. Ask an admin to add it on the project connection." The Slack reply also shows an **Open agent settings** button. The AI service account card shows a warning for admins.
+
+When BigQuery rejects the saved key, Lightdash refuses the agent query with: "The AI service account on this connection could not sign in. Ask an admin to check it on the project connection." Replace the key on the AI service account card.
+
+To remove the key, select **Remove** on the card and confirm. Agent queries on that project are refused until an admin adds a key again.
+
+### Verify on BigQuery
+
+Ask an agent to run this SQL, for example in [SQL mode](/agents/use-ai-agents#sql-mode) or through the MCP `run_sql` tool:
+
+```sql
+SELECT SESSION_USER() AS principal;
+```
+
+The result is the email address of the AI service account.
+
+Then find recent agent jobs in the jobs view for the region of your data. Run it as an account that can run queries and list all jobs in the project, for example one with the BigQuery Resource Viewer and BigQuery Job User roles:
+
+```sql
+SELECT creation_time, user_email, job_id, query
+FROM `region-us`.INFORMATION_SCHEMA.JOBS
+WHERE creation_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)
+  AND EXISTS (
+    SELECT 1 FROM UNNEST(labels) AS label
+    WHERE label.key = 'agent' AND label.value = 'true'
+  )
+ORDER BY creation_time DESC;
+```
+
+Replace `region-us` with the region of your datasets. Agent jobs show the AI service account in `user_email`. See [JOBS view](https://cloud.google.com/bigquery/docs/information-schema-jobs).
+
+Finally, ask an agent about an explore whose table the AI service account cannot read. BigQuery refuses the query with an access denied error.
