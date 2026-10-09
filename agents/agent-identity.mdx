@@ -13,23 +13,24 @@ AI agents run SQL in your warehouse. By default, an agent query uses the same cr
 
 Agent identity lets an organization admin choose a different identity for agent queries. The warehouse then sees agent queries as that identity, and your warehouse grants and policies decide what agents can read. Lightdash's own controls still apply on top. See [Data access control](/agents/data-access).
 
-Agent identity is available on the warehouses that can enforce it: Snowflake, BigQuery and Databricks.
+Agent identity is available on the warehouses that can enforce it: Snowflake, BigQuery, Databricks and Athena.
 
-| Identity | Snowflake | BigQuery | Databricks |
+| Warehouse | Same credentials as the user | A separate agent sign-in for each person | The AI service account |
 | --- | --- | --- | --- |
-| Same credentials as the user | <Icon icon="check" /> | <Icon icon="check" /> | <Icon icon="check" /> |
-| A separate agent sign-in for each person | <Icon icon="check" /> | <Icon icon="x" className="matrix-no" /> | <Icon icon="x" className="matrix-no" /> |
-| The AI service account | <Icon icon="check" /> | <Icon icon="check" /> | <Icon icon="check" /> |
+| Snowflake | <Icon icon="check" /> | <Icon icon="check" /> | <Icon icon="check" /> |
+| BigQuery | <Icon icon="check" /> | <Icon icon="x" className="matrix-no" /> | <Icon icon="check" /> |
+| Databricks | <Icon icon="check" /> | <Icon icon="x" className="matrix-no" /> | <Icon icon="check" /> |
+| Athena | <Icon icon="check" /> | <Icon icon="x" className="matrix-no" /> | <Icon icon="check" /> |
 
 What the warehouse sees with each identity:
 
 - **Same credentials as the user:** the person. This is the default.
 - **A separate agent sign-in for each person:** the person, in a session that Snowflake verifies as an agent session.
-- **The AI service account:** one Snowflake user, BigQuery service account or Databricks service principal that an admin adds to the project connection.
+- **The AI service account:** one Snowflake user, BigQuery service account, Databricks service principal or AWS identity for Athena that an admin adds to the project connection.
 
 Lightdash also tags agent queries with the person they ran for and the agent that ran them, so you can find them in query history. On Snowflake, the tags are in `query_tag`. On BigQuery, they are job labels. Tags are not an identity: warehouse policies can't act on them. See [Find agent queries in the warehouse](#find-agent-queries-in-the-warehouse).
 
-Jump to [the organization rule](#choose-who-agents-run-as), [Snowflake agent sign-in](#snowflake-a-separate-agent-sign-in-for-each-person), [the Snowflake AI service account](#snowflake-the-ai-service-account), [the BigQuery AI service account](#bigquery-the-ai-service-account), [the Databricks AI service account](#databricks-the-ai-service-account) or [finding agent queries](#find-agent-queries-in-the-warehouse).
+Jump to [the organization rule](#choose-who-agents-run-as), [Snowflake agent sign-in](#snowflake-a-separate-agent-sign-in-for-each-person), [the Snowflake AI service account](#snowflake-the-ai-service-account), [the BigQuery AI service account](#bigquery-the-ai-service-account), [the Databricks AI service account](#databricks-the-ai-service-account), [the Athena AI service account](#athena-the-ai-service-account) or [finding agent queries](#find-agent-queries-in-the-warehouse).
 
 ## Choose who agents run as
 
@@ -41,10 +42,11 @@ A separate identity is always required. When you pick **A separate agent sign-in
 - **Snowflake, AI service account:** an admin adds an AI service account on every Snowflake project connection. See [Set up the Snowflake AI service account](#set-up-the-snowflake-ai-service-account).
 - **BigQuery:** an admin adds an AI service account key on every BigQuery project connection. See [Set up the AI service account](#set-up-the-ai-service-account).
 - **Databricks:** an admin adds an AI service account on every Databricks project connection. See [Set up the Databricks AI service account](#set-up-the-databricks-ai-service-account).
+- **Athena:** an admin adds an AI service account on every Athena project connection. See [Set up the Athena AI service account](#set-up-the-athena-ai-service-account).
 
 <Steps>
   <Step title="Open Agent identity">
-    Go to **Organization settings → Agent identity**. The page has one row for each warehouse: Snowflake, BigQuery and Databricks.
+    Go to **Organization settings → Agent identity**. The page has one row for each warehouse: Snowflake, BigQuery, Databricks and Athena.
   </Step>
   <Step title="Choose the identity">
     In the row for your warehouse, choose an identity in the select. The text under the select explains the identity you chose.
@@ -279,7 +281,7 @@ This connection is separate from your [personal warehouse connections](/personal
 **Settings → My agent connections** shows when the organization's rule for at least one warehouse is not **Same credentials as the user**. The page has one card for each warehouse where the person has a project and the rule needs one:
 
 - **A separate agent sign-in for each person** (Snowflake): a card with the person's sign-in status and a button.
-- **The AI service account** (Snowflake, BigQuery or Databricks): a card that says, for example, "Agents on Databricks projects run as the AI service account your admin set up. They read only what that account can read. Your own access doesn't change." There is nothing to do.
+- **The AI service account** (Snowflake, BigQuery, Databricks or Athena): a card that says, for example, "Agents on Databricks projects run as the AI service account your admin set up. They read only what that account can read. Your own access doesn't change." There is nothing to do.
 
 When no card shows, the page says "Agents use your own warehouse access. There's nothing to connect."
 
@@ -591,7 +593,7 @@ The commands use the account name `lightdash-agents`. Change it if your organiza
 
 ### The project Agent identity page
 
-People who can manage a project find **Agent identity** in the project settings sidebar, after **Tables configuration**. The page has one **AI service account** card, with the same layout on Snowflake, BigQuery and Databricks:
+People who can manage a project find **Agent identity** in the project settings sidebar, after **Tables configuration**. The page has one **AI service account** card, with the same layout on Snowflake, BigQuery, Databricks and Athena:
 
 - **Status.** A badge says **In use** or **Not in use**, and one line gives the reason from the organization rule, for example "Agents on this project run as this account. The organization rule for BigQuery requires it." An **Organization settings** link opens the rule. Only an organization admin can change it.
 - **Missing.** When the rule requires an AI service account and the project has none, an alert says "Agents are refused on this project until you add an AI service account." The card has an **Add AI service account** button.
@@ -837,3 +839,71 @@ SELECT current_user() AS principal;
 ```
 
 The result is the application ID of the service principal. Then ask an agent about an explore whose table the service principal cannot read. Databricks refuses the query with a permission error.
+
+## Athena: the AI service account
+
+With this identity, agent queries on an Athena project run as a separate AWS identity, with its own Athena workgroup and its own S3 results location. An admin adds the identity's access keys to the project connection. Lake Formation grants and data filters on that identity then decide what agents can read.
+
+<Warning>
+  Every person's agent gets the same access: the grants of the AI service account. Grant it only the data that every agent user may see.
+</Warning>
+
+The AI service account takes only the region, catalog, database and query settings from the connection. The keys, workgroup and S3 locations come from the AI service account. The connection's own role, web identity, keys, workgroup and S3 locations never apply to agent queries.
+
+### Choose the AWS identity
+
+Lightdash signs in with access keys. It cannot renew keys yet.
+
+- **A dedicated IAM user for agents (recommended for now).** Give the user only the permissions agents need, and use its long-lived access keys. Rotate the keys on your normal schedule, and select **Replace** to add the new keys.
+- **An IAM role.** The in-app guide creates a role. Keys from an assumed role expire within hours. When they expire, Lightdash refuses agent queries until an admin adds new keys.
+
+Lightdash will support keyless sign-in later.
+
+### Set up the Athena AI service account
+
+The **AI service account** card on **Project settings → Agent identity** ends with a **How to set up the AI service account** guide in three steps. It has copy buttons for each policy and grant, built from the connection's region, catalog and database. The guide is open when the project has no AI service account.
+
+<Steps>
+  <Step title="Create the AWS identity">
+    Create an IAM user or role for agents. Create an Athena workgroup and an S3 results location for agents only. Attach the **Permission policy** from the guide. It allows queries through the agent workgroup, reads of the catalog metadata, and the results location. For a role, also use the **Role trust policy**, and give the trusted caller permission to assume the role. KMS keys and cross-account catalogs need extra permissions. See [Athena workgroups](https://docs.aws.amazon.com/athena/latest/ug/workgroups-manage-queries-control-costs.html).
+  </Step>
+  <Step title="Grant it only the data agents may read">
+    As a Lake Formation administrator, run the **Lake Formation grant** from the guide for each table that agents may read. Grant to the user or role ARN, not to a session ARN. To limit rows or columns, use the **Filtered table grant** with a data filter instead. Other grants on the table can still allow more. See [Lake Formation data filters](https://docs.aws.amazon.com/lake-formation/latest/dg/data-filters-about.html).
+  </Step>
+  <Step title="Add the AI service account">
+    Select **Add AI service account**. Enter the **Access key ID** and **Secret access key**, the **Session token** if the keys come from an assumed role, the **Agent workgroup**, the **S3 results location** and, if needed, the **S3 data location**. Select **Test and save**. **Test** checks the values without saving them.
+  </Step>
+  <Step title="Set the Athena rule">
+    Add an AI service account on every Athena project connection first. Then an organization admin sets the Athena row on **Organization settings → Agent identity** to **The AI service account**, and confirms. See [Choose who agents run as](#choose-who-agents-run-as).
+  </Step>
+</Steps>
+
+<Frame>
+  <img src="/images/agents/agent-identity/athena-ai-service-account-form.png" alt="The AI service account form for Athena with Access key ID, Secret access key, Session token (optional), Agent workgroup, S3 results location and S3 data location (optional) fields, and Cancel, Test and Test and save buttons" />
+</Frame>
+
+<Frame>
+  <img src="/images/agents/agent-identity/org-agent-identity-athena.png" alt="The Athena row on the Agent identity page in Organization settings with the select open on Same credentials as the user and The AI service account" />
+</Frame>
+
+### Test, replace and remove
+
+**Test** checks the AWS identity with `GetCallerIdentity`, then runs a simple query through the agent workgroup. The card then shows "Signs in as" followed by the identity's ARN, the method **Access keys**, and when it was tested and added. Test proves that the keys, workgroup and results location work. It does not check table grants. Test gives a specific message for rejected keys, denied access, a results location problem and a missing workgroup.
+
+<Frame>
+  <img src="/images/agents/agent-identity/athena-ai-service-account-card.png" alt="The AI service account card on an Athena project, marked In use: Agents on this project run as this account. The organization rule for Athena requires it, an Organization settings link, Signs in as followed by an assumed-role ARN, Access keys, Tested 9 Oct 2026. Added 8 Oct 2026, and Test, Replace and Remove buttons" />
+</Frame>
+
+- To add new keys, select **Replace**.
+- To remove the AI service account, select **Remove** and confirm. Agent queries on that project are refused until an admin adds one again.
+
+Preview projects use the AI service account of their parent project. See [Preview projects](#preview-projects).
+
+### What agents and people see on Athena
+
+When the Athena rule is **The AI service account**:
+
+- Chat, [MCP](/agents/lightdash-mcp), [Slack](/integrations/slack) and data app sample queries on Athena run as the AI service account, through its workgroup.
+- **Settings → My agent connections** shows an Athena card. People have nothing to set up. See [My agent connections](#my-agent-connections).
+
+When a project has no AI service account, or AWS rejects the keys, Lightdash refuses the agent query. Expired keys from an assumed role cause this too. See [When the AI service account is missing or fails](#when-the-ai-service-account-is-missing-or-fails). Lightdash never falls back to the connection's own credentials.
