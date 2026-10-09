@@ -31,22 +31,22 @@ Organization admins set one rule for each warehouse type. A rule applies to ever
 
 A separate identity is always required. When you pick **A separate agent sign-in for each person** or **The AI service account**, Lightdash refuses every agent query that cannot run as that identity. It never falls back to the person's own credentials. Put the identity in place before you switch the rule:
 
-- **Snowflake:** each person who uses agents connects their agent. See [Connect your agent](#connect-your-agent).
+- **Snowflake:** set up the Snowflake agent integration. After you turn it on, Lightdash asks each person who uses agents to connect their agent. See [Set up the Snowflake agent integration](#set-up-the-snowflake-agent-integration) and [Connect your agent](#connect-your-agent).
 - **BigQuery:** an admin adds an AI service account key on every BigQuery project connection. See [Set up the AI service account](#set-up-the-ai-service-account).
 
 <Steps>
-  <Step title="Open Warehouse credentials">
-    Go to **Organization settings → Warehouse credentials** and find the **Agent identity** card. The card has one row for Snowflake and one for BigQuery.
+  <Step title="Open Agent identity">
+    Go to **Organization settings → Agent identity**. The page has one row for Snowflake and one for BigQuery.
   </Step>
   <Step title="Choose the identity">
     In the row for your warehouse, choose an identity in the select after "When AI agents query …, they run as". The text under the select explains the identity you chose.
   </Step>
 </Steps>
 
-Each change saves at once, and an "Agent identity saved." notification confirms it.
+Most changes save at once, and an "Agent identity saved." notification confirms it. **A separate agent sign-in for each person** saves only after the Snowflake agent integration passes Verify and you select **Turn on**. See [Set up the Snowflake agent integration](#set-up-the-snowflake-agent-integration).
 
 <Frame>
-  <img src="/images/agents/agent-identity/agent-identity-card.png" alt="The Agent identity card with a row for Snowflake set to Same credentials as the user, and a row for BigQuery set to The AI service account with the note 1 project has no AI service account: Jaffle shop. Agents are refused on it until a project admin adds one." />
+  <img src="/images/agents/agent-identity/org-agent-identity-default.png" alt="The Agent identity page in Organization settings with the Snowflake select open on Same credentials as the user and A separate agent sign-in for each person, which has the hint Needs a one-time Snowflake setup" />
 </Frame>
 
 With **Same credentials as the user**, Lightdash never refuses an agent query for a missing identity.
@@ -144,15 +144,63 @@ A query tag alone does not prove that Snowflake verified the session. The agent 
 
 ### Before you start
 
-- **The Snowflake agent integration is set up for your instance.** On Lightdash Cloud, Lightdash support sets it up. On a self-hosted instance, follow [Agent identity on Snowflake](/self-host/enterprise-features/ai-agents#agent-identity-on-snowflake). Without the integration, **A separate agent sign-in for each person** is disabled in the select, and the Snowflake row shows the `CREATE SECURITY INTEGRATION` statement for your instance.
+- **The Snowflake agent integration is set up for your instance.** See [Set up the Snowflake agent integration](#set-up-the-snowflake-agent-integration). Until it is set up, the option **A separate agent sign-in for each person** shows "Needs a one-time Snowflake setup".
 - **Your project uses the same Snowflake account as the integration.** An instance has one agent integration for one Snowflake account. A project on a second Snowflake account cannot complete the agent connection.
 - **Each person has an allowed default role.** Snowflake blocks the `ACCOUNTADMIN`, `SECURITYADMIN`, `ORGADMIN` and `GLOBALORGADMIN` roles from OAuth sessions. The agent sign-in uses the person's default role. Each person who uses agents needs a default role outside that list.
 
 The agent sign-in is separate from the person's normal [Sign in with Snowflake](/integrations/connect-project#sign-in-with-snowflake) connection. A person can have both.
 
+### Set up the Snowflake agent integration
+
+An organization admin sets up the integration once, from **Organization settings → Agent identity**. The setup shows only after you choose **A separate agent sign-in for each person** in the Snowflake row. The rule does not change until you select **Turn on**, so agents keep running as each person during the setup.
+
+<Steps>
+  <Step title="Choose agent sign-in">
+    In the Snowflake row, choose **A separate agent sign-in for each person**. The **Set up the Snowflake agent integration** steps open with a "Not active yet" badge.
+  </Step>
+  <Step title="Copy and run in Snowflake">
+    Copy the `CREATE SECURITY INTEGRATION` SQL and run it in Snowflake as `ACCOUNTADMIN`. The SQL has the redirect URL of your instance. The second statement returns the client ID and the client secret.
+  </Step>
+  <Step title="Give the client ID and secret to your instance operator">
+    The instance reads the OAuth client from environment variables. The step lists each `SNOWFLAKE_AI_OAUTH_*` setting as "Set" or "Missing". Your instance operator sets them and restarts the instance. On Lightdash Cloud, give them to Lightdash support. On a self-hosted instance, see [Agent identity on Snowflake](/self-host/enterprise-features/ai-agents#agent-identity-on-snowflake).
+  </Step>
+  <Step title="Verify">
+    Select **Verify integration**. Lightdash runs the checks below and names each missing piece.
+  </Step>
+  <Step title="Turn on">
+    Select **Turn on**. It stays disabled until the required checks pass. **Cancel** sets the select back to the saved rule.
+  </Step>
+</Steps>
+
+<Frame>
+  <img src="/images/agents/agent-identity/org-agent-identity-snowflake-setup.png" alt="The Set up the Snowflake agent integration steps with a Not active yet badge: the CREATE SECURITY INTEGRATION SQL with a copy button, the four SNOWFLAKE_AI_OAUTH settings marked Missing, and Verify with OAuth client settings Failed and Authorization endpoint Not checked" />
+</Frame>
+
+| Check | Required for **Turn on** | What it checks |
+| --- | --- | --- |
+| OAuth client settings | Yes | All `SNOWFLAKE_AI_OAUTH_*` settings are set, and Lightdash can find the Snowflake account. The result names each missing setting. It never shows the values. |
+| Authorization endpoint | Yes | The Snowflake authorization endpoint answers. This does not prove that the integration settings are correct. |
+| Agent session | No | At least one person in the organization has connected their agent. Lightdash saves an agent connection only when Snowflake marks the session as an agent session. |
+
+Lightdash cannot sign in to Snowflake for you, so Verify checks only what the server can reach. The agent session check passes after the first person connects.
+
+When the integration is already set up, choosing **A separate agent sign-in for each person** skips the steps and shows **Turn on agent sign-in** with **Turn on** and **Cancel**.
+
+<Frame>
+  <img src="/images/agents/agent-identity/org-agent-identity-snowflake-turn-on.png" alt="The Snowflake row set to A separate agent sign-in for each person with the Turn on agent sign-in box, a Not active yet badge, and Cancel and Turn on buttons" />
+</Frame>
+
+After you turn it on, the setup collapses to one line: "Verified · Snowflake agent integration · checked" followed by the time, with **View setup**. When a later check fails, the line says that the integration needs attention and the steps open.
+
+<Frame>
+  <img src="/images/agents/agent-identity/org-agent-identity-snowflake-verified.png" alt="The Snowflake row set to A separate agent sign-in for each person with the line Verified · Snowflake agent integration · checked less than a minute ago and a View setup button" />
+</Frame>
+
+Lightdash does not save **A separate agent sign-in for each person** while the integration is not configured on the instance. This keeps an admin from saving a rule that refuses every agent query.
+
 ### Connect your agent
 
-Each person who uses agents connects their own agent once. People can connect before an admin changes the Snowflake rule, so ask them to connect first.
+Each person who uses agents connects their own agent once, after an admin turns on agent sign-in.
 
 <Steps>
   <Step title="Open My agent connections">
@@ -208,7 +256,7 @@ Snowflake decides when the connection ends:
 
 ### Set the Snowflake rule
 
-When people have connected their agents, set the Snowflake row of the **Agent identity** card to **A separate agent sign-in for each person**. See [Choose who agents run as](#choose-who-agents-run-as).
+An organization admin selects **Turn on** for **A separate agent sign-in for each person** on **Organization settings → Agent identity**. See [Set up the Snowflake agent integration](#set-up-the-snowflake-agent-integration). Tell people before you turn it on: until each person connects, Lightdash refuses their agent queries on Snowflake.
 
 While the rule is set:
 
@@ -237,7 +285,7 @@ Each surface shows the person how to connect:
 
 Every **Connect agent** button and link opens the same Snowflake sign-in as **Connect agent** in **Settings → My agent connections**.
 
-When a refusal needs an admin instead, for example because the last check of the agent connection failed, the Slack reply shows an **Open agent settings** button. It opens **Organization settings → Warehouse credentials**.
+When a refusal needs an admin instead, for example because the last check of the agent connection failed, the Slack reply shows an **Open agent settings** button. It opens **Organization settings → Agent identity**.
 
 <Frame>
   <img src="/images/agents/agent-identity/connect-agent-chat-card.png" alt="The Connect your agent to your warehouse card with a Connect agent button" />
@@ -345,6 +393,14 @@ The AI service account replaces only the credentials of the connection. The proj
 
 ### Set up the AI service account
 
+The **AI service account** card on **Project settings → Agent identity** has a **Set up the AI service account** section with these steps. Its commands create the account, grant `roles/bigquery.jobUser` on the project that runs the jobs, and grant `roles/bigquery.dataViewer` on the dataset of the connection. The project, the execution project and the dataset come from the connection. Select the copy button to copy the commands. The section is open when the project has no key.
+
+<Frame>
+  <img src="/images/agents/agent-identity/ai-service-account-setup.png" alt="The Set up the AI service account section: step 1 Create the service account and grant access with gcloud and bq commands and a copy button, step 2 Create a JSON key and upload it below, step 3 Select Test" />
+</Frame>
+
+The commands use the account name `lightdash-agents`. Change it if your organization uses a different name.
+
 <Steps>
   <Step title="Create a service account">
     In Google Cloud, create a service account for agents. Use a different account from the one the project connection uses, so agents get their own grants. See [Create service accounts](https://cloud.google.com/iam/docs/service-accounts-create).
@@ -368,7 +424,7 @@ The AI service account replaces only the credentials of the connection. The proj
     Select **Test as agent**. Lightdash lists the tables that the AI service account can read and the tables that BigQuery blocks. See [Check what agents can read](#check-what-agents-can-read).
   </Step>
   <Step title="Set the BigQuery rule">
-    Add a key on every BigQuery project connection first. Then an organization admin sets the BigQuery row of the **Agent identity** card to **The AI service account**. See [Choose who agents run as](#choose-who-agents-run-as).
+    Add a key on every BigQuery project connection first. Then an organization admin sets the BigQuery row on **Organization settings → Agent identity** to **The AI service account**. See [Choose who agents run as](#choose-who-agents-run-as).
   </Step>
 </Steps>
 
@@ -482,7 +538,11 @@ Column-level access control, dynamic data masking and row-level security need Bi
 
 Each project connection holds its own AI service account. While the BigQuery rule is **The AI service account**, agents are refused on every BigQuery project that has no key. Add a key on every BigQuery project connection. You can use the same key file on more than one project.
 
-The BigQuery row of the **Agent identity** card lists the projects that have no AI service account yet, for example "1 project has no AI service account: Jaffle shop. Agents are refused on it until a project admin adds one." It names up to three projects, each with a link to its project settings, and counts the rest.
+The BigQuery row on **Organization settings → Agent identity** lists the projects that have no AI service account yet, for example "1 project has no AI service account: Jaffle shop. Agents are refused on it until a project admin adds one." It names up to three projects, each with a link to its project settings, and counts the rest.
+
+<Frame>
+  <img src="/images/agents/agent-identity/agent-identity-card.png" alt="The Agent identity rows with Snowflake set to Same credentials as the user, and BigQuery set to The AI service account with the note 1 project has no AI service account: Jaffle shop. Agents are refused on it until a project admin adds one." />
+</Frame>
 
 Preview projects do not copy the AI service account from their source project. Agents are refused on a preview project until an admin adds a key to it.
 
