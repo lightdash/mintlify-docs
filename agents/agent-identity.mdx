@@ -1,7 +1,7 @@
 ---
 title: "Agent identity"
 sidebarTitle: "Agent identity"
-description: "Choose who AI agents run as on Snowflake and BigQuery, so the warehouse decides what agents can read"
+description: "Choose who AI agents run as in your warehouse, so its grants and policies decide what they can read"
 tag: "Beta"
 ---
 
@@ -13,17 +13,23 @@ AI agents run SQL in your warehouse. By default, an agent query uses the same cr
 
 Agent identity lets an organization admin choose a different identity for agent queries. The warehouse then sees agent queries as that identity, and your warehouse grants and policies decide what agents can read. Lightdash's own controls still apply on top. See [Data access control](/agents/data-access).
 
-Agent identity is available on the warehouses that can enforce it: Snowflake and BigQuery.
+Agent identity is available on the warehouses that can enforce it: Snowflake, BigQuery and Databricks.
 
-| Identity | Snowflake | BigQuery | What the warehouse sees |
+| Identity | Snowflake | BigQuery | Databricks |
 | --- | --- | --- | --- |
-| Same credentials as the user | <Icon icon="check" /> | <Icon icon="check" /> | The person. This is the default. |
-| A separate agent sign-in for each person | <Icon icon="check" /> | <Icon icon="x" className="matrix-no" /> | The person, in a session that Snowflake verifies as an agent session. |
-| The AI service account | <Icon icon="x" className="matrix-no" /> | <Icon icon="check" /> | One service account that an admin adds to the project connection. |
+| Same credentials as the user | <Icon icon="check" /> | <Icon icon="check" /> | <Icon icon="check" /> |
+| A separate agent sign-in for each person | <Icon icon="check" /> | <Icon icon="x" className="matrix-no" /> | <Icon icon="x" className="matrix-no" /> |
+| The AI service account | <Icon icon="x" className="matrix-no" /> | <Icon icon="check" /> | <Icon icon="check" /> |
+
+What the warehouse sees with each identity:
+
+- **Same credentials as the user:** the person. This is the default.
+- **A separate agent sign-in for each person:** the person, in a session that Snowflake verifies as an agent session.
+- **The AI service account:** one BigQuery service account or Databricks service principal that an admin adds to the project connection.
 
 Lightdash also tags agent queries with the person they ran for and the agent that ran them, so you can find them in query history. On Snowflake, the tags are in `query_tag`. On BigQuery, they are job labels. Tags are not an identity: warehouse policies can't act on them. See [Find agent queries in the warehouse](#find-agent-queries-in-the-warehouse).
 
-Jump to [the organization rule](#choose-who-agents-run-as), [Snowflake agent sign-in](#snowflake-a-separate-agent-sign-in-for-each-person), [the BigQuery AI service account](#bigquery-the-ai-service-account) or [finding agent queries](#find-agent-queries-in-the-warehouse).
+Jump to [the organization rule](#choose-who-agents-run-as), [Snowflake agent sign-in](#snowflake-a-separate-agent-sign-in-for-each-person), [the BigQuery AI service account](#bigquery-the-ai-service-account), [the Databricks AI service account](#databricks-the-ai-service-account) or [finding agent queries](#find-agent-queries-in-the-warehouse).
 
 ## Choose who agents run as
 
@@ -33,10 +39,11 @@ A separate identity is always required. When you pick **A separate agent sign-in
 
 - **Snowflake:** set up the Snowflake agent integration. After you turn it on, Lightdash asks each person who uses agents to connect their agent. See [Set up the Snowflake agent integration](#set-up-the-snowflake-agent-integration) and [Connect your agent](#connect-your-agent).
 - **BigQuery:** an admin adds an AI service account key on every BigQuery project connection. See [Set up the AI service account](#set-up-the-ai-service-account).
+- **Databricks:** an admin adds an AI service account on every Databricks project connection. See [Set up the Databricks AI service account](#set-up-the-databricks-ai-service-account).
 
 <Steps>
   <Step title="Open Agent identity">
-    Go to **Organization settings → Agent identity**. The page has one row for Snowflake and one for BigQuery.
+    Go to **Organization settings → Agent identity**. The page has one row for each warehouse: Snowflake, BigQuery and Databricks.
   </Step>
   <Step title="Choose the identity">
     In the row for your warehouse, choose an identity in the select after "When AI agents query …, they run as". The text under the select explains the identity you chose.
@@ -592,3 +599,92 @@ ORDER BY creation_time DESC;
 Replace `region-us` with the region of your datasets. Agent jobs show the AI service account in `user_email`. See [JOBS view](https://cloud.google.com/bigquery/docs/information-schema-jobs).
 
 Finally, ask an agent about an explore whose table the AI service account cannot read. BigQuery refuses the query with an access denied error.
+
+## Databricks: the AI service account
+
+With this identity, agent queries on a Databricks project run as a separate Databricks service principal. An admin adds the service principal's OAuth client ID and secret (OAuth machine-to-machine) to the project connection. Unity Catalog then applies that service principal's grants, row filters and column masks to every agent query.
+
+<Warning>
+  Every person's agent gets the same access: the grants of the service principal. Unity Catalog applies its row filters and column masks to the service principal, not to the person who asked. Grant the service principal only the data that every agent user may see.
+</Warning>
+
+Databricks has no separate agent sign-in for each person, and no service principal for each group.
+
+The AI service account replaces only the sign-in of the connection. The host, HTTP path, catalog, schema and compute stay from the connection.
+
+### Before you start
+
+- The `agent-identity` feature flag is on. See the note at the top of this page.
+- You are an admin of the Lightdash project, and an organization admin sets the rule.
+- The project connection uses a Databricks SQL warehouse in the workspace.
+
+### Set up the Databricks AI service account
+
+The **AI service account** card on **Project settings → Agent identity** has a **Set up the AI service account** section with these steps.
+
+<Steps>
+  <Step title="Create the service principal and an OAuth secret">
+    In the Databricks account console, create a service principal and an OAuth secret for it. Add the service principal to the workspace, and give it the `CAN USE` permission on the SQL warehouse of the connection. The application ID of the service principal is the client ID. See [Service principals](https://docs.databricks.com/aws/en/admin/users-groups/service-principals) and [OAuth machine-to-machine authentication](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-m2m).
+  </Step>
+  <Step title="Grant access to the data agents may read">
+    Grant the service principal `USE CATALOG`, `USE SCHEMA` and `SELECT`. The card has the statements with the catalog and schema of the connection, and a copy button. Replace the placeholders, and repeat `SELECT` for each table or view that agents may read:
+
+    ```sql
+    GRANT USE CATALOG ON CATALOG `analytics` TO `<service-principal-application-id>`;
+    GRANT USE SCHEMA ON SCHEMA `analytics`.`marts` TO `<service-principal-application-id>`;
+    GRANT SELECT ON TABLE `analytics`.`marts`.`<table>` TO `<service-principal-application-id>`;
+    ```
+  </Step>
+  <Step title="Add the client ID and secret">
+    Select **Add an AI service account**. Enter the **Client ID** and **Client secret**, then select **Test and save**. **Test** checks the values without saving them.
+  </Step>
+  <Step title="Set the Databricks rule">
+    Add an AI service account on every Databricks project connection first. Then an organization admin sets the Databricks row on **Organization settings → Agent identity** to **The AI service account**. See [Choose who agents run as](#choose-who-agents-run-as).
+  </Step>
+</Steps>
+
+<Frame>
+  <img src="/images/agents/agent-identity/databricks-ai-service-account-card.png" alt="The AI service account card on a Databricks project: the Set up the AI service account steps with GRANT statements and a copy button, and the saved Databricks service principal with OAuth M2M, Signs in as followed by the application ID, and Replace, Test and Remove buttons" />
+</Frame>
+
+<Frame>
+  <img src="/images/agents/agent-identity/databricks-ai-service-account-form.png" alt="The AI service account form with Client ID and Client secret fields and Cancel, Test and Test and save buttons" />
+</Frame>
+
+<Frame>
+  <img src="/images/agents/agent-identity/org-agent-identity-databricks.png" alt="The Agent identity page in Organization settings with the Databricks row set to The AI service account and the select open on Same credentials as the user and The AI service account" />
+</Frame>
+
+### Test, replace and remove
+
+**Test** signs in as the service principal and runs `SELECT current_user()`. The card then shows "Signs in as" followed by the application ID, and when Lightdash last checked it. Test proves that the client ID and secret work. It does not check what the service principal can read.
+
+- To change the service principal or the secret, select **Replace**.
+- Databricks OAuth secrets expire. Create a new secret before the old one expires, then select **Replace** and enter it.
+- To remove the AI service account, select **Remove** and confirm. Agent queries on that project are refused until an admin adds one again.
+
+Preview projects use the AI service account of their parent project, as on BigQuery. A preview with no service principal of its own shows "From parent project" and **Use a different service principal**. See [Preview projects](#preview-projects).
+
+<Frame>
+  <img src="/images/agents/agent-identity/databricks-preview-inherited.png" alt="The AI service account card on a Databricks preview project: Databricks service principal OAuth M2M, Signs in as followed by the application ID, Last checked, From parent project with a link to the parent, and Use a different service principal and Test buttons" />
+</Frame>
+
+### What agents and people see on Databricks
+
+When the Databricks rule is **The AI service account**:
+
+- Chat, [MCP](/agents/lightdash-mcp), [Slack](/integrations/slack) and data app sample queries on Databricks run as the service principal.
+- Agent queries skip the Databricks result cache.
+- People have nothing to set up.
+
+When a project has no AI service account, Lightdash refuses the agent query with: "AI agents on this connection run as the AI service account, and none is set up. Ask an admin to add it on the project connection." When Databricks rejects the client ID or secret, Lightdash refuses the agent query with: "The AI service account on this connection could not sign in. Ask an admin to check it on the project connection." Lightdash never falls back to the connection's own credentials.
+
+### Verify on Databricks
+
+Ask an agent to run this SQL, for example in [SQL mode](/agents/use-ai-agents#sql-mode) or through the MCP `run_sql` tool:
+
+```sql
+SELECT current_user() AS principal;
+```
+
+The result is the application ID of the service principal. Then ask an agent about an explore whose table the service principal cannot read. Databricks refuses the query with a permission error.
