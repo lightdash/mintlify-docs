@@ -21,9 +21,9 @@ Agent identity is available on the warehouses that can enforce it: Snowflake and
 | A separate agent sign-in for each person | <Icon icon="check" /> | <Icon icon="x" className="matrix-no" /> | The person, in a session that Snowflake verifies as an agent session. |
 | The AI service account | <Icon icon="x" className="matrix-no" /> | <Icon icon="check" /> | One service account that an admin adds to the project connection. |
 
-Lightdash also tags agent queries, so you can find them in query history. On Snowflake, the tag is in `query_tag`. On BigQuery, agent jobs carry the label `agent: true`. The tag is not an identity: warehouse policies can't act on it.
+Lightdash also tags agent queries with the person they ran for and the agent that ran them, so you can find them in query history. On Snowflake, the tags are in `query_tag`. On BigQuery, they are job labels. Tags are not an identity: warehouse policies can't act on them. See [Find agent queries in the warehouse](#find-agent-queries-in-the-warehouse).
 
-Jump to [the organization rule](#choose-who-agents-run-as), [Snowflake agent sign-in](#snowflake-a-separate-agent-sign-in-for-each-person) or [the BigQuery AI service account](#bigquery-the-ai-service-account).
+Jump to [the organization rule](#choose-who-agents-run-as), [Snowflake agent sign-in](#snowflake-a-separate-agent-sign-in-for-each-person), [the BigQuery AI service account](#bigquery-the-ai-service-account) or [finding agent queries](#find-agent-queries-in-the-warehouse).
 
 ## Choose who agents run as
 
@@ -66,6 +66,65 @@ Lightdash checks the identity on every agent query. A change applies from the ne
 Results follow the identity too. Lightdash does not serve results that an agent produced as an identity that is no longer current. This covers results that an agent already showed, results that a later query reuses, and cached results. A person's own queries never get cached results that an agent identity produced. A new query runs as the current identity.
 
 One exception: when you switch the BigQuery rule away from **The AI service account** and back, and the key did not change, the results that the key produced become available again. Replace the key to stop this.
+
+## Find agent queries in the warehouse
+
+Lightdash records two identities on every agent query:
+
+- **Who the agent ran for:** the Lightdash user, or the Lightdash service account.
+- **Which agent ran it:** the surface and the client.
+
+Lightdash keeps both in its query history, and sends them to the warehouse as tags. Use the tags to audit agent activity next to the warehouse's own record of who ran the query.
+
+| Tag | Value |
+| --- | --- |
+| `agent` | `true` on every agent query. |
+| `user_uuid` | The UUID of the Lightdash user that triggered the query, which is the person the agent ran for. |
+| `agent_surface` | Where the agent ran. See the table below. |
+| `agent_client` | The client of that agent. See the table below. |
+
+| `agent_surface` | `agent_client` |
+| --- | --- |
+| `in_app_agent` | `lightdash-chat` |
+| `mcp` | The OAuth client ID of the MCP client. `unknown` when the client authenticates with a personal access token or a service account token. |
+| `slack_agent` | The Slack app ID. |
+| `data_app` | `lightdash-data-app`, for data app sample queries. |
+| `ai_summary` | `lightdash-ai-summary`, for AI summaries in scheduled deliveries. |
+
+`agent_client` is the client ID in lower case. When the ID has characters that a label cannot hold, or is longer than 60 characters, the value is `h-` followed by a 32-character hash. The same ID always gives the same hash.
+
+On BigQuery, every agent job has the `agent`, `agent_surface` and `agent_client` labels. They come before the other labels, so the 64-label limit does not drop them. On Snowflake, the same keys come first in the JSON `query_tag`, so the 2,000-character limit does not cut them.
+
+<CodeGroup>
+
+```sql BigQuery
+SELECT creation_time, user_email, job_id,
+       (SELECT value FROM UNNEST(labels) WHERE key = 'user_uuid') AS lightdash_user_uuid,
+       (SELECT value FROM UNNEST(labels) WHERE key = 'agent_surface') AS agent_surface,
+       (SELECT value FROM UNNEST(labels) WHERE key = 'agent_client') AS agent_client
+FROM `region-us`.INFORMATION_SCHEMA.JOBS
+WHERE creation_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 DAY)
+  AND EXISTS (
+    SELECT 1 FROM UNNEST(labels) AS label
+    WHERE label.key = 'agent_surface' AND label.value = 'mcp'
+  )
+ORDER BY creation_time DESC;
+```
+
+```sql Snowflake
+SELECT start_time, user_name, agent_type,
+       TRY_PARSE_JSON(query_tag):user_uuid::STRING AS lightdash_user_uuid,
+       TRY_PARSE_JSON(query_tag):agent_surface::STRING AS agent_surface,
+       TRY_PARSE_JSON(query_tag):agent_client::STRING AS agent_client
+FROM SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY
+WHERE start_time >= DATEADD('day', -1, CURRENT_TIMESTAMP())
+  AND TRY_PARSE_JSON(query_tag):agent_surface::STRING = 'mcp'
+ORDER BY start_time DESC;
+```
+
+</CodeGroup>
+
+Each example lists the agent queries from MCP in the last day. Change the `agent_surface` filter, or filter on `agent_client` to find one client, for example one Slack app. On BigQuery, replace `region-us` with the region of your datasets. For the account each query ran as, read `user_email` on BigQuery and `user_name` on Snowflake. Other Lightdash query tags are listed in [Query tags](/workspace-admin/usage-analytics#query-tags).
 
 ## Snowflake: a separate agent sign-in for each person
 
