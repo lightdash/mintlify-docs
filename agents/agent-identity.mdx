@@ -19,17 +19,17 @@ Agent identity is available on the warehouses that can enforce it: Snowflake, Bi
 | --- | --- | --- | --- |
 | Same credentials as the user | <Icon icon="check" /> | <Icon icon="check" /> | <Icon icon="check" /> |
 | A separate agent sign-in for each person | <Icon icon="check" /> | <Icon icon="x" className="matrix-no" /> | <Icon icon="x" className="matrix-no" /> |
-| The AI service account | <Icon icon="x" className="matrix-no" /> | <Icon icon="check" /> | <Icon icon="check" /> |
+| The AI service account | <Icon icon="check" /> | <Icon icon="check" /> | <Icon icon="check" /> |
 
 What the warehouse sees with each identity:
 
 - **Same credentials as the user:** the person. This is the default.
 - **A separate agent sign-in for each person:** the person, in a session that Snowflake verifies as an agent session.
-- **The AI service account:** one BigQuery service account or Databricks service principal that an admin adds to the project connection.
+- **The AI service account:** one Snowflake user, BigQuery service account or Databricks service principal that an admin adds to the project connection.
 
 Lightdash also tags agent queries with the person they ran for and the agent that ran them, so you can find them in query history. On Snowflake, the tags are in `query_tag`. On BigQuery, they are job labels. Tags are not an identity: warehouse policies can't act on them. See [Find agent queries in the warehouse](#find-agent-queries-in-the-warehouse).
 
-Jump to [the organization rule](#choose-who-agents-run-as), [Snowflake agent sign-in](#snowflake-a-separate-agent-sign-in-for-each-person), [the BigQuery AI service account](#bigquery-the-ai-service-account), [the Databricks AI service account](#databricks-the-ai-service-account) or [finding agent queries](#find-agent-queries-in-the-warehouse).
+Jump to [the organization rule](#choose-who-agents-run-as), [Snowflake agent sign-in](#snowflake-a-separate-agent-sign-in-for-each-person), [the Snowflake AI service account](#snowflake-the-ai-service-account), [the BigQuery AI service account](#bigquery-the-ai-service-account), [the Databricks AI service account](#databricks-the-ai-service-account) or [finding agent queries](#find-agent-queries-in-the-warehouse).
 
 ## Choose who agents run as
 
@@ -37,7 +37,8 @@ Organization admins set one rule for each warehouse type. A rule applies to ever
 
 A separate identity is always required. When you pick **A separate agent sign-in for each person** or **The AI service account**, Lightdash refuses every agent query that cannot run as that identity. It never falls back to the person's own credentials. Put the identity in place before you switch the rule:
 
-- **Snowflake:** set up the Snowflake agent integration. After you turn it on, Lightdash asks each person who uses agents to connect their agent. See [Set up the Snowflake agent integration](#set-up-the-snowflake-agent-integration) and [Connect your agent](#connect-your-agent).
+- **Snowflake, agent sign-in:** set up the Snowflake agent integration. After you turn it on, Lightdash asks each person who uses agents to connect their agent. See [Set up the Snowflake agent integration](#set-up-the-snowflake-agent-integration) and [Connect your agent](#connect-your-agent).
+- **Snowflake, AI service account:** an admin adds an AI service account on every Snowflake project connection. See [Set up the Snowflake AI service account](#set-up-the-snowflake-ai-service-account).
 - **BigQuery:** an admin adds an AI service account key on every BigQuery project connection. See [Set up the AI service account](#set-up-the-ai-service-account).
 - **Databricks:** an admin adds an AI service account on every Databricks project connection. See [Set up the Databricks AI service account](#set-up-the-databricks-ai-service-account).
 
@@ -397,6 +398,101 @@ ORDER BY start_time DESC;
 The agent query has `agent_type = 'EXTERNAL_AGENT'` and the Lightdash agent tag in `query_tag`. `QUERY_HISTORY` has an ingestion delay, so new queries can take a while to appear. See [QUERY_HISTORY](https://docs.snowflake.com/en/sql-reference/account-usage/query_history).
 
 Finally, query a protected table through an agent and as the person. Check that your row access, masking and session policies give the restrictions you expect.
+
+## Snowflake: the AI service account
+
+With this identity, agent queries on a Snowflake project run as one Snowflake user that signs in with a key pair. An admin adds the user, its private key, a role and a warehouse to the project connection. Snowflake then applies that role's grants and your policies to every agent query.
+
+<Warning>
+  Every person's agent gets the same access: the grants of the AI service account's role. Snowflake does not apply each person's own role to agent queries. Grant the role only the data that every agent user may see.
+</Warning>
+
+Use this identity when every agent user may see the same data. To let Snowflake apply each person's own access to their agent, use [a separate agent sign-in for each person](#snowflake-a-separate-agent-sign-in-for-each-person) instead.
+
+The AI service account replaces only the identity of the connection: the user, key, role and warehouse. The account, database and schema stay from the connection. The connection's custom query tag does not carry over. Lightdash still tags each agent query with the person it ran for. See [Find agent queries in the warehouse](#find-agent-queries-in-the-warehouse).
+
+### Set up the Snowflake AI service account
+
+The **AI service account** card on **Project settings → Agent identity** has a **Set up the AI service account** section with the SQL and a **Copy SQL** button. The section is open when the project has no AI service account.
+
+<Steps>
+  <Step title="Create a key pair">
+    Create an RSA key pair for the user. See [Key-pair authentication](https://docs.snowflake.com/en/user-guide/key-pair-auth).
+  </Step>
+  <Step title="Create the user and role">
+    Create a separate Snowflake user and role for agents. The role and warehouse must exist. Grant the role `USAGE` on the warehouse, database and schema, and access only to the data that agents may read:
+
+    ```sql
+    CREATE USER AI_AGENT
+      TYPE = SERVICE_AGENT
+      RSA_PUBLIC_KEY = '<public key without PEM headers>'
+      DEFAULT_ROLE = AI_AGENT_ROLE
+      DEFAULT_WAREHOUSE = AI_AGENT_WH;
+    GRANT ROLE AI_AGENT_ROLE TO USER AI_AGENT;
+    ```
+
+    `TYPE = SERVICE_AGENT` is recommended, not required. With it, Snowflake marks every session of the user as an agent session.
+  </Step>
+  <Step title="Add the AI service account">
+    Select **Add an AI service account**. Enter the **User**, upload or paste the **Private key**, and enter the **Passphrase** if the key has one, the **Role** and the **Warehouse**. Select **Test and save**. Lightdash signs in with the key pair before it saves. **Test** checks the values without saving them.
+  </Step>
+  <Step title="Set the Snowflake rule">
+    Add an AI service account on every Snowflake project connection first. Then an organization admin sets the Snowflake row on **Organization settings → Agent identity** to **The AI service account**. See [Choose who agents run as](#choose-who-agents-run-as).
+  </Step>
+</Steps>
+
+<Frame>
+  <img src="/images/agents/agent-identity/snowflake-ai-service-account-setup.png" alt="The AI service account card on a Snowflake project with no account: the Set up the AI service account text recommending TYPE = SERVICE_AGENT, the CREATE USER SQL with a copy button, the note AI agents on this connection are refused until an AI service account is added, and an Add an AI service account button" />
+</Frame>
+
+<Frame>
+  <img src="/images/agents/agent-identity/snowflake-ai-service-account-form.png" alt="The AI service account form for Snowflake with User, Private key with Upload file and Paste key options and the key blurred, Passphrase (optional), Role and Warehouse fields, the line Signs in as AI_AGENT · AI_AGENT_ROLE, and Cancel, Test and Test and save buttons" />
+</Frame>
+
+<Frame>
+  <img src="/images/agents/agent-identity/org-agent-identity-snowflake-ai-service-account.png" alt="The Agent identity page in Organization settings with the Snowflake select open on Same credentials as the user, A separate agent sign-in for each person and The AI service account, and the note 1 project has no AI service account: Jaffle shop" />
+</Frame>
+
+The Snowflake row on **Organization settings → Agent identity** lists the projects that have no AI service account, with a link to each project's **Agent identity** page.
+
+### Agent sessions and your policies
+
+With `TYPE = SERVICE_AGENT`, `SYS_CONTEXT('SNOWFLAKE$CURRENT', 'IS_AGENT_ACTIVATED')` is true in every session of the AI service account. The row access, masking and session policies in [Write Snowflake policies for agent sessions](#write-snowflake-policies-for-agent-sessions) then apply to agent queries. With another user type, Snowflake does not mark the sessions, and only the role's grants restrict agents. See [SERVICE_AGENT users](https://docs.snowflake.com/en/sql-reference/sql/create-user).
+
+### Test, replace and remove
+
+**Test** signs in with the key pair and shows "Signs in as" followed by the user and role that Snowflake returns. The card also shows when Lightdash last checked it. Test proves that the key pair, role and warehouse work. It does not check what the role can read.
+
+<Frame>
+  <img src="/images/agents/agent-identity/snowflake-ai-service-account-card.png" alt="The saved AI service account on a Snowflake project: Snowflake key pair, Signs in as AI_AGENT · AI_AGENT_ROLE, Last checked and Last updated dates, and Replace, Test and Remove buttons" />
+</Frame>
+
+- To change the user, key, role or warehouse, select **Replace**. A failed sign-in keeps the saved account.
+- To remove the AI service account, select **Remove** and confirm. Agent queries on that project are refused until an admin adds one again.
+
+Preview projects use the AI service account of their parent project. See [Preview projects](#preview-projects).
+
+### What agents and people see on Snowflake
+
+When the Snowflake rule is **The AI service account**:
+
+- Chat, [MCP](/agents/lightdash-mcp), [Slack](/integrations/slack) and data app sample queries on Snowflake run as the AI service account.
+- Agent sessions turn off the Snowflake result cache, and Lightdash does not reuse cached results for these queries.
+- People have nothing to set up. They do not connect an agent.
+
+When a project has no AI service account, Lightdash refuses the agent query with: "AI agents on this connection run as the AI service account, and none is set up. Ask an admin to add it on the project connection." When Snowflake rejects the key pair, Lightdash refuses the agent query with: "The AI service account on this connection could not sign in. Ask an admin to check it on the project connection." Lightdash never falls back to the connection's own credentials.
+
+### Verify the Snowflake AI service account
+
+Ask an agent to run this SQL, for example in [SQL mode](/agents/use-ai-agents#sql-mode) or through the MCP `run_sql` tool:
+
+```sql
+SELECT CURRENT_USER() AS principal,
+       CURRENT_ROLE() AS role,
+       SYS_CONTEXT('SNOWFLAKE$CURRENT', 'IS_AGENT_ACTIVATED') AS agent_activated;
+```
+
+The result is the AI service account user and role. With `TYPE = SERVICE_AGENT`, `agent_activated` is true.
 
 ## BigQuery: the AI service account
 
