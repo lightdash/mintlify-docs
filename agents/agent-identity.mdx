@@ -49,9 +49,24 @@ A separate identity is always required. When you pick **A separate agent sign-in
   <Step title="Choose the identity">
     In the row for your warehouse, choose an identity in the select after "When AI agents query …, they run as". The text under the select explains the identity you chose.
   </Step>
+  <Step title="Confirm the change">
+    A confirmation opens and states the effect of the change. Select the confirm button to save. An "Agent identity saved." notification confirms it. **Cancel** closes the confirmation, and the rule does not change.
+  </Step>
 </Steps>
 
-Most changes save at once, and an "Agent identity saved." notification confirms it. **A separate agent sign-in for each person** saves only after the Snowflake agent integration passes Verify and you select **Turn on**. See [Set up the Snowflake agent integration](#set-up-the-snowflake-agent-integration).
+Nothing saves until you confirm:
+
+- **To The AI service account.** The confirmation lists the projects on that warehouse that have no AI service account yet, with a link to each project's **Agent identity** page. Agents stop working on these projects until a project admin adds one.
+- **Back to Same credentials as the user.** The confirmation states that agents get the same warehouse access as the person who asks.
+- **To A separate agent sign-in for each person.** No confirmation opens. The select keeps the saved rule, and the text under it says "Not saved. Finish the setup below, then select Turn on." See [Set up the Snowflake agent integration](#set-up-the-snowflake-agent-integration).
+
+<Frame>
+  <img src="/images/agents/agent-identity/org-agent-identity-confirm-ai-service-account.png" alt="The confirmation Use the AI service account for BigQuery?, with the note 2 projects have no AI service account yet: Finance, Marketing. Agents stop working on them until a project admin adds one, and Cancel and Use the AI service account buttons" />
+</Frame>
+
+<Frame>
+  <img src="/images/agents/agent-identity/org-agent-identity-confirm-same-credentials.png" alt="The confirmation Use each person's credentials for BigQuery?, which says agents will get the same BigQuery access as the person asking, with Cancel and Use each person's credentials buttons" />
+</Frame>
 
 <Frame>
   <img src="/images/agents/agent-identity/org-agent-identity-default.png" alt="The Agent identity page in Organization settings with the Snowflake select open on Same credentials as the user and A separate agent sign-in for each person, which has the hint Needs a one-time Snowflake setup" />
@@ -166,13 +181,13 @@ An organization admin sets up the integration once, from **Organization settings
 
 <Steps>
   <Step title="Choose agent sign-in">
-    In the Snowflake row, choose **A separate agent sign-in for each person**. The **Set up the Snowflake agent integration** steps open with a "Not active yet" badge.
+    In the Snowflake row, choose **A separate agent sign-in for each person**. The **Set up the Snowflake agent integration** steps open with a "Not active yet" badge. The select keeps the saved rule, and the text under it says "Not saved. Finish the setup below, then select Turn on."
   </Step>
   <Step title="Copy and run in Snowflake">
     Copy the `CREATE SECURITY INTEGRATION` SQL and run it in Snowflake as `ACCOUNTADMIN`. The SQL has the redirect URL of your instance. The second statement returns the client ID and the client secret.
   </Step>
-  <Step title="Paste what Snowflake returned">
-    Enter the **Snowflake account URL**, for example `https://myorg-myaccount.snowflakecomputing.com`, and paste the **Client ID** and **Client secret**. Select **Save**. A "Snowflake client saved." notification confirms it. Lightdash works out the sign-in and token addresses from the account URL.
+  <Step title="Add your Snowflake account and client details">
+    Enter the **Snowflake account URL**, for example `https://myorg-myaccount.snowflakecomputing.com`. Paste the `OAUTH_CLIENT_ID` and `OAUTH_CLIENT_SECRET` values from the query in step 1 into **Client ID** and **Client secret**. Select **Save**. A "Snowflake client saved." notification confirms it. Lightdash works out the sign-in and token addresses from the account URL.
   </Step>
   <Step title="Verify">
     Select **Verify integration**. Lightdash runs the checks below and names each missing piece.
@@ -183,30 +198,34 @@ An organization admin sets up the integration once, from **Organization settings
 </Steps>
 
 <Frame>
-  <img src="/images/agents/agent-identity/org-agent-identity-snowflake-setup.png" alt="The Set up the Snowflake agent integration steps with a Not active yet badge: the CREATE SECURITY INTEGRATION SQL with a copy button, the Paste what Snowflake returned form with Snowflake account URL, Client ID and Client secret fields and a Save button, and Verify with a Verify integration button" />
+  <img src="/images/agents/agent-identity/org-agent-identity-snowflake-not-saved.png" alt="The Snowflake row with the select on Same credentials as the user and the text Not saved. Finish the setup below, then select Turn on." />
+</Frame>
+
+<Frame>
+  <img src="/images/agents/agent-identity/org-agent-identity-snowflake-setup.png" alt="The Set up the Snowflake agent integration steps with a Not active yet badge: the CREATE SECURITY INTEGRATION SQL with a copy button, the Add your Snowflake account and client details form with the placeholders OAUTH_CLIENT_ID from the query above and OAUTH_CLIENT_SECRET from the query above, and Verify with OAuth client settings Failed: Not saved, Authorization endpoint Not checked and Agent session Not checked" />
 </Frame>
 
 Lightdash stores the client for your organization and encrypts the secret. It never shows the secret again. Only organization admins can save or replace the client. After you save, step 2 shows the account URL, the client ID, "Client secret saved" and a **Replace client** button.
 
 <Frame>
-  <img src="/images/agents/agent-identity/org-agent-identity-snowflake-client-saved.png" alt="Step 2 Paste what Snowflake returned after a save: the Snowflake account URL, the client ID, Client secret saved and a Replace client button" />
+  <img src="/images/agents/agent-identity/org-agent-identity-snowflake-client-saved.png" alt="Step 2 Add your Snowflake account and client details after a save: the Snowflake account URL (hidden), the client ID, Client secret saved and a Replace client button" />
 </Frame>
 
 When you replace the client, the agent sign-ins that people made with the old client stop working. Each person connects their agent again.
 
 | Check | Required for **Turn on** | What it checks |
 | --- | --- | --- |
-| OAuth client settings | Yes | A client is saved for your organization, and Lightdash can find the Snowflake account. The result names each missing piece. It never shows the client secret. |
-| Authorization endpoint | Yes | The Snowflake authorization endpoint answers. This does not prove that the integration settings are correct. When the endpoint returns HTTP 404, check the Snowflake account URL. |
-| Agent session | No | At least one person in the organization has connected their agent. Lightdash saves an agent connection only when Snowflake marks the session as an agent session. |
+| OAuth client settings | Yes | A client is saved for your organization. With no client, the result is "Not saved. Paste the client ID and secret from Snowflake in the form above, then verify again." It never shows the client secret. |
+| Authorization endpoint | Yes | Snowflake's sign-in page answers. A pass says "Snowflake's sign-in page responded." With no client, the result is "Save the OAuth client first." A pass does not prove that the integration settings are correct. When the endpoint returns HTTP 404 or 405, check the Snowflake account URL. |
+| Agent session | No | At least one person in the organization has connected their agent. Lightdash saves an agent connection only when Snowflake marks the session as an agent session. Until then, the result links to **My agent connections**. |
+
+<Frame>
+  <img src="/images/agents/agent-identity/org-agent-identity-snowflake-verify-passed.png" alt="Verify results: OAuth client settings Passed, Using the client saved for this organisation; Authorization endpoint Passed, Snowflake's sign-in page responded; Agent session Not checked, with a My agent connections link" />
+</Frame>
 
 Lightdash cannot sign in to Snowflake for you, so Verify checks only what the server can reach. The agent session check passes after the first person connects.
 
 When the integration is already set up, choosing **A separate agent sign-in for each person** skips the steps and shows **Turn on agent sign-in** with **Turn on** and **Cancel**.
-
-<Frame>
-  <img src="/images/agents/agent-identity/org-agent-identity-snowflake-turn-on.png" alt="The Snowflake row set to A separate agent sign-in for each person with the Turn on agent sign-in box, a Not active yet badge, and Cancel and Turn on buttons" />
-</Frame>
 
 After you turn it on, the setup collapses to one line: "Verified · Snowflake agent integration · checked" followed by the time, with **View setup**. When a later check fails, the line says that the integration needs attention and the steps open.
 
