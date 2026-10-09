@@ -238,7 +238,50 @@ Agent sign-in on Snowflake also needs the Snowflake agent integration. See [Agen
 
 Lightdash does not serve agent results from an identity that is no longer current. See [When an identity changes](/agents/agent-identity#when-an-identity-changes). If this check causes a problem on your instance, set `AGENT_RESULT_IDENTITY_CHECK_ENABLED=false` to turn it off. See [Agent identity variables](/self-host/customize-deployment/environment-variables#agent-identity).
 
-Each agent query writes one structured info log line with the message `Agent query` before it runs in the warehouse. Set `LIGHTDASH_LOG_FORMAT=JSON` to keep the fields: `queryUuid`, `projectUuid`, `warehouseConnectionUuid`, `userUuid`, `identity` (`marked_person`, `connected_person` or `ai_service_account`), `actorKind`, `principalKind`, `credentialUuid`, `identityUuid`, `principalRef` and `context`. Lightdash does not store these audits in a table. See [logging](/self-host/customize-deployment/environment-variables#logging).
+Each agent query writes one structured info log line with the message `Agent query` before it runs in the warehouse. Set `LIGHTDASH_LOG_FORMAT=JSON` to keep the fields: `queryUuid`, `projectUuid`, `warehouseConnectionUuid`, `userUuid`, `identity` (`marked_person`, `connected_person` or `ai_service_account`), `actorKind`, `principalKind`, `credentialUuid`, `identityUuid`, `principalRef` and `context`. The line does not include the person's email. See [logging](/self-host/customize-deployment/environment-variables#logging).
+
+### Agent identity audit entries and logs
+
+Lightdash writes agent identity changes and failures to the application log. It does not store them in a table. Collect them from the log output of every backend/API replica and every scheduler or worker process.
+
+#### Audit entries
+
+Admin changes write an entry at the `audit` log level. The `audit` level is below `info`, so set `LIGHTDASH_LOG_LEVEL=audit` or `LIGHTDASH_LOG_LEVEL=debug` to write them. With the default level (`http` in production), Lightdash does not write audit entries.
+
+Each entry has the `actor` who made the change, the `action`, the `resource` and the `status`. `resource.metadata.event` names the change:
+
+| `resource.type` | `resource.metadata.event` | `action` | Other `resource.metadata` fields |
+| --- | --- | --- | --- |
+| `OrganizationAgentIdentityRule` | `agent_identity.rule_updated` | `update` | `warehouseType`, `previousSource`, `source` |
+| `AiServiceAccount` | `agent_identity.service_account_saved` | `create` for a new key, `update` for a replaced key | `warehouseConnectionUuid`, `connectionName`, `previousGeneration`, `generation` |
+| `AiServiceAccount` | `agent_identity.service_account_tested` | `test` | `warehouseConnectionUuid`, `connectionName`, `previousGeneration` and `generation` (both the saved key), `result` (`success` or `failure`) |
+| `AiServiceAccount` | `agent_identity.service_account_deleted` | `delete` | `warehouseConnectionUuid`, `connectionName`, `previousGeneration` |
+
+`source` and `previousSource` are `marked_person` (same credentials as the user), `agent_sign_in` or `ai_service_account`. `resource.organizationUuid` is on every entry, and `resource.projectUuid` is on AI service account entries. A generation changes each time the key changes, so compare `previousGeneration` and `generation` to see that a key was replaced.
+
+If your log indexer maps the `actor` field as text, set `LIGHTDASH_LOG_AUDIT_ACTOR_AS_STRING=true`.
+
+#### Log lines
+
+Lightdash also logs these events at the default levels:
+
+| Message | Level | Fields |
+| --- | --- | --- |
+| `Agent sign-in connect failed` | `warn` | `userUuid`, `organizationUuid`, the failure reason, the redacted error |
+| `Agent sign-in disconnected` | `info` | `userUuid`, `organizationUuid` |
+| `Agent sign-in refreshed` | `info` | `userUuid`, `organizationUuid` |
+| `Agent sign-in refresh token rotated` | `info` | `userUuid`, `organizationUuid` |
+| `Agent sign-in refresh failed` | `warn` | `userUuid`, `organizationUuid`, the refusal reason, the redacted error |
+| `Agent result lineage refused` | `warn` | `queryUuid`, the refused node, the reason. Depth and size refusals also have the limits. |
+
+BigQuery key refusals, Snowflake session check refusals and AI service account test failures also log the redacted warehouse error. A status or diagnostic check that only reports a refusal logs at `debug`.
+
+#### What Lightdash does not log
+
+- Keys, tokens, client secrets and client emails are never in an audit entry or a log line.
+- A logged warehouse error has `errorClass`, `errorCode`, `errorCategory` and a redacted `errorMessage`. Lightdash removes key blocks, quoted text and SQL from the message, and keeps only plain words and short numbers. `errorCategory` is a fixed value, for example `invalid_grant`, `token_expired` or `permission_denied`.
+- No SQL or result data is logged in these entries.
+- In access log URLs, Lightdash replaces the values of the OAuth `code` and `state` parameters with `[REDACTED]`.
 
 ### Agent identity on Snowflake
 
