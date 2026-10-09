@@ -144,8 +144,8 @@ A query tag alone does not prove that Snowflake verified the session. The agent 
 
 ### Before you start
 
-- **The Snowflake agent integration is set up for your instance.** See [Set up the Snowflake agent integration](#set-up-the-snowflake-agent-integration). Until it is set up, the option **A separate agent sign-in for each person** shows "Needs a one-time Snowflake setup".
-- **Your project uses the same Snowflake account as the integration.** An instance has one agent integration for one Snowflake account. A project on a second Snowflake account cannot complete the agent connection.
+- **The Snowflake agent integration is set up for your organization.** See [Set up the Snowflake agent integration](#set-up-the-snowflake-agent-integration). Until it is set up, the option **A separate agent sign-in for each person** shows "Needs a one-time Snowflake setup".
+- **Your project uses the same Snowflake account as the integration.** An organization has one agent integration for one Snowflake account. A project on a second Snowflake account cannot complete the agent connection.
 - **Each person has an allowed default role.** Snowflake blocks the `ACCOUNTADMIN`, `SECURITYADMIN`, `ORGADMIN` and `GLOBALORGADMIN` roles from OAuth sessions. The agent sign-in uses the person's default role. Each person who uses agents needs a default role outside that list.
 
 The agent sign-in is separate from the person's normal [Sign in with Snowflake](/integrations/connect-project#sign-in-with-snowflake) connection. A person can have both.
@@ -161,8 +161,8 @@ An organization admin sets up the integration once, from **Organization settings
   <Step title="Copy and run in Snowflake">
     Copy the `CREATE SECURITY INTEGRATION` SQL and run it in Snowflake as `ACCOUNTADMIN`. The SQL has the redirect URL of your instance. The second statement returns the client ID and the client secret.
   </Step>
-  <Step title="Give the client ID and secret to your instance operator">
-    The instance reads the OAuth client from environment variables. The step lists each `SNOWFLAKE_AI_OAUTH_*` setting as "Set" or "Missing". Your instance operator sets them and restarts the instance. On Lightdash Cloud, give them to Lightdash support. On a self-hosted instance, see [Agent identity on Snowflake](/self-host/enterprise-features/ai-agents#agent-identity-on-snowflake).
+  <Step title="Paste what Snowflake returned">
+    Enter the **Snowflake account URL**, for example `https://myorg-myaccount.snowflakecomputing.com`, and paste the **Client ID** and **Client secret**. Select **Save**. A "Snowflake client saved." notification confirms it. Lightdash works out the sign-in and token addresses from the account URL.
   </Step>
   <Step title="Verify">
     Select **Verify integration**. Lightdash runs the checks below and names each missing piece.
@@ -173,13 +173,23 @@ An organization admin sets up the integration once, from **Organization settings
 </Steps>
 
 <Frame>
-  <img src="/images/agents/agent-identity/org-agent-identity-snowflake-setup.png" alt="The Set up the Snowflake agent integration steps with a Not active yet badge: the CREATE SECURITY INTEGRATION SQL with a copy button, the four SNOWFLAKE_AI_OAUTH settings marked Missing, and Verify with OAuth client settings Failed and Authorization endpoint Not checked" />
+  <img src="/images/agents/agent-identity/org-agent-identity-snowflake-setup.png" alt="The Set up the Snowflake agent integration steps with a Not active yet badge: the CREATE SECURITY INTEGRATION SQL with a copy button, the Paste what Snowflake returned form with Snowflake account URL, Client ID and Client secret fields and a Save button, and Verify with a Verify integration button" />
 </Frame>
+
+Lightdash stores the client for your organization and encrypts the secret. It never shows the secret again. Only organization admins can save or replace the client. After you save, step 2 shows the account URL, the client ID, "Client secret saved" and a **Replace client** button.
+
+<Frame>
+  <img src="/images/agents/agent-identity/org-agent-identity-snowflake-client-saved.png" alt="Step 2 Paste what Snowflake returned after a save: the Snowflake account URL, the client ID, Client secret saved and a Replace client button" />
+</Frame>
+
+When you replace the client, the agent sign-ins that people made with the old client stop working. Each person connects their agent again.
+
+On a self-hosted instance, the operator can also set the client with `SNOWFLAKE_AI_OAUTH_*` environment variables. A client saved on this page overrides them for your organization. See [Agent identity on Snowflake](/self-host/enterprise-features/ai-agents#agent-identity-on-snowflake).
 
 | Check | Required for **Turn on** | What it checks |
 | --- | --- | --- |
-| OAuth client settings | Yes | All `SNOWFLAKE_AI_OAUTH_*` settings are set, and Lightdash can find the Snowflake account. The result names each missing setting. It never shows the values. |
-| Authorization endpoint | Yes | The Snowflake authorization endpoint answers. This does not prove that the integration settings are correct. |
+| OAuth client settings | Yes | A client is saved for your organization, or all `SNOWFLAKE_AI_OAUTH_*` settings are set on the instance. Lightdash can find the Snowflake account. The result names each missing setting. It never shows the values. |
+| Authorization endpoint | Yes | The Snowflake authorization endpoint answers. This does not prove that the integration settings are correct. When the endpoint returns HTTP 404, check the Snowflake account URL. |
 | Agent session | No | At least one person in the organization has connected their agent. Lightdash saves an agent connection only when Snowflake marks the session as an agent session. |
 
 Lightdash cannot sign in to Snowflake for you, so Verify checks only what the server can reach. The agent session check passes after the first person connects.
@@ -196,7 +206,7 @@ After you turn it on, the setup collapses to one line: "Verified · Snowflake ag
   <img src="/images/agents/agent-identity/org-agent-identity-snowflake-verified.png" alt="The Snowflake row set to A separate agent sign-in for each person with the line Verified · Snowflake agent integration · checked less than a minute ago and a View setup button" />
 </Frame>
 
-Lightdash does not save **A separate agent sign-in for each person** while the integration is not configured on the instance. This keeps an admin from saving a rule that refuses every agent query.
+Lightdash does not save **A separate agent sign-in for each person** while no OAuth client is configured. This keeps an admin from saving a rule that refuses every agent query.
 
 ### Connect your agent
 
@@ -236,7 +246,7 @@ The Snowflake card shows one of these states:
 | **Connected** | The agent connection works. The card shows when it ends. | **Disconnect** |
 | **Expired** | The agent connection has ended. Their AI questions on Snowflake projects are refused until they connect again. | **Connect agent** |
 | **Failing** | The last sign-in from this page failed, for example because the browser blocked the sign-in window. The card shows the error. | **Connect agent** |
-| **Not available** | The Snowflake agent integration is not set up on the instance. The card says "Agent sign-in is not set up yet. Ask an admin to finish the Snowflake setup." | None |
+| **Not available** | The Snowflake agent integration is not set up. The card says "Agent sign-in is not set up yet. Ask an admin to finish the Snowflake setup." | None |
 
 <Frame>
   <img src="/images/agents/agent-identity/my-agent-connections-expired.png" alt="My agent connections with a Snowflake card marked Expired and a Connect agent button, and a BigQuery card marked Nothing to do" />
@@ -252,7 +262,7 @@ Snowflake decides when the connection ends:
 
 - **The grant ended or Snowflake revoked it.** Snowflake returns `invalid_grant`. Lightdash refuses the agent query with "Your agent connection expired. Connect again." The person connects again.
 - **Snowflake is not available for a short time.** For example, a network error, a timeout, a rate limit or a server error. The agent query fails with an error that you can retry. The agent connection stays in place.
-- **Snowflake rejects the Lightdash OAuth client.** Lightdash refuses the agent query with "The warehouse OAuth client was rejected. Ask an administrator to check the agent sign-in settings." Connecting again does not help. An admin checks the security integration and the client ID and secret on the instance. See [Agent identity on Snowflake](/self-host/enterprise-features/ai-agents#agent-identity-on-snowflake).
+- **Snowflake rejects the Lightdash OAuth client.** Lightdash refuses the agent query with "The warehouse OAuth client was rejected. Ask an administrator to check the agent sign-in settings." Connecting again does not help. An admin checks the security integration in Snowflake and the client on **Organization settings → Agent identity**. See [Set up the Snowflake agent integration](#set-up-the-snowflake-agent-integration).
 
 ### Set the Snowflake rule
 
