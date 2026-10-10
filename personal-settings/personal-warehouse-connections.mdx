@@ -70,3 +70,30 @@ Depending on your warehouse type, you can authenticate using different methods:
 ### Other warehouses
 
 For other warehouse types (Postgres, Trino, ClickHouse), authentication is typically done using username and password credentials.
+
+## With agent identity on
+
+When the [agent identity](/agents/agent-identity) feature flag is on, a personal warehouse credential can set sign-in fields only. The host, port, database, compute, TLS, SSH tunnel and policy settings always come from the project connection. Lightdash refuses to save a personal credential that sets any other field, and the error names the fields.
+
+| Warehouse | Sign-in fields a personal credential can set |
+| --- | --- |
+| Snowflake | User, password, private key, private key passphrase, refresh token, authentication type |
+| BigQuery | Sign in with Google only: the Google sign-in keyfile (type, client ID, client secret and refresh token) and the authentication type |
+| Databricks | Personal access token or refresh token, authentication type, OAuth client ID. The workspace host is checked against the connection, never used. |
+| Redshift | User, password, authentication type, AWS access key ID and secret access key, session token, and a role ARN and external ID with your own AWS keys |
+| Postgres, Trino, ClickHouse | User, password |
+| Athena | AWS access key ID and secret access key |
+| DuckDB | MotherDuck token |
+
+Lightdash refuses to save a BigQuery service account key file, and a Redshift IAM credential with a role but no AWS access key of your own.
+
+Some saved credentials stop working when the flag turns on. Queries with them fail with: "Your saved warehouse credentials can no longer be used with this connection. Reconnect your credentials and try again." Lightdash never falls back to the shared project credentials. Reconnect your credentials under **Settings → My warehouse connections**. This affects:
+
+- A Databricks sign-in saved without a workspace host, or for a different workspace host than the connection.
+- A Databricks credential that uses a service principal (machine-to-machine) sign-in.
+- A Redshift IAM credential that has a role but no AWS access key of your own.
+- An Athena credential that has a session token.
+- A credential for a different warehouse type than the project connection.
+- A MotherDuck token used with a DuckDB connection that is not MotherDuck.
+
+Other saved credentials keep working. Lightdash ignores any extra fields on them, such as a host, database, warehouse or role, and uses the connection's values instead.
