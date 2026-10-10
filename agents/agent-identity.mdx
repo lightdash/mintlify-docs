@@ -31,7 +31,7 @@ What the warehouse sees with each identity:
 
 Lightdash also tags agent queries with the person they ran for and the agent that ran them, so you can find them in query history. On Snowflake, the tags are in `query_tag`. On BigQuery, they are job labels. Tags are not an identity: warehouse policies can't act on them. See [Find agent queries in the warehouse](#find-agent-queries-in-the-warehouse).
 
-Jump to [the organization rule](#choose-who-agents-run-as), [Snowflake agent sign-in](#snowflake-a-separate-agent-sign-in-for-each-person), [the Snowflake AI service account](#snowflake-the-ai-service-account), [the BigQuery AI service account](#bigquery-the-ai-service-account), [the Databricks AI service account](#databricks-the-ai-service-account), [the Athena AI service account](#athena-the-ai-service-account), [the Postgres AI service account](#postgres-the-ai-service-account) or [finding agent queries](#find-agent-queries-in-the-warehouse).
+Jump to [the organization rule](#choose-who-agents-run-as), [Snowflake agent sign-in](#snowflake-a-separate-agent-sign-in-for-each-person), [the Snowflake AI service account](#snowflake-the-ai-service-account), [the BigQuery AI service account](#bigquery-the-ai-service-account), [the Databricks AI service account](#databricks-the-ai-service-account), [the Athena AI service account](#athena-the-ai-service-account), [the Postgres AI service account](#postgres-the-ai-service-account), [finding agent queries](#find-agent-queries-in-the-warehouse) or [what gets recorded](#what-gets-recorded).
 
 ## Choose who agents run as
 
@@ -167,6 +167,19 @@ ORDER BY start_time DESC;
 Each example lists the agent queries from MCP in the last day. Change the `agent_surface` filter, or filter on `agent_client` to find one client, for example one Slack app. On BigQuery, replace `region-us` with the region of your datasets. For the account each query ran as, read `user_email` on BigQuery and `user_name` on Snowflake. Other Lightdash query tags are listed in [Query tags](/workspace-admin/usage-analytics#query-tags).
 
 Agent queries skip the warehouse's own result cache on BigQuery, Snowflake, Databricks, Redshift and ClickHouse. Each agent query runs in the warehouse with the current identity, and the warehouse applies its policies at that time.
+
+## What gets recorded
+
+When an agent changes content, Lightdash records that an agent made the change and for which person. The record has the surface (in-app agent, MCP or Slack agent), the client and the agent. It comes only from the signed-in credential and the agent runtime. Request headers and tool arguments cannot set it.
+
+- **Content with versions.** New versions of charts, dashboards, SQL charts, documents and data apps record the agent. Chart and dashboard version history show "Changed by an agent for" followed by the person and the surface. When you restore a version, the new version does not copy the agent of the restored version.
+- **Other writes and refusals.** Agent writes that make no version, and agent refusals, go to the agent action log. Examples are spaces, scheduled deliveries, content verification, access changes, share links and dbt write-back commits. Each entry has the organization, project, time, agent, object, action, outcome (allowed or denied), the policy that decided and a reason code. It never has data, tool arguments, SQL, recipients, URLs or secrets.
+
+<Frame>
+  <img src="/images/agents/agent-identity/chart-version-history-agent.png" alt="Chart version history with two versions marked Changed by an agent for David Attenborough, one from the In-app agent and one from MCP, and an older version Updated by David Attenborough" />
+</Frame>
+
+Each agent action log entry also goes to the application audit log. See [Agent identity audit entries and logs](/self-host/enterprise-features/ai-agents#agent-identity-audit-entries-and-logs). The query history cleanup job deletes old entries, with the same retention as query history (`QUERY_HISTORY_RETENTION_DAYS`).
 
 ## Snowflake: a separate agent sign-in for each person
 
