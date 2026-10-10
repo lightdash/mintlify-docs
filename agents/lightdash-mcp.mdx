@@ -240,6 +240,17 @@ If you're building your own agents or automated workflows, you can integrate dir
 - **Pin a project (optional)**: pass `X-Lightdash-Project: <project-uuid>` to scope the MCP session to a specific project, skipping the `set_project` step. See [details below](#pin-a-project-with-the-x-lightdash-project-header).
 - **Override user attributes per request (optional)**: pass `X-Lightdash-User-Attributes: <json>` to override the authenticated user's attributes for that request (useful for row-level security when an agent acts on behalf of different end-users). See [details below](#override-user-attributes).
 
+#### OAuth with agent identity on
+
+When the [agent identity](/agents/agent-identity) feature flag is on, the Lightdash OAuth server is stricter. A custom OAuth client must:
+
+- **Send the `resource` parameter** set to the MCP URL, for example `https://<your_instance_name>.lightdash.cloud/api/v1/mcp`. Each token is for the Lightdash API or for MCP, and one audience refuses the other's tokens. Without `resource`, the token is for the API, so the MCP endpoint refuses it.
+- **Register exact redirect URIs.** Only an http loopback redirect (`localhost`, `127.0.0.1` or `[::1]`) can use a different port. Allowed schemes are https, http on a loopback host, reverse-DNS native schemes such as `com.example.app`, and `cursor`, `vscode`, `vscode-insiders`, `windsurf` and `lightdash`. Dynamic client registration refuses wildcards, except for the loopback port.
+- **Use PKCE with `S256`.**
+- **Send the token in the `Authorization` header.** Lightdash refuses a bearer token in the query string.
+
+Use each refresh token once. When a used refresh token comes back, Lightdash revokes every token from that sign-in. Authorization responses also include the `iss` parameter (RFC 9207).
+
 <a id="pin-a-project-with-the-x-lightdash-project-header" />
 
 #### Pin a project with the `X-Lightdash-Project` header
