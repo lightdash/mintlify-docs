@@ -644,7 +644,7 @@ People who can manage a project find **Agent identity** in the project settings 
 - **Missing.** When the rule requires a shared agent account and the project has none, an alert says "Agents are refused on this project until you add a shared agent account." The card has an **Add shared agent account** button.
 - **Summary.** After you save an account, the card shows "Signs in as" followed by the account, the method (**Key file**, **Key pair** or **Client ID and secret**), and when it was tested and added. Before the first Test, it says "Not tested yet. Select Test to see who it signs in as."
 - **Buttons.** **Test**, **Replace** and **Remove**. A failed Test shows the error in an alert.
-- **Setup steps.** While the project has no shared agent account, the card shows three setup steps for the warehouse. After you save an account, the card does not show them. An account that a preview project gets from its parent project counts as a saved account.
+- **Setup steps.** While the project has no shared agent account, the card shows three setup steps for the warehouse. After you save an account, the card does not show them. A [preview project](#preview-projects) never shows them, because its account comes from the parent project.
 
 <Frame>
   <img src="/images/agents/agent-identity/project-ai-service-account-in-use.png" alt="The shared agent account card on a BigQuery project, marked In use: Agents on this project run as this account. The organization rule for BigQuery requires it, an Organization settings link, Not tested yet, Key file, Added 9 Oct 2026 and Test, Replace and Remove buttons" />
@@ -741,19 +741,31 @@ Each row on **Organization settings → Agents** that uses **A shared agent acco
 
 #### Preview projects
 
-A preview project uses the shared agent account of its parent project for the matching connection. Developers can ask agents about a preview with no extra setup. Lightdash does not copy the key: it reads the key of the parent on each query. When an admin replaces or removes the key of the parent, previews use the new state on their next query.
+A preview project always uses the shared agent account of its parent project for the matching connection. A preview has no shared agent account of its own, and you cannot add one on a preview. Developers can ask agents about a preview with no extra setup. Lightdash does not copy the account: it reads the account of the parent on each query. When an admin replaces or removes the account of the parent, previews use the new state on their next query.
 
-- **The preview has no account of its own.** The **Shared agent account** card on the preview's **Agent identity** page says "Uses the shared agent account from" followed by a link to the parent, and "Changes there apply here on the next query." It shows "Signs in as" followed by the account. Select **Test** to test the parent's account, or **Add this preview's own account** to add one to the preview.
-- **The preview has its own account.** The preview uses its own account, also when it is not valid. Select **Use the parent's account** and confirm to remove the preview's account and go back to the parent's.
-- **Lightdash can't read the parent's account.** An alert says that agents are refused on the preview. Add the preview's own account, or ask an admin of the parent project to replace the parent's account.
+The **Shared agent account** card on the preview's **Agent identity** page is read-only. To add or change the account, go to the parent project.
+
+- **The parent has an account.** The card says "Uses the shared agent account from" followed by a link to the parent. It shows "Signs in as" followed by the account, the method, and when it was tested. Select **Test** to test the parent's account on the preview's connection.
+- **The parent has no account, and the rule requires one.** A warning says "Agents are refused on this preview until the parent project has a shared agent account for this connection. Ask an admin to add one on the parent project." The last words link to the parent project.
+- **The parent has no account, and the rule does not require one.** The card says "The parent project has no shared agent account. Add one on the parent project."
+- **Lightdash can't read the parent's account.** An alert says that agents are refused on the preview. Ask an admin of the parent project to replace the parent's account.
 
 <Frame>
-  <img src="/images/agents/agent-identity/preview-inherited-ai-service-account.png" alt="The shared agent account card on a BigQuery preview project, marked In use: Uses the shared agent account from Jaffle shop, the parent project. Changes there apply here on the next query, Signs in as followed by the account, Key file, and Test and Add this preview's own account buttons" />
+  <img src="/images/agents/agent-identity/preview-parent-shared-agent-account.png" alt="The shared agent account card on a Postgres preview project, marked In use: Agents on this project run as this account. The organization rule for Postgres requires it, an Organization settings link, Uses the shared agent account from Jaffle shop, Signs in as followed by the account, User and password, Tested 11 Oct 2026, and a Test button" />
 </Frame>
 
-The original connection of a preview matches the original connection of the parent. An extra connection matches the extra connection of the parent with the same name and warehouse type. A preview does not use the parent's key when no connection matches, when the parent is deleted, or when the parent is in another organization. A preview of a preview uses the key of its direct parent.
+<Frame>
+  <img src="/images/agents/agent-identity/preview-parent-no-shared-agent-account.png" alt="The shared agent account card on a preview project with the warning Agents are refused on this preview until the parent project has a shared agent account for this connection. Ask an admin to add one on the parent project" />
+</Frame>
 
-Anyone who can query a preview can make agents run as the parent's shared agent account on that preview. Only admins of the parent can change the parent's key.
+The original connection of a preview matches the original connection of the parent. An extra connection matches the extra connection of the parent with the same name and warehouse type. A preview does not use the parent's account when no connection matches or when the parent is in another organization. The preview then has no shared agent account. A preview of a preview uses the account of its direct parent. A preview whose parent project was deleted is an ordinary project and keeps its own shared agent account.
+
+Anyone who can query a preview can make agents run as the parent's shared agent account on that preview. Only admins of the parent can change the parent's account.
+
+**Grant the parent's account access to preview data.** Agent queries on a preview run as the parent's account, so that account needs read access to the datasets or schemas that previews build into. Without it, agent queries on the preview fail:
+
+- **Postgres, Redshift, Trino and ClickHouse:** the error starts with "This preview uses the parent's shared agent account, which can't read this preview's data. Ask an admin to grant it access.", followed by the warehouse error.
+- **BigQuery, Snowflake, Databricks and Athena:** the person sees the warehouse error only.
 
 ### What agents and people see
 
@@ -859,11 +871,7 @@ While the project has no shared agent account, the **Shared agent account** card
 - Databricks OAuth secrets expire. Create a new secret before the old one expires, then select **Replace** and enter it.
 - To remove the shared agent account, select **Remove** and confirm. Agent queries on that project are refused until an admin adds one again.
 
-Preview projects use the shared agent account of their parent project, as on BigQuery. A preview with no account of its own shows the parent project and **Add this preview's own account**. See [Preview projects](#preview-projects).
-
-<Frame>
-  <img src="/images/agents/agent-identity/databricks-preview-inherited.png" alt="The shared agent account card on a Databricks preview project, marked In use: Uses the shared agent account from Jaffle shop, the parent project, Signs in as followed by the application ID, Client ID and secret, Tested 9 Oct 2026, and Test and Add this preview's own account buttons" />
-</Frame>
+Preview projects use the shared agent account of their parent project. See [Preview projects](#preview-projects).
 
 ### What agents and people see on Databricks
 
