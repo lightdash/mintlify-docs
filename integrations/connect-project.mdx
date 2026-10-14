@@ -234,6 +234,29 @@ For example, setting this to `1000000000` means if a query would bill more than 
   Query exceeded limit for bytes billed: 1000000000. 2000000000 or higher required.
 ```
 
+`Maximum bytes billed` is enforced by BigQuery itself, so it is the hard limit for every query, including AI agent queries. Keep it set when you use query cost estimates (below): estimates can be lower than the bytes a query is billed for.
+
+
+##### Query cost estimates
+
+Lightdash can estimate how much data a query will process before it runs, using a free [BigQuery dry run](https://cloud.google.com/bigquery/docs/running-queries#dry-run). All three settings are in the advanced options of the BigQuery connection and are off until you set them.
+
+| Setting | What it does |
+| --- | --- |
+| `Show query cost estimates` | Shows the estimated bytes processed next to **Run query** in the Explore view and next to **Run** in the SQL Runner. |
+| `Confirm queries estimated above (bytes)` | Asks users to confirm before running a query whose estimate is above this number of bytes. Requires `Show query cost estimates`. Leave it empty to never ask. |
+| `AI agent query limit (estimated bytes)` | Refuses AI agent queries whose estimate is above this number of bytes. Leave it empty for no limit. |
+
+**Estimate and confirm for users.** With estimates on, the estimate updates as you change the query, before you run it. If you run a query estimated above the confirmation threshold, a dialog shows the estimate and the threshold, and the query only runs once you confirm. If an estimate can't be calculated, the query runs as normal.
+
+**Enforced limit for AI agents.** Every query an AI agent runs, in Lightdash or through [MCP](/agents/lightdash-mcp), is dry-run before it executes. If the estimate is above the agent limit, the query is not run and the agent receives an error with the estimate and the limit, so it can narrow the query (filter on a partition column, shorten the date range, or select fewer columns) and try again. Lightdash checks the limit on every agent query; it does not depend on the agent's instructions.
+
+<Warning>
+Dry-run estimates can be lower than what a query is billed for: tables with row-level security report 0 bytes, and external tables can report less than they scan. Keep `Maximum bytes billed` set as the hard limit.
+</Warning>
+
+The confirmation threshold and the agent limit are integer numbers of bytes, for example `10000000000` for 10 GB. Estimates are bytes processed, which is what BigQuery bills on on-demand pricing; with capacity (slot-based) pricing they show scan size, not cost.
+
 
 ##### Start of week
 
