@@ -275,6 +275,29 @@ To get the query under the limit, add filters, choose fewer fields or use a shor
 When an agent's query hits the limit, the agent gets the same error. It may try a narrower query. If its queries keep failing, it stops querying and answers with what it has, telling you that the query failed.
 
 
+##### Query cost estimates
+
+Lightdash can estimate how much data a query will process before it runs, using a free [BigQuery dry run](https://cloud.google.com/bigquery/docs/running-queries#dry-run). All three settings are in the advanced options of the BigQuery connection and are off until you set them.
+
+`Maximum bytes billed`, and the role and AI agent limits above, are enforced by BigQuery itself, so they stay the hard limit for every query, including AI agent queries. Keep them set when you use query cost estimates: estimates can be lower than the bytes a query is billed for.
+
+| Setting | What it does |
+| --- | --- |
+| `Show query cost estimates` | Shows the estimated bytes processed next to **Run query** in the Explore view and next to **Run** in the SQL Runner. |
+| `Confirm queries estimated above (bytes)` | Asks users to confirm before running a query whose estimate is above this number of bytes. Requires `Show query cost estimates`. Leave it empty to never ask. |
+| `AI agent query limit (estimated bytes)` | Refuses AI agent queries whose estimate is above this number of bytes. Leave it empty for no limit. |
+
+**Estimate and confirm for users.** With estimates on, the estimate updates as you change the query, before you run it. If you run a query estimated above the confirmation threshold, a dialog shows the estimate and the threshold, and the query only runs once you confirm. If an estimate can't be calculated, the query runs as normal.
+
+**Enforced limit for AI agents.** Every query an AI agent runs, in Lightdash or through [MCP](/agents/lightdash-mcp), is dry-run before it executes. If the estimate is above the agent limit, the query is not run and the agent receives an error with the estimate and the limit, so it can narrow the query (filter on a partition column, shorten the date range, or select fewer columns) and try again. Lightdash checks the limit on every agent query; it does not depend on the agent's instructions. This limit is separate from **AI agent maximum bytes billed**: the estimate limit stops the query before it reaches BigQuery, and the bytes-billed limit is enforced by BigQuery on the query itself.
+
+<Warning>
+Dry-run estimates can be lower than what a query is billed for: tables with row-level security report 0 bytes, and external tables can report less than they scan. Keep `Maximum bytes billed` (or the role and AI agent limits) set as the hard limit.
+</Warning>
+
+The confirmation threshold and the agent limit are integer numbers of bytes, for example `10000000000` for 10 GB. Estimates are bytes processed. On-demand pricing bills bytes processed but rounds each referenced table up to at least 10 MB, so a very small query can be billed more than its estimate. With capacity (slot-based) pricing, estimates show scan size, not cost.
+
+
 ##### Start of week
 
 This controls what day is the start of the week in Lightdash. `Auto` sets it to whatever the default is for your data warehouse. Or, you can customize it and select the day of the week from the drop-down menu. This will be taken into account when using 'WEEK' time interval in Lightdash.
