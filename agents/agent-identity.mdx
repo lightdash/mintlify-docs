@@ -174,6 +174,7 @@ Lightdash keeps both in its query history, and sends them to the warehouse as ta
 | `user_uuid` | The UUID of the Lightdash user that triggered the query, which is the person the agent ran for. |
 | `agent_surface` | Where the agent ran. See the table below. |
 | `agent_client` | The client of that agent. See the table below. |
+| `agent_uuid` | The UUID of the Lightdash AI agent that ran the query, for in-app chat and Slack agents. Not set for MCP queries. |
 
 | `agent_surface` | `agent_client` |
 | --- | --- |
@@ -185,7 +186,7 @@ Lightdash keeps both in its query history, and sends them to the warehouse as ta
 
 `agent_client` is the client ID in lower case. When the ID has characters that a label cannot hold, or is longer than 60 characters, the value is `h-` followed by a 32-character hash. The same ID always gives the same hash.
 
-On BigQuery, every agent job has the `agent`, `agent_surface` and `agent_client` labels. They come before the other labels, so the 64-label limit does not drop them. On Snowflake, the same keys come first in the JSON `query_tag`, so the 2,000-character limit does not cut them.
+On BigQuery, every agent job has the `agent`, `agent_surface` and `agent_client` labels, and `agent_uuid` and `user_uuid` when they are set. They come before the other labels, so the 64-label limit does not drop them. On Snowflake, the same keys come first in the JSON `query_tag`, so the 2,000-character limit does not cut them. To group BigQuery cost by agent and user, see [Attribute BigQuery cost with job labels](/workspace-admin/usage-analytics#attribute-bigquery-cost-with-job-labels).
 
 <CodeGroup>
 
@@ -193,7 +194,8 @@ On BigQuery, every agent job has the `agent`, `agent_surface` and `agent_client`
 SELECT creation_time, user_email, job_id,
        (SELECT value FROM UNNEST(labels) WHERE key = 'user_uuid') AS lightdash_user_uuid,
        (SELECT value FROM UNNEST(labels) WHERE key = 'agent_surface') AS agent_surface,
-       (SELECT value FROM UNNEST(labels) WHERE key = 'agent_client') AS agent_client
+       (SELECT value FROM UNNEST(labels) WHERE key = 'agent_client') AS agent_client,
+       (SELECT value FROM UNNEST(labels) WHERE key = 'agent_uuid') AS agent_uuid
 FROM `region-us`.INFORMATION_SCHEMA.JOBS
 WHERE creation_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 DAY)
   AND EXISTS (
@@ -665,6 +667,8 @@ People who can manage a project find **Agent identity** in the project settings 
 </Frame>
 
 When the rule is **The person**, the card says **Not in use**, and agents use each person's own credentials. When the Snowflake rule is **The person's agent sign-in**, the card says agents use each person's own agent sign-in for Snowflake.
+
+On BigQuery, the setup steps also show the bytes-billed limit for agent queries, for example "Agent queries are limited to 500,000,000,000 bytes billed." To change it, set **AI agent maximum bytes billed** in the project connection. That limit applies whichever identity agents run as. See [AI agent maximum bytes billed](/integrations/connect-project#ai-agent-maximum-bytes-billed).
 
 Lightdash does not check that the shared agent account differs from the account of the connection. Use the Test result to confirm it. To check what agents can read, see [Verify on BigQuery](#verify-on-bigquery).
 

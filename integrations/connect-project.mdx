@@ -234,12 +234,52 @@ For example, setting this to `1000000000` means if a query would bill more than 
   Query exceeded limit for bytes billed: 1000000000. 2000000000 or higher required.
 ```
 
-`Maximum bytes billed` is enforced by BigQuery itself, so it is the hard limit for every query, including AI agent queries. Keep it set when you use query cost estimates (below): estimates can be lower than the bytes a query is billed for.
+Leaving this field empty or setting it to `0` means no limit.
+
+###### Maximum bytes billed by role
+
+A limit that suits people who view dashboards can be too tight for people who write SQL. Under **Maximum bytes billed by role**, you can set a different limit for each project role: **Viewer**, **Interactive Viewer**, **Editor**, **Developer** and **Admin**. You'll find these fields in the advanced options of the BigQuery connection, after **Maximum bytes billed**.
+
+Lightdash uses the person's highest project role. That role can come from their organization role, their project access or a group they belong to. For example, a person who is an organization **Viewer** but a **Developer** on the project through a group gets the **Developer** limit.
+
+- Leave a role empty to use the connection's **Maximum bytes billed** for that role.
+- Set a role to `0` to remove the limit for that role.
+- People whose access comes only from a [custom role](/workspace-admin/custom-roles) get the connection's **Maximum bytes billed**.
+
+<a id="ai-agent-maximum-bytes-billed" />
+
+###### AI agent maximum bytes billed
+
+**AI agent maximum bytes billed** sets a separate limit for queries that AI agents run. This includes agents in Lightdash and Slack, MCP clients and the [shared agent account](/agents/agent-identity#bigquery-the-shared-agent-account). Leave it empty to use the role limit of the person the agent is working for, or the connection's limit if their role has none. Set it to `0` to remove the limit for agent queries.
+
+###### Which limit applies
+
+Lightdash picks one limit for each query and sends it with that query to BigQuery:
+
+1. For an agent query, the **AI agent maximum bytes billed**, if it's set.
+2. Otherwise, the limit for the person's highest project role, if it's set.
+3. Otherwise, the connection's **Maximum bytes billed**.
+
+The role and agent limits replace the connection's limit. They don't add to it, so a role limit can be higher or lower than the connection's limit. They apply to queries from charts, dashboards, the SQL runner, scheduled deliveries and agents. dbt runs and compiling the project use the connection's **Maximum bytes billed**.
+
+###### When a query hits the limit
+
+BigQuery rejects the query before it runs, so nothing is billed. The chart, dashboard tile or SQL runner shows an error with the limit and the number of bytes the query needs:
+
+```bash
+  Bigquery warehouse error: bytesBilledLimitExceeded - Query exceeded limit for bytes billed: 1000000000. 2000000000 or higher required.
+```
+
+To get the query under the limit, add filters, choose fewer fields or use a shorter date range. To raise the limit, ask a project admin to change it for your role.
+
+When an agent's query hits the limit, the agent gets the same error. It may try a narrower query. If its queries keep failing, it stops querying and answers with what it has, telling you that the query failed.
 
 
 ##### Query cost estimates
 
 Lightdash can estimate how much data a query will process before it runs, using a free [BigQuery dry run](https://cloud.google.com/bigquery/docs/running-queries#dry-run). All three settings are in the advanced options of the BigQuery connection and are off until you set them.
+
+`Maximum bytes billed`, and the role and AI agent limits above, are enforced by BigQuery itself, so they stay the hard limit for every query, including AI agent queries. Keep them set when you use query cost estimates: estimates can be lower than the bytes a query is billed for.
 
 | Setting | What it does |
 | --- | --- |
@@ -249,10 +289,10 @@ Lightdash can estimate how much data a query will process before it runs, using 
 
 **Estimate and confirm for users.** With estimates on, the estimate updates as you change the query, before you run it. If you run a query estimated above the confirmation threshold, a dialog shows the estimate and the threshold, and the query only runs once you confirm. If an estimate can't be calculated, the query runs as normal.
 
-**Enforced limit for AI agents.** Every query an AI agent runs, in Lightdash or through [MCP](/agents/lightdash-mcp), is dry-run before it executes. If the estimate is above the agent limit, the query is not run and the agent receives an error with the estimate and the limit, so it can narrow the query (filter on a partition column, shorten the date range, or select fewer columns) and try again. Lightdash checks the limit on every agent query; it does not depend on the agent's instructions.
+**Enforced limit for AI agents.** Every query an AI agent runs, in Lightdash or through [MCP](/agents/lightdash-mcp), is dry-run before it executes. If the estimate is above the agent limit, the query is not run and the agent receives an error with the estimate and the limit, so it can narrow the query (filter on a partition column, shorten the date range, or select fewer columns) and try again. Lightdash checks the limit on every agent query; it does not depend on the agent's instructions. This limit is separate from **AI agent maximum bytes billed**: the estimate limit stops the query before it reaches BigQuery, and the bytes-billed limit is enforced by BigQuery on the query itself.
 
 <Warning>
-Dry-run estimates can be lower than what a query is billed for: tables with row-level security report 0 bytes, and external tables can report less than they scan. Keep `Maximum bytes billed` set as the hard limit.
+Dry-run estimates can be lower than what a query is billed for: tables with row-level security report 0 bytes, and external tables can report less than they scan. Keep `Maximum bytes billed` (or the role and AI agent limits) set as the hard limit.
 </Warning>
 
 The confirmation threshold and the agent limit are integer numbers of bytes, for example `10000000000` for 10 GB. Estimates are bytes processed. On-demand pricing bills bytes processed but rounds each referenced table up to at least 10 MB, so a very small query can be billed more than its estimate. With capacity (slot-based) pricing, estimates show scan size, not cost.

@@ -74,6 +74,7 @@ The following query tags are sent:
 | agent | `true` when an AI agent ran the query. Set with [agent identity](/agents/agent-identity#find-agent-queries-in-the-warehouse). |
 | agent_surface | Where the AI agent ran, for example `mcp` or `slack_agent`. Only set with [agent identity](/agents/agent-identity#find-agent-queries-in-the-warehouse). |
 | agent_client | The client of the AI agent, for example an MCP OAuth client ID or a Slack app ID. Only set with [agent identity](/agents/agent-identity#find-agent-queries-in-the-warehouse). |
+| agent_uuid | The UUID of the Lightdash AI agent that ran the query, for in-app chat and Slack agents. Not set for MCP queries. Only set with [agent identity](/agents/agent-identity#find-agent-queries-in-the-warehouse). |
 | user_attribute_`<name>` | One tag per [user attribute](/workspace-admin/user-attributes) value assigned to the querying user. Applies to both regular users and embed viewers, and requires no configuration. |
 
 ### Query contexts
@@ -143,3 +144,50 @@ Query tags are stored differently in each data warehouse:
 | Databricks     | Appends JSON metadata as a SQL comment in each submitted SQL query.                                                                                        |
 | Postgres       | Appends JSON metadata as a SQL comment in each submitted SQL query.                                                                                        |
 | Athena         | Appends JSON metadata as a SQL comment in each submitted SQL query.                                                                                        |
+
+### Attribute BigQuery cost with job labels
+
+On BigQuery, every query tag is a label on the job. BigQuery records the account that ran the job in `user_email`. That is the connection's service account, or the agent's own account with [agent identity](/agents/agent-identity), never the Lightdash user. To find who a job ran for, read the `user_uuid` label. To find which AI agent ran it, read `agent_uuid`.
+
+BigQuery allows 64 labels on a job. When a query has more tags than that, Lightdash keeps `agent`, `agent_surface`, `agent_client`, `agent_uuid` and `user_uuid` first, then the other query tags, then the user attribute tags. The labels beyond 64 are dropped, so `user_uuid` and the agent labels always stay on the job.
+
+Lightdash writes labels on the jobs it creates in the connection's execution project. Query `INFORMATION_SCHEMA.JOBS` in that project. This needs the `bigquery.jobs.listAll` permission, for example from the BigQuery Resource Viewer role. Replace `region-us` with the region of your datasets.
+
+<CodeGroup>
+
+```sql Cost by Lightdash user
+SELECT
+  (SELECT value FROM UNNEST(labels) WHERE key = 'user_uuid') AS lightdash_user_uuid,
+  COUNT(*) AS jobs,
+  SUM(total_bytes_billed) / POW(1024, 4) AS tib_billed,
+  SUM(total_slot_ms) / 1000 / 3600 AS slot_hours
+FROM `region-us`.INFORMATION_SCHEMA.JOBS
+WHERE creation_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+  AND job_type = 'QUERY'
+  AND EXISTS (SELECT 1 FROM UNNEST(labels) WHERE key = 'query_context')
+GROUP BY lightdash_user_uuid
+ORDER BY tib_billed DESC;
+```
+
+```sql Cost by AI agent and user
+SELECT
+  (SELECT value FROM UNNEST(labels) WHERE key = 'agent_uuid') AS agent_uuid,
+  (SELECT value FROM UNNEST(labels) WHERE key = 'agent_surface') AS agent_surface,
+  (SELECT value FROM UNNEST(labels) WHERE key = 'user_uuid') AS lightdash_user_uuid,
+  COUNT(*) AS jobs,
+  SUM(total_bytes_billed) / POW(1024, 4) AS tib_billed,
+  SUM(total_slot_ms) / 1000 / 3600 AS slot_hours
+FROM `region-us`.INFORMATION_SCHEMA.JOBS
+WHERE creation_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+  AND job_type = 'QUERY'
+  AND EXISTS (
+    SELECT 1 FROM UNNEST(labels) AS label
+    WHERE label.key = 'agent' AND label.value = 'true'
+  )
+GROUP BY agent_uuid, agent_surface, lightdash_user_uuid
+ORDER BY tib_billed DESC;
+```
+
+</CodeGroup>
+
+`total_bytes_billed` drives on-demand cost, and `total_slot_ms` drives cost with capacity pricing. Label values are lower case. To match a `user_uuid` or `agent_uuid` to a name, compare it with the user or agent UUID in Lightdash. The same labels are in the BigQuery [billing export](https://cloud.google.com/billing/docs/how-to/export-data-bigquery), so you can also group billed cost by them there.
