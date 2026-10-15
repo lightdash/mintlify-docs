@@ -8,14 +8,14 @@ tag: "Experimental"
   <Badge icon="test-pipe-2" color="orange" size="sm" shape="pill">Experimental</Badge> Multiple warehouse connections are behind the `multi-connection-projects` feature flag, and the flow and wording on this page may change between releases. Contact [Lightdash support](mailto:support@lightdash.com) to enable it for your organization. Self-hosted instances need an [Enterprise license](/self-host/enterprise-features) and `multi-connection-projects` in `LIGHTDASH_ENABLE_FEATURE_FLAGS`. [What Experimental means](/support/feature-maturity-levels).
 </Info>
 
-Use multiple connections when one project needs data from several databases of the same warehouse type, such as a production database and a read replica. If you only need more dbt projects on the same warehouse, use [multiple dbt sources](/integrations/dbt/projects#connecting-multiple-dbt-sources) instead.
+Use multiple connections when one project needs data from several databases of the same warehouse type, such as a production database and a read replica. On Snowflake, you can also use them to run different workloads on different warehouses, such as a small warehouse for dashboards and a large warehouse for heavy SQL runner work. If you only need more dbt projects on the same warehouse, use [multiple dbt sources](/integrations/dbt/projects#connecting-multiple-dbt-sources) instead.
 
 When you switch, the current connection becomes the **primary** connection and everything that already exists stays on it. Each explore, SQL chart and virtual view runs on one connection.
 
 ## Requirements and limits
 
 - You need permission to manage the project.
-- Only Postgres and Athena projects can switch, and every extra connection uses the primary's warehouse type. You can't change that type while extra connections exist.
+- Only Postgres, Athena and Snowflake projects can switch, and every extra connection uses the primary's warehouse type. You can't change that type while extra connections exist.
 - Preview projects can't switch, and neither can a project whose warehouse uses [organization credentials](/workspace-admin/organization-credentials).
 - The switch is one way. You can remove extra connections, but the app can't switch the project back.
 - One query can't combine tables from two connections.
@@ -41,7 +41,41 @@ Name the current connection, add the first extra connection, and click **Review 
   <img src="/images/workspace-admin/multiple-warehouse-connections/connections-panel.png" alt="The Connections card listing Primary warehouse with an Original badge, Reporting replica, and the Add connection button" />
 </Frame>
 
-**Edit** applies to extra connections. Edit the primary with the warehouse form on the same page. **SQL runner databases** sets which databases the SQL runner lists for a connection, up to 100.
+**Edit** applies to extra connections. Edit the primary with the warehouse form on the same page. **SQL runner databases** sets which databases the SQL runner lists for a Postgres or Athena connection, up to 100.
+
+### Snowflake connections
+
+Each Snowflake connection has its own account, user, role, database and warehouse. To run different workloads on different Snowflake warehouses, add one connection for each warehouse. Then pick a connection in the SQL runner, or run a dbt source on it.
+
+A model's `snowflake_warehouse` config and **Always use this warehouse** work on every connection the same way they work on a single-connection project.
+
+#### Shared credentials or None
+
+Two settings decide whose Snowflake login runs a query:
+
+- **Require users to provide their own credentials** on the primary connection. Every extra connection follows it.
+- **Authentication Type** on the connection. **None** means the connection stores no Snowflake login at all.
+
+| Setup | What the connection stores | Whose login runs each person's queries | What people see |
+| --- | --- | --- | --- |
+| Shared credentials, personal credentials not required | One Snowflake login: **Password**, **Key Pair (private key file)** or **User Account (Sign in with Snowflake)** | The shared login | Nothing extra |
+| Shared credentials, personal credentials required | One Snowflake login | Their own login | Until they add their own credentials, a message that names the connection and points to the credentials switcher |
+| **None** | No Snowflake login | Their own login | The same message |
+
+Which to choose:
+
+- **Shared credentials, personal credentials not required**: everyone can see the same data through one service user.
+- **Personal credentials required**: Snowflake roles and access policies must apply to each person.
+- **None**: the same as personal credentials required, and you don't want a shared Snowflake login stored for this connection.
+
+With **User Account (Sign in with Snowflake)** as shared credentials, the connection saves the Snowflake sign-in of the person who adds or edits it.
+
+To use **None** on an extra connection:
+
+- On the primary connection, turn on **Require users to provide their own credentials** and save. If this setting is off, **None** isn't in the **Authentication Type** list.
+- Each person adds their own Snowflake credentials for the connection in the credentials switcher in the navigation bar. They can use **Password**, **Key Pair (private key file)** or **User Account (Sign in with Snowflake)**. The sign-in option needs Snowflake OAuth on the instance. Self-hosted instances set it up with the [Snowflake environment variables](/self-host/customize-deployment/environment-variables#snowflake).
+
+**External Browser** authentication isn't allowed on an extra Snowflake connection. This applies when you enable multiple connections, add a connection, or edit one.
 
 ## Run a dbt source on another connection
 
