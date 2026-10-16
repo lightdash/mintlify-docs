@@ -281,7 +281,7 @@ For embedding a Lightdash [AI agent](/agents) so users can chat with their data 
     [attributeName: string]: string,
   },
 
-  // Optional: user information surfaced in audit/analytics
+  // Optional: viewer identity. Not a query tag for agent queries, see User metadata
   user?: {
     externalId?: string,
     email?: string,
@@ -740,6 +740,7 @@ writeActions?: {
 - When editing or building a dashboard, add-tile content is filtered to `spaceUuid`, so embedded users can only pick saved charts from the allowed space.
 - Dashboards and charts created or edited through write actions are normal Lightdash objects — they can be viewed and edited from Lightdash and vice versa.
 - Newly saved charts are **not** added to the embed allowlist automatically. They behave like normal private content and won't be re-embeddable unless you add them explicitly.
+- In AI agent embeds, the name shown next to messages in the chat is the actor's name: the Lightdash user's full name for `userUuid`, or the service account's description for `serviceAccountUserUuid`. Every embedded viewer sees the same name; the `user` claim does not change it.
 - API access tokens do not support write actions. They are for supported API reads, such as listing content through the React SDK.
 
 ### Configure write actions
@@ -960,7 +961,7 @@ See the complete [User attributes guide](/workspace-admin/user-attributes).
 
 ## User metadata
 
-Pass user information to track who's viewing embedded content.
+Pass user information to identify who's viewing embedded content.
 
 ```typescript
 user?: {
@@ -969,7 +970,12 @@ user?: {
 }
 ```
 
-This metadata appears in [query tags](/workspace-admin/usage-analytics#query-tags) for usage analytics. If you don't provide an `externalId`, Lightdash automatically generates one based on the embed token.
+How `externalId` reaches your warehouse depends on who runs the query:
+
+- **Dashboard and chart embeds** run queries as the embed viewer. Each query carries the `embed` and `external_id` [query tags](/workspace-admin/usage-analytics#query-tags), where `external_id` is your `externalId`. If you don't provide an `externalId`, Lightdash automatically generates one based on the embed token.
+- **AI agent embeds** run queries as the [write actions](#write-actions) actor. Those queries carry the actor's `user_uuid` and no `external_id`, so `externalId` does not identify the viewer in your warehouse. To attribute agent queries to a viewer, add an identifier to [`userAttributes`](#user-attributes). Every attribute on the token is emitted as a `user_attribute_<name>` [tag](/workspace-admin/usage-analytics#user-attribute-tags), whether or not it is defined in Lightdash.
+
+`email` is not sent as a query tag.
 
 **Example:**
 
