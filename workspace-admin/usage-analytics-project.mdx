@@ -5,14 +5,14 @@ tag: "Beta"
 ---
 
 <Info>
-  <Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> The analytics project requires access to be enabled for your organization and organization administration permissions. Contact the Lightdash team to request access. Self-hosted operators must also complete the [deployment setup](/self-host/enterprise-features/usage-analytics). [What Beta means](/support/feature-maturity-levels).
+  <Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> The analytics project requires access to be enabled for your organization. Organization administrators can create it and [grant read access](#grant-access) to selected users and service accounts. Contact the Lightdash team to request access. Self-hosted operators must also complete the [deployment setup](/self-host/enterprise-features/usage-analytics). [What Beta means](/support/feature-maturity-levels).
 </Info>
 
 The **Lightdash analytics** project brings your organization's usage data into Lightdash. Start with the built-in dashboards, explore the underlying metrics, or save your own charts. You do not need to connect a warehouse or maintain a dbt project for it.
 
 This project is separate from the [project-level User Activity dashboard](/workspace-admin/usage-analytics#user-activity-dashboard). It covers captured activity across your organization, rather than one project's fixed report.
 
-Use this page to [create the project](#create-your-analytics-project), [update its content](#update-models-and-dashboards), [choose a dashboard](#built-in-dashboards), or [build your own analysis](#build-your-own-analysis).
+Use this page to [create the project](#create-your-analytics-project), [grant access](#grant-access), [update its content](#update-models-and-dashboards), [choose a dashboard](#built-in-dashboards), or [build your own analysis](#build-your-own-analysis).
 
 ## Create your analytics project
 
@@ -21,9 +21,44 @@ Use this page to [create the project](#create-your-analytics-project), [update i
 3. Click **Create**. Lightdash creates the project and installs its built-in models, charts and dashboards.
 4. Open a dashboard from the settings page, or click **Explore** to browse the available tables.
 
-The project is restricted to organization administrators, even if someone has access to other projects. It can include user identities and usage from across the organization.
+Organization administrators have access automatically. Other users need an explicit [analytics permission](#grant-access), even if they have access to other projects.
 
 Creating the project does not create historical events. Read [Data freshness and history](#data-freshness-and-history) if a chart is empty after setup.
+
+## Grant access
+
+The **View managed analytics for the entire organization** permission (`view:SystemAnalytics`) lets selected users, groups and service accounts read the analytics project without organization administration access. It is separate from **View usage analytics** (`view:Analytics`), which controls the older project-level usage reports.
+
+Organization Admin includes this permission. Built-in Project Admin and other non-admin system roles do not; duplicating a Project Admin role does not add it either.
+
+<Warning>
+  The analytics project contains organization-wide usage, including user and content names. Assigning this permission on the analytics project does not limit the data to other projects the recipient can access. Grant it only to people or agents trusted to see usage across your organization.
+</Warning>
+
+### Configure a custom role
+
+An organization administrator can grant access using [custom roles](/workspace-admin/custom-roles), which require an Enterprise plan:
+
+1. Create a **Project** custom role and select **View managed analytics for the entire organization**. Keep its **View project** (`view:Project`) dependency selected.
+2. Assign the role to the selected users, group or service account on the **Lightdash analytics** project.
+3. Keep the ordinary permissions required for their work. Viewer access allows reading shared saved content; Interactive Viewer access or equivalent custom permissions is needed to build Explore queries. The analytics permission does not replace content, space or query permissions.
+4. Have the recipient select **Lightdash analytics** in the project selector and open a dashboard. To verify query access, open a chart's **Explore from here** action and run a query.
+
+The permission can also be included in an **Organization** custom role. A project-level assignment makes the intended access explicit. Follow [custom-role assignment](/workspace-admin/custom-roles#assigning-custom-roles) for users and groups, or [project-scoped service accounts](/workspace-admin/service-accounts#project-scoped-service-accounts) for automation.
+
+Creating, syncing and deleting the managed project through analytics settings still require organization administration permissions. The read permission does not grant those operations or access to SQL Runner, which is unavailable for managed analytics projects.
+
+### Agents and MCP
+
+An agent uses the permissions of the user or service account it authenticates with. Grant access to that identity; granting it only to the service account's creator is not enough. The usual project, content, Explore and [MCP permissions](/agents/lightdash-mcp) still apply.
+
+Use the managed Explores for metric queries. Test with the agent's actual credentials, including any required connection or token permissions.
+
+### Remove access
+
+Permissions are additive. Remove every applicable analytics grant, including direct, group and organization-level grants, to revoke access. An organization administrator retains access through their admin role.
+
+After the normal permission/session refresh, revocation blocks project discovery, new queries, query history and cached results. It does not retract data already downloaded by a recipient.
 
 ## Update models and dashboards
 
@@ -112,6 +147,12 @@ Keep these distinctions in mind when reading a chart:
 ### I cannot see Lightdash analytics in Settings
 
 Check that your organization has access enabled and that your account has organization administration permissions. On a self-hosted instance, also check the [deployment prerequisites](/self-host/enterprise-features/usage-analytics).
+
+### I have project access but cannot open analytics
+
+Check that your account has **View managed analytics for the entire organization**, plus the ordinary project and content permissions. **View usage analytics** alone does not grant access to this project. Ask an organization administrator to follow [Grant access](#grant-access).
+
+Readers open the project through the project selector; they do not need access to the admin-only analytics settings page. If an agent is denied, check its authenticated identity and effective permissions rather than its creator's access.
 
 ### A dashboard is empty or missing fields
 
