@@ -29,19 +29,27 @@ Sandboxes are also what make these features **fast** and **multi-turn**: a sandb
 suspended between turns and resumed later, so a conversation with the agent keeps its state
 without holding a container open the whole time.
 
+Sandboxes also run **Python execution** <Badge color="purple" icon="flask" size="sm">Beta</Badge>,
+which runs Python over query results in a one-off sandbox. See
+[Python execution](#python-execution).
+
 ## Sandbox providers
 
 The sandbox backend is pluggable. Lightdash talks to a provider-neutral interface, so the
 same feature code runs on whichever backend your deployment is configured for. You select
 the provider with the `SANDBOX_PROVIDER` environment variable.
 
-| Provider | `SANDBOX_PROVIDER` | Use for | Isolation |
-| --- | --- | --- | --- |
-| **E2B** (default) | `e2b` | Production / managed | microVM |
-| **AWS Lambda MicroVMs** | `lambda-microvm` | Production on AWS (self-hosted) | microVM |
-| **Azure Container Apps Sandboxes** | `azure-sandboxes` | Production on Azure (self-hosted) | microVM |
-| **Google Cloud Run Sandboxes** | `gcp-cloud-run` | GCP (self-hosted, preview) | gVisor |
-| **Local Docker** | `docker` | Local development only | container |
+<div className="sticky-first-col">
+
+| Provider | `SANDBOX_PROVIDER` | Use for | Isolation | Python execution |
+| --- | --- | --- | --- | --- |
+| **E2B** (default) | `e2b` | Production / managed | microVM | <Icon icon="check" /> |
+| **AWS Lambda MicroVMs** | `lambda-microvm` | Production on AWS (self-hosted) | microVM | <Icon icon="x" className="matrix-no" /> |
+| **Azure Container Apps Sandboxes** | `azure-sandboxes` | Production on Azure (self-hosted) | microVM | <Icon icon="x" className="matrix-no" /> |
+| **Google Cloud Run Sandboxes** | `gcp-cloud-run` | GCP (self-hosted, preview) | gVisor | <Icon icon="x" className="matrix-no" /> |
+| **Local Docker** | `docker` | Local development only | container | <Icon icon="check" /> |
+
+</div>
 
 **E2B**, **AWS Lambda MicroVMs**, and **Azure Container Apps Sandboxes** are all supported
 production backends. E2B is the managed default; the AWS and Azure providers are for teams
@@ -91,6 +99,8 @@ E2B_TEMPLATE_NAME=lightdash/lightdash-data-app
 E2B_TEMPLATE_TAG=<lightdash-version>             # defaults to your Lightdash version
 E2B_AI_WRITEBACK_TEMPLATE_NAME=lightdash/lightdash-ai-writeback
 E2B_AI_WRITEBACK_TEMPLATE_TAG=<lightdash-version>
+E2B_PYTHON_TEMPLATE_NAME=lightdash-python-runner  # Python execution
+E2B_PYTHON_TEMPLATE_TAG=<lightdash-version>
 ```
 
 ## AWS Lambda MicroVMs (self-hosted production)
@@ -491,13 +501,14 @@ For local development you can run sandboxes as plain Docker containers on your o
 — no E2B account required. This is the recommended way to work on or try the AI features
 locally.
 
-It uses the same images E2B builds, but as plain local Docker images. Two **separate**
-images are used (different toolchains), mirroring the two E2B templates:
+It uses the same images E2B builds, but as plain local Docker images. Each feature uses a
+**separate** image (different toolchains), mirroring the E2B templates:
 
 | Image (default tag) | Built from | Used by |
 | --- | --- | --- |
 | `lightdash-sandbox:local` | `sandboxes/data-apps/` | Data app generation |
 | `lightdash-ai-writeback:local` | `sandboxes/ai-writeback/` | AI writeback |
+| `lightdash-python-runner:local` | `sandboxes/python-runner/` | Python execution |
 
 ### Prerequisites
 
@@ -514,7 +525,10 @@ images are used (different toolchains), mirroring the two E2B templates:
    ```bash
    ./sandboxes/data-apps/build-local-image.sh        # -> lightdash-sandbox:local
    ./sandboxes/ai-writeback/build-local-image.sh     # -> lightdash-ai-writeback:local
+   ./sandboxes/python-runner/build-local-image.sh    # -> lightdash-python-runner:local
    ```
+
+   Build only the images for the features you use.
 
    These are large (the writeback image bundles dbt, the Lightdash CLI and Claude Code) and
    only need rebuilding when the sandbox toolchain changes.
@@ -526,12 +540,61 @@ images are used (different toolchains), mirroring the two E2B templates:
    # optional — these are the defaults:
    SANDBOX_DOCKER_IMAGE=lightdash-sandbox:local
    SANDBOX_AI_WRITEBACK_DOCKER_IMAGE=lightdash-ai-writeback:local
+   SANDBOX_PYTHON_DOCKER_IMAGE=lightdash-python-runner:local
    ```
 
 3. Restart the **backend and the scheduler** so both pick up the new environment. Data app
    generation runs in the scheduler worker, so a stale `SANDBOX_PROVIDER` there will keep it
    on E2B. (With PM2, a plain `restart` reuses the cached env — delete and re-start the
    processes, or restart with `--update-env`, to actually reload the env file.)
+
+## Python execution
+
+Python execution runs Python over the results of other queries in a pipeline. Lightdash
+writes the referenced results into a fresh sandbox, runs the code, reads the output back,
+and destroys the sandbox. The sandbox has no credentials and no outbound network access.
+Lightdash never suspends it, so [snapshot lifecycle](#snapshot-lifecycle) settings don't
+apply.
+
+The sandbox image includes pandas, numpy, scipy, pyarrow, scikit-learn, and polars. Your code
+must return a pandas DataFrame.
+
+### Supported providers
+
+Python execution runs only on the **E2B** and **Local Docker** providers. On
+`lambda-microvm`, `azure-sandboxes`, and `gcp-cloud-run`, Python queries fail with
+`Python queries are not supported on the <provider> sandbox provider yet`. Other sandbox
+features keep working on those providers.
+
+### Make sure the Python sandbox exists
+
+- **E2B** — Lightdash launches `E2B_PYTHON_TEMPLATE_NAME` (default
+  `lightdash-python-runner`) at `E2B_PYTHON_TEMPLATE_TAG` (default: your Lightdash version).
+  Your `E2B_API_KEY` must have access to the template at that tag. To build the template in
+  your own E2B team, check out the Lightdash repository at your version, run the build from
+  `sandboxes/python-runner/`, and then set both variables to the template you built:
+
+  ```bash
+  cd sandboxes/python-runner
+  pnpm install
+  E2B_API_KEY=e2b_... E2B_PYTHON_TEMPLATE_TAG=<lightdash-version> pnpm run build
+  ```
+
+  When you upgrade Lightdash, rebuild or retag the template so a build exists at the new
+  version's tag, or pin `E2B_PYTHON_TEMPLATE_TAG`.
+- **Local Docker** — build `lightdash-python-runner:local` with
+  `./sandboxes/python-runner/build-local-image.sh`, or set `SANDBOX_PYTHON_DOCKER_IMAGE` to
+  your own tag. See [Local Docker provider](#local-docker-provider-development).
+
+### Turn it on
+
+Two feature flags control Python execution, and both are off by default. To turn it on, set
+[`LIGHTDASH_ENABLE_FEATURE_FLAGS`](/self-host/customize-deployment/environment-variables#feature-flags)
+on the backend and the scheduler:
+
+```bash
+LIGHTDASH_ENABLE_FEATURE_FLAGS=compose-sql-runner,python-query-runner
+```
 
 ## Snapshot lifecycle
 
@@ -563,6 +626,8 @@ destroy the sandbox, so nothing idles in the first place.
 | `E2B_TEMPLATE_TAG` | Lightdash version | Tag of the data app template to launch. |
 | `E2B_AI_WRITEBACK_TEMPLATE_NAME` | `lightdash/lightdash-ai-writeback` | E2B template for writeback sandboxes. |
 | `E2B_AI_WRITEBACK_TEMPLATE_TAG` | Lightdash version | Tag of the writeback template to launch. |
+| `E2B_PYTHON_TEMPLATE_NAME` | `lightdash-python-runner` | E2B template for Python execution sandboxes. |
+| `E2B_PYTHON_TEMPLATE_TAG` | Lightdash version | Tag of the Python execution template to launch. |
 | `LAMBDA_MICROVM_REGION` | `eu-west-1` | AWS region the microVMs run in (`lambda-microvm`). |
 | `LAMBDA_MICROVM_DATA_APP_IMAGE_ARN` | — | Image ARN for data app microVMs (required when `SANDBOX_PROVIDER=lambda-microvm`). |
 | `LAMBDA_MICROVM_AI_WRITEBACK_IMAGE_ARN` | — | Image ARN for writeback microVMs (required when `SANDBOX_PROVIDER=lambda-microvm`). |
@@ -583,5 +648,6 @@ destroy the sandbox, so nothing idles in the first place.
 | `GCP_CLOUD_RUN_SANDBOX_SECRET` | — | Shared secret the gateway was deployed with (required when `gcp-cloud-run`). |
 | `SANDBOX_DOCKER_IMAGE` | `lightdash-sandbox:local` | Local image for data app sandboxes (`docker` provider). |
 | `SANDBOX_AI_WRITEBACK_DOCKER_IMAGE` | `lightdash-ai-writeback:local` | Local image for writeback sandboxes (`docker` provider). |
+| `SANDBOX_PYTHON_DOCKER_IMAGE` | `lightdash-python-runner:local` | Local image for Python execution sandboxes (`docker` provider). |
 | `SANDBOX_IDLE_TIMEOUT_MS` | `1800000` (30 min) | Auto-suspend a running-but-idle sandbox (`lambda-microvm` and `azure-sandboxes`). Ignored by `e2b`/`docker`. |
 | `SANDBOX_SNAPSHOT_RETENTION_MS` | `604800000` (7 days) | Lambda MicroVMs idle policy: auto-terminate a suspended microVM (also how long a thread stays resumable). Ignored by `e2b`/`azure-sandboxes`/`docker`. |
