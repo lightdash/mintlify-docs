@@ -253,7 +253,11 @@ A single Lightdash project can connect to more than one dbt project. Each connec
 - The dbt connection you set up when you first created the Lightdash project is the **primary source**.
 - Any dbt projects you add on top of it are **additional sources**.
 
-All sources are compiled together into one set of Explores, so tables from different dbt repos appear side-by-side in the same Lightdash project and can reference each other via `ref()` and joins.
+All sources are compiled together into one set of Explores, so tables from different dbt repos appear side-by-side in the same Lightdash project and can be joined to each other.
+
+<Note>
+  Each source runs dbt on its own, so a `{{ ref() }}` in a model's SQL can only point at models in the same source. To reference a model from another dbt project in SQL, use [dbt-loom](#cross-project-references-with-dbt-loom).
+</Note>
 
 ### When to use this
 
@@ -290,7 +294,7 @@ Each additional source has:
 
 On refresh, Lightdash compiles every source and merges the resulting manifests into a single set of Explores.
 
-**Precedence.** Sources are ordered by precedence. The primary source is always `0` (highest priority). Additional sources are appended after it in the order they were added. Precedence orders the merge for `ref()` and lookup resolution.
+**Precedence.** Sources are ordered by precedence. The primary source is always `0` (highest priority). Additional sources are appended after it in the order they were added. Precedence orders the merge for Lightdash lookups such as joins.
 
 **Name collisions.** If the same model name exists in more than one source, **compilation fails** with an error that names each collision and which sources define it (in the form `<section> "<key>" is defined in both "<source A>" and "<source B>"`, listing up to 10 entries and ending with "Rename or remove the duplicate(s) before deploying."). Rename or remove the duplicates in one of the sources before deploying. Only identical dbt built-in macros and docs are merged silently.
 
@@ -300,7 +304,7 @@ On refresh, Lightdash compiles every source and merges the resulting manifests i
 
 **What's merged vs. deduplicated.**
 
-- **Models**: must be uniquely named across sources — a name collision fails the deploy. Once unique, models can `ref()` each other and be joined across sources.
+- **Models**: must be uniquely named across sources — a name collision fails the deploy. Once unique, models can be joined across sources in Lightdash YAML. A dbt `ref()` in model SQL does not resolve across sources.
 - **Metrics, docs, dbt sources, macros**: unioned across all repos.
 - **Identical dbt built-in macros and docs**: merged silently across repos and never reported as collisions.
 
@@ -362,6 +366,75 @@ Supported for the **primary source only**. Writing custom metrics and dimensions
   To edit models in additional sources, use AI agent write-back or edit the source's dbt project directly.
 </Warning>
 
+## Cross-project references with dbt-loom
+
+<Info>
+  **Availability.** dbt-loom support is behind the `dbt-loom` feature flag and is off by default. On Lightdash Cloud, contact support to turn it on for your organization. On self-hosted deployments, add `dbt-loom` to your `LIGHTDASH_ENABLE_FEATURE_FLAGS` environment variable. It needs dbt 1.6 or later.
+</Info>
+
+[dbt-loom](https://github.com/nicholasyager/dbt-loom) is a dbt plugin that lets one dbt project `ref()` public models from another dbt project:
+
+```sql
+select * from {{ ref('shared_dimensions', 'dim_calendar') }}
+```
+
+dbt-loom reads the upstream project's `manifest.json` and adds its public models to your project before dbt resolves refs. When it is on, Lightdash runs dbt with dbt-loom installed, so server-side compiles work for these projects. This includes the **Refresh dbt** button, `lightdash refresh`, and the refresh API.
+
+Without dbt-loom, a cross-project `ref()` fails the compile with an error like:
+
+```text
+Model 'model.analytics.fct_orders' depends on a node named 'dim_calendar' in package or project 'shared_dimensions' which was not found
+```
+
+### Setting it up
+
+1. Commit a `dbt_loom.config.yml` to the root of your dbt project, next to `dbt_project.yml`. To keep it somewhere else in the repository, set a `DBT_LOOM_CONFIG` [environment variable](#dbt-environment-variables) to its path.
+2. List each upstream project and where to read its manifest from:
+
+```yaml
+manifests:
+  - name: shared_dimensions
+    type: s3
+    config:
+      bucket_name: my-dbt-artifacts
+      object_name: shared_dimensions/manifest.json
+```
+
+3. Add any secrets the config needs as [dbt environment variables](#dbt-environment-variables) on the dbt connection. dbt-loom replaces `$VAR` and `${VAR}` in the config with their values.
+4. Refresh the project.
+
+### Where upstream manifests can come from
+
+Lightdash checks `dbt_loom.config.yml` before dbt runs, so that a project cannot read files or cloud storage that belong to the Lightdash server. Each manifest type needs the following:
+
+| Type | Requirement |
+| --- | --- |
+| `file` | A path inside your dbt project's repository, or an `https://` URL. |
+| `dbt_cloud`, `paradime` | A token in the config or environment variables. A custom `api_endpoint` must use `https://`. |
+| `snowflake` | Uses the warehouse credentials on the Lightdash project. |
+| `s3` | `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` set as dbt environment variables. |
+| `gcs` | A `credentials` key file path inside the repository. |
+| `azure` | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID` and `AZURE_CLIENT_SECRET` set as dbt environment variables. |
+| `databricks` | `DATABRICKS_HOST` and `DATABRICKS_TOKEN` set as dbt environment variables. |
+
+If an entry does not meet its requirement, the refresh fails with an error that names the manifest.
+
+<Note>
+  On self-hosted deployments, these rules apply when the `dbt-explicit-credentials` feature flag is on. When it is off, dbt already shares the server's cloud credentials, so dbt-loom can also read manifests with them and from any file path on the server.
+</Note>
+
+### What appears in Lightdash
+
+- Your project's models become Explores as usual, including models that `ref()` upstream models.
+- The upstream models that dbt-loom adds do not become Explores. They carry no columns or Lightdash metadata in your project. To explore them, connect the upstream dbt project to its own Lightdash project.
+- To limit Lightdash to your own project's models, use a [dbt selector](#dbt-selector) such as `package:analytics`, or combine conditions with a comma, for example `package:analytics,tag:lightdash`.
+
+### Deploying from the CLI
+
+`lightdash deploy` and `lightdash compile` run dbt on your machine or in CI, so they work when dbt-loom is installed there. They do not need the `dbt-loom` feature flag. `lightdash refresh` asks Lightdash to compile from your git connection, so it needs the feature flag.
+
+dbt-loom looks for `dbt_loom.config.yml` in the directory you run the command from, and resolves relative manifest paths from there. Run the CLI from your dbt project directory, or set `DBT_LOOM_CONFIG` to the config's path, as you would for `dbt` itself.
+
 ## dbt project settings
 
 For more information about dbt connection types (Github, Gitlab, Bitbucket, etc.) and the fields required for each type, [read the dbt project section in our connection guide](/integrations/connect-project#2-import-a-dbt-project).
@@ -380,6 +453,8 @@ For example, if you only want to include the `my_model` and all models with the 
 ```console
 my_model tag:lightdash
 ```
+
+To combine conditions, separate them with a comma. For example, `package:analytics,tag:lightdash` includes only models in the `analytics` package that also have the `lightdash` tag.
 
 We support all dbt selectors. [Read more about selectors in the dbt docs](https://docs.getdbt.com/reference/node-selection/syntax#combining-state-and-result-selectors).
 
