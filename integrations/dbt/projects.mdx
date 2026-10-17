@@ -253,7 +253,7 @@ A single Lightdash project can connect to more than one dbt project. Each connec
 - The dbt connection you set up when you first created the Lightdash project is the **primary source**.
 - Any dbt projects you add on top of it are **additional sources**.
 
-All sources are compiled together into one set of Explores, so tables from different dbt repos appear side-by-side in the same Lightdash project and can reference each other via `ref()` and joins.
+Lightdash compiles each source with dbt separately, then merges the resulting manifests into one set of Explores. Tables from different dbt repos appear side-by-side in the same Lightdash project and can be connected with Lightdash [joins](/semantic-layer/joins). A dbt `ref()` to a model in another source doesn't work, because each source must compile on its own.
 
 ### When to use this
 
@@ -288,9 +288,9 @@ Each additional source has:
 
 ### How compilation and merging works
 
-On refresh, Lightdash compiles every source and merges the resulting manifests into a single set of Explores.
+On refresh, Lightdash compiles every source independently and merges the resulting manifests into a single set of Explores.
 
-**Precedence.** Sources are ordered by precedence. The primary source is always `0` (highest priority). Additional sources are appended after it in the order they were added. Precedence orders the merge for `ref()` and lookup resolution.
+**Precedence.** Sources are ordered by precedence. The primary source is always `0` (highest priority). Additional sources are appended after it in the order they were added. Precedence orders the merge of the manifests and the lookup when Lightdash resolves joins by model name.
 
 **Name collisions.** If the same model name exists in more than one source, **compilation fails** with an error that names each collision and which sources define it (in the form `<section> "<key>" is defined in both "<source A>" and "<source B>"`, listing up to 10 entries and ending with "Rename or remove the duplicate(s) before deploying."). Rename or remove the duplicates in one of the sources before deploying. Only identical dbt built-in macros and docs are merged silently.
 
@@ -300,9 +300,14 @@ On refresh, Lightdash compiles every source and merges the resulting manifests i
 
 **What's merged vs. deduplicated.**
 
-- **Models**: must be uniquely named across sources — a name collision fails the deploy. Once unique, models can `ref()` each other and be joined across sources.
+- **Models**: must be uniquely named across sources — a name collision fails the deploy. Once unique, models can be joined across sources with `joins:` in model YAML. Lightdash resolves each join by model name when it builds Explores.
+- **dbt `ref()` across sources**: not supported. dbt compiles each source on its own, so a `ref()` to a model in another source fails that source's `dbt ls` with `depends on a node named ... which was not found`.
 - **Metrics, docs, dbt sources, macros**: unioned across all repos.
 - **Identical dbt built-in macros and docs**: merged silently across repos and never reported as collisions.
+
+<Note>
+  For cross-project `ref()` with dbt Mesh, use the [dbt Cloud connection type](/integrations/connect-project#dbt-cloud). dbt-loom can't run in Lightdash's server-side compile because no dbt plugins are installed there. If you use dbt-loom, compile in CI and run [`lightdash deploy`](#cli-deploy-methods), with one Lightdash project per dbt repo.
+</Note>
 
 **Environment variables** are scoped to their source's connection and validated when that source is saved.
 
