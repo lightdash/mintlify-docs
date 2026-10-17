@@ -316,13 +316,11 @@ A model in one source can reference a model in another connected source. Use dbt
 select * from {{ ref('upstream_project', 'model_name') }}
 ```
 
-The first argument is the `name` from the upstream project's `dbt_project.yml`. Lightdash resolves the ref on the server. You don't need dbt-loom installed in Lightdash.
+The first argument is the `name` from the upstream project's `dbt_project.yml`. You don't need dbt-loom or any other package installed in Lightdash.
+
+Each source compiles as usual, and Lightdash resolves a ref to a model in another connected source on the server. The sources then merge as described in [How compilation and merging works](#how-compilation-and-merging-works). Chains of refs across several sources work, and so do diamond-shaped dependencies. Each extra level in a chain adds compile time, so deeper chains take longer to refresh.
 
 Cross-project refs are behind the `cross-source-dbt-refs` feature flag, which is off by default. On Lightdash Cloud, contact [Lightdash support](mailto:support@lightdash.com) to enable it for your organization. On self-hosted deployments, append `cross-source-dbt-refs` to `LIGHTDASH_ENABLE_FEATURE_FLAGS`, next to `multi-dbt-sources`. [What Experimental means](/support/feature-maturity-levels).
-
-#### How Lightdash resolves the refs
-
-Each source compiles as usual. If a source fails because it references a model in another connected source, Lightdash adds the models of the sources that already compiled as external nodes, through dbt's plugin hook. Then it compiles the failed source again. Lightdash repeats this in rounds, so chains of any depth and diamond-shaped dependencies resolve. The compiled sources then merge as described in [How compilation and merging works](#how-compilation-and-merging-works).
 
 #### Requirements
 
@@ -331,10 +329,10 @@ Each source compiles as usual. If a source fails because it references a model i
 - The two dbt projects have different `name` values in their `dbt_project.yml` files.
 - The two sources use the same warehouse connection. On a project with [multiple warehouse connections](/workspace-admin/multiple-warehouse-connections), sources on different connections cannot reference each other.
 
-dbt's [model access](https://docs.getdbt.com/docs/mesh/govern/model-access) rules apply as they do in dbt:
+dbt's [model access](https://docs.getdbt.com/docs/mesh/govern/model-access) settings decide which models you can reference:
 
 - You cannot reference a `private` model from another project.
-- You can reference a `protected` model. dbt does not enforce protected access on models that arrive as external nodes, so `restrict-access: true` in the consuming project has no effect here. This matches dbt-loom.
+- You can reference a `protected` model. `restrict-access: true` in the consuming project has no effect on cross-project refs.
 - You can always reference a `public` model.
 
 Versioned models work. Pin a version with `v`, for example `{{ ref('upstream_project', 'model_name', v=2) }}`, or leave it out to get the latest version.
@@ -345,9 +343,9 @@ The downstream model can declare a [join](/semantic-layer/joins) to the upstream
 
 #### Local development and the CLI
 
-Keep using dbt-loom locally with your `dbt_loom.config.yml`. The CLI ignores the stub nodes that dbt-loom adds, so `lightdash compile`, `lightdash preview`, and `lightdash deploy` work from one repository.
+dbt-loom keeps working locally with your `dbt_loom.config.yml`. `lightdash compile`, `lightdash preview`, and `lightdash deploy` work from one repository, with no extra setup.
 
-The CLI only compiles the local repository's models. `lightdash deploy` uploads only those models, as described in [How refreshes work](#how-refreshes-work). `lightdash preview` adds the other sources' models from the parent project's merged manifest, as described in [Preview projects](#preview-projects). When the models of another source are not available, the CLI skips a join to a model from that source and prints a warning.
+The CLI compiles only the local repository's models. `lightdash deploy` uploads only those models, as described in [How refreshes work](#how-refreshes-work). `lightdash preview` adds the other sources' models from the parent project's merged manifest, as described in [Preview projects](#preview-projects). When the models of another source are not available, the CLI skips a join to a model from that source and prints a warning.
 
 #### Errors
 
@@ -365,7 +363,7 @@ If the upstream project is connected but has no model with that name, for exampl
 Cannot resolve cross-source dbt refs: Source "<source>": <project>.<model>: source "<upstream source>" provides project "<project>" but has no model "<model>"
 ```
 
-If two sources reference each other, directly or through other sources, or depend on an upstream source that failed, the refresh fails with:
+If two sources reference each other, directly or through other sources, or a source depends on an upstream source that failed, the refresh fails with:
 
 ```text
 Cannot resolve cross-source dbt refs: the pending sources depend on each other or on an upstream source that failed. Source "<a>": <b>.<model>; Source "<b>": <a>.<model>
@@ -409,7 +407,7 @@ A preview of a multi-source project contains models from every source, not just 
 
 Passing `--combine-manifest <path-or-url>` explicitly overrides the automatic fetch, and is still the right option when you want a specific manifest rather than the parent's. It takes a single file, so in a project with more than two sources that file must already contain the full merged set.
 
-[Cross-project refs](#cross-project-refs-between-sources) resolve in a preview the same way as in its parent. A preview created from the UI resolves them on the server. A CLI preview gets the upstream models from the parent's merged manifest. If that combine is skipped, joins to models from other sources are skipped with a warning.
+[Cross-project refs](#cross-project-refs-between-sources) work in a preview the same way as in its parent. A preview created from the UI resolves them on the server. A CLI preview gets the upstream models from the parent's merged manifest. If the CLI skips that combine, it also skips joins to models from other sources and prints a warning.
 
 ### Write-back behavior
 
@@ -462,7 +460,7 @@ my_model tag:lightdash
 
 We support all dbt selectors. [Read more about selectors in the dbt docs](https://docs.getdbt.com/reference/node-selection/syntax#combining-state-and-result-selectors).
 
-In a project with [multiple dbt sources](#connecting-multiple-dbt-sources), each source has its own selector. A model outside its source's selector still resolves [cross-project refs](#cross-project-refs-between-sources) from other sources, but it produces no Explore and you cannot join to it. Use this to connect a repository only to resolve refs. For example, give the upstream source a selector that matches none of its models, such as `tag:reference_only`.
+In a project with [multiple dbt sources](#connecting-multiple-dbt-sources), each source has its own selector. Other sources can still use [cross-project refs](#cross-project-refs-between-sources) to a model outside its source's selector, but that model produces no Explore and you cannot join to it. This lets you connect a repository only so that other sources can reference its models: give it a selector that matches none of its models, such as `tag:reference_only`.
 
 ## dbt targets
 
