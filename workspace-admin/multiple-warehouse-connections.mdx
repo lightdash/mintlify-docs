@@ -15,7 +15,7 @@ When you switch, the current connection becomes the **primary** connection and e
 ## Requirements and limits
 
 - You need permission to manage the project.
-- Only Postgres, Athena and Snowflake projects can switch, and every extra connection uses the primary's warehouse type. You can't change that type while extra connections exist.
+- Only Postgres, Athena and Snowflake projects can switch, and every extra connection uses the primary's warehouse type. You can't change that type while extra connections exist. To mix warehouse types, see [Mix warehouse types](#mix-warehouse-types).
 - Preview projects can't switch, and neither can a project whose warehouse uses [organization credentials](/workspace-admin/organization-credentials).
 - The switch is one way. You can remove extra connections, but the app can't switch the project back.
 - One query can't combine tables from two connections.
@@ -77,6 +77,62 @@ To use **None** on an extra connection:
 
 **External Browser** authentication isn't allowed on an extra Snowflake connection. This applies when you enable multiple connections, add a connection, or edit one.
 
+## Mix warehouse types
+
+<Info>
+  <Badge icon="test-pipe-2" color="orange" size="sm" shape="pill">Experimental</Badge> Mixing warehouse types needs a second feature flag, `mixed-warehouse-connections`, on top of `multi-connection-projects`. Contact [Lightdash support](mailto:support@lightdash.com) to enable it. Self-hosted instances add `mixed-warehouse-connections` to `LIGHTDASH_ENABLE_FEATURE_FLAGS`.
+</Info>
+
+With mixed warehouse types, one project can hold connections to different warehouses, for example a Snowflake primary with a Trino or BigQuery connection next to it. Charts from each warehouse can then sit on the same dashboard.
+
+Each explore still runs on one connection, and Lightdash writes its SQL in that connection's dialect. This applies to metrics, filters, custom dimensions, table calculations, date zoom, the SQL runner and the AI features.
+
+### Set it up
+
+1. Switch the project to multiple connections, as described in [Enable multiple connections](#enable-multiple-connections). Any warehouse type can be the primary.
+2. Click **Add connection**, then pick the warehouse in the **Type** list.
+3. Fill in the connection details. Lightdash tests the connection before it saves it.
+4. Run a dbt source on the new connection. See [Run a dbt source on another connection](#run-a-dbt-source-on-another-connection).
+
+<Frame>
+  <img src="/images/workspace-admin/multiple-warehouse-connections/mixed-add-connection-type.png" alt="The Add a connection dialog with the Type list open, showing several warehouse types" />
+</Frame>
+
+The explorer shows the connection name and its warehouse type above the results. The custom SQL dimension and SQL table calculation editors show which SQL dialect to write.
+
+<Frame>
+  <img src="/images/workspace-admin/multiple-warehouse-connections/mixed-dashboard.png" alt="A dashboard with a Postgres tile and a DuckLake tile of Jaffle shop orders, each with its connection badge" />
+</Frame>
+
+### Requirements
+
+- The `multi-connection-projects` and `mixed-warehouse-connections` feature flags, and on self-hosted instances an Enterprise license.
+- Supported warehouse types: BigQuery, ClickHouse, Databricks, DuckDB (MotherDuck and DuckLake), Postgres, Redshift, Snowflake, Trino and Athena.
+- The connection's warehouse type can't change after you add it. To use another type, add a new connection and move the dbt source to it.
+
+### Limits
+
+- **One query, one connection.** A join between models on different connections is skipped, and the explore shows a warning that names both connections. To combine results from two warehouses, use merge queries.
+- **dbt refs stay on one connection.** With [cross-project refs between sources](/integrations/dbt/projects#cross-project-refs-between-sources), a dbt source can only `ref` models from sources on the same connection.
+- **Shared credentials for compiling.** An extra connection compiles dbt with its shared credentials. BigQuery **SSO** and Redshift **browser IAM** sign-in can't be used on an extra connection.
+- **Personal credentials per connection.** An extra connection of another warehouse type doesn't follow the primary's **Require users to provide their own credentials** setting. Turn it on in that connection's advanced settings. A Snowflake connection with **None** authentication needs it on.
+- **SQL runner databases** is available for Postgres and Athena connections only.
+- **AI agents** know about every connection and its dialect, but the agent's raw SQL tool runs on the primary connection.
+- **Week start in dashboard filters.** Dashboard-wide filters use the primary connection's week start in the filter bar. Each tile's query uses its own connection's week start.
+- When the `mixed-warehouse-connections` flag is off, only same-type connections can be added. Connections that already exist keep working.
+
+### Errors you may see
+
+| Message | What it means |
+| --- | --- |
+| `An extra connection must use the same warehouse type as the original connection.` | Mixed warehouse types aren't enabled for your organization, or the type isn't supported. |
+| `A connection's warehouse type cannot be changed. Add a new connection instead.` | You tried to edit a connection to another warehouse type. |
+| `BigQuery SSO is not supported for an extra connection because compilation requires shared credentials.` | Use a service account key on the extra connection. Redshift browser IAM shows a similar message. |
+| `Database listing settings are not supported for <type> connections.` | **SQL runner databases** only works on Postgres and Athena connections. |
+| `Join "<join>" was skipped: model "<model>" is on connection "<connection>", and this explore runs on connection "<connection>". Joins across connections are not supported.` | A model joins a model that runs on another connection. Move both dbt sources to one connection, or use a merge query. |
+| `dbt source "<source>" references project "<project>", which belongs to dbt source "<other source>" on connection "<connection>". Refs across connections are not supported; bind both sources to the same connection.` | A dbt source refs a model from a dbt source on another connection. Run both sources on the same connection. |
+| `Connection "<connection>" failed to compile, so its previous explores are kept: ...` | The extra connection failed, for example because a dbt source refs a model on another connection. Its explores stay as they were until the next successful compile. |
+
 ## Run a dbt source on another connection
 
 The primary dbt source always runs on the primary connection. Each [additional dbt source](/integrations/dbt/projects#connecting-multiple-dbt-sources) can run on any connection, and its explores move on the next compile.
@@ -111,7 +167,7 @@ A dashboard can mix connections. Each tile, with its underlying data, downloads 
 
 ## Personal warehouse credentials
 
-Extra connections follow the primary's **Require users to provide their own credentials** setting. When it is on, people need [personal credentials](/personal-settings/personal-warehouse-connections) for each connection they query, and the credentials switcher in the navigation bar has one section per connection.
+Extra connections of the primary's warehouse type follow the primary's **Require users to provide their own credentials** setting. With [mixed warehouse types](#mix-warehouse-types), an extra connection of another type has its own setting. When it is on, people need [personal credentials](/personal-settings/personal-warehouse-connections) for each connection they query, and the credentials switcher in the navigation bar has one section per connection.
 
 <Frame>
   <img src="/images/workspace-admin/multiple-warehouse-connections/credentials-message.png" alt="The SQL runner on Reporting replica without personal credentials, with a message that names the connection and points to the credentials switcher" />
