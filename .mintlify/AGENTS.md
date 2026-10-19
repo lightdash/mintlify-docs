@@ -57,7 +57,7 @@ Use the named tasks in `package.json` instead of invoking their scripts directly
 
 - `aube run validate:docs -- --changed-files <file-list>` checks frontmatter, nav reachability, redirects, internal links, media placement, IA annotations, and blocking component rules. The file list contains one changed path per line, including deleted paths; omit `--changed-files <file-list>` for a full-site audit.
 - `aube run audit:components -- --baseline` checks for component regressions across the site.
-- `mint validate` checks the Mintlify build and needs to run outside the sandbox because it writes under `~/.mintlify/previews`; `mint broken-links --check-anchors` checks page links and heading anchors.
+- `mint validate` checks the Mintlify build and needs to run outside the sandbox because it writes under `~/.mintlify/previews`; `mint broken-links --check-anchors` checks page links and heading anchors. Both need a mint CLI at least as new as the version CI pins in `.github/workflows/validate-docs.yml`. An outdated CLI is missing `mint validate`, ignores `.mintignore`, and reports phantom broken links in `.mintlify/` files and OpenAPI-generated `api-reference` pages — if you see those findings, update with `npm install --global mint@<pinned-version>` instead of editing anything.
 - `aube run check` type-checks and tests the utilities when tooling changes.
 - `aube run audit:external-links` reports unavailable third-party links when auditing external URLs; findings are advisory.
 
