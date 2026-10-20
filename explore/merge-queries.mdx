@@ -1,15 +1,15 @@
 ---
 title: "Merge queries"
-description: "Combine two explores into one result by joining them on a shared field"
+description: "Combine two or more explores into one result by joining them on a shared field"
 sidebarTitle: "Merge queries"
-tag: "Experimental"
+tag: "Beta"
 ---
 
 <Info>
-  <Badge icon="test-pipe-2" color="orange" size="sm" shape="pill">Experimental</Badge> Merge queries are available to design partners behind the `merge-queries` feature flag, and the flow, limits and wording on this page may change between releases. Contact [Lightdash support](mailto:support@lightdash.com) to enable it for your organization. [What Experimental means](/support/feature-maturity-levels).
+  <Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> Merge queries are available to everyone, and the flow, limits and wording on this page may change between releases. [What Beta means](/support/feature-maturity-levels).
 </Info>
 
-A merge query puts two explores side by side in one result. You pick the fields you want from each explore, say which field lines them up, and run. The merged result behaves like any other chart: you can configure it, save it, add it to dashboards, schedule it, and filter it from a dashboard.
+A merge query puts two or more explores side by side in one result. You pick the fields you want from each explore, say which field lines them up, and run. The merged result behaves like any other chart: you can configure it, save it, add it to dashboards, schedule it, and filter it from a dashboard.
 
 Use it when a question spans two explores that share a field at the same grain, such as review sentiment next to return rates for the same product, or orders next to payments for the same month.
 
@@ -19,10 +19,10 @@ Use it when a question spans two explores that share a field at the same grain, 
 
 ## Before you start
 
-Each side of a merge is a normal explore query with its own metrics, dimensions and filters. Both explores must be in the same project. You need:
+Each source of a merge is a normal explore query with its own metrics, dimensions and filters. All explores must be in the same project, and the same explore can be used more than once. You need:
 
-- **A shared field.** A dimension that exists on both sides with matching values, such as a product code or a month. This becomes the join key. A merge can join on more than one field.
-- **Matching grain.** Every dimension you select from a side must be one of the join keys. This keeps each side to one row per key, so the join never multiplies rows. See [how the join stays honest](#how-the-join-stays-honest).
+- **A shared field.** A dimension that exists in every source with matching values, such as a product code or a month. This becomes the join key. A merge can join on more than one field.
+- **Matching grain.** Every dimension you select from a source must be one of the join keys. This keeps each source to one row per key, so the join never multiplies rows. See [how the join stays honest](#how-the-join-stays-honest).
 
 Anyone who can run queries in the explore can merge. There is nothing to install and no change to your dbt project.
 
@@ -74,8 +74,12 @@ Anyone who can run queries in the explore can merge. There is nothing to install
     </Frame>
   </Step>
 
+  <Step title="Add more sources (optional)">
+    To merge a third explore or more, choose **Add source** and repeat the previous two steps for it. Every source maps to the same join key, and one join type applies to the whole merge.
+  </Step>
+
   <Step title="Choose the join type">
-    The summary next to **Relationship** reads the join back in words. The default is a full outer join. See [which join type to choose](#which-join-type-to-choose).
+    The summary next to **Relationship** reads the join back in words. The default is **All rows**. See [which join type to choose](#which-join-type-to-choose).
 
     <Frame>
       <img className="block dark:hidden" src="/images/explore/merge-queries/relationship-card.png" alt="The Relationship card with both join fields set to Order date month and the Left join type selected" />
@@ -84,7 +88,7 @@ Anyone who can run queries in the explore can merge. There is nothing to install
   </Step>
 
   <Step title="Run the query">
-    Results arrive as one table. The join key has a key icon, and every other column carries the name of the explore it came from. Configure the chart the way you would for any explore.
+    Results arrive as one table. The join key has a key icon, and every other column carries the name of the explore it came from. Configure the chart the way you would for any explore. Table calculations added to a merged result can reference fields from every source and have the usual format options. Drill-down and underlying data on a merged column open the source explore that column came from.
 
     <Frame>
       <img className="block dark:hidden" src="/images/explore/merge-queries/merged-results.png" alt="Merged results with Order date month, Total order amount from Orders and Unique payment count from Payments" />
@@ -104,31 +108,35 @@ Anyone who can run queries in the explore can merge. There is nothing to install
 
 ## Which join type to choose
 
-The three options answer one question: when a key exists on only one side, what happens to it?
+The three options answer one question: when a key exists in only some sources, what happens to it?
 
-| Join type | Keeps | Use when |
-| --- | --- | --- |
-| **Inner** | Only keys present on both sides. Anything unmatched is dropped. | A row without both measures would be misleading. |
-| **Left** | Every key from the first explore. The second side's columns are blank where it has no match. | The first explore is the list you report on. |
-| **Full outer** | Every key from either side. Blanks wherever one side has nothing. | You want to spot keys that exist on one side only. |
+| Option | SQL equivalent | Keeps | Use when |
+| --- | --- | --- | --- |
+| **Matches only** | Inner join | Only keys found in every source. Anything unmatched is dropped. | A row missing any measure would be misleading. |
+| **From** _first explore_ | Left join | Every key from the first explore. Other sources' columns are blank where they have no match. | The first explore is the list you report on. |
+| **All rows** | Full outer join | Every key from any source. Blanks wherever a source has nothing. | You want to spot keys that exist in some sources only. |
 
 ## How the join stays honest
 
-A merge is only safe when each side has exactly one row per join key. Because an explore query groups by its dimensions, that comes down to one rule: **every dimension you select on a side must be a join key.** Metrics are already one value per key, so any number of them is fine.
+A merge is only safe when each source has exactly one row per join key. Because an explore query groups by its dimensions, that comes down to one rule: **every dimension you select in a source must be a join key.** Metrics are already one value per key, so any number of them is fine.
 
-When a selection breaks the rule, the query refuses with a message rather than multiplying rows. Either add that dimension as another join condition on both sides, or remove it.
+When a selection breaks the rule, the query refuses with a message rather than multiplying rows. Either add that dimension as another join condition in every source, or remove it.
 
 For example, reviews by `product` merged with returns by `product`, joined on product, works. Reviews by `product` and `month` merged with returns by `product`, joined on product only, refuses, because the review side has many rows per product. Add `month` to both sides and to the join conditions and it works again.
 
+### Repeat values
+
+Sometimes the extra rows are what you want, such as a product's return rate shown on every month of its reviews. The refusal message offers to repeat the other sources' values on every row of the finer-grained source. Their values then appear once per matching row, and their columns have no totals, because a sum would count each value once per repeat. Only one source can keep dimensions that are not join keys. Choose **Stop repeating** to go back.
+
 ## Filters
 
-Filters on either side apply to that side before the join. A [dashboard filter](/explore/dashboards/filter) on a merged chart is pushed into both sides, so a date filter narrows both explores rather than only the merged output.
+Filters on a source apply to that source before the join. A [dashboard filter](/explore/dashboards/filter) on a merged chart is pushed into every source that has the field, so a date filter narrows every explore rather than only the merged output. A dashboard filter on a column that exists only in the merged result, such as a merge table calculation, is refused, because merges have no filter step after the join.
 
 ## Current limits
 
 | Area | Today |
 | --- | --- |
-| Table calculations | Can reference fields from either side. Format options such as percentage, rounding, prefix and suffix are not yet available on calculations created inside a merge. Multiply by 100 in the formula if you need a percentage. |
 | Join key formatting | The merged key column shows its underlying value. A month key shows as a full date rather than a month label. |
-| Row limits | Each side runs with its own row limit. If a side is cut off by its limit, the merge refuses instead of returning a partial answer. Narrow that side with a filter or raise its limit. |
-| Sources | Two explores from the same project. |
+| Row limits | Each source runs with its own row limit. If a source is cut off by its limit, the merge refuses instead of returning a partial answer. Narrow that source with a filter or raise its limit. |
+| Dashboards | Date zoom and dashboard sort overrides are not applied to merged chart tiles. |
+| Sources | Explores from the same project. |
