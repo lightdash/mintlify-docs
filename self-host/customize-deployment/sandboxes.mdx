@@ -46,7 +46,7 @@ the provider with the `SANDBOX_PROVIDER` environment variable.
 | **E2B** (default) | `e2b` | Production / managed | microVM | <Icon icon="check" /> |
 | **AWS Lambda MicroVMs** | `lambda-microvm` | Production on AWS (self-hosted) | microVM | <Icon icon="x" className="matrix-no" /> |
 | **Azure Container Apps Sandboxes** | `azure-sandboxes` | Production on Azure (self-hosted) | microVM | <Icon icon="x" className="matrix-no" /> |
-| **Google Cloud Run Sandboxes** | `gcp-cloud-run` | GCP (self-hosted, preview) | gVisor | <Icon icon="x" className="matrix-no" /> |
+| **Google Cloud Run Sandboxes** | `gcp-cloud-run` | GCP (self-hosted, preview) | gVisor | <Icon icon="check" /> |
 | **Local Docker** | `docker` | Local development only | container | <Icon icon="check" /> |
 
 </div>
@@ -256,14 +256,18 @@ to non-allowlisted hosts are rejected, and all other ports are blocked.
 
 ## Google Cloud Run Sandboxes (self-hosted, preview)
 
-Use the `gcp-cloud-run` provider to run data app sandboxes in a
-[Cloud Run service](https://docs.cloud.google.com/run/docs/code-execution). Lightdash
-connects to the service through an HTTP gateway included in the sandbox image.
+Use the `gcp-cloud-run` provider to run data app and [Python execution](#python-execution)
+sandboxes in a [Cloud Run service](https://docs.cloud.google.com/run/docs/code-execution).
+Lightdash connects to the service through an HTTP gateway included in the sandbox image.
 
 <Note>
-Cloud Run Sandboxes is in public preview and currently supports data app generation only.
-AI writeback is not supported.
+Cloud Run Sandboxes is in public preview and currently supports data app generation and
+Python execution. AI writeback is not supported.
 </Note>
+
+Each gateway service runs a single toolchain image, so data apps and Python execution use
+**separate** Cloud Run services. Steps 1–5 set up the data app gateway. To run Python
+execution, also deploy the [Python gateway](#6-deploy-the-python-gateway-optional).
 
 ### Prerequisites
 
@@ -483,11 +487,70 @@ Lightdash — you configure it yourself:
    gateway image — sandboxes share its root filesystem), and the deny-all firewall drops
    anything that bypasses it.
 
+### 6. Deploy the Python gateway (optional)
+
+Python execution needs its own gateway service, built from the Python runner image. Get
+the image in one of two ways:
+
+- **Docker Hub** — every release publishes
+  `lightdash/lightdash-python-sandbox-cloud-run:<lightdash-version>` (`linux/amd64` only;
+  `:latest` tracks the newest release).
+- **Build it** from a checkout of the Lightdash repository at the version you deploy. This
+  needs only Docker with Buildx and npm — no `pnpm install`:
+
+  ```bash
+  TARGET=<region>-docker.pkg.dev/<your-project>/<repo>/lightdash-python-sandbox-cloud-run:<lightdash-version>
+
+  ./sandboxes/python-runner/build-cloud-run-image.sh "$TARGET" --push
+  ```
+
+As with the data app image, copy it into your own registry and
+[get its digest](#get-the-image-digest). Then deploy it as a second service with a
+**different** secret from the data app gateway:
+
+```bash
+PYTHON_SANDBOX_SECRET=$(openssl rand -hex 32)
+
+gcloud beta run deploy lightdash-python-sandbox-gateway \
+  --image <region>-docker.pkg.dev/<your-project>/<repo>/<image>@sha256:<digest> \
+  --region <region> \
+  --project <your-project> \
+  --sandbox-launcher \
+  --no-cpu-throttling \
+  --session-affinity \
+  --cpu 2 \
+  --memory 4Gi \
+  --concurrency 20 \
+  --min-instances 1 \
+  --max-instances 1 \
+  --timeout 3600 \
+  --allow-unauthenticated \
+  --set-env-vars "SANDBOX_SECRET=$PYTHON_SANDBOX_SECRET"
+```
+
+Get its URL with `gcloud run services describe lightdash-python-sandbox-gateway ...` as in
+[step 4](#4-configure-lightdash), and set these on both the backend and scheduler (alongside
+`SANDBOX_PROVIDER=gcp-cloud-run`):
+
+```bash
+GCP_CLOUD_RUN_PYTHON_SANDBOX_URL=<python-gateway-url>
+GCP_CLOUD_RUN_PYTHON_SANDBOX_SECRET=<python-sandbox-secret>
+```
+
+The Python gateway doesn't need an Anthropic API key. Python sandboxes launch with egress
+denied, and the image preinstalls pandas, numpy, scipy, pyarrow, scikit-learn, and polars —
+there is no `pip install` at runtime. Then [turn Python execution on](#turn-it-on).
+
+Each feature only needs its own gateway: with only the Python variables set, Python
+execution works and data app generation fails with a configuration error, and vice versa.
+
 ### Upgrading
 
-When you upgrade Lightdash, redeploy the gateway with the image for the new version.
+When you upgrade Lightdash, redeploy each gateway (data app and, if deployed, Python) with
+the image for the new version.
 Rebuild from a checkout of the new version, or copy the new version's tag from Docker Hub.
-Then get its digest and rerun the deploy command from [step 3](#3-deploy-the-gateway).
+Then get its digest and rerun the deploy command from [step 3](#3-deploy-the-gateway)
+(and [step 6](#6-deploy-the-python-gateway-optional) for the Python gateway).
 
 Cloud Run always runs the deployed gateway image. It ignores `E2B_TEMPLATE_TAG`, so
 upgrading Lightdash alone doesn't change what runs in the sandbox.
@@ -561,8 +624,8 @@ must return a pandas DataFrame.
 
 ### Supported providers
 
-Python execution runs only on the **E2B** and **Local Docker** providers. On
-`lambda-microvm`, `azure-sandboxes`, and `gcp-cloud-run`, Python queries fail with
+Python execution runs on the **E2B**, **Google Cloud Run**, and **Local Docker** providers.
+On `lambda-microvm` and `azure-sandboxes`, Python queries fail with
 `Python queries are not supported on the <provider> sandbox provider yet`. Other sandbox
 features keep working on those providers.
 
@@ -582,6 +645,9 @@ features keep working on those providers.
 
   When you upgrade Lightdash, rebuild or retag the template so a build exists at the new
   version's tag, or pin `E2B_PYTHON_TEMPLATE_TAG`.
+- **Google Cloud Run** — deploy the separate Python gateway and set
+  `GCP_CLOUD_RUN_PYTHON_SANDBOX_URL` and `GCP_CLOUD_RUN_PYTHON_SANDBOX_SECRET`. See
+  [Deploy the Python gateway](#6-deploy-the-python-gateway-optional).
 - **Local Docker** — build `lightdash-python-runner:local` with
   `./sandboxes/python-runner/build-local-image.sh`, or set `SANDBOX_PYTHON_DOCKER_IMAGE` to
   your own tag. See [Local Docker provider](#local-docker-provider-development).
@@ -644,8 +710,10 @@ destroy the sandbox, so nothing idles in the first place.
 | `AZURE_SANDBOXES_RESOURCE_TIER` | `M` | Sandbox size: `XS`, `S`, `M`, or `L`. |
 | `AZURE_SANDBOXES_API_VERSION` | `2026-02-01-preview` | Azure Sandboxes data-plane API version. |
 | `AZURE_SANDBOXES_TOKEN_SCOPE` | `https://management.azuredevcompute.io/.default` | Entra token scope for the data plane. |
-| `GCP_CLOUD_RUN_SANDBOX_URL` | — | URL of the sandbox gateway Cloud Run service (required when `SANDBOX_PROVIDER=gcp-cloud-run`). |
-| `GCP_CLOUD_RUN_SANDBOX_SECRET` | — | Shared secret the gateway was deployed with (required when `gcp-cloud-run`). |
+| `GCP_CLOUD_RUN_SANDBOX_URL` | — | URL of the data app sandbox gateway Cloud Run service (required for data apps when `SANDBOX_PROVIDER=gcp-cloud-run`). |
+| `GCP_CLOUD_RUN_SANDBOX_SECRET` | — | Shared secret the data app gateway was deployed with (required for data apps when `gcp-cloud-run`). |
+| `GCP_CLOUD_RUN_PYTHON_SANDBOX_URL` | — | URL of the Python sandbox gateway Cloud Run service (required for Python execution when `gcp-cloud-run`). |
+| `GCP_CLOUD_RUN_PYTHON_SANDBOX_SECRET` | — | Shared secret the Python gateway was deployed with (required for Python execution when `gcp-cloud-run`). |
 | `SANDBOX_DOCKER_IMAGE` | `lightdash-sandbox:local` | Local image for data app sandboxes (`docker` provider). |
 | `SANDBOX_AI_WRITEBACK_DOCKER_IMAGE` | `lightdash-ai-writeback:local` | Local image for writeback sandboxes (`docker` provider). |
 | `SANDBOX_PYTHON_DOCKER_IMAGE` | `lightdash-python-runner:local` | Local image for Python execution sandboxes (`docker` provider). |
