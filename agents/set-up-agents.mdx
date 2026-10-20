@@ -91,7 +91,7 @@ The org default applies to every new chat unless an agent overrides it or the us
 
 ### Bring your own AI providers and models
 
-Instead of using the instance-wide Anthropic and OpenAI keys configured by your Lightdash administrator, org admins can store their organization's own provider API keys and control which models are exposed to users. When a key is set, Ask AI routes that provider's model calls through your org's account — including agent chats, thread-title generation, the Slack agent path, agent readiness checks, doc summarization, the [AI router](/agents/enable-ai-router), ambient AI, [data-app](/data-apps) clarification and sandbox generation, and other agent utility calls.
+Instead of using the instance-wide provider keys configured by your Lightdash administrator, org admins can store their organization's own provider API keys and control which models are exposed to users. When a key is set, Ask AI routes that provider's model calls through your org's account — including agent chats, thread-title generation, the Slack agent path, agent readiness checks, doc summarization, the [AI router](/agents/enable-ai-router), ambient AI, [data-app](/data-apps) clarification and sandbox generation, and other agent utility calls.
 
 Both the API keys and the per-provider model availability controls live in one card: **AI providers & models** on the Ask AI → General settings page.
 
@@ -102,7 +102,7 @@ This card is only visible when the `org-ai-provider-api-keys` feature flag is en
 #### How to set a provider key
 
 1. Go to **Organization settings → Ask AI → General**.
-2. In the **AI providers & models** card, find the block for **Anthropic** or **OpenAI**.
+2. In the **AI providers & models** card, find the block for **Anthropic**, **Google Gemini**, or **OpenAI**.
 3. Paste your provider API key into the input and click **Set key**. The key is sent once and encrypted at rest — it is never returned by the API again.
 4. Once saved, the block shows an **Active** badge (with a key icon) and the input placeholder switches to a partially-redacted hint (e.g. `sk-ant-api03-R2D...igAA` for Anthropic, `sk-...j3kl` for OpenAI), similar to Anthropic's and OpenAI's own dashboards.
 5. To rotate a key, paste a new value and click **Update**. To remove a key, click **Remove** — the provider falls back to the instance-wide key (if configured).
@@ -112,13 +112,22 @@ The card also confirms where AI agent traffic is being sent:
 - When every user-selectable provider is running on an org key, a success callout appears: **"All AI interactions use your organization's API key(s)"**.
 - When a provider is available to users but doesn't have an org key set, its block shows guidance that those models still run on Lightdash's instance default key — add a key for that provider to route it through your own account.
 
+#### Custom base URL
+
+Once a provider's key is saved, its block shows an optional **Custom base URL** field. Set it to send that provider's requests to a proxy or gateway that speaks the provider's API — a corporate LLM gateway, for example — instead of the provider's public endpoint. Click **Remove** to return the provider to its default endpoint.
+
+- The value must be an HTTP(S) URL without credentials, a query string, or a fragment.
+- The expected shape mirrors the provider's instance-wide gateway variable: Anthropic takes the base URL before `/v1` (`https://ai-gateway.example.com`), while Google Gemini and OpenAI include the API version path (`https://ai-gateway.example.com/v1beta` and `https://ai-gateway.example.com/v1`).
+- Model names are passed through unchanged, and the model picker still offers only Lightdash's built-in models, so the endpoint must serve those model IDs. The access check that unlocks [key-gated models](#key-gated-models) also runs against this endpoint; listings that return models as `vendor/model` are recognized.
+- A custom base URL replaces the instance-wide [corporate gateway](/self-host/enterprise-features/ai-agents#corporate-llm-gateways) configuration for that provider. Requests authenticated with the org key only ever go to the endpoint configured here — never to the instance's gateway, and never with the instance gateway's custom headers.
+
 #### Behavior
 
 - Setting a key routes that provider's model calls through the org key. Removing the key falls back to the instance-wide configuration.
 - Providers that are **not** keyed at the org level continue to use the instance configuration, so you can BYO one provider without touching the other.
-- An org-level Anthropic key cannot be combined with an instance-wide `ANTHROPIC_BASE_URL`. Remove the org key to use the [corporate gateway](/self-host/enterprise-features/ai-agents#corporate-llm-gateways), or remove the gateway URL to keep routing through the org's Anthropic account.
+- An org-level Anthropic or Google Gemini key cannot be combined with the matching instance-wide gateway (`ANTHROPIC_BASE_URL` or `GEMINI_BASE_URL`) unless the key has its own [custom base URL](#custom-base-url), which replaces the gateway for the org's traffic. Otherwise, remove the org key to use the gateway, or remove the gateway URL to keep routing through the org's own account.
 - The **Default AI model** dropdown includes models for any provider your org has keyed, even when the instance itself has no key configured for that provider. For example, an org that stores its own OpenAI key sees OpenAI models in the dropdown even on an Anthropic-only instance.
-- Provider availability at the org level is validated against each provider's public models API on save (with a short timeout). If the check fails, the provider fails closed — models that require the check remain hidden until it succeeds.
+- Provider availability at the org level is validated against each provider's models API on save (with a short timeout). If the check fails, the provider fails closed — models that require the check remain hidden until it succeeds.
 
 #### Control which models users can pick
 
