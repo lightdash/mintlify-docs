@@ -34,7 +34,7 @@ Managed and external pre-aggregates can coexist on the same model, and the match
 Pre-aggregates follow a four-step cycle:
 
 1. **Define** — You add a `pre_aggregates` block to your dbt model YAML, specifying which dimensions and metrics to include.
-2. **Materialize** — Lightdash runs the aggregation query against your warehouse and stores the results. This happens automatically on compile, on a cron schedule you define, or when you trigger it manually.
+2. **Materialize** — Lightdash runs the aggregation query against your warehouse and stores the results. Lightdash builds it on the first compile after you add it, and again on a compile that changes its definition. On a compile that leaves the definition unchanged, Lightdash doesn't rebuild it. To keep the data fresh, Lightdash refreshes it on the schedule in `refresh.cron` or when you trigger a refresh manually. See [Scheduling refreshes](#scheduling-refreshes).
 3. **Match** — When a user runs a query, Lightdash checks if every requested dimension, metric, and filter is covered by a pre-aggregate.
 4. **Serve** — If a match is found, the query is served from the materialized data instead of hitting your warehouse.
 
@@ -143,7 +143,7 @@ pre_aggregates:
 | `granularity` | No | Time granularity for the `time_dimension`. Valid values: `hour`, `day`, `week`, `month`, `quarter`, `year`. Must be paired with `time_dimension`. |
 | `sorts` | No | Controls how rows are ordered inside the materialization. See [Materialization sort order](#materialization-sort-order). |
 | `max_rows` | No | Maximum number of rows to store in the materialization. If the aggregation exceeds this limit, the result is truncated. Must be a positive integer. |
-| `refresh` | No | Schedule configuration for automatic re-materialization. See [Scheduling refreshes](#scheduling-refreshes). |
+| `refresh` | No | When Lightdash re-materializes the pre-aggregate: a `cron` schedule, and whether Lightdash rebuilds it on the compile that changes its definition (`on_change`, default `true`). See [Scheduling refreshes](#scheduling-refreshes). |
 | `materialization_role` | No | Fixed access context to use when materializing the pre-aggregate. This is useful when your model or joined tables use [`required_attributes`](/semantic-layer/tables#required-attributes) or [`any_attributes`](/semantic-layer/tables#any-attributes). See [Materialization role](#materialization-role). |
 
 <Note>
@@ -334,7 +334,12 @@ When a query matches multiple pre-aggregates, Lightdash picks the smallest one.
 
 ## Scheduling refreshes
 
-By default, pre-aggregates are materialized when your dbt project compiles. You can also schedule automatic refreshes using cron expressions, using your project's configured timezone (defaults to UTC):
+During a compile, Lightdash rebuilds a pre-aggregate in two cases: the first time the pre-aggregate appears, so it serves queries without waiting for a schedule, and when the compile changes the pre-aggregate's definition or the fields it reads (see [When a definition changes](#when-a-definition-changes)). When the compile leaves the definition unchanged, Lightdash never rebuilds it. To keep the data fresh, set a schedule in the `refresh` block or refresh it manually in the [monitoring UI](/semantic-layer/pre-aggregates/monitoring).
+
+| Key | Default | What it does |
+|---|---|---|
+| `refresh.cron` | none | Lightdash rebuilds the pre-aggregate on this cron schedule, in your project's timezone (default: UTC). |
+| `refresh.on_change` | `true` | If `false`, Lightdash doesn't rebuild the pre-aggregate on the compile that changes its definition. It rebuilds on the next scheduled or manual refresh. |
 
 ```yaml
 pre_aggregates:
@@ -346,18 +351,34 @@ pre_aggregates:
     time_dimension: order_date
     granularity: day
     refresh:
-      cron: "0 6 * * *"  # Every day at 6:00 AM UTC
+      cron: "0 6 * * *"  # Every day at 6:00 AM in the project timezone
 ```
+
+<Note>
+  A pre-aggregate with no `refresh.cron` keeps serving its last materialization until you refresh it manually or change its definition. Give every managed pre-aggregate a schedule unless its source data doesn't change.
+</Note>
+
+### When a definition changes
+
+On every compile, Lightdash compares what the pre-aggregate reads with what it read when Lightdash built the active materialization: the compiled SQL of the dimensions and metrics it selects or filters on, the source tables and joins they reach, its `filters`, `time_dimension` and `granularity`, `max_rows`, and `materialization_role`. If any of that changed, Lightdash stops serving the active materialization immediately and rebuilds it in the same compile. Until the rebuild completes, Lightdash runs matching queries on your warehouse.
+
+To skip that rebuild, set `refresh.on_change: false`, for example on a large pre-aggregate with a cron schedule whose definition you edit often. Lightdash still stops serving the old materialization as soon as the definition changes, and rebuilds it on the next scheduled or manual refresh.
+
+```yaml
+    refresh:
+      cron: "0 6 * * *"
+      on_change: false   # Wait for the schedule instead of rebuilding on this compile
+```
+
+Lightdash ignores changes that don't affect the stored rows: labels, descriptions, formats, the order of keys or lists in YAML, SQL whitespace and comments, `sorts`, and the `refresh` block itself.
 
 ### Materialization triggers
 
-Pre-aggregates can be materialized through three different triggers:
-
 | Trigger | When it happens |
 |---|---|
-| **Compile** | Automatically when your dbt project is compiled |
-| **Cron** | On the schedule you define in `refresh.cron` |
-| **Manual** | When you trigger a refresh from the Lightdash UI |
+| **Compile** | The first compile that includes the pre-aggregate, and later compiles that change its definition unless `refresh.on_change` is `false` |
+| **Cron** | On the schedule in `refresh.cron` |
+| **Manual** | When you refresh from the [monitoring UI](/semantic-layer/pre-aggregates/monitoring) |
 
 ## Row limits
 
