@@ -35,6 +35,8 @@ For role-controlled dashboard capabilities and AI access, see [Permission modes]
 
 Embedded Lightdash content is available to view by anyone (not just folks with a Lightdash login). Content is secured using JWT (JSON Web Tokens) with configurable expiration times.
 
+Embeds don't link to the Lightdash documentation or offer to share errors with Lightdash support, and their labels and error messages don't name Lightdash. React SDK components never change your page's document title.
+
 ## Known limitations
 
 - Embedding works for dashboards, charts, [AI agents](/embed/embed-ai-agents), the [metrics catalog](/embed/embed-metrics-catalog), and [data apps](/data-apps). To embed explores, use the `canExplore` flag in a dashboard or metrics catalog token.
@@ -133,9 +135,10 @@ All configuration options (`dashboardFiltersInteractivity`, `canExportCsv`, `can
     canViewDataApps?: boolean,      // Allow rendering data app tiles
   },
 
-  // Optional: Allow embedded users to save new charts from Explore
+  // Optional: Allow embedded users to save charts and edit dashboards
   writeActions?: {
-    spaceUuid: string,                // Destination space for created content
+    writeSpaceUuids: string[],        // Spaces users can write to; the first is the default
+    sourceSpaceUuids?: string[],      // Extra spaces to add existing charts from
     serviceAccountUserUuid?: string,  // Actor for the write (use one)
     userUuid?: string,
     permissionsMode?: 'default' | 'roles',
@@ -215,6 +218,13 @@ Chart embedding is **only available via the React SDK**. iframe embedding for ch
     canViewUnderlyingData?: boolean, // Allow viewing raw data
   },
 
+  // Optional: let viewers edit and drill into the chart with Lightdash.Chart isEditMode
+  writeActions?: {
+    writeSpaceUuids: string[],        // Must include the chart's space
+    serviceAccountUserUuid?: string,
+    userUuid?: string,
+  },
+
   // Optional: User information for query tracking
   user?: {
     externalId?: string,
@@ -270,7 +280,7 @@ For embedding a Lightdash [AI agent](/agents) so users can chat with their data 
 
   // Required: AI agent embeds must include writeActions
   writeActions: {
-    spaceUuid: string,                  // Space the agent reads/writes content from
+    writeSpaceUuids: string[],          // Spaces the agent reads from and saves to; the first scopes threads
     serviceAccountUserUuid?: string,    // Use a service account as the actor
     userUuid?: string,                  // Or use an existing Lightdash user as the actor
     permissionsMode?: 'default' | 'roles',
@@ -290,7 +300,7 @@ For embedding a Lightdash [AI agent](/agents) so users can chat with their data 
 ```
 
 <Info>
-AI agent tokens are scoped to a single agent. A token issued for one `agentUuid` cannot be used to access another agent, and dashboard or chart tokens are rejected on AI agent routes. The agent can only read dashboards and saved charts from `writeActions.spaceUuid`, and saves new charts back into that same space. Embedded viewers can open saved charts from that space in the chat side panel and saved dashboards as a read-only view, with the token's `userAttributes` applied.
+AI agent tokens are scoped to a single agent. A token issued for one `agentUuid` cannot be used to access another agent, and dashboard or chart tokens are rejected on AI agent routes. The agent can only read dashboards and saved charts from the token's write spaces, and saves new charts into one of them. Embedded viewers can open saved charts from those spaces in the chat side panel and saved dashboards as a read-only view, with the token's `userAttributes` applied. Threads are scoped to the first write space; see [Embedding AI agents](/embed/embed-ai-agents#access-control).
 </Info>
 
 **Example:**
@@ -306,7 +316,7 @@ const token = jwt.sign({
   },
   writeActions: {
     serviceAccountUserUuid: 'service-account-user-uuid',
-    spaceUuid: 'destination-space-uuid',
+    writeSpaceUuids: ['destination-space-uuid'],
   },
   userAttributes: {
     tenant_id: 'tenant-abc',
@@ -336,7 +346,7 @@ For embedding the project [metrics catalog](/semantic-layer/metrics) so embedded
   // Optional: enable saving charts from the embedded Explore. Required only
   // when canExplore is true and you want embedded users to save results.
   writeActions?: {
-    spaceUuid: string,
+    writeSpaceUuids: string[],
     serviceAccountUserUuid?: string,
     userUuid?: string,
   },
@@ -371,7 +381,7 @@ const token = jwt.sign({
   },
   writeActions: {
     serviceAccountUserUuid: 'service-account-user-uuid',
-    spaceUuid: 'destination-space-uuid',
+    writeSpaceUuids: ['destination-space-uuid'],
   },
   userAttributes: {
     tenant_id: 'tenant-abc',
@@ -617,7 +627,7 @@ Control what users can export from embedded content.
 {
   canExportCsv?: boolean,        // Download chart data as CSV files
   canExportImages?: boolean,     // Download charts as PNG images
-  canExportPagePdf?: boolean,    // Download entire dashboard page as PDF (dashboards only)
+  canExportPagePdf?: boolean,    // Download the dashboard as PDF (dashboards only, on unless false)
 }
 ```
 
@@ -635,10 +645,18 @@ Control what users can export from embedded content.
 - Exports charts as PNG files
 - Captures current chart state
 
+In an Explore opened with **Explore from here**, the same two options enable downloads from the chart and results panels. Google Sheets export is not offered in embeds.
+
 **PDF Export (dashboards only):**
-- Enables print icon in dashboard header
-- Exports entire dashboard page as PDF
-- Includes all visible tiles
+
+PDF export is on unless the token sets `canExportPagePdf: false`; in [`'roles'` mode](#dashboard-capabilities) it needs `view:EmbedPagePdfExport` instead. What the icon button in the dashboard header does depends on how the dashboard is embedded:
+
+| Embed method | Tooltip | Output |
+| --- | --- | --- |
+| React SDK | **Export as PDF** | A PDF rendered by Lightdash with only the dashboard: every visible tab stacked in order, using the viewer's current filters, parameters, and date zoom |
+| iframe | **Print this page** | The browser's print dialog for the embedded page |
+
+The SDK export doesn't apply the component's `paletteUuid` or `contentOverrides`. Self-hosted instances need [object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage) and the [headless browser](/self-host/customize-deployment/enable-headless-browser-for-lightdash) for it.
 
 <Frame>
   ![A printer icon in the top right of an embedded dashboard, with a "Print this page" tooltip](/images/embed/reference/embedding-print-61cb9f9107c6e4ae00fa3cde99dd572d.png)
@@ -682,7 +700,7 @@ Users can:
 - Change chart types
 - Run custom queries
 
-The `canExplore` option alone does not allow users to save charts, share results, or view SQL. To let users save new charts from Explore, configure a [writeActions claim](#write-actions).
+The `canExplore` option alone does not allow users to save charts, share results, or view SQL. Downloads follow `canExportCsv` and `canExportImages`. To let users save charts from Explore, configure a [writeActions claim](#write-actions). Saving from **Explore from here** always creates a new chart; it never overwrites the chart the user started from.
 
 ### View underlying data
 
@@ -712,32 +730,36 @@ When this option is off (the default), data app tiles on the dashboard render as
 
 ## Write actions
 
-Write actions let embedded users save changes back to Lightdash. When the JWT includes a `writeActions` claim, Lightdash uses a configured actor (a service account or a regular user) to perform the write on behalf of the embedded viewer, and forces created or edited content into a specific destination space.
+Write actions let embedded users save changes back to Lightdash. When the JWT includes a `writeActions` claim, Lightdash uses a configured actor (a service account or a regular user) to perform the write on behalf of the embedded viewer, and keeps created or edited content inside the spaces the token names.
 
 With `writeActions`, embedded users can:
 
 - Save a new chart from the embedded Explore view.
-- Edit an existing embedded dashboard with the React SDK — rename it, add saved charts from the allowed space, and move or resize tiles. See [`Lightdash.Dashboard` edit mode](/embed/react-sdk#with-edit-mode).
+- Edit an existing embedded dashboard with the React SDK — rename it, add one or more saved charts, and move or resize tiles. See [`Lightdash.Dashboard` edit mode](/embed/react-sdk#with-edit-mode).
 - Create a brand-new dashboard with the React SDK using [`Lightdash.DashboardBuilder`](/embed/react-sdk#lightdashdashboardbuilder).
 
 This is useful when you want to let your customers explore data, change charts and dashboards, and save the result back to Lightdash — without giving them a Lightdash login.
 
 ```typescript
 writeActions?: {
-  spaceUuid: string,                  // Required: destination space for created content
+  writeSpaceUuids: string[],          // Required: spaces users can write to; the first is the default
+  sourceSpaceUuids?: string[],        // Dashboards only: extra spaces to add existing charts from
   serviceAccountUserUuid?: string,    // Use a service account as the actor
   userUuid?: string,                  // Or use an existing Lightdash user as the actor
   permissionsMode?: 'default' | 'roles', // Dashboard and AI agent permission mode
+  spaceUuid?: string,                 // Deprecated: a single write space; use writeSpaceUuids
 }
 ```
 
 **Rules:**
 
-- `spaceUuid` is required and must belong to the same project as the embed.
+- `writeSpaceUuids` takes 1 to 100 space UUIDs with no duplicates. Every space must belong to the embed's project. If any one of them doesn't exist or belongs to another project, the token gets no write actions at all. A write space the actor can't create charts in is left out of the save options.
+- The first write space is the default: new content is saved there unless the user picks another write space. In AI agent embeds, it also scopes threads.
+- `spaceUuid` is still accepted and behaves like a one-entry `writeSpaceUuids`. A token that sets both is rejected.
 - You must provide exactly one of `serviceAccountUserUuid` or `userUuid`.
 - The actor must belong to the same organization as the project and (for `userUuid`) be active.
-- The actor's permissions and space access still apply — the embed inherits whatever the actor can do in that space.
-- When editing or building a dashboard, add-tile content is filtered to `spaceUuid`, so embedded users can only pick saved charts from the allowed space.
+- The actor's permissions and space access still apply — the embed inherits whatever the actor can do in each write space.
+- When editing or building a dashboard, the add-chart picker lists saved charts from the write spaces and any [source spaces](#add-charts-from-other-spaces).
 - Dashboards and charts created or edited through write actions are normal Lightdash objects — they can be viewed and edited from Lightdash and vice versa.
 - Newly saved charts are **not** added to the embed allowlist automatically. They behave like normal private content and won't be re-embeddable unless you add them explicitly.
 - In AI agent embeds, the name shown next to messages in the chat is the actor's name: the Lightdash user's full name for `userUuid`, or the service account's description for `serviceAccountUserUuid`. Every embedded viewer sees the same name; the `user` claim does not change it.
@@ -748,9 +770,11 @@ writeActions?: {
 Configure write actions from **Settings → Embedding** by toggling **Enable write actions** and selecting:
 
 - **Service account** — the Lightdash actor that performs the write. You can pick an existing service account or create one inline. Only service accounts with a writable role (Admin, Developer, Editor, or an equivalent custom role) can be used.
-- **Space for created content** — the destination space. You can pick an existing space or create one inline.
+- **Default space for created content** — the first write space. You can pick an existing space or create one inline. On the Dashboards and Charts tabs, it's the selected dashboard's or chart's space.
+- **Additional write spaces** — optional. Embedded users can also edit content in these spaces and choose them when saving. The service account needs edit access to each one.
+- **Spaces to add charts from** — optional, Dashboards tab only. Sets [`sourceSpaceUuids`](#add-charts-from-other-spaces).
 
-The settings panel generates a JWT snippet that includes the `writeActions` claim with the selected service account user UUID and space UUID. Copy that snippet into your backend token-generation code.
+The settings panel generates a JWT snippet that includes the `writeActions` claim with the selected service account user UUID and the space UUIDs. Copy that snippet into your backend token-generation code.
 
 ### Using a service account
 
@@ -767,7 +791,7 @@ const token = jwt.sign({
   },
   writeActions: {
     serviceAccountUserUuid: 'service-account-user-uuid',
-    spaceUuid: 'destination-space-uuid',
+    writeSpaceUuids: ['destination-space-uuid'],
   },
   userAttributes: {
     tenant_id: 'tenant-abc',
@@ -788,14 +812,40 @@ const token = jwt.sign({
   },
   writeActions: {
     userUuid: 'lightdash-user-uuid',
-    spaceUuid: 'destination-space-uuid',
+    writeSpaceUuids: ['destination-space-uuid'],
   },
 }, LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
 ```
 
-<Warning>
-Embedded users cannot pick a different space when saving. The space is fixed by the `spaceUuid` in the JWT. This keeps embedded write activity contained and predictable.
-</Warning>
+### Save to more than one space
+
+List several spaces in `writeSpaceUuids` to let embedded users write to all of them, for example a personal space and a shared team space:
+
+```javascript
+writeActions: {
+  serviceAccountUserUuid: 'service-account-user-uuid',
+  writeSpaceUuids: ['personal-space-uuid', 'team-space-uuid'],
+}
+```
+
+When the actor can create charts in more than one of the write spaces, the save dialog shows a required **Space** select that defaults to the first one. Embedded users can only choose among those spaces. `Lightdash.DashboardBuilder` always creates its dashboard in the first write space.
+
+### Add charts from other spaces
+
+Set `sourceSpaceUuids` on a dashboard token to let embedded users add existing charts from spaces they can't write to, such as a shared library of curated charts. It takes up to 100 space UUIDs.
+
+```javascript
+writeActions: {
+  serviceAccountUserUuid: 'service-account-user-uuid',
+  writeSpaceUuids: ['customer-space-uuid'],
+  sourceSpaceUuids: ['curated-charts-space-uuid'],
+}
+```
+
+- The add-chart picker lists saved charts from the write spaces and the source spaces. The actor needs view access to each source space.
+- Charts from a source space stay in that space and can't be edited from the dashboard. Charts saved inside a dashboard can't be added from a source space, and SQL charts from a source space can appear in the picker but fail when the dashboard is saved.
+- When the claim is set, the token can only list content in the write and source spaces.
+- `sourceSpaceUuids` only applies to dashboard tokens. Other token types ignore it.
 
 ## Permission modes
 
@@ -806,11 +856,11 @@ Use `writeActions.permissionsMode` to choose how dashboard capabilities and AI a
 | Dashboard | JWT interactivity flags and their defaults | Only the actor's corresponding embed scopes |
 | AI agent | Actor must satisfy AI access prerequisites | Same prerequisites **AND** the actor's `view:EmbedAiAgent` scope |
 
-This setting does not change standalone chart, data app, or metrics catalog embeds. Tokens without a mode continue to work without adding embed scopes to their actors' roles.
+The mode only switches dashboard capabilities and AI access. Chart, metrics catalog, and AI agent tokens that include `writeActions` also pick up the actor's embed scopes in either mode: for example, the actor's `view:EmbedExplore` enables Explore even when the token omits `canExplore`. The [AI Debug scope](#debug-information) is the exception and only applies in `'roles'` mode. Data app embeds don't use embed scopes.
 
 ### Choose the actor and its role
 
-Role checks use the Lightdash user identified by `writeActions.userUuid`, or the service account identified by `writeActions.serviceAccountUserUuid`. Include `writeActions.spaceUuid` and meet the [write-action requirements](#write-actions), even when you are configuring read-only capabilities such as export. Dashboard `'roles'` mode rejects requests if the actor cannot be resolved; it does not fall back to JWT-only permissions.
+Role checks use the Lightdash user identified by `writeActions.userUuid`, or the service account identified by `writeActions.serviceAccountUserUuid`. Include `writeActions.writeSpaceUuids` and meet the [write-action requirements](#write-actions), even when you are configuring read-only capabilities such as export. Dashboard `'roles'` mode rejects requests if the actor cannot be resolved; it does not fall back to JWT-only permissions.
 
 Configure embed scopes in the **Embedding** section of a [custom role](/workspace-admin/custom-roles), then assign that role to the actor. Built-in roles also provide embed scopes; duplicate a system role if you want a starting point you can edit. The external viewer's `user.externalId` is not the role-bearing actor.
 
@@ -850,7 +900,7 @@ const token = jwt.sign({
   },
   writeActions: {
     serviceAccountUserUuid: 'service-account-user-uuid',
-    spaceUuid: 'destination-space-uuid',
+    writeSpaceUuids: ['destination-space-uuid'],
     permissionsMode: 'roles',
   },
 }, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
@@ -862,16 +912,29 @@ In this example, grant or remove the corresponding embed scopes on the actor's r
 Before selecting `'roles'`, grant every embed capability the actor needs. JWT flags and their defaults do not provide fallback access: PDF export requires `view:EmbedPagePdfExport`, even though it defaults to enabled in `'default'` mode.
 </Warning>
 
+### Compiled SQL
+
+Embedded field details, metric details in the metrics catalog, and AI agent answers can show the SQL behind a field. Embeds hide it unless the actor has the `view:EmbedCompiledSql` scope, which has no JWT flag. Built-in roles include it from developer up. Hiding it doesn't stop fields from being queried; the SQL is also removed from the API responses the embed receives.
+
+| Token | Compiled SQL is shown when |
+| --- | --- |
+| Dashboard, omitted or `'default'` mode | Never |
+| Dashboard, `'roles'` mode | The actor has `view:EmbedCompiledSql` |
+| Chart, metrics catalog, or AI agent with `writeActions` | The actor has `view:EmbedCompiledSql`, in either mode |
+| Any token without `writeActions` | Never |
+
+To keep SQL from external viewers while the actor stays a developer, give the actor a [custom role](/workspace-admin/custom-roles) without `view:EmbedCompiledSql`.
+
 ### AI agent access
 
-Both modes require an AI agent token, a resolved actor who can view the project and create charts in the destination space, and the existing agent, space, and thread access checks. `'default'` does not mean unrestricted AI access.
+Both modes require an AI agent token, a resolved actor who can view the project and create charts in at least one write space, and the existing agent, space, and thread access checks. `'default'` does not mean unrestricted AI access.
 
 To make the actor's role control access to embedded AI, add the mode to the [AI agent token](#ai-agent-token):
 
 ```javascript
 writeActions: {
   userUuid: 'lightdash-user-uuid',
-  spaceUuid: 'destination-space-uuid',
+  writeSpaceUuids: ['destination-space-uuid'],
   permissionsMode: 'roles',
 }
 ```
@@ -890,6 +953,17 @@ Agent answers have a Debug action that opens a panel with the chart's query conf
 Built-in roles from interactive viewer up include `view:EmbedAiAgentDebug`. To hide Debug in `'roles'` mode, give the actor a [custom role](/workspace-admin/custom-roles) without it.
 
 When Debug is hidden, the embed's thread and streaming responses also omit the raw output of the agent's tool calls. The steps under "How this chart was built" still show, including the fields the agent used. Debug is always available in the main Lightdash app.
+
+#### SQL and downloads on answers
+
+The actor's role controls two more actions on embedded chart answers, in both modes. Neither has a JWT flag.
+
+| Action | Shown when the actor has |
+| --- | --- |
+| **View SQL** | `view:EmbedCompiledSql` (built-in from developer up) |
+| **Download** | `view:EmbedCsvExport` (built-in from viewer up) |
+
+Download exports the answer's results as CSV or XLSX, exactly as shown, without row-limit options. Without `view:EmbedCompiledSql`, the SQL in the agent's tool-call steps is hidden too.
 
 ### Verify role changes
 

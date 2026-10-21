@@ -15,7 +15,7 @@ The Lightdash React SDK (`@lightdash/sdk`) provides React components for embeddi
 
 - Seamless integration with your React application
 - Programmatic filters for dashboards
-- Callbacks for user interactions (e.g., explore navigation)
+- Callbacks for saves, filter changes, notifications, and errors (`onEvent`, `onError`)
 - Custom styling to match your application
 - TypeScript support with full type definitions
 
@@ -143,7 +143,9 @@ type DashboardProps = {
   ) => void;                        // Callback when the embed enters or leaves edit mode
   onExplore?: (options: {
     chart: SavedChart
-  }) => void;                       // Callback when user navigates to explore
+  }) => void;                       // Handle "Explore from here" in your app instead of the embed
+  onEvent?: LightdashEventHandler;  // Saves, filter and tab changes, notifications
+  onError?: (error: SdkError) => void; // Load and request failures
 };
 ```
 
@@ -204,24 +206,25 @@ See [Filtering data](#filtering-data) for complete filter documentation.
 />
 ```
 
-#### With explore callback
+#### Handle Explore in your app
 
-Track when users navigate to explore:
+When the token allows Explore, **Explore from here** on a saved chart opens Explore inside the component, with a **Back** button that returns to the dashboard. Drill-downs always open there too.
+
+Pass `onExplore` to take over **Explore from here** for saved charts instead, for example to route to a page of your app that renders [`Lightdash.Explore`](#lightdashexplore). The component then doesn't open Explore itself, so don't pass `onExplore` only to track usage; use [`onEvent`](#listen-to-events) for that.
 
 ```tsx
 <Lightdash.Dashboard
   instanceUrl="https://app.lightdash.cloud"
   token={generateToken({ canExplore: true })}
   onExplore={({ chart }) => {
-    console.log('User exploring chart:', chart.name);
-    // Track analytics, show help guides, etc.
+    navigate(`/explore/${chart.uuid}`, { state: { chart } });
   }}
 />
 ```
 
 #### With edit mode
 
-When the JWT includes a `writeActions` claim, you can render an existing dashboard in edit mode and let users rename it, add saved charts from the allowed space, move or resize tiles, and save changes. The host app controls the edit-mode state through `isEditMode` and `onEditModeChange`.
+When the JWT includes a `writeActions` claim, you can render an existing dashboard in edit mode and let users rename it, add one or more saved charts, move or resize tiles, and save changes. The host app controls the edit-mode state through `isEditMode` and `onEditModeChange`.
 
 ```tsx
 import Lightdash from '@lightdash/sdk';
@@ -246,13 +249,13 @@ function EditableDashboard() {
 }
 ```
 
-Add-tile content is filtered to the JWT `writeActions.spaceUuid`, so users can only pick saved charts from the allowed space. See [Write actions](/embed/reference#write-actions) for the JWT claim.
+The dashboard must be in one of the token's write spaces. The add-chart picker lists saved charts from the write spaces and any [source spaces](/embed/reference#add-charts-from-other-spaces); charts from a source space can't be edited from the dashboard. See [Write actions](/embed/reference#write-actions) for the JWT claim.
 
 <a id="lightdashdashboardbuilder" />
 
 ### Lightdash.DashboardBuilder
 
-Let embedded users build a brand-new dashboard from scratch. On mount, the SDK creates an empty dashboard in the JWT `writeActions.spaceUuid` and renders it through the same embedded dashboard component as `Lightdash.Dashboard`. The host app controls when the dashboard is in edit mode.
+Let embedded users build a brand-new dashboard from scratch. On mount, the SDK creates an empty dashboard in the token's first write space and renders it through the same embedded dashboard component as `Lightdash.Dashboard`. The host app controls when the dashboard is in edit mode.
 
 Use this when you want your customers to author their own dashboards inside your app — for example, a "Create dashboard" page in your customer portal — without giving them a Lightdash login.
 
@@ -284,6 +287,8 @@ type DashboardBuilderProps = {
   onExplore?: (options: {
     chart: SavedChart
   }) => void;
+  onEvent?: LightdashEventHandler;
+  onError?: (error: SdkError) => void;
 };
 ```
 
@@ -316,11 +321,11 @@ function MyDashboardBuilder() {
 
 #### Requirements and behavior
 
-- The JWT must include a `writeActions` claim with `spaceUuid`. JWTs without `writeActions` fail closed for write-capable paths.
-- The new dashboard is created in `writeActions.spaceUuid`, named "Untitled dashboard", and is empty.
-- Add-tile content (saved charts and SQL charts) is filtered to the same space.
+- The JWT must include a `writeActions` claim with `writeSpaceUuids`. JWTs without `writeActions` fail closed for write-capable paths.
+- The new dashboard is created in the first write space, named "Untitled dashboard", and is empty.
+- The add-chart picker lists saved charts and SQL charts from the write spaces, plus charts from any [source spaces](/embed/reference#add-charts-from-other-spaces).
 - Dashboards created or edited through the SDK are normal Lightdash dashboards — they can be viewed and edited from Lightdash and vice versa.
-- See [Write actions](/embed/reference#write-actions) for the JWT claim and how to configure the actor and destination space.
+- See [Write actions](/embed/reference#write-actions) for the JWT claim and how to configure the actor and write spaces.
 
 <a id="lightdashchart" />
 
@@ -345,12 +350,25 @@ type ChartProps = {
   };
   contentOverrides?: LanguageMap;   // Translate your content (names, titles, markdown)
   uiOverrides?: SdkUiOverrides;     // Translate Lightdash UI strings (filters, menus, buttons)
+  isEditMode?: boolean;             // Render the chart in Explore (requires writeActions JWT)
+  onExplore?: (options: {
+    chart: SavedChart
+  }) => void;                       // Handle "Explore from here" in your app instead of the embed
+  onEvent?: LightdashEventHandler;
+  onError?: (error: SdkError) => void;
 };
 ```
 
-<Info>
-Unlike Dashboard, Chart does not support `filters` or `onExplore` props since charts are read-only and cannot navigate to explore.
-</Info>
+Chart does not accept `filters`.
+
+#### Edit and drill into a chart
+
+Without `isEditMode`, the chart renders read-only with minimal UI. Pass `isEditMode` as `true` or `false` to render the chart in Explore when the token's write actor can update it, which requires a `writeActions` claim whose write spaces include the chart's space:
+
+- `isEditMode={true}` opens the chart for editing; saving updates the chart.
+- `isEditMode={false}` shows the chart in Explore's view mode, where viewers can click a data point and **Drill into** it. The drill-down opens inside the component, with a **Back to Chart** button.
+
+If the actor can't update the chart, `isEditMode={true}` shows an error and `isEditMode={false}` falls back to the read-only chart.
 
 #### Basic usage
 
@@ -405,6 +423,8 @@ export function generateChartToken(chartId) {
 
 See [Embedding charts guide](/embed/embed-charts) for details.
 
+<a id="lightdashexplore" />
+
 ### Lightdash.Explore
 
 Embed interactive data exploration interface with full query builder capabilities.
@@ -416,6 +436,8 @@ type ExploreProps = {
   // Required
   instanceUrl: string;              // Your Lightdash instance URL
   token: string | Promise<string>;  // JWT with canExplore: true
+  exploreId: string;                // Explore (table) to open, e.g. chart.tableName
+  savedChart: SavedChart;           // Chart to start from
 
   // Optional
   theme?: 'light' | 'dark';         // Force light or dark color scheme
@@ -423,25 +445,40 @@ type ExploreProps = {
     backgroundColor?: string;       // Background color or 'transparent'
     fontFamily?: string;            // Font family for all text
   };
+  filters?: SdkFilter[];
   contentOverrides?: LanguageMap;   // Translate your content (names, titles, markdown)
   uiOverrides?: SdkUiOverrides;     // Translate Lightdash UI strings (filters, menus, buttons)
+  onExplore?: (options: {
+    chart: SavedChart
+  }) => void;
+  onEvent?: LightdashEventHandler;
+  onError?: (error: SdkError) => void;
 };
 ```
 
 #### Basic usage
 
+`Lightdash.Explore` starts from a chart, usually the one a viewer chose **Explore from here** on in a dashboard whose [`onExplore`](#handle-explore-in-your-app) routed to this page:
+
 ```tsx
 import Lightdash from '@lightdash/sdk';
+import type { ComponentProps } from 'react';
 
-function MyExplore() {
+type SavedChart = ComponentProps<typeof Lightdash.Explore>['savedChart'];
+
+function MyExplore({ chart }: { chart: SavedChart }) {
   return (
     <Lightdash.Explore
       instanceUrl="https://app.lightdash.cloud"
       token={generateExploreToken()} // Must include canExplore: true
+      exploreId={chart.tableName}
+      savedChart={chart}
     />
   );
 }
 ```
+
+After a drill-down, **Back** returns to the starting query in one click.
 
 #### With styling
 
@@ -449,6 +486,8 @@ function MyExplore() {
 <Lightdash.Explore
   instanceUrl="https://app.lightdash.cloud"
   token={token}
+  exploreId={chart.tableName}
+  savedChart={chart}
   styles={{
     backgroundColor: '#f9f9f9',
     fontFamily: 'Inter, sans-serif',
@@ -483,7 +522,7 @@ export function generateExploreToken() {
 
 Embed a Lightdash [AI agent](/agents) so embedded users can chat with their data, generate charts, and save results back to a fixed space — without a Lightdash login.
 
-The component renders the agent inside an iframe. Use `threadUuid` to deep-link into an existing thread, or omit it to land on the new-thread screen.
+By default the component renders the agent inside an iframe; set `renderMode="native"` to [render it in your page](#render-the-agent-natively) instead. Use `threadUuid` to deep-link into an existing thread, or omit it to land on the new-thread screen.
 
 #### Props
 
@@ -497,18 +536,28 @@ type AiAgentProps = {
   // Optional
   threadUuid?: string;              // Open a specific thread on load
   onThreadChange?: (options: { threadUuid: string }) => void; // Fires when the embed opens or creates a thread
+  binding?: AiThreadBinding;        // Bind threads started here to a dashboard
+  threadContext?: string;           // Background for threads started here (max 10,000 characters)
+  renderMode?: 'iframe' | 'native'; // Beta: 'native' renders in your page. Default 'iframe'
+  onError?: (error: SdkError) => void;
   theme?: 'light' | 'dark';
   styles?: {
     backgroundColor?: string;
+    fontFamily?: string;            // Native mode only
   };
+};
+
+type AiThreadBinding = {
+  type: 'dashboard';
+  dashboardUuid: string;
 };
 ```
 
 <Info>
-`Lightdash.AiAgent` does not accept `filters`, `contentOverrides`, `uiOverrides`, or `onExplore`. Threads, navigation, and chart actions are managed inside the embedded agent UI. Changing `token` reloads the iframe; see [Rotating tokens](#rotating-tokens).
+`Lightdash.AiAgent` does not accept `filters`, `contentOverrides`, `uiOverrides`, `onExplore`, or `onEvent`. Threads, navigation, and chart actions are managed inside the embedded agent UI. In iframe mode, an open agent doesn't pick up a replaced `token`; see [Rotating tokens](#rotating-tokens).
 </Info>
 
-`onThreadChange` fires whenever the embedded agent creates a new thread or opens an existing one. Use it together with `threadUuid` to persist the current conversation in your app (for example in `localStorage` or your own backend) and resume it the next time the user returns. Under the hood, the SDK passes a `targetOrigin` query parameter to the iframe and listens for `lightdash:aiAgentThreadChanged` `postMessage` events from the embedded page — no extra setup is required on your side.
+`onThreadChange` fires whenever the embedded agent creates a new thread or opens an existing one. Use it together with `threadUuid` to persist the current conversation in your app (for example in `localStorage` or your own backend) and resume it the next time the user returns. In iframe mode, the SDK passes a `targetOrigin` query parameter to the iframe and listens for `lightdash:aiAgentThreadChanged` `postMessage` events from the embedded page — no extra setup is required on your side.
 
 #### Basic usage
 
@@ -569,9 +618,52 @@ function ShopInsightsAgent({ token }: { token: string }) {
 }
 ```
 
+#### Start a thread bound to a dashboard
+
+Pass `binding` to bind the thread the embed creates to a dashboard, and `threadContext` to give the agent background for it, such as a summary of an earlier conversation. Both apply when the user sends the first message, and are ignored when `threadUuid` opens an existing thread. `onThreadChange` returns the new thread's UUID:
+
+```tsx
+<Lightdash.AiAgent
+  instanceUrl="https://app.lightdash.cloud"
+  agentUuid="your-agent-uuid"
+  token={token}
+  binding={{ type: 'dashboard', dashboardUuid }}
+  threadContext="Summary of the previous conversation..."
+  onThreadChange={({ threadUuid }) => saveThreadForDashboard(dashboardUuid, threadUuid)}
+/>
+```
+
+The dashboard must be in one of the token's write spaces. Errors, such as a dashboard outside those spaces, surface when the first message is sent. See [Bind a thread to a dashboard](/embed/embed-ai-agents#bind-a-thread-to-a-dashboard) for what a bound thread does and how to create one from your backend.
+
+#### Render the agent natively
+
+<Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> Native rendering may change before general availability. [What Beta means](/support/feature-maturity-levels).
+
+Set `renderMode="native"` to render the agent directly in your page instead of an iframe. It uses the same props and token:
+
+```tsx
+<div style={{ height: 720 }}>
+  <Lightdash.AiAgent
+    instanceUrl="https://app.lightdash.cloud"
+    agentUuid="your-agent-uuid"
+    token={token}
+    renderMode="native"
+    styles={{ fontFamily: 'Inter, sans-serif' }}
+  />
+</div>
+```
+
+In native mode:
+
+- The agent fills its container, so give the container a height. The chat scrolls inside the component, never your page.
+- The agent calls the Lightdash API from your page, like the other SDK components, so your origin must be allowed in [CORS](#set-up-cors).
+- `styles.fontFamily` applies, and `onError` reports every load and request failure. In iframe mode, `onError` only reports token errors.
+- `onThreadChange` is called directly instead of through `postMessage`. Setting `threadUuid` to `undefined` opens a new thread.
+- The agent shows no toast notifications, and `Lightdash.AiAgent` doesn't accept `onEvent`, so `onError` is the only failure signal.
+
 #### Token generation for AI agents
 
-AI agent embeds require a JWT with `content.type: 'aiAgent'` and a `writeActions` claim that pins the destination space and the actor used for agent queries and chart saves:
+AI agent embeds require a JWT with `content.type: 'aiAgent'` and a `writeActions` claim that names the write spaces and the actor used for agent queries and chart saves:
 
 ```javascript
 // Backend API endpoint
@@ -586,7 +678,7 @@ export function generateAiAgentToken() {
     },
     writeActions: {
       serviceAccountUserUuid: 'service-account-user-uuid',
-      spaceUuid: 'destination-space-uuid',
+      writeSpaceUuids: ['destination-space-uuid'],
     },
     userAttributes: {
       tenant_id: 'tenant-abc',
@@ -619,12 +711,29 @@ type MetricsCatalogProps = {
     backgroundColor?: string;       // Background color or 'transparent'
     fontFamily?: string;            // Font family for all text
   };
+  hiddenFilters?: MetricsCatalogFilter[]; // Built-in filter controls to hide
+  onEvent?: LightdashEventHandler;
+  onError?: (error: SdkError) => void;
 };
+
+type MetricsCatalogFilter = 'tables' | 'owners' | 'categories';
 ```
 
 <Info>
 `Lightdash.MetricsCatalog` does not accept `filters`, `contentOverrides`, `uiOverrides`, or `onExplore`. The catalog and the embedded Explore it launches are managed inside the component.
 </Info>
+
+#### Hide filter controls
+
+Use `hiddenFilters` to remove built-in filter controls that don't mean anything to your viewers. It only hides the controls; the metadata behind them, such as each metric's owner, stays in the catalog.
+
+```tsx
+<Lightdash.MetricsCatalog
+  instanceUrl="https://app.lightdash.cloud"
+  token={token}
+  hiddenFilters={['owners']}
+/>
+```
 
 #### Basic usage
 
@@ -658,7 +767,7 @@ export function generateMetricsCatalogToken() {
     },
     writeActions: {
       serviceAccountUserUuid: 'service-account-user-uuid',
-      spaceUuid: 'destination-space-uuid',
+      writeSpaceUuids: ['destination-space-uuid'],
     },
     userAttributes: {
       tenant_id: 'tenant-abc',
@@ -788,7 +897,7 @@ Use the `spaceUuids` option as a filter, not as an authorization boundary — au
 
 ### Lightdash.useLightdashAiAgentThreads
 
-Use `useLightdashAiAgentThreads` when you want to show your users a list of their previous AI agent conversations — for example a "Recent chats" sidebar next to a `Lightdash.AiAgent` embed. The hook calls the AI agent threads endpoint with the embed JWT, so it returns only threads that belong to the JWT-authenticated embed user and are scoped to their embed space.
+Use `useLightdashAiAgentThreads` when you want to show your users a list of their previous AI agent conversations — for example a "Recent chats" sidebar next to a `Lightdash.AiAgent` embed. The hook calls the AI agent threads endpoint with the embed JWT, so it returns only the threads for the token's agent, write actor, and first write space. Viewers whose tokens share those see the same threads; `user.externalId` doesn't separate them.
 
 Pair it with `Lightdash.AiAgent`'s `threadUuid` and `onThreadChange` props to let users resume any past conversation.
 
@@ -814,7 +923,13 @@ type LightdashAiAgentThreadResults = LightdashAiAgentThread[];
 type LightdashAiAgentThread = {
   uuid: string;
   title?: string;
-  firstMessage: { message: string };
+  firstMessage: { uuid: string; message: string } | null; // null for a thread created without a prompt
+  binding: {
+    type: 'dashboard';
+    dashboardUuid: string;
+    displayName: string | null;   // null once the dashboard is deleted
+  } | null;
+  threadContext: string | null;   // always null for embed tokens
   // ...additional metadata such as timestamps
 };
 ```
@@ -868,7 +983,7 @@ function ShopInsightsAgentWithHistory({
             type="button"
             onClick={() => setThreadUuid(thread.uuid)}
           >
-            {thread.title ?? thread.firstMessage.message}
+            {thread.title ?? thread.firstMessage?.message ?? 'Untitled thread'}
           </button>
         ))}
       </aside>
@@ -891,7 +1006,7 @@ function ShopInsightsAgentWithHistory({
 ```
 
 <Info>
-`useLightdashAiAgentThreads` uses the same embed JWT you pass to `Lightdash.AiAgent`. The token's `content.agentUuid` and `writeActions.spaceUuid` are what scope the returned threads — the hook cannot list threads from a different agent or space, even if you pass a different `agentUuid` argument.
+`useLightdashAiAgentThreads` uses the same embed JWT you pass to `Lightdash.AiAgent`. The token's `content.agentUuid` and first write space are what scope the returned threads — the hook cannot list threads from a different agent or space, even if you pass a different `agentUuid` argument.
 </Info>
 
 ## Generating embed tokens
@@ -1010,9 +1125,112 @@ This applies to `Lightdash.Dashboard`, `Lightdash.DashboardBuilder`, `Lightdash.
 
 <Note>
 - Refresh before expiry. A request that already failed on an expired token is not retried with the new one.
-- The new token replaces the old one for every SDK component on the page. Render one SDK component per page; two components with different tokens are not supported.
-- `Lightdash.AiAgent` renders an iframe and passes the token in its URL, so changing the token reloads the agent and closes the open thread. Mint AI agent tokens that outlive the session instead.
+- Each component sends its own token, so components with different tokens, such as a dashboard and a chart, can share a page. Replacing one component's token doesn't affect the others.
+- In iframe mode, `Lightdash.AiAgent` reads the token from the iframe URL when it loads, so an open agent doesn't pick up a replaced token. Mint AI agent tokens that outlive the session instead.
 </Note>
+
+## Listen to events
+
+Pass `onEvent` to `Lightdash.Dashboard`, `Lightdash.DashboardBuilder`, `Lightdash.Chart`, `Lightdash.Explore`, or `Lightdash.MetricsCatalog` to react to what viewers do in the embed, for example to confirm a save in your own UI or link to the new chart.
+
+```tsx
+import Lightdash, { type LightdashEvent } from '@lightdash/sdk';
+
+<Lightdash.Explore
+  instanceUrl="https://app.lightdash.cloud"
+  token={token}
+  exploreId={chart.tableName}
+  savedChart={chart}
+  onEvent={(event: LightdashEvent) => {
+    if (event.type === 'chartSaved' && event.payload.action === 'created') {
+      showToast(`Chart saved`, { link: `/charts/${event.payload.chartUuid}` });
+    }
+    if (event.type === 'notification') {
+      showToast(event.payload.title ?? '', { variant: event.payload.variant });
+    }
+  }}
+/>
+```
+
+Each event has a `type` and a `payload`:
+
+| `type` | `payload` | Sent when |
+| --- | --- | --- |
+| `chartSaved` | `{ chartUuid: string; action: 'created' \| 'updated' }` | A viewer saves a new chart, or a new version of an existing one, from Explore, chart edit mode, or a dashboard tile |
+| `dashboardSaved` | `{ dashboardUuid: string }` | A viewer saves a dashboard in edit mode |
+| `filterChanged` | `{ hasFilters: boolean; filterCount: number }` | Dashboard filters change |
+| `tabChanged` | `{ tabIndex: number }` | A viewer switches dashboard tab |
+| `allTilesLoaded` | `{ tilesCount: number; loadTimeMs: number }` | Every tile on the dashboard has loaded |
+| `notification` | `{ id: string; variant: 'success' \| 'error' \| 'info' \| 'warning'; title: string \| null; message: string \| null }` | The embed has something to tell the viewer |
+
+SDK components don't show toast notifications themselves. Render `notification` events in your own UI, or viewers won't see save confirmations and error messages. A notification can be sent more than once with the same `id`, for example while an export goes from in progress to done; update the same message instead of adding another.
+
+`Lightdash.AiAgent` does not accept `onEvent`; use `onThreadChange` to follow its threads.
+
+## Handle errors
+
+Pass `onError` to any SDK component to find out when it fails to load or a request fails, for example to show your own error screen instead of Lightdash's.
+
+```typescript
+type SdkError = {
+  kind:
+    | 'network'
+    | 'token_expired'
+    | 'invalid_token'
+    | 'unauthorized'
+    | 'forbidden'
+    | 'not_found'
+    | 'invalid_request'
+    | 'server'
+    | 'render'
+    | 'unknown';
+  status: number | null;   // HTTP status, or null when there was no response
+  message: string;
+  retryable: boolean;      // Network errors, 429, and 5xx server errors
+  fatal: boolean;          // The component replaced its content with an error screen
+};
+```
+
+`onError` only reports errors; the component still renders its own error state. A fatal error means the whole embed failed: the token couldn't be read, any request failed because the token expired or is invalid, the dashboard, chart, or explore couldn't be loaded, or the component crashed. After the first fatal error, the component stops reporting until it remounts. To retry, remount it, for example by changing its React `key`.
+
+```tsx
+import Lightdash, { type SdkError } from '@lightdash/sdk';
+import { useState } from 'react';
+
+function Dashboard({ token }: { token: string }) {
+  const [error, setError] = useState<SdkError | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  if (error?.fatal) {
+    return (
+      <div>
+        <p>We couldn't load this report.</p>
+        {error.retryable && (
+          <button
+            onClick={() => {
+              setError(null);
+              setAttempt((n) => n + 1);
+            }}
+          >
+            Try again
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <Lightdash.Dashboard
+      key={attempt}
+      instanceUrl="https://app.lightdash.cloud"
+      token={token}
+      onError={setError}
+    />
+  );
+}
+```
+
+For `Lightdash.AiAgent` in iframe mode, `onError` only reports token errors; in [native mode](#render-the-agent-natively) it reports every failure.
 
 ## Applying styles
 
@@ -1444,8 +1662,9 @@ Keys are flat dot-paths, namespaced by the surface they translate:
 - `dateZoom.*` – the date zoom control, granularity names, tooltips, and the per-tile zoom indicator
 - `tileMenu.*` – the tile menu: Explore from here, Download data, Export image, View underlying data
 - `dashboard.*` – dashboard-level export and print buttons
+- `explorer.*` – the Back button that returns from an embedded Explore to the dashboard, chart, or starting query
 
-Every key is also exported through the `SdkUiOverrides` type in `@lightdash/sdk`, so your editor autocompletes the full set. The complete list with the built-in English defaults:
+Every key is also exported through the `SdkUiOverrides` type in `@lightdash/sdk`, so your editor autocompletes the full set. The keys for the surfaces above, with the built-in English defaults:
 
 <AccordionGroup>
 <Accordion title="All translatable keys with English defaults">
@@ -1658,7 +1877,11 @@ Every key is also exported through the `SdkUiOverrides` type in `@lightdash/sdk`
   "filters.summary.hideFilters": "Hide filters",
   "filters.summary.hide": "Hide",
   "dashboard.exportAllTiles": "Export all tiles",
-  "dashboard.printPage": "Print this page"
+  "dashboard.printPage": "Print this page",
+  "dashboard.exportPdf": "Export as PDF",
+  "explorer.back": "Back",
+  "explorer.backToDashboard": "Back to Dashboard",
+  "explorer.backToChart": "Back to Chart"
 }
 ```
 </Accordion>
@@ -1872,7 +2095,11 @@ Every key is also exported through the `SdkUiOverrides` type in `@lightdash/sdk`
   "filters.summary.hideFilters": "Ocultar filtros",
   "filters.summary.hide": "Ocultar",
   "dashboard.exportAllTiles": "Exportar todos los mosaicos",
-  "dashboard.printPage": "Imprimir esta página"
+  "dashboard.printPage": "Imprimir esta página",
+  "dashboard.exportPdf": "Exportar como PDF",
+  "explorer.back": "Volver",
+  "explorer.backToDashboard": "Volver al tablero",
+  "explorer.backToChart": "Volver al gráfico"
 }
 ```
 </Accordion>
@@ -2006,9 +2233,9 @@ export function EmbeddedDashboard() {
           backgroundColor: 'transparent',
           fontFamily: 'Inter, -apple-system, sans-serif',
         }}
-        onExplore={({ chart }) => {
-          console.log('User exploring:', chart.name);
-          // Track analytics event
+        onEvent={(event) => {
+          // Track analytics events, e.g. saves and filter changes
+          analytics.track(`lightdash_${event.type}`, event.payload);
         }}
       />
     </div>

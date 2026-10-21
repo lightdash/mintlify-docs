@@ -22,20 +22,22 @@ AI agent embeds use the same JWT-based security model as dashboard and chart emb
 
 - Add a "Chat with your data" experience to your customer-facing app
 - Let customers ask ad-hoc questions about their own data without giving them a Lightdash login
-- Scope each customer's AI session to a specific space, so the agent only sees and writes content the customer is allowed to see
+- Scope each customer's AI session to their own spaces, so the agent only sees and writes content the customer is allowed to see
+- Keep one shared conversation per customer dashboard, with the agent's changes limited to that dashboard
 
 ### Available features
 
 Embedded AI agents support:
 
-- Creating and continuing threads with the agent
-- Resuming a previous conversation on load, and listing an embed user's past threads to build your own thread history UI
+- Creating and continuing threads with the agent, and stopping or steering an answer while it streams
+- Resuming a previous conversation on load, and listing past threads to build your own thread history UI
+- [Binding a thread to a dashboard](#bind-a-thread-to-a-dashboard) and giving it background context
 - Viewing agent-generated charts and tables in the response
-- Opening saved charts and dashboards the agent references, when they live in `writeActions.spaceUuid`: charts in a side panel next to the chat, dashboards as a read-only view inside the embed
-- Saving AI-generated charts into a fixed destination space (via [write actions](/embed/reference#write-actions))
+- Opening saved charts and dashboards the agent references, when they live in one of the token's write spaces: charts in a side panel next to the chat, dashboards as a read-only view inside the embed
+- Saving AI-generated charts into the token's write spaces (via [write actions](/embed/reference#write-actions))
 - Row-level filtering via [user attributes](/workspace-admin/user-attributes)
 
-Embedded AI sessions hide non-embed UI surfaces by default — including thread history sidebars, dashboard navigation, SQL mode, MCP server tools, and user preference screens. Saved charts from `writeActions.spaceUuid` open in a read-only side panel, and saved dashboards from that space open as a read-only view with a "Back to AI" control, both inside the embed. "Explore from here" appears only when the token sets `content.canExplore` (or the actor's role grants the Explore scope in `roles` mode), and Explore stays inside the embed. The Debug panel on agent answers is hidden unless the token sets `content.canViewDebugInfo` (or the actor's role grants it in `roles` mode); see [Debug information](/embed/reference#debug-information). Links to other content, such as documents or scheduled deliveries, are shown as plain references.
+Embedded AI sessions hide non-embed UI surfaces by default — including thread history sidebars, dashboard navigation, SQL mode, MCP server tools, and user preference screens. Saved charts from the write spaces open in a read-only side panel, and saved dashboards from those spaces open as a read-only view with a "Back to AI" control, both inside the embed. "Explore from here" appears only when the token sets `content.canExplore` or the actor's role grants `view:EmbedExplore`, and Explore stays inside the embed. The Debug panel on agent answers is hidden unless the token sets `content.canViewDebugInfo` (or the actor's role grants it in `roles` mode); see [Debug information](/embed/reference#debug-information). **View SQL** and **Download** on chart answers follow the actor's role; see [SQL and downloads on answers](/embed/reference#sql-and-downloads-on-answers). Links to other content, such as documents or scheduled deliveries, are shown as plain references.
 
 ## Prerequisites
 
@@ -43,12 +45,12 @@ Before you embed an AI agent, you need:
 
 - An AI agent configured in your Lightdash project. See [Set up AI agents](/agents/set-up-agents).
 - An embed secret for the project. See [Embedding quickstart](/embed/set-up-embedding).
-- A destination space where AI-generated charts will be saved.
+- At least one space where AI-generated charts will be saved.
 - A service account user (or regular Lightdash user) to act as the writer for AI actions. See [Write actions](/embed/reference#write-actions).
 
 ## Embed an AI agent with the React SDK
 
-The React SDK ships a `Lightdash.AiAgent` component that renders the agent inside an iframe. Use it when you want the agent to live inside a React or Next.js app.
+The React SDK ships a `Lightdash.AiAgent` component. Use it when you want the agent to live inside a React or Next.js app. By default it renders the agent inside an iframe; set `renderMode="native"` to render it directly in your page instead (Beta).
 
 ```tsx
 import Lightdash from '@lightdash/sdk';
@@ -78,7 +80,52 @@ If you construct the embed URL yourself (Node, Python, Go, or any other backend)
 {siteUrl}/embed/{projectUuid}/ai-agents/{agentUuid}/threads/{threadUuid}#{embedJwt}
 ```
 
-Omit the `/{threadUuid}` segment to land on the new-thread screen. The `threadUuid` must belong to the embed user identified by the JWT — thread access is enforced server-side.
+Omit the `/{threadUuid}` segment to land on the new-thread screen. The thread must have been created with an embed token for the same agent, write actor, and first write space — thread access is enforced server-side. Threads aren't separated by `user.externalId`, so every viewer whose token shares that actor and first write space can open them.
+
+## Bind a thread to a dashboard
+
+A thread can be bound to one dashboard for its whole life, and can carry background context for the agent. Use this when each customer has a dashboard with one shared conversation, for example to keep a dashboard's conversation going after you copy it into another customer's space.
+
+In a bound thread:
+
+- A **Linked dashboard** card at the top of the thread opens the dashboard.
+- The agent treats "this dashboard" as the bound dashboard. If the agent can create content, its changes are limited to that dashboard and the charts saved in it; see [Threads bound to a dashboard](/agents/enable-content-tools#threads-bound-to-a-dashboard).
+- The thread context, up to 10,000 characters, is given to the agent on every turn as background from the user. It is never shown as a chat message, and embedded viewers can't read it back.
+- Neither the binding nor the context can be changed after the thread is created.
+
+The dashboard must be in one of the token's write spaces.
+
+### From the React SDK
+
+Pass `binding` and `threadContext` to `Lightdash.AiAgent`. The embed creates the bound thread when the user sends the first message, and `onThreadChange` returns its UUID so you can reopen it later. See [Start a thread bound to a dashboard](/embed/react-sdk#start-a-thread-bound-to-a-dashboard) for the example.
+
+### From your backend
+
+To create a bound thread before anyone opens it, call the create-thread endpoint from your server with the customer's AI agent embed token in the `lightdash-embed-token` header. `prompt` is optional when you send `binding` or `threadContext`; without one, the thread starts empty.
+
+```bash
+curl -X POST "https://app.lightdash.cloud/api/v1/projects/$PROJECT_UUID/aiAgents/$AGENT_UUID/threads" \
+  -H "lightdash-embed-token: $EMBED_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "binding": { "type": "dashboard", "dashboardUuid": "'"$DASHBOARD_UUID"'" },
+    "threadContext": "Summary of the previous conversation..."
+  }'
+```
+
+The response's `results.uuid` is the thread UUID; pass it to `Lightdash.AiAgent` as `threadUuid`, or add it to the [iframe URL](#resuming-a-thread-from-an-iframe-embed).
+
+<Warning>
+Create the thread with the same embed token setup your viewers use. A thread created with a personal access token or a Lightdash session isn't attached to an embed space, so embedded viewers can't open it.
+</Warning>
+
+| Response | Cause |
+| --- | --- |
+| `400` | No `prompt`, `binding`, or `threadContext`, or a `threadContext` longer than 10,000 characters |
+| `403` | The dashboard is outside the token's write spaces, or the actor can't view it |
+| `404` | The dashboard doesn't exist, is in the trash, or belongs to another project |
+
+If the bound dashboard is deleted later, the thread stays bound and shows **Dashboard no longer available**. The agent can still answer questions and run queries, but can't create or change saved content in that thread.
 
 ## Generate an AI agent embed token
 
@@ -95,7 +142,7 @@ const token = jwt.sign({
   },
   writeActions: {
     serviceAccountUserUuid: 'service-account-user-uuid',
-    spaceUuid: 'destination-space-uuid',
+    writeSpaceUuids: ['destination-space-uuid'],
   },
   userAttributes: {
     tenant_id: 'tenant-abc', // Row-level filtering for the embedded viewer
@@ -110,7 +157,7 @@ const token = jwt.sign({
 
 - `content.type` — must be `"aiAgent"`.
 - `content.agentUuid` — the agent the embed is allowed to use. Tokens cannot switch to a different agent at runtime.
-- `writeActions.spaceUuid` — the space AI-generated charts are saved into, and the only space the agent can read charts or dashboards from.
+- `writeActions.writeSpaceUuids` — the spaces the agent can read charts and dashboards from and save AI-generated charts into. The first space is the default save target and scopes the embed's threads. If the agent is restricted to certain spaces, it must have access to the first one.
 - One of `writeActions.serviceAccountUserUuid` or `writeActions.userUuid` — the actor whose permissions are used when the agent runs queries and saves charts, and whose name appears next to messages in the chat. See [Write actions](/embed/reference#write-actions).
 
 **Optional fields:**
@@ -127,8 +174,10 @@ To let the actor's role enable or disable embedded AI access, configure [Permiss
 AI agent embeds enforce a tight scope:
 
 - A token issued for agent A cannot access agent B, even within the same project.
-- The agent can only read dashboards and saved charts that live in `writeActions.spaceUuid`. Other content returns a not-found error.
-- Embedded viewers can open those saved charts in the chat side panel and those dashboards as a read-only view. Both run with the write actor's permissions and the token's `userAttributes`; content outside `writeActions.spaceUuid` is rejected.
-- The agent saves new charts into `writeActions.spaceUuid`. Embedded users cannot pick a different destination.
+- The agent can only read dashboards and saved charts that live in the token's write spaces. Other content returns a not-found error.
+- Embedded viewers can open those saved charts in the chat side panel and those dashboards as a read-only view. Both run with the write actor's permissions and the token's `userAttributes`; content outside the write spaces is rejected.
+- Charts are saved into the first write space by default. When the actor can create charts in more than one write space, the save dialog lets embedded users choose among them.
+- Threads belong to the write actor and the first write space. Changing which space comes first changes which past threads viewers see.
+- In a [bound thread](#bind-a-thread-to-a-dashboard), the agent can only change the bound dashboard and the charts saved in it.
 - Query results respect the write actor's permissions and any `userAttributes` claims on the JWT, so embedded viewers only see the rows they're entitled to.
 - Dashboard and chart embed tokens are rejected by AI agent routes, and AI agent tokens are rejected by dashboard or chart routes.
