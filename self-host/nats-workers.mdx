@@ -36,6 +36,18 @@ flowchart LR
 
 The Lightdash API publishes jobs to NATS JetStream. Worker pods consume messages from their stream and process them concurrently (default 100 concurrent jobs per pod).
 
+## Streams and workers
+
+The API publishes each job to one of three JetStream streams:
+
+| Stream | Jobs | Worker |
+|---|---|---|
+| `warehouse` | Interactive and background warehouse queries | [Warehouse worker](/self-host/nats-workers/warehouse-workers) |
+| `pre-aggregate` | Materializations, queries served from a pre-aggregate, and DuckDB compose queries on an Enterprise instance | [Pre-aggregate worker](/self-host/nats-workers/pre-aggregate-workers) |
+| `duckdb` | DuckDB compose queries on an instance without an Enterprise license | None in the Helm chart; start one with `--stream duckdb` or run a worker without `--stream` |
+
+A worker started with `--stream <name>` consumes only that stream. A worker started without `--stream` consumes every stream the instance registers. The Helm chart pins its workers: the warehouse worker runs with `--stream warehouse` and the pre-aggregate worker with `--stream pre-aggregate`, so each stream you use needs its own worker enabled. A job published to a stream with no worker waits for `NATS_QUEUE_TIMEOUT_MS` (3 minutes by default) and then fails; nothing falls back to the API process.
+
 ## Enabling NATS
 
 ```yaml
