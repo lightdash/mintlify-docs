@@ -7,18 +7,29 @@ description: "Enable pre-aggregate query routing on a self-hosted Lightdash inst
   <Badge icon="building-plus" color="blue" size="sm" shape="pill">Enterprise</Badge> Pre-aggregates need a valid `LIGHTDASH_LICENSE_KEY` set on your instance before any of the configuration below takes effect. See [enterprise features](/self-host/enterprise-features) for applying the key.
 </Info>
 
-[Pre-aggregates](/semantic-layer/pre-aggregates) materialize aggregated tables to S3 and route matching queries to DuckDB instead of your warehouse, so common dashboard queries return in milliseconds without hitting the warehouse. To enable them on a self-hosted instance you need an S3-compatible bucket for the materialized data and at least one [pre-aggregate worker](/self-host/nats-workers/pre-aggregate-workers) to run the materializations.
+[Pre-aggregates](/semantic-layer/pre-aggregates) materialize aggregated tables to S3 and route matching queries to DuckDB instead of your warehouse, so common dashboard queries return in milliseconds without hitting the warehouse. A self-hosted instance needs two things to run them: the license key and an S3-compatible bucket for the materialized data. A [pre-aggregate worker](/self-host/nats-workers/pre-aggregate-workers) is recommended for large materializations, and required when NATS is enabled.
 
 ## Prerequisites
 
 - **Enterprise license** — `LIGHTDASH_LICENSE_KEY` must be set on your instance.
-- **S3-compatible storage** — a bucket Lightdash can write Parquet files to. This can be the same bucket used for [external object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage), or a dedicated one.
-- **NATS enabled** — set `NATS_ENABLED=true` and `NATS_URL`. Materializations run through the NATS `pre-aggregate` stream.
-- **At least one pre-aggregate worker** — see [pre-aggregate workers](/self-host/nats-workers/pre-aggregate-workers) for the worker deployment.
+- **S3-compatible storage** — a dedicated bucket Lightdash can write Parquet files to. Don't reuse the results cache bucket: query history cleanup would delete active materializations. See [S3 storage configuration](/self-host/nats-workers/pre-aggregate-workers#s3-storage-configuration) for the bucket variables and provider examples.
+
+## Where pre-aggregates run
+
+Where materializations and pre-aggregate queries execute depends on whether NATS is enabled:
+
+| NATS | What runs them | Notes |
+|---|---|---|
+| `NATS_ENABLED` unset | The API process serves queries and the scheduler process materializes | No extra deployment. Materialization stages the full result on that pod's local disk and runs DuckDB in-process, so size the scheduler pod for your largest pre-aggregate. |
+| `NATS_ENABLED=true` | A worker that consumes the `pre-aggregate` stream | A worker started without `--stream` consumes every stream. A worker pinned with `--stream warehouse` doesn't, so run a dedicated [pre-aggregate worker](/self-host/nats-workers/pre-aggregate-workers) alongside it. The Helm chart pins its warehouse worker this way, so on Helm set `preAggregateNatsWorker.enabled: true`. |
+
+<Warning>
+  With NATS enabled and no worker on the `pre-aggregate` stream, queries that match a pre-aggregate wait in the queue for `NATS_QUEUE_TIMEOUT_MS` (3 minutes by default) and then fail. Nothing falls back to the warehouse.
+</Warning>
 
 ## Enable pre-aggregates
 
-Set the main switch, keep Parquet materialization on, and point Lightdash at the bucket:
+Set the main switch, keep Parquet materialization on, and point Lightdash at the bucket. Lightdash refuses to start when `PRE_AGGREGATES_ENABLED` is `true` without a bucket.
 
 ```bash
 PRE_AGGREGATES_ENABLED=true
@@ -27,21 +38,31 @@ PRE_AGGREGATE_RESULTS_S3_BUCKET=lightdash-pre-aggregates
 PRE_AGGREGATE_RESULTS_S3_REGION=us-east-1
 ```
 
-Authenticate to the bucket with `PRE_AGGREGATE_RESULTS_S3_ACCESS_KEY` and `PRE_AGGREGATE_RESULTS_S3_SECRET_KEY`, or omit them to use an IAM role or the default AWS credential chain. `PRE_AGGREGATES_PARQUET_ENABLED=false` keeps pre-aggregates in-memory only, lost on restart. To bound DuckDB memory per worker, set `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` (e.g. `4GB`). The full variable list is in the [pre-aggregates reference](/self-host/customize-deployment/environment-variables#pre-aggregates).
+Authenticate to the bucket with `PRE_AGGREGATE_RESULTS_S3_ACCESS_KEY` and `PRE_AGGREGATE_RESULTS_S3_SECRET_KEY`, or omit them to use an IAM role or the default AWS credential chain. With `PRE_AGGREGATES_PARQUET_ENABLED` unset, Lightdash stores materializations as JSON Lines files, which DuckDB reads more slowly; keep it `true`. To bound the memory DuckDB uses to serve queries, set `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` (for example `4GB`). The full variable list is in the [pre-aggregates reference](/self-host/customize-deployment/environment-variables#pre-aggregates).
 
-Deploy at least one [pre-aggregate worker](/self-host/nats-workers/pre-aggregate-workers) and restart the backend. Project developers can then define pre-aggregates in dbt and Lightdash will materialize and serve them.
+Restart the backend, and the scheduler and workers if you run them. Project developers can then define pre-aggregates in dbt and Lightdash materializes and serves them.
+
+## Switching pre-aggregates off
+
+Once the instance has the license key and the bucket, pre-aggregates are on for every organization through the `pre-aggregates` feature flag. To switch them off without removing the configuration, add the flag to the disable list and restart:
+
+```bash
+LIGHTDASH_DISABLE_FEATURE_FLAGS=pre-aggregates
+```
+
+The disable list wins over every other setting. On Lightdash Cloud the same flag switches a single organization off.
 
 ## Verifying pre-aggregates
 
 1. Add a pre-aggregate definition to a dbt model and deploy.
-2. The deploy materializes it. To rebuild it later, trigger a refresh from the Lightdash UI or wait for its scheduled run.
+2. The first compile that includes it materializes it. Later compiles rebuild it only when its definition changes; `refresh.cron` and manual refreshes cover the rest. See [Scheduling refreshes](/semantic-layer/pre-aggregates#scheduling-refreshes).
 3. Confirm a Parquet file lands in the configured bucket.
 4. Run a query that matches the pre-aggregate — the query timing panel shows `pre-aggregate` as the source.
 
 ## Troubleshooting
 
-**Materialization jobs stay queued forever.**
-No pre-aggregate worker is consuming the NATS stream. Confirm at least one worker pod is running against the same NATS URL and is subscribed to the `pre-aggregate` stream.
+**Materialization jobs stay queued forever, or matching queries fail after 3 minutes.**
+NATS is enabled and no worker consumes the `pre-aggregate` stream. Confirm a worker pod runs against the same NATS URL and was started either without `--stream` or with `--stream pre-aggregate`. A worker started with `--stream warehouse` never picks these jobs up.
 
 **Materializations fail with an S3 permissions error.**
 The credentials in `PRE_AGGREGATE_RESULTS_S3_ACCESS_KEY` / `_SECRET_KEY` (or the IAM role) need `s3:GetObject`, `s3:PutObject`, and `s3:ListBucket` on the bucket.
