@@ -1,0 +1,40 @@
+---
+title: "Upgrade notes"
+description: "Changes that need action when you upgrade across a major Lightdash version"
+doc-type: reference
+---
+
+<Note>
+🛠 This page is for engineering teams self-hosting their own Lightdash instance. Lightdash Cloud is upgraded for you, but the behavior changes listed here apply to Cloud projects from the version noted.
+</Note>
+
+A major version changes behavior, configuration, or an API in a way that needs action on your side. This page lists those changes by major version, with what to do before or after you upgrade. For how versioning works, see [Upgrading](/self-host/upgrading); for the upgrade procedure, see the [upgrade runbook](/self-host/upgrade-runbook); for the per-release safety verdict, see [Upgrade safety](/self-host/upgrade-safety).
+
+## 2.x to 3.0
+
+### Pre-aggregates don't rebuild on every compile
+
+In 2.x, every project compile (a `lightdash deploy`, a refresh from the UI, or a CLI compile) rebuilt every managed pre-aggregate. From 3.0, a compile materializes a pre-aggregate only the first time it appears and, when the definition sets `refresh.on_change: true`, when that compile changes the pre-aggregate's definition or the fields it reads. Everything else refreshes on its `refresh.cron` schedule or by a manual refresh. See [Scheduling refreshes](/semantic-layer/pre-aggregates#scheduling-refreshes) for the full behavior.
+
+What to do:
+
+1. Add a `refresh.cron` schedule to each managed pre-aggregate whose data needs to stay fresh. A pre-aggregate without a schedule keeps serving its last materialization until someone refreshes it from **Project Settings > Pre-aggregates**.
+2. Optional: set `refresh.on_change: true` on pre-aggregates you want rebuilt as soon as their definition changes. Without it, a changed pre-aggregate stops serving the old data immediately, and matching queries run on the warehouse until the next scheduled or manual refresh.
+
+```yaml
+pre_aggregates:
+  - name: orders_daily_by_status
+    dimensions:
+      - status
+    metrics:
+      - total_order_amount
+    time_dimension: order_date
+    granularity: day
+    refresh:
+      cron: "0 6 * * *"
+      on_change: true
+```
+
+Nothing changes for [external pre-aggregates](/semantic-layer/pre-aggregates/external), because you own their refresh.
+
+Existing materializations keep serving after the upgrade. The first compile on 3.0 records what each pre-aggregate reads, as the baseline for change detection, without rebuilding anything. The upgrade is rolling-safe: its migrations add nullable or defaulted columns only.
