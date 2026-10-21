@@ -385,7 +385,7 @@ MCP provides AI assistants with powerful tools to interact with your Lightdash d
 #### Query execution
 
 - **Run metric query** - Execute queries using your semantic layer's metrics and dimensions. Completed results include a best-effort `exploreUrl` so you can open the query in Lightdash to keep exploring.
-- **Render chart** - Render a visualization (tables, bar charts, line charts, pie charts, and more) for a completed metric query result in MCP App-capable clients (e.g., Claude). Call this after a metric query finishes when you want a visual chart; the query is not re-executed. SQL Runner results are not supported by `render_chart`.
+- **Render chart** - Render a visualization (tables, bar charts, line charts, pie charts, and more) for a completed metric query result in MCP App-capable clients (e.g., Claude). Call this after a metric query finishes when you want a visual chart; the query is not re-executed. It can also render with one of the project's [custom chart types](#chart-types). SQL Runner results are not supported by `render_chart`.
 - **Run SQL** - Execute arbitrary SQL queries directly against the project's data warehouse. Useful for ad-hoc analysis or queries that don't fit the explore-based model. Returns up to 500 rows by default (configurable up to 5,000). Completed results include a best-effort `sqlRunnerUrl` so you can open the compiled SQL in [SQL Runner](/explore/sql-runner).
 - **Get query result** - Poll for the result of a long-running query. If `run_metric_query` or `run_sql` doesn't finish within its wait window, the tool returns a `queryUuid` and the assistant polls `get_query_result` until the warehouse completes the query — so long queries don't time out the session.
 
@@ -582,6 +582,32 @@ An app built over MCP is created as the calling user's **personal app**: at the 
 
 - _"Build a data app called Revenue Overview that shows monthly revenue and the top 10 customers, then tell me when it's ready."_
 - _"Add a region filter to the Revenue Overview app."_
+
+#### Chart types
+
+MCP can build and use [custom chart types](/visualizations/chart-studio), the reusable visualizations Chart Studio builds for a project, from any MCP client. Ask the assistant for a chart the built-in chart types can't draw, wait a few minutes while it builds, then iterate on it with follow-up briefs. Each build adds a **version** to the chart type.
+
+- **List custom chart types** (`list_custom_chart_types`) - Browse the project's chart types, including ones installed from the [chart library](/visualizations/chart-library), newest first.
+- **Find custom chart types** (`find_custom_chart_types`) - Search the project's chart types by name and description, or fetch one by slug. Each result has the chart type's inputs, display options, and a link to it in Chart Studio, so the assistant can reuse a chart type that fits before building a new one.
+- **Create custom chart type** (`create_custom_chart_type`) - Start building a new chart type from a name and a brief. Optionally share the first rows of a completed metric query as sample data, or apply a [theme](/data-apps/customize-themes). The sample rows only guide the build; they don't tie the chart type to that query.
+- **Iterate custom chart type** (`iterate_custom_chart_type`) - Build a new version of an existing chart type from a follow-up brief. The chart type keeps its inputs, so charts that already use it keep working.
+
+Builds run in the background, like [data app builds](#data-app-builds), so the assistant reports that the build has started and then follows up with a link to the chart type in Chart Studio when it's ready. A chart type built over MCP is the same as one built in Chart Studio: it's available across the whole project (see [Chart Studio permissions](/visualizations/chart-studio#permissions)).
+
+Once a chart type is built, the assistant can use it in two ways:
+
+- **Render a query with it** - `render_chart` draws a completed metric query with the chart type, binding the query's fields to the chart type's inputs. Like other rendered charts, it only displays in MCP App-capable clients.
+- **Save a chart with it** - `create_content` saves a chart that uses the chart type, with the same field mapping. The saved chart behaves like one [built in the Explorer](/visualizations/chart-studio#using-a-chart-type-in-a-chart).
+
+<Info>
+  **What enables these tools.** `list_custom_chart_types` and `find_custom_chart_types` appear in the tools list when chart types are enabled for your organization and the caller can explore data in the active project. `create_custom_chart_type` and `iterate_custom_chart_type` appear alongside the [data app build](#data-app-builds) tools, so they need data apps enabled and permission to create data apps.
+</Info>
+
+**Example prompts:**
+
+- _"Show monthly revenue by product category as a calendar heatmap. Build a chart type for it if we don't have one."_
+- _"Render the last query with the Calendar Heatmap chart type."_
+- _"Add a color legend to the Calendar Heatmap chart type."_
 
 #### Scheduled deliveries
 
@@ -885,7 +911,7 @@ A: Yes, each team member can set up their own MCP connection with their individu
 
 **Q: Can MCP modify my data or dashboards?**
 
-A: MCP can create and edit Lightdash charts and dashboards via the [content-as-code tools](#editing-content), and can create [scheduled deliveries](#scheduled-deliveries), when your user account has the required permissions. MCP cannot modify your underlying warehouse data — query execution is read-only (metric queries and SQL `SELECT` only). All write operations respect your existing Lightdash permissions and project access controls, and each write tool is only registered for users whose role grants the corresponding scope.
+A: MCP can create and edit Lightdash charts and dashboards via the [content-as-code tools](#editing-content), can build [custom chart types](#chart-types), and can create [scheduled deliveries](#scheduled-deliveries), when your user account has the required permissions. MCP cannot modify your underlying warehouse data — query execution is read-only (metric queries and SQL `SELECT` only). All write operations respect your existing Lightdash permissions and project access controls, and each write tool is only registered for users whose role grants the corresponding scope.
 
 **Q: Claude returns data as text but no visual chart is displayed. What's wrong?**
 
