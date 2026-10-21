@@ -29,10 +29,10 @@ Metrics catalog embeds use the same JWT-based security model as other embed type
 Embedded metrics catalog supports:
 
 - Browsing all metrics in the project the JWT is scoped to
-- Searching and filtering by category
+- Searching and filtering by table, owner, and category, with any of those filter controls [hidden](/embed/react-sdk#hide-filter-controls)
 - Previewing a metric with its default time-series chart
 - Continuing into an embedded Explore from any metric when `content.canExplore` is `true`
-- Saving Explore results into a fixed destination space via [write actions](/embed/reference#write-actions)
+- Saving Explore results into the token's write spaces via [write actions](/embed/reference#write-actions)
 - Row- and column-level filtering via [user attributes](/workspace-admin/user-attributes)
 
 ## Prerequisites
@@ -42,7 +42,7 @@ Before you embed the metrics catalog, you need:
 - An embed secret for the project. See [Embedding quickstart](/embed/set-up-embedding).
 - At least one metric defined in the project's semantic layer. See [How to create metrics](/semantic-layer/metrics).
 - A React or Next.js host application — metrics catalog embedding is only available through the React SDK.
-- If you want embedded users to save charts from Explore, a destination space and a write actor. See [Write actions](/embed/reference#write-actions).
+- If you want embedded users to save charts from Explore, at least one write space and a write actor. See [Write actions](/embed/reference#write-actions).
 
 ## Embed the metrics catalog with the React SDK
 
@@ -78,7 +78,7 @@ const token = jwt.sign({
   },
   writeActions: {
     serviceAccountUserUuid: 'service-account-user-uuid',
-    spaceUuid: 'destination-space-uuid',
+    writeSpaceUuids: ['destination-space-uuid'],
   },
   userAttributes: {
     tenant_id: 'tenant-abc', // Row-level filtering for the embedded viewer
@@ -108,7 +108,8 @@ Metrics catalog embeds honor the same access controls as other embed surfaces:
 - The catalog only shows metrics from the project named in `content.projectUuid`.
 - [User attributes](/workspace-admin/user-attributes) applied to the JWT hide tables, dimensions, and [metrics](/workspace-admin/user-attributes#metric-access-control) whose `required_attributes` rules the embedded viewer does not satisfy, both in the catalog listing and in any Explore session launched from it.
 - Metric previews and Explore queries run with the write actor's permissions (when `writeActions` is set) plus any `userAttributes` filters, so embedded viewers only see rows and columns they are entitled to.
-- When `canExplore` is not set to `true`, the catalog is read-only — the **Explore from here** action is hidden and Explore routes reject the token.
+- Metric and field SQL is hidden unless the write actor has the `view:EmbedCompiledSql` scope; see [Compiled SQL](/embed/reference#compiled-sql).
+- When `canExplore` isn't `true` and the write actor's role doesn't grant `view:EmbedExplore`, the catalog is read-only — the **Explore from here** action is hidden and Explore routes reject the token.
 - Metrics catalog tokens are rejected by dashboard, chart, AI agent, and data app routes, and vice versa.
 
 ## Example: read-only metrics catalog
