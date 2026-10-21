@@ -5,22 +5,22 @@ doc-type: reference
 ---
 
 <Note>
-🛠 This page is for engineering teams self-hosting their own Lightdash instance. Lightdash Cloud is upgraded for you, but the behavior changes listed here apply to Cloud projects from the version noted.
+🛠 This page is for engineering teams self-hosting their own Lightdash instance. Lightdash upgrades Cloud for you, but the behavior changes listed here apply to Cloud projects from the version noted.
 </Note>
 
-A major version changes behavior, configuration, or an API in a way that needs action on your side. This page lists those changes by major version, with what to do before or after you upgrade. For how versioning works, see [Upgrading](/self-host/upgrading); for the upgrade procedure, see the [upgrade runbook](/self-host/upgrade-runbook); for the per-release safety verdict, see [Upgrade safety](/self-host/upgrade-safety).
+A major version changes behavior, configuration, or an API in a way that needs action from you. This page lists those changes by major version, with what to do before or after you upgrade. For how versioning works, see [Upgrading](/self-host/upgrading); for the upgrade procedure, see the [upgrade runbook](/self-host/upgrade-runbook); for the per-release safety verdict, see [Upgrade safety](/self-host/upgrade-safety).
 
 ## 2.x to 3.0
 
 ### Pre-aggregates don't rebuild on every compile
 
-In 2.x, every project compile (a `lightdash deploy`, a refresh from the UI, or a CLI compile) rebuilt every managed pre-aggregate. From 3.0, a compile materializes a pre-aggregate only the first time it appears and when that compile changes the pre-aggregate's definition or the fields it reads. A compile that leaves the definition unchanged doesn't rebuild it. To keep the data fresh, a pre-aggregate refreshes on its `refresh.cron` schedule or by a manual refresh. See [Scheduling refreshes](/semantic-layer/pre-aggregates#scheduling-refreshes) for the full behavior.
+In 2.x, Lightdash rebuilt every managed pre-aggregate on every project compile (a `lightdash deploy`, a refresh from the UI, or a CLI compile). From 3.0, Lightdash materializes a pre-aggregate on a compile only the first time the pre-aggregate appears and when that compile changes its definition or the fields it reads. On a compile that leaves the definition unchanged, Lightdash doesn't rebuild it. To keep the data fresh, Lightdash refreshes a pre-aggregate on its `refresh.cron` schedule or when you refresh it manually. See [Scheduling refreshes](/semantic-layer/pre-aggregates#scheduling-refreshes) for the full behavior.
 
 What to do:
 
-1. Add a `refresh.cron` schedule to each managed pre-aggregate whose data needs to stay fresh. A pre-aggregate without a schedule keeps serving its last materialization until someone refreshes it from **Project Settings > Pre-aggregates**.
+1. Add a `refresh.cron` schedule to each managed pre-aggregate whose data needs to stay fresh. Without a schedule, Lightdash keeps serving the last materialization until someone refreshes the pre-aggregate from **Project Settings > Pre-aggregates**.
 2. If you refreshed pre-aggregates by refreshing the project, use **Rebuild managed** on that page instead, or call `POST /api/v1/projects/{projectUuid}/pre-aggregates/refresh` from your orchestration after `dbt run`.
-3. Optional: set `refresh.on_change: false` on a pre-aggregate whose definition you edit often and would rather rebuild on its schedule. A changed pre-aggregate stops serving the old data immediately either way.
+3. Optional: set `refresh.on_change: false` on a pre-aggregate whose definition you edit often and would rather rebuild on its schedule. Either way, Lightdash stops serving the old data as soon as the definition changes.
 
 ```yaml
 pre_aggregates:
@@ -37,4 +37,4 @@ pre_aggregates:
 
 Nothing changes for [external pre-aggregates](/semantic-layer/pre-aggregates/external), because you own their refresh.
 
-Existing materializations keep serving after the upgrade. The first compile on 3.0 records what each pre-aggregate reads, as the baseline for change detection, without rebuilding anything. The upgrade is rolling-safe: its migrations add nullable or defaulted columns only.
+Lightdash keeps serving existing materializations after the upgrade. On the first compile on 3.0, Lightdash records what each pre-aggregate reads as the baseline for change detection, without rebuilding anything. You can upgrade with a rolling update: the migrations add nullable or defaulted columns only.
