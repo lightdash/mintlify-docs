@@ -35,7 +35,7 @@ Each provider's exhaustive variable list lives in the [environment variables ref
 
 Leave `AI_DEFAULT_PROVIDER` unset or set it to `openai`, then set `OPENAI_API_KEY`. `gpt-6-sol` is the default model; override it with `OPENAI_MODEL_NAME`. All options: [OpenAI configuration](/self-host/customize-deployment/environment-variables#openai-configuration).
 
-Behind an OpenAI-compatible LLM gateway (LiteLLM, an internal proxy), also set `OPENAI_BASE_URL` to the gateway URL and `OPENAI_MODEL_NAME` to a model your gateway exposes. If the gateway doesn't support streaming (SSE), set `OPENAI_SUPPORTS_STREAMING=false`. If it enforces Zero Data Retention, set `OPENAI_ZERO_DATA_RETENTION=true`.
+Behind an OpenAI-compatible LLM gateway (LiteLLM, an internal proxy), also set `OPENAI_BASE_URL` to the gateway URL and `OPENAI_MODEL_NAME` to a model your gateway exposes. If the gateway doesn't support streaming (SSE), set `OPENAI_SUPPORTS_STREAMING=false`. If it enforces Zero Data Retention, set `OPENAI_ZERO_DATA_RETENTION=true`. If it only implements the Chat Completions API (`/chat/completions`) and returns 404 for `/responses`, set `OPENAI_USE_CHAT_COMPLETIONS=true`.
 
 ### Anthropic
 
@@ -53,7 +53,7 @@ Set `AI_DEFAULT_PROVIDER=vertex` and either `GOOGLE_VERTEX_API_KEY` or `GOOGLE_V
 
 ### Azure AI
 
-Set `AI_DEFAULT_PROVIDER=azure` and point Lightdash at your deployment with `AZURE_AI_API_KEY`, `AZURE_AI_ENDPOINT`, `AZURE_AI_API_VERSION`, and `AZURE_AI_DEPLOYMENT_NAME`. For reasoning-capable deployments (e.g. `o3`), also set `AZURE_AI_DEPLOYMENT_SUPPORTS_REASONING=true`. All options: [Azure AI configuration](/self-host/customize-deployment/environment-variables#azure-ai-configuration).
+Set `AI_DEFAULT_PROVIDER=azure` and point Lightdash at your deployment with `AZURE_AI_API_KEY`, `AZURE_AI_ENDPOINT`, `AZURE_AI_API_VERSION`, and `AZURE_AI_DEPLOYMENT_NAME`. For reasoning-capable deployments (e.g. `o3`), also set `AZURE_AI_DEPLOYMENT_SUPPORTS_REASONING=true`. If your endpoint is a gateway that copies the Azure URL layout but only implements the Chat Completions API, set `AZURE_AI_USE_CHAT_COMPLETIONS=true`. Chat Completions sends `reasoning_effort: none`, which newer models require for tool calls but older ones such as `gpt-5-mini` reject; pin a value your deployment accepts with `AZURE_AI_REASONING_EFFORT`. All options: [Azure AI configuration](/self-host/customize-deployment/environment-variables#azure-ai-configuration).
 
 ### OpenRouter
 
@@ -343,6 +343,9 @@ Check the API key for the selected `AI_DEFAULT_PROVIDER`. For Azure, verify `AZU
 
 **Multi-step conversations fail against an OpenAI-compatible gateway.**
 If the gateway enforces Zero Data Retention, set `OPENAI_ZERO_DATA_RETENTION=true`. If it doesn't support SSE, set `OPENAI_SUPPORTS_STREAMING=false`.
+
+**Every agent request to an OpenAI-compatible gateway returns 404.**
+Lightdash uses the OpenAI Responses API by default. Gateways such as LiteLLM, Kong, or internal proxies often only implement the older Chat Completions API. Set `OPENAI_USE_CHAT_COMPLETIONS=true` (or `AZURE_AI_USE_CHAT_COMPLETIONS=true` for the Azure provider) to send `/chat/completions` requests instead. Extended reasoning summaries aren't available on Chat Completions: tool calls work, but reasoning models run with reasoning disabled.
 
 **Verified answers never match.**
 Confirm `AI_EMBEDDING_ENABLED=true` and that the embedding provider credentials are set. Tune `AI_VERIFIED_ANSWER_SIMILARITY_THRESHOLD` if legitimate matches fall below the default 0.6 similarity cutoff.
