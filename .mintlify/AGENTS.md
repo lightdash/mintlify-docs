@@ -32,6 +32,20 @@ Doc-type pills are suppressed in the sidebar for now, so `tag` carries lifecycle
 - **Frontmatter** carries `title` and `description` on every page.
 - **Fenced code blocks** always declare a language (`text` for output, trees, or ASCII).
 
+## Voice and tone
+
+Write the way the best pages here already read (`explore/dashboards.mdx` is a good model): a knowledgeable colleague explaining the product, not marketing and not a spec.
+
+- **Talk to the reader.** Second person, present tense, active voice: "Set `dbt_selector` in the project settings", not "The selector can be set" or "Users should set".
+- **Lead with the job.** Open a page or section with what the reader is trying to do and what they get, then the steps or facts, then the caveats. One or two sentences of orientation, never a preamble.
+- **Headings say the task.** Sentence case, and imperative for a task ("Create a dashboard", "Add filters"); a noun phrase for a concept or reference ("Dashboard filters"). No questions, no "Overview".
+- **Plain and short.** Everyday words, short sentences, one idea per paragraph. Define a term the first time you use it, or link to where it is defined. No "simply", "just", "easily", "powerful" or "seamless".
+- **UI as the reader sees it.** Bold the exact label for buttons, menu items and fields (**New**, **Save**); give a path as **Settings** → **Project** → **dbt selector**. Code, file names, settings keys and commands go in backticks.
+- **Exact over vague.** Name the setting, the default, the limit and who can do it (the role or permission). "Admins and editors" beats "users with access".
+- **Steps are numbered and one action each.** Say where the reader is before telling them what to click, and show the result when it isn't obvious.
+- **Descriptions are one line.** The frontmatter `description` says what the page lets the reader do, in a phrase with no trailing full stop.
+- **No promises or prices.** No roadmap, timelines or "coming soon"; no prices or plan costs. Scope a plan-gated feature with the `<Info>` gate in [`components.md`](.mintlify/components.md), not prose.
+
 ## Components
 
 Pick a component by the job it does for the reader, never by how it looks. The full system — callout semantics, lifecycle badges, media, tabs vs code groups, icons, and the colour tokens — is [`components.md`](.mintlify/components.md). The rules you'll hit on almost every change:
