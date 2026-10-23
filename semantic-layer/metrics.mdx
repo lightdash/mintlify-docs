@@ -126,7 +126,7 @@ metrics:
 Model-level metrics don't inherit settings from the columns they reference. That includes access control: a model-level metric that reads a column with `required_attributes` is not restricted with it unless you set `required_attributes` or `any_attributes` on the metric. See [metric access control](/workspace-admin/user-attributes#metric-access-control).
 
 <Warning>
-  **Non-aggregate metrics** (`number`, `boolean`, etc.) can only reference other metrics in `sql:` since they are inserted directly into the generated SQL query without being wrapped in an aggregate function.
+  **Non-aggregate metrics** (`number`, `boolean`, etc.) reference other metrics in `sql:` since they are inserted directly into the generated SQL query without being wrapped in an aggregate function. They can also reference dimensions inside an aggregate function in their own `sql:`, such as `SUM(${revenue}) / ${num_orders}`.
 
   **Aggregate metrics** (`sum`, `count_distinct`, etc.) can only reference dimensions since they are wrapped in an aggregate function before being added to the generated SQL query. Wrapping an aggregate function in another aggregate function will cause an error.
 
@@ -151,7 +151,7 @@ Aggregate metrics cannot use window functions in their `sql`. Their SQL is wrapp
 
 Non-aggregate metrics are metric types that, you guessed it, do _not_ perform aggregations.
 
-Numbers and booleans are examples of non-aggregate metrics. These metric types perform a calculation on a single data point, so they can only reference aggregate metrics. They _cannot_ reference dimensions.
+Numbers and booleans are examples of non-aggregate metrics. These metric types perform a calculation on a single data point, so they reference aggregate metrics. They can reference dimensions only inside an aggregate function in their own `sql`.
 
 Non-aggregate metrics cannot use window functions in their `sql`. Their SQL is inserted alongside the aggregate metrics in the same `SELECT`, which runs in the same step as the `GROUP BY`, so window functions — which must run after aggregation — are not allowed. See [post calculation metrics](#post-calculation-metrics-experimental) for the window operations Lightdash does support and what to do instead.
 
@@ -1428,6 +1428,8 @@ metrics:
     sql: 'IF(${subscriptions.is_active}, ${user_id}, NULL)'
 ```
 
+Filters on dimensions, from the Explore view or a dashboard, compile into the query's `WHERE` clause, so an aggregate metric's `sql` only sees rows that already match them. A metric's own [`filters`](#filters) also apply to rows before aggregation, but only for that metric. Filters on metrics in the Explore view apply after aggregation, to the aggregated results.
+
 ### Referencing time intervals in custom SQL
 
 You can reference specific time intervals of dimensions in custom SQL for aggregate metrics. When a dimension has time intervals defined, you can reference the specific interval by appending the interval name to the dimension name.
@@ -1442,7 +1444,7 @@ In this example, the metric references `${session_start_month}`, which is the `M
 
 ## Using custom SQL in non-aggregate metrics
 
-In non-aggregate metrics, you can reference any other metric from the given model and any joined models. You **can’t reference other dimensions.**
+In non-aggregate metrics, you can reference any other metric from the given model and any joined models.
 
 You can reference metrics from the same model like this: `sql: "${metric_in_this_model}"`Or from joined models like this: `sql: "${other_model.metric_in_other_model}"`
 
@@ -1457,6 +1459,19 @@ metrics:
     type: number
     sql: '(${num_unique_users} - ${growth_model.num_unique_users_lag_1d}) / NULLIF(${growth_model.num_unique_users_lag_1d}, 0)'
 ```
+
+You can also reference dimensions, as long as the `sql` wraps them in an aggregate function such as `SUM`, `COUNT`, `AVG`, `MIN`, `MAX`, or `MEDIAN`:
+
+```yaml
+metrics:
+  revenue_per_order:
+    type: number
+    sql: 'SUM(${revenue}) / NULLIF(${num_orders}, 0)'
+```
+
+<Note>
+  A non-aggregate metric that references a dimension without an aggregate function in its `sql` fails to compile with `Model "<model>" in metric "<metric>" has a metric reference: ${<field>} which matches no metric`. Wrap the dimension in an aggregate function, or reference a metric instead.
+</Note>
 
 ## Show underlying values
 
@@ -1495,6 +1510,8 @@ models:
                 - actual_date
                 - web_sessions.session_id # field from joined table
 ```
+
+To reuse the same list of fields across several metrics, define it once as a [set](/semantic-layer/tables#sets) on the model and reference it with `my_set*`.
 
 ### Default show underlying values
 
