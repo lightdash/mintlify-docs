@@ -1,0 +1,76 @@
+---
+title: "Chart library"
+description: "Enable the chart library on a self-hosted Lightdash instance, or point it at a private mirror"
+---
+
+import ChartLibraryEnv from '/snippets/self-host/chart-library-env.mdx';
+
+<Info>
+  <Badge icon="building-plus" color="blue" size="sm" shape="pill">Enterprise</Badge> The chart library needs a valid `LIGHTDASH_LICENSE_KEY` set on your instance before any of the configuration below takes effect. See [enterprise features](/self-host/enterprise-features) for applying the key.
+</Info>
+
+The [chart library](/visualizations/chart-library) is the in-product catalog of chart types built by Lightdash. Installing one adds it to a project without any build step: the instance downloads prebuilt artifacts from the library, verifies their checksums, and stores them like any other custom chart type.
+
+Lightdash reads the library from a static website. The public library lives at `https://lightdash.github.io/lightdash-library`. Instances that cannot reach it can read a mirror of the same files from inside their own network instead.
+
+## Prerequisites
+
+- **Enterprise license** - `LIGHTDASH_LICENSE_KEY` must be set on your instance.
+- **The `chart-type-registry` feature flag** - add it to `LIGHTDASH_ENABLE_FEATURE_FLAGS`. The library is off until the flag is on. See [feature flags](/self-host/customize-deployment/environment-variables#feature-flags).
+- **Outbound access to the library** - the backend fetches the library over `https`. The browser never talks to the library directly; images and other assets are proxied through the backend.
+
+The library does not need data apps or Chart Studio. Installed chart types can be used in charts wherever the library flag is on. Forking an installed chart type into an editable copy does need [Chart Studio](/self-host/enterprise-features/data-apps#chart-studio).
+
+## Enable the library
+
+Add the flag to your deployment and restart the backend:
+
+```bash
+LIGHTDASH_ENABLE_FEATURE_FLAGS=chart-type-registry
+```
+
+The **Chart library** tab appears under **Browse → Chart Studio** for users who can install chart types (see [permissions](/visualizations/chart-library#permissions)). If the library cannot be reached, the tab is hidden and already-installed chart types keep working.
+
+## Configuration
+
+<ChartLibraryEnv />
+
+## Using a private mirror
+
+A deployment with no route to the public internet can serve the library from inside its network. The library is a static tree of files, so any artifact proxy or object store that can mirror a website works, for example a remote repository in your artifact manager that caches `https://lightdash.github.io/lightdash-library`, or a bucket you sync the tree into.
+
+Mirror the tree as published. Lightdash reads `index.json` at the base URL and the chart files beneath it (`charts/<slug>/<version>/...`), and it verifies every downloaded artifact against the checksums in the index, so a mirror cannot alter chart code without the install failing.
+
+Then point the instance at the mirror:
+
+```bash
+LIGHTDASH_CHART_REGISTRY_URL=https://artifacts.internal.example/lightdash-library
+LIGHTDASH_CHART_REGISTRY_ALLOW_PRIVATE_HOSTS=true
+# Only if the mirror requires authentication
+LIGHTDASH_CHART_REGISTRY_AUTHORIZATION_HEADER="Bearer <token>"
+```
+
+- `LIGHTDASH_CHART_REGISTRY_ALLOW_PRIVATE_HOSTS` is needed whenever the mirror's hostname resolves to a private address. It lifts only that check. The mirror must still be served over `https` with a certificate the backend trusts, redirects are refused, and the connection stays pinned to the resolved address. Do not use `LIGHTDASH_CHART_REGISTRY_ALLOW_INSECURE` for a mirror.
+- `LIGHTDASH_CHART_REGISTRY_AUTHORIZATION_HEADER` holds the complete header value. Treat it as a secret: deliver it from your secret store rather than writing it into plain configuration. On Kubernetes, add the key to the Secret your deployment already injects, or use an `extraEnv` entry with a `secretKeyRef`.
+- If the mirror uses a certificate from an internal certificate authority, give the backend the CA bundle with `NODE_EXTRA_CA_CERTS`. Lightdash does not offer a way to skip certificate validation for the library.
+- Artifact proxies often rewrite the content type of binary files to `application/octet-stream`. Lightdash detects PNG, JPEG, WebP and GIF screenshots from their contents, so the library still renders previews behind such a proxy.
+
+Restart the backend after changing any of these variables.
+
+## Turning the library off
+
+Set `LIGHTDASH_CHART_REGISTRY_URL` to an empty string. The **Chart library** tab disappears and no library requests are made. Chart types already installed keep working, and Chart Studio is unaffected.
+
+## Troubleshooting
+
+**The Chart library tab doesn't appear.**
+Check that `LIGHTDASH_LICENSE_KEY` is set, `chart-type-registry` is in `LIGHTDASH_ENABLE_FEATURE_FLAGS`, and the signed-in user can install chart types in the project. If all of that is in place, the backend could not fetch the library index: check the backend logs for the request to `LIGHTDASH_CHART_REGISTRY_URL`.
+
+**The logs say the library host resolves to a private address.**
+The mirror is on an internal address and `LIGHTDASH_CHART_REGISTRY_ALLOW_PRIVATE_HOSTS` is not set.
+
+**The logs show a certificate error against the mirror.**
+The backend does not trust the mirror's certificate. Add the issuing CA bundle with `NODE_EXTRA_CA_CERTS`.
+
+**Installs fail with a checksum mismatch.**
+The mirror served a file that differs from the published one. Check that the mirror serves the tree unchanged and is not injecting or rewriting content.
