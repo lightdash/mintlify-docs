@@ -132,8 +132,12 @@ backend already runs in**:
   [Build the gateway image](#2-build-the-gateway-image) under the Cloud Run provider.
   The writeback Dockerfile has no such prerequisite.
 - **Control-plane permissions on your backend's existing IAM role** — add `RunMicrovm`,
-  `GetMicrovm`, `SuspendMicrovm`, `ResumeMicrovm`, `TerminateMicrovm`, and
-  `CreateMicrovmAuthToken`.
+  `GetMicrovm`, `SuspendMicrovm`, `ResumeMicrovm`, `TerminateMicrovm`,
+  `CreateMicrovmAuthToken`, and `lambda:PassNetworkConnector` (the backend attaches the
+  ingress and egress connectors on every launch). If you set an execution role (see
+  [Networking and IAM](#networking-and-iam)), also allow `iam:PassRole` on that role's ARN.
+  Don't add an `iam:PassedToService` condition: microVMs receive the role through a
+  different service principal than `lambda.amazonaws.com`, so the condition denies the pass.
 
 <Note>
 Registering an image uses AWS's `create-microvm-image`, which needs a build role (trusting
@@ -183,6 +187,17 @@ LAMBDA_MICROVM_EXECUTION_ROLE_ARN=arn:aws:iam::...:role/lightdash-sandbox
 LAMBDA_MICROVM_INGRESS_CONNECTOR_ARN=arn:aws:lambda:<region>:aws:network-connector:aws-network-connector:ALL_INGRESS
 LAMBDA_MICROVM_EGRESS_CONNECTOR_ARN=arn:aws:lambda:<region>:aws:network-connector:aws-network-connector:INTERNET_EGRESS
 ```
+
+The execution role trusts `lambda.amazonaws.com` with `sts:AssumeRole` and `sts:TagSession`.
+The sandbox reaches the internet through the egress connector rather than AWS APIs, so the
+role only needs CloudWatch Logs (`logs:CreateLogGroup`, `logs:CreateLogStream`,
+`logs:PutLogEvents`). Keep it separate from your backend's role, since the sandbox runs
+agent-written code with whatever the execution role allows.
+
+The microVM doesn't inherit your backend's AWS credentials. For data apps on Bedrock,
+Lightdash passes `BEDROCK_API_KEY` or `BEDROCK_ACCESS_KEY_ID` and
+`BEDROCK_SECRET_ACCESS_KEY` into the sandbox; with `BEDROCK_USE_DEFAULT_CREDENTIALS=true`
+it passes none.
 
 ## Azure Container Apps Sandboxes (self-hosted production)
 
