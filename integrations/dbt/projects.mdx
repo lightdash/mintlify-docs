@@ -16,7 +16,7 @@ There are two approaches to syncing dbt into Lightdash. Each one has several met
 |                                  | CLI deploy                                                                                   | Git connection                                                                                      |
 | -------------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | How it works                     | You compile the dbt project with `lightdash deploy` and push the resulting manifest to Lightdash | Lightdash pulls the connected branch, compiles it server-side, and refreshes the project            |
-| dbt code source                  | Local working copy or CI checkout                                                            | Connected branch in GitHub, GitLab, Azure DevOps, Bitbucket, or dbt Cloud                           |
+| dbt code source                  | Local working copy or CI checkout                                                            | Connected branch in GitHub, GitLab, Azure DevOps, or Bitbucket, or the last run of a dbt Cloud environment |
 | Uncommitted changes              | Included when you deploy from a laptop                                                       | Not included                                                                                        |
 | Connection settings used         | Local or CI `profiles.yml`                                                                   | UI Connection Settings                                                                              |
 | Remote git connection required?  | No                                                                                           | Yes                                                                                                 |
@@ -125,7 +125,7 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
 
 ## Git connection methods
 
-The project is connected to a remote git source (GitHub, GitLab, Azure DevOps, Bitbucket, or dbt Cloud) in Project Settings. Every method triggers the same server-side refresh: Lightdash pulls the connected branch, compiles it using the UI Connection Settings, and updates the project. The methods differ only in how you trigger that refresh.
+The project is connected to a remote git source (GitHub, GitLab, Azure DevOps, or Bitbucket) or to dbt Cloud in Project Settings. Every method triggers the same server-side refresh: Lightdash pulls the connected branch, compiles it using the UI Connection Settings, and updates the project. A [dbt Cloud connection](/integrations/connect-project#dbt-cloud) doesn't compile: the refresh reads what dbt Cloud recorded in the environment's last run. The methods differ only in how you trigger that refresh.
 
 You can also run [`lightdash deploy`](#cli-deploy-methods) against a git-connected project. It compiles locally or in CI instead of pulling the connected branch, and its result stays in place until the next refresh. Don't use it on projects with [multiple dbt sources](#connecting-multiple-dbt-sources).
 
@@ -137,7 +137,7 @@ Push and merge your changes to the branch your Lightdash project is connected to
 
     | Property                              | Value                                                                                                                          |
     | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-    | dbt code source                       | Lightdash pulls from the remote git source configured in Project Settings (GitHub, GitLab, Azure DevOps, Bitbucket, dbt Cloud) |
+    | dbt code source                       | Lightdash pulls from the remote git source configured in Project Settings (GitHub, GitLab, Azure DevOps, Bitbucket), or reads the last run of the connected dbt Cloud environment |
     | Compile location                      | Lightdash servers                                                                                                              |
     | `profiles.yml` source                 | Lightdash synthesises one from Project Settings → Connection Settings                                                          |
     | Target                                | UI Project Settings → Connection Settings → Target name                                                                        |
@@ -228,6 +228,8 @@ Push and merge your changes to the branch your Lightdash project is connected to
 
 `lightdash deploy` does not use the UI **Target name** setting. It uses the local `profiles.yml` default, or whatever `--target` overrides it with. Only the Git connection methods respect the UI Target name.
 
+`lightdash deploy` runs the `dbt` installed where you run the CLI, so dbt plugins installed there, such as dbt-loom, take part in the compile. Git connection methods compile with Lightdash's own dbt installation, which has dbt-core and the warehouse adapters only, so third-party dbt plugins don't run on a server-side refresh.
+
 `lightdash refresh` requires a remote git connection. It fails with a `ParameterError` if the project's `dbtConnection.type` is `NONE`.
 
 Refresh is async. `lightdash refresh` and the refresh API both return a `jobUuid` and the work continues server-side. If your CI needs to know the refresh succeeded, poll `GET /api/v1/jobs/{jobUuid}` before exiting the workflow.
@@ -253,7 +255,7 @@ A single Lightdash project can connect to more than one dbt project. Each connec
 - The dbt connection you set up when you first created the Lightdash project is the **primary source**.
 - Any dbt projects you add on top of it are **additional sources**.
 
-All sources are compiled together into one set of Explores, so tables from different dbt repos appear side-by-side in the same Lightdash project and can reference each other via `ref()` and joins.
+All sources are compiled together into one set of Explores, so tables from different dbt repos appear side-by-side in the same Lightdash project and can be joined to each other. For a model to `ref()` a model in another source, see [Cross-project refs between sources](#cross-project-refs-between-sources).
 
 ### When to use this
 
@@ -290,7 +292,7 @@ Each additional source has:
 
 On refresh, Lightdash compiles every source and merges the resulting manifests into a single set of Explores.
 
-**Precedence.** Sources are ordered by precedence. The primary source is always `0` (highest priority). Additional sources are appended after it in the order they were added. Precedence orders the merge for `ref()` and lookup resolution.
+**Precedence.** Sources are ordered by precedence. The primary source is always `0` (highest priority). Additional sources are appended after it in the order they were added. Precedence orders the merge and lookup resolution. For refs between sources, see [Cross-project refs between sources](#cross-project-refs-between-sources).
 
 **Name collisions.** If the same model name exists in more than one source, **compilation fails** with an error that names each collision and which sources define it (in the form `<section> "<key>" is defined in both "<source A>" and "<source B>"`, listing up to 10 entries and ending with "Rename or remove the duplicate(s) before deploying."). Rename or remove the duplicates in one of the sources before deploying. Only identical dbt built-in macros and docs are merged silently.
 
