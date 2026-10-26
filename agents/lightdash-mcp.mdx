@@ -240,7 +240,8 @@ If you're building your own agents or automated workflows, you can integrate dir
 - **Authentication**: For interactive setups use OAuth 2.0. For headless agents and automated workflows, you can authenticate with a Personal Access Token by passing it in the `Authorization` header — both `Authorization: ApiKey ldpat_<redacted>` and `Authorization: Bearer ldpat_<redacted>` are accepted on the MCP endpoint and resolve to the same PAT authentication path. The `Bearer` alias is accepted only on the MCP endpoint. Use `Bearer` when your MCP host only supports static `Bearer` tokens (for example, Claude managed agents and other third-party MCP hosts that don't let you choose a custom auth scheme); use `ApiKey` for direct HTTP clients where you can set the scheme yourself, since it makes it explicit that the token is a Lightdash PAT. Create the token under **Settings → Personal access tokens** for the user whose permissions and attributes you want the integration to use. Service account tokens are also supported on plans that include them.
 - **Redirect URIs**: A wildcard in a registered redirect URI matches only a port, a path, or one leftmost subdomain label, for example `https://*.example.com/callback`. Lightdash refuses a redirect URI that has a user name, a password or a backslash. When the agent identity feature flag is on, stricter rules apply. See [OAuth with agent identity on](#oauth-with-agent-identity-on).
 - **Documentation**: See the [MCP specification](https://modelcontextprotocol.io/docs) for implementation details
-- **Pin a project (optional)**: pass `X-Lightdash-Project: <project-uuid>` to scope the MCP session to a specific project, skipping the `set_project` step. See [details below](#pin-a-project-with-the-x-lightdash-project-header).
+- **Pin a project (optional)**: pass `X-Lightdash-Project: <project-uuid>` to scope the MCP session to a specific project. See [details below](#pin-a-project-with-the-x-lightdash-project-header).
+- **Pin an agent (optional)**: pass `X-Lightdash-Agent: <agent-uuid>` to scope the MCP session to one [AI agent](/agents) and its project. See [details below](#pin-an-agent-with-the-x-lightdash-agent-header).
 - **Override user attributes per request (optional)**: pass `X-Lightdash-User-Attributes: <json>` to override the authenticated user's attributes for that request (useful for row-level security when an agent acts on behalf of different end-users). See [details below](#override-user-attributes).
 
 #### OAuth with agent identity on
@@ -258,15 +259,15 @@ Use each refresh token once. When a used refresh token comes back, Lightdash rev
 
 #### Pin a project with the `X-Lightdash-Project` header
 
-By default, MCP clients use `set_project` to choose an active project, and the selection is stored as a per-user context. If you're building an integration that should always operate against a single project, you can pre-select the project by sending the `X-Lightdash-Project` header on every request to `/api/v1/mcp`.
+By default, MCP clients call `get_context` to see the projects you can access, then pass a project UUID to each tool that works with project data. If you're building an integration that should always operate against a single project, you can pre-select the project by sending the `X-Lightdash-Project` header on every request to `/api/v1/mcp`.
 
 When the header is set:
 
-- The project UUID in the header is used as the active project for that request, overriding any project previously set with `set_project`.
-- The `list_projects` and `set_project` tools are hidden from `tools/list`, so the AI assistant can't change the project for the request.
+- Tools run against the project in the header, and a tool call for any other project is refused. `get_context` reports this project as `activeProject`.
+- The `list_projects` tool is hidden from `tools/list`, so the AI assistant isn't steered toward another project.
 - Access to the project is still enforced by your user, API key, or service account's permissions — the header can't be used to access projects the caller can't already see.
 
-This is useful when you want each integration, workspace, or environment to be locked to one project (for example, a separate connector per project) without relying on the AI assistant to call `set_project` first.
+This is useful when you want each integration, workspace, or environment to be locked to one project (for example, a separate connector per project) without relying on the AI assistant to pick the right project.
 
 The header value must be a valid project UUID. You can find the project UUID in the Lightdash URL when viewing a project (`/projects/<projectUuid>/...`).
 
@@ -294,8 +295,51 @@ curl https://<your_instance_name>.lightdash.cloud/api/v1/mcp \
 </CodeGroup>
 
 <Info>
-  If the header value isn't a valid UUID, it's ignored and the request falls back to the user's stored project context. Permissions are always checked against the resolved project, so a header for a project the caller can't view will return a "no access" error.
+  If the header value isn't a valid UUID, it's ignored and the request falls back to the user's stored project context. When the request also sends [`X-Lightdash-Agent`](#pin-an-agent-with-the-x-lightdash-agent-header), an invalid value is rejected with a `400` error instead. Permissions are always checked against the resolved project, so a header for a project the caller can't view will return a "no access" error.
 </Info>
+
+<a id="pin-an-agent-with-the-x-lightdash-agent-header" />
+
+#### Pin an agent with the `X-Lightdash-Agent` header
+
+To lock an integration to one [AI agent](/agents), send the `X-Lightdash-Agent` header with the agent's UUID on every request to `/api/v1/mcp`. The agent's project becomes the pinned project, so you don't need to send `X-Lightdash-Project` as well.
+
+When the header is set:
+
+- Every tool that works with project data runs with the agent's scope, as if the AI assistant had passed the agent's `agentUuid` (see [Agent context](#agent-context)). A tool call for a different agent is refused.
+- The agent's project is pinned the same way as with [`X-Lightdash-Project`](#pin-a-project-with-the-x-lightdash-project-header): a tool call for any other project is refused, and `list_projects` is hidden.
+- `route_agent` and `list_agents` return only the pinned agent, and `get_context` reports it as `activeAgent`.
+- The agent's instructions are added to the server instructions that the client receives when it connects.
+- Access is still enforced: the caller must have access to the agent and be able to view its project. The header can only narrow what the caller can already reach.
+
+**Enable agents over MCP** must be on for your organization (see [Using AI agent context](#using-ai-agent-context)). You can find the agent UUID in the Lightdash URL when viewing the agent (`/projects/<projectUuid>/ai-agents/<agentUuid>`).
+
+<CodeGroup>
+```json Cursor (.cursor/mcp.json)
+{
+  "mcpServers": {
+    "lightdash-sales-agent": {
+      "url": "https://<your_instance_name>.lightdash.cloud/api/v1/mcp",
+      "headers": {
+        "X-Lightdash-Agent": "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  }
+}
+```
+
+```bash curl
+curl https://<your_instance_name>.lightdash.cloud/api/v1/mcp \
+  -H "Authorization: Bearer <your_token>" \
+  -H "X-Lightdash-Agent: 00000000-0000-0000-0000-000000000000" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+</CodeGroup>
+
+<Note>
+  The request fails with a `400` error when the header isn't a valid UUID, when no agent has that UUID, or when the request also pins a different project. It fails with a `403` error when AI agents or agents over MCP aren't enabled for your organization, or when the caller can't access the agent or view its project.
+</Note>
 
 <a id="override-user-attributes" />
 
@@ -634,16 +678,15 @@ The assistant will call `create_scheduled_delivery` with the chart's slug, the c
 
 #### Agent context
 
-- **Route agent** - Automatically select and activate the best agent for a user prompt within the active project. This is the preferred way to pick an agent — it mirrors the [AI Router](/agents/enable-ai-router) experience in the Lightdash app, so MCP sessions get the same automatic agent selection.
-- **List agents** - Discover available AI agents and their areas of expertise
-- **Set agent** - Manually activate an agent to scope your session to its explores, instructions, and verified answers. Use this when you want to override automatic routing.
-- **Get current agent** - Check which agent is active and view its full context
-- **Clear agent** - Remove agent scoping and return to the full project context
+- **Route agent** (`route_agent`) - Automatically select the best agent for a user prompt within a project. This is the preferred way to pick an agent — it mirrors the [AI Router](/agents/enable-ai-router) experience in the Lightdash app, so MCP sessions get the same automatic agent selection.
+- **List agents** (`list_agents`) - Discover available AI agents and their areas of expertise
+
+To work as an agent, the AI assistant passes the agent's `agentUuid` to the tools it calls. Without an `agentUuid`, tools use the full project. To lock an integration to one agent, [pin it with the `X-Lightdash-Agent` header](#pin-an-agent-with-the-x-lightdash-agent-header).
 
 These tools are covered in detail in the [Using AI agent context](#using-ai-agent-context) section below.
 
 <Info>
-  When an agent is active, its scope applies to the whole session: data exploration is limited to the agent's explores, and content tools (find, list, read, create, and edit) only see spaces the agent has access to.
+  When a tool call passes an `agentUuid`, the agent's scope applies to that call: data exploration is limited to the agent's explores, and content tools (find, list, read, create, and edit) only see spaces the agent has access to.
 </Info>
 
 #### Skills
@@ -706,7 +749,7 @@ After connecting, verify that the MCP integration is working by asking your AI a
 
 **Prompt:** _"What Lightdash tools do you have access to?"_
 
-The assistant will confirm the connection and list the available MCP tools, such as `list_projects`, `find_fields`, `run_metric_query`, `run_sql`, and others. This is a quick way to verify that authentication succeeded and the MCP server is reachable.
+The assistant will confirm the connection and list the available MCP tools, such as `list_projects`, `grep_fields`, `run_metric_query`, `run_sql`, and others. This is a quick way to verify that authentication succeeded and the MCP server is reachable.
 
 <Accordion title="See screenshot">
   <Frame>
@@ -716,13 +759,13 @@ The assistant will confirm the connection and list the available MCP tools, such
 
 #### Example 2: Setting up a project and finding dashboards
 
-Before querying data, you need to set an active project. Then you can search for existing dashboards and charts.
+Before querying data, the assistant needs to know which project to use. Then you can search for existing dashboards and charts.
 
 **Prompt:** _"What projects do I have access to? Set the Jaffle Shop project, then show me all dashboards related to revenue."_
 
 The assistant will:
 1. Call `list_projects` to show your available projects
-2. Call `set_project` to activate "Jaffle Shop"
+2. Use the "Jaffle Shop" project's UUID in the next calls
 3. Call `find_content` with your search term to find matching dashboards and charts
 
 **Expected output:** A list of dashboards and charts matching "revenue", including their names, descriptions, and direct links to view them in Lightdash.
@@ -740,7 +783,7 @@ Once a project is active, you can explore data models and run queries using your
 **Prompt:** _"What metrics do we have for orders? Show me total revenue by month for the last 6 months as a bar chart."_
 
 The assistant will:
-1. Call `find_fields` to search for order-related metrics and dimensions (e.g., `orders_total_revenue`, `orders_order_date`)
+1. Call `grep_fields` to search for order-related metrics and dimensions (e.g., `orders_total_revenue`, `orders_order_date`)
 2. Call `run_metric_query` with the appropriate explore, metrics, dimensions, filters, and sort order to fetch the data and render a visualization
 
 **Expected output:** A bar chart showing monthly revenue for the last 6 months, along with the underlying data table. The query uses your semantic layer definitions, so metric calculations and joins are handled automatically.
@@ -771,9 +814,11 @@ When you activate an agent in your MCP session, your AI assistant receives:
 
 ### Example workflow
 
-1. **Set your project** with `set_project`
-2. **Let the router pick an agent** with `route_agent` — pass the user's prompt and Lightdash activates the best-fit agent automatically. Use `list_agents` + `set_agent` only when you want to inspect candidates or override the choice manually.
-3. **Ask your questions** — the agent's context automatically guides queries
+1. **Choose your project** — `get_context` lists the projects you can access
+2. **Let the router pick an agent** with `route_agent` — pass the user's prompt and Lightdash returns the best-fit agent. Use `list_agents` only when you want to inspect candidates or pick one manually.
+3. **Ask your questions** — the AI assistant passes the agent's `agentUuid` to its tool calls, so the agent's context guides queries
+
+To skip routing and always use one agent, [pin it with the `X-Lightdash-Agent` header](#pin-an-agent-with-the-x-lightdash-agent-header).
 
 <Tip>
   `route_agent` chooses between agents the user can already access — it never widens permissions. If only one agent is accessible, it activates that agent directly; if none are accessible, it returns an error so the assistant can fall back to the unscoped project context.
