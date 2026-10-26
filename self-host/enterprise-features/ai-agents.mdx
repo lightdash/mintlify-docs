@@ -304,45 +304,6 @@ The `warehouse-oauth-refresh-lock` feature flag makes Lightdash refresh each sto
   To test over `http://localhost`, add `OAUTH_ALLOW_NON_TLS_REDIRECT_URI = TRUE` to the integration. This is for local development only. Do not set it in production.
 </Warning>
 
-## Query pipelines
-
-[Query pipelines](/agents/query-pipelines) <Badge color="purple" icon="flask" size="sm">Beta</Badge> let agents run DuckDB SQL and Python over semantic layer results. Each kind of step needs its own infrastructure, so you can enable DuckDB steps first and add Python or CSV attachments later.
-
-### Turn on the feature flags
-
-Add both flags to `LIGHTDASH_ENABLE_FEATURE_FLAGS` on the backend and on every scheduler or worker process that runs AI agent jobs, then restart them:
-
-```bash
-LIGHTDASH_ENABLE_FEATURE_FLAGS=multi-source-query,compose-sql-runner
-```
-
-If the variable already lists other flags, append these to the comma-separated list. Agents also need **Read the rows behind a chart** turned on. **Composer queries** in the agent's settings is on by default once the flags are on.
-
-### DuckDB steps
-
-DuckDB runs inside Lightdash and reads the results of earlier steps from your results storage. Without NATS, it runs in the backend process and needs no extra service. With `NATS_ENABLED=true`, DuckDB steps are sent to the `pre-aggregate` stream, so you must run a [pre-aggregate worker](/self-host/nats-workers/pre-aggregate-workers) with the same storage settings to run them. You need:
-
-- **Results storage.** Set `S3_ENDPOINT`, `S3_BUCKET` and `S3_REGION`, or the `RESULTS_S3_*` overrides. See [S3](/self-host/customize-deployment/environment-variables#s3). Without it, DuckDB steps fail with an error asking for results storage.
-- **A CA certificate bundle when storage uses HTTPS.** DuckDB verifies the storage endpoint's certificate. Install `ca-certificates` in your image, or set `SSL_CERT_FILE` to a PEM bundle.
-- **Optional memory limit.** DuckDB shares `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` with [pre-aggregates](/self-host/customize-deployment/environment-variables#pre-aggregates). Set it to cap DuckDB memory wherever DuckDB runs.
-
-### Python steps
-
-Python steps run in a [sandbox](/self-host/customize-deployment/sandboxes#python-execution). The feature flags above also turn on Python steps, so configure a sandbox provider that supports Python before you enable them:
-
-- **E2B**: set `E2B_API_KEY`, and make sure the key can launch the `E2B_PYTHON_TEMPLATE_NAME` template at `E2B_PYTHON_TEMPLATE_TAG`.
-- **Google Cloud Run**: set `SANDBOX_PROVIDER=gcp-cloud-run` and deploy the separate Python gateway, then set `GCP_CLOUD_RUN_PYTHON_SANDBOX_URL` and `GCP_CLOUD_RUN_PYTHON_SANDBOX_SECRET`.
-
-AWS Lambda MicroVMs and Azure Container Apps Sandboxes don't run Python yet. The local Docker provider runs Python for development only.
-
-<Warning>
-  Agents can add Python steps whenever the flags are on, whether or not a sandbox is configured. Without a working Python sandbox, those steps fail when they run.
-</Warning>
-
-### CSV attachments
-
-Attaching a CSV to a thread uses [external sources](/explore/external-sources#self-hosted-setup). On top of the flags above, add `external-sources` to `LIGHTDASH_ENABLE_FEATURE_FLAGS` and set the `PRE_AGGREGATE_RESULTS_S3_*` variables listed under [pre-aggregates](/self-host/customize-deployment/environment-variables#pre-aggregates). **Attach a CSV** only appears when that bucket is configured.
-
 ## Costs
 
 Self-hosting AI Analyst means you pay the selected model provider directly. Every user question sends the project's dbt catalog plus conversation history to the provider, so long conversations against large projects use noticeably more tokens than one-shot prompts. Query results also contribute to usage when [data access](/agents/data-access#data-access-modes) is enabled. Provider dashboards expose usage — set spend limits before rolling out.

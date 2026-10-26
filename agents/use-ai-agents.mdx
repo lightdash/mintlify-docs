@@ -86,6 +86,48 @@ Each SQL call is approved individually. To stop the prompts for the rest of a th
 
 Slack-triggered prompts can only use SQL mode when your organization has the **\"Require Slack users to authenticate with Lightdash\"** setting (`aiRequireOAuth`) turned on. Without it, Slack messages run under a shared workspace-default identity, so SQL execution is disabled fail-closed whether or not SQL mode is on. See [Slack AI bot setup](/agents/set-up-agents) for how to configure OAuth.
 
+## Advanced data analysis
+
+<Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> Some questions need a step after the query: joining two explores, comparing results against a CSV you attach, ranking or bucketing rows, or fitting a forecast. For these, the agent runs one or more source queries, then transforms their results with DuckDB SQL or Python before it answers. It writes the SQL or Python itself. You just ask the question.
+
+The semantic layer runs first (or the SQL query, if approved in [SQL mode](#sql-mode)). DuckDB and Python only ever see the rows those queries returned, so metric definitions, joins, [data access](/agents/data-access) rules and SQL approvals apply exactly as they do for any other query. Neither DuckDB nor Python connects to your warehouse.
+
+### What you can ask
+
+- *"Compare monthly revenue from Orders with ad spend from Marketing, and show return on ad spend by month."*
+- *"Here are our quarterly targets (attached CSV). How is each region tracking against them?"*
+- *"Forecast weekly signups for the next 8 weeks from the last year of data."*
+- *"Which customers are in the top 10% by lifetime value, and what share of revenue do they drive?"*
+- *"Run a linear regression of order volume on discount rate and tell me how strong the relationship is."*
+
+A question that one metric query can answer still runs as a single query. The agent only adds DuckDB or Python steps when the question needs them.
+
+### How it works
+
+| Step | What it runs | Where it runs |
+| --- | --- | --- |
+| **Semantic layer** | A metric query against an explore | Your warehouse, through the semantic layer |
+| **Warehouse SQL** | A read-only `SELECT` or `WITH` statement, with [approval](#how-approvals-work) | Your warehouse, in [SQL mode](#sql-mode) |
+| **External data** | DuckDB SQL over a CSV attached to the thread | Lightdash's DuckDB engine |
+| **Transformation** | DuckDB SQL over the results of other steps | Lightdash's DuckDB engine |
+| **Python** | pandas code over the results of other steps | An isolated sandbox |
+
+Python steps can use pandas, numpy, scipy, pyarrow, scikit-learn and polars. They have no network access and can't install packages. Each run gets a fresh sandbox that only receives the result rows the step references, and the sandbox is destroyed afterwards.
+
+To attach a CSV, select **+** in the message input and choose **Attach a CSV**, or drop a CSV or TSV file onto the input. Attaching a CSV needs permission to manage external sources in the project and isn't available in embedded agents.
+
+### Reading the result
+
+The agent shows the result as a card, the same way it shows a chart. Below it, the **Queries** bar shows how many steps ran. Expand it to see each step, grouped into **Sources**, **Transformations** and **Result**, or switch to **Graph** to see how they connect. **View query** shows a step's SQL and **View code** shows a Python step's code. Select a step to see its own rows, and **Back to result** to return.
+
+Opening a result runs the steps as the person viewing it, so viewers only ever see data they have access to.
+
+### Limitations
+
+- A result built with DuckDB or Python lives in its thread. It can't be saved as a chart or added to a dashboard. A result with a single semantic layer step and no transformations is a regular chart and can be saved.
+- Each step is subject to the AI query row limit. A transformation only sees the rows the step before it returned, so the agent aggregates early when a step would hit its limit.
+- Advanced data analysis isn't used in [deep research](/agents/deep-research) runs.
+
 ## Query execution stats
 
 When an agent runs a query against BigQuery, it gets the warehouse's statistics for the job back with the results. You can ask the agent how much data a query scanned or how long it took. For example: "How many bytes did that query process?"
@@ -300,7 +342,7 @@ If you haven't set a default and the AI Router is enabled, Lightdash routes each
 
 ### Data analysis and calculations
 
-AI agents can query your actual data through metric queries, field value search, and [SQL mode](#sql-mode), and can define [custom metrics](/explore/create-custom-fields) and formula [table calculations](/explore/table-calculations) on the fly. They don't include built-in forecasting or predictive models: statistical work is limited to what can be expressed in SQL or table calculation formulas. With [query pipelines](/agents/query-pipelines) turned on, agents can also run DuckDB SQL and Python over query results, including forecasts and regressions. Reading result rows is subject to your [data access setting](/agents/data-access).
+AI agents can query your actual data through metric queries, field value search, and [SQL mode](#sql-mode), and can define [custom metrics](/explore/create-custom-fields) and formula [table calculations](/explore/table-calculations) on the fly. For forecasts, regressions and other statistical work, agents use [advanced data analysis](#advanced-data-analysis) to run DuckDB SQL and Python over query results. Reading result rows is subject to your [data access setting](/agents/data-access).
 
 ### Query and visualizations constraints
 
