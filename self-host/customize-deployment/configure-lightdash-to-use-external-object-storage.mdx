@@ -176,6 +176,16 @@ Any omitted result storage setting inherits its corresponding `S3_*` value.
 Raw JSONL result downloads use a presigned URL that browsers fetch directly from `RESULTS_S3_ENDPOINT`. This endpoint must be reachable from users' browsers; `S3_PUBLIC_ENDPOINT` does not apply to the query results bucket. The bucket can remain private, but an IP policy that limits `GetObject` to Lightdash's backend egress addresses will block these downloads.
 </Warning>
 
+### Use separate storage for uploads
+
+AI agent avatars and homepage announcement images are served through permanent links, so they must not be deleted by a lifecycle rule. If your main bucket has one, point these uploads at a bucket without one:
+
+```bash
+UPLOADS_S3_BUCKET=my-lightdash-uploads
+```
+
+The uploads bucket shares the endpoint, region, credentials and auth mode of the main S3 configuration. Leave it unset if your main bucket keeps objects indefinitely. Once set, keep it: uploads made while it was set are only looked up in that bucket. Available from Lightdash 3.56.0.
+
 ### Authenticate without static keys
 
 How you do this depends on the cloud provider, because the two mechanisms are unrelated.
@@ -200,6 +210,7 @@ For an enterprise deployment, use a **dedicated bucket per purpose**, each with 
 - **Results / cache bucket** — add a lifecycle rule deleting objects after **1 day**. Results are ephemeral, so this keeps the bucket small and cheap.
 - **Pre-aggregations bucket** (if using [pre-aggregates](/self-host/nats-workers/pre-aggregate-workers)) — lifecycle delete after **~30 days**.
 - **Data-apps bucket** (if using [data apps](/self-host/enterprise-features/data-apps)) — persistent, with **no** delete lifecycle.
+- **Uploads bucket** (`UPLOADS_S3_BUCKET`) — persistent, with **no** delete lifecycle. Holds AI agent avatars and homepage announcement images, which are served through permanent links. Required if the main bucket has a delete lifecycle rule.
 
 **Block all public access** on every bucket, and prefer short-lived credentials over static
 keys. On EKS, use IAM roles for service accounts (IRSA). On GKE, set
