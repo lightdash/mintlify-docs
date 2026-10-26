@@ -28,7 +28,6 @@
               allowUnfreePredicate =
                 pkg:
                 builtins.elem (nixpkgs.lib.getName pkg) [
-                  "graphite-cli"
                 ];
             };
           };
@@ -38,8 +37,7 @@
             name = "lightdash-docs-dev-shell";
 
             buildInputs = with pkgs; [
-              nodejs
-              graphite-cli
+              nodejs_24
             ];
           };
         }
