@@ -281,7 +281,7 @@ For embedding a Lightdash [AI agent](/agents) so users can chat with their data 
   // Required: AI agent embeds must include writeActions
   writeActions: {
     writeSpaceUuids: string[],          // Spaces the agent reads from and saves to; the first scopes threads
-    sourceSpaceUuids?: string[],        // Extra spaces the agent can read and search, but not create or update content in
+    sourceSpaceUuids?: string[],        // Extra spaces the agent can read from and bind to; see Add charts from other spaces
     serviceAccountUserUuid?: string,    // Use a service account as the actor
     userUuid?: string,                  // Or use an existing Lightdash user as the actor
     permissionsMode?: 'default' | 'roles',
@@ -301,7 +301,7 @@ For embedding a Lightdash [AI agent](/agents) so users can chat with their data 
 ```
 
 <Info>
-AI agent tokens are scoped to a single agent. A token issued for one `agentUuid` cannot be used to access another agent, and dashboard or chart tokens are rejected on AI agent routes. The agent can read dashboards and saved charts from the token's write spaces and any `sourceSpaceUuids`, and saves new charts into one of the write spaces. Embedded viewers can open saved charts from that combined scope in the chat side panel and saved dashboards as a read-only view, with the token's `userAttributes` applied. Threads are scoped to the first write space; see [Embedding AI agents](/embed/embed-ai-agents#access-control).
+AI agent tokens are scoped to a single agent. A token issued for one `agentUuid` cannot be used to access another agent, and dashboard or chart tokens are rejected on AI agent routes. The agent can read dashboards and saved charts from the token's write spaces and `sourceSpaceUuids`, and saves new charts into one of the write spaces. Embedded viewers can open saved charts from those spaces in the chat side panel and saved dashboards as a read-only view, with the token's `userAttributes` applied. Threads are scoped to the first write space; see [Embedding AI agents](/embed/embed-ai-agents#access-control).
 </Info>
 
 **Example:**
@@ -744,7 +744,7 @@ This is useful when you want to let your customers explore data, change charts a
 ```typescript
 writeActions?: {
   writeSpaceUuids: string[],          // Required: spaces users can write to; the first is the default
-  sourceSpaceUuids?: string[],        // Dashboard and AI agent tokens only: see Add charts from other spaces below
+  sourceSpaceUuids?: string[],        // Dashboard and AI agent tokens: extra spaces to read existing content from
   serviceAccountUserUuid?: string,    // Use a service account as the actor
   userUuid?: string,                  // Or use an existing Lightdash user as the actor
   permissionsMode?: 'default' | 'roles', // Dashboard and AI agent permission mode
@@ -773,7 +773,7 @@ Configure write actions from **Settings → Embedding** by toggling **Enable wri
 - **Service account** — the Lightdash actor that performs the write. You can pick an existing service account or create one inline. Only service accounts with a writable role (Admin, Developer, Editor, or an equivalent custom role) can be used.
 - **Default space for created content** — the first write space. You can pick an existing space or create one inline. On the Dashboards and Charts tabs, it's the selected dashboard's or chart's space.
 - **Additional write spaces** — optional. Embedded users can also edit content in these spaces and choose them when saving. The service account needs edit access to each one.
-- **Spaces to add charts from** — optional, Dashboards tab only. Sets [`sourceSpaceUuids`](#add-charts-from-other-spaces).
+- **Spaces to add charts from** (Dashboards tab) or **Extra spaces the agent can use** (AI agents tab) — optional. Sets [`sourceSpaceUuids`](#add-charts-from-other-spaces).
 
 The settings panel generates a JWT snippet that includes the `writeActions` claim with the selected service account user UUID and the space UUIDs. Copy that snippet into your backend token-generation code.
 
@@ -833,7 +833,7 @@ When the actor can create charts in more than one of the write spaces, the save 
 
 ### Add charts from other spaces
 
-Set `sourceSpaceUuids` on a dashboard token to let embedded users add existing charts from spaces they can't write to, such as a shared library of curated charts. It takes up to 100 space UUIDs.
+Set `sourceSpaceUuids` on a dashboard or AI agent token to give embedded users, or the agent, read access to spaces beyond the write spaces — for example a shared library of curated charts. It takes up to 100 space UUIDs.
 
 ```javascript
 writeActions: {
@@ -843,10 +843,12 @@ writeActions: {
 }
 ```
 
-- The add-chart picker lists saved charts from the write spaces and the source spaces. The actor needs view access to each source space.
+- On a dashboard token, the add-chart picker lists saved charts from the write spaces and the source spaces.
 - Charts from a source space stay in that space and can't be edited from the dashboard. Charts saved inside a dashboard can't be added from a source space, and SQL charts from a source space can appear in the picker but fail when the dashboard is saved.
+- On an [AI agent token](#ai-agent-token), `sourceSpaceUuids` adds spaces the agent can read charts and dashboards from and bind threads to, without being able to save new content there. See [Embedding AI agents](/embed/embed-ai-agents#access-control).
 - When the claim is set, the token can only list content in the write and source spaces.
-- AI agent tokens also accept `sourceSpaceUuids`, but "write" means something different there: the claim expands what the agent can read and search, and which dashboards or charts a thread can bind to, without letting it create or update content in those spaces. See [Access control](/embed/embed-ai-agents#access-control) for AI agent tokens. Chart, metrics catalog, data app, and API access tokens ignore the claim.
+- The write actor needs its own view access to every write and source space on the token — on dashboard tokens as much as AI agent tokens. On an AI agent token, each write and source space is also checked against the agent's own space access: when the agent is restricted to certain spaces, a token space outside that list is silently dropped from what the agent can read or bind to, and the token as a whole is rejected only if the agent has access to none of the write spaces.
+- Chart, metrics catalog, data app, and API access tokens ignore the claim.
 
 ## Permission modes
 
@@ -869,40 +871,62 @@ Permissions from the actor's organization and project roles are additive. Removi
 
 ### Dashboard capabilities
 
-Both modes require a resolved actor (`serviceAccountUserUuid` or `userUuid`) who can view the dashboard and its project.
+In `'roles'` mode, only the actor's embed scopes grant capabilities. JWT interactivity flags are ignored whether they are `true`, `false`, or omitted. For example, CSV export requires `view:EmbedCsvExport` even when the token contains `canExportCsv: true`. In `'default'` mode, the scope is ignored and the JWT flag decides.
 
-**`'default'` (or omitted):** Capabilities come from the JWT's `content` flags (`canExportCsv`, `canExplore`, `canViewUnderlyingData`, etc.), each defaulting to off. This is the existing JWT-only behavior.
+The dashboard scopes replace these `content` options when using `'roles'` mode:
 
-**`'roles'`:** Capabilities come entirely from the actor's embed scopes; `content` flags are ignored. Grant each capability as a scope in a [custom role](/workspace-admin/custom-roles) assigned to the actor:
-
-| Scope | Enables |
+| JWT field (default mode) | Embed scope (roles mode) |
 | --- | --- |
-| `view:EmbedExplore` | "Explore from here" |
-| `view:EmbedCsvExport` | CSV export |
-| `view:EmbedImageExport` | Image export |
-| `view:EmbedPagePdfExport` | PDF export |
-| `view:EmbedUnderlyingDataView` | View underlying data |
-| `view:EmbedDashboardCsvExport` | Export all dashboard tiles |
-| `view:EmbedDataApps` | Data app tiles |
+| `dashboardFiltersInteractivity.enabled` | `view:EmbedDashboardFilters` |
+| `dashboardFiltersInteractivity.canAddFilters` | `view:EmbedDashboardFilterAddition` |
+| `parameterInteractivity.enabled` | `view:EmbedDashboardParameters` |
+| `canExportCsv` | `view:EmbedCsvExport` |
+| `canExportDashboardCsv` | `view:EmbedDashboardCsvExport` |
+| `canExportImages` | `view:EmbedImageExport` |
+| `canExportPagePdf` | `view:EmbedPagePdfExport` |
+| `canDateZoom` | `view:EmbedDateZoom` |
+| `canExplore` | `view:EmbedExplore` |
+| `canViewUnderlyingData` | `view:EmbedUnderlyingData` |
+| `canViewDataApps` | `view:EmbedDataApps` |
 
-Filter interactivity (`dashboardFiltersInteractivity`) and parameter interactivity (`parameterInteractivity`) are unaffected by the mode — they're always controlled by the JWT.
+The filter-interactivity scope enables all dashboard filters rather than only those in `allowedFilters`. Adding temporary filters and changing parameters have separate scopes. Hidden-filter presentation and user-attribute data restrictions still apply.
+
+To manage dashboard capabilities through roles, set the mode and omit the JWT interactivity flags:
 
 ```javascript
-// 'roles' mode: capabilities come from the actor's role, not the content flags below
+import jwt from 'jsonwebtoken';
+
 const token = jwt.sign({
   content: {
     type: 'dashboard',
     dashboardUuid: 'your-dashboard-uuid',
-    canExplore: true,            // Ignored in 'roles' mode
-    canExportCsv: true,          // Ignored in 'roles' mode
   },
   writeActions: {
     serviceAccountUserUuid: 'service-account-user-uuid',
     writeSpaceUuids: ['destination-space-uuid'],
-    permissionsMode: 'roles',    // Capabilities now come from the actor's embed scopes
+    permissionsMode: 'roles',
   },
-}, SECRET, { expiresIn: '1h' });
+}, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
 ```
+
+In this example, grant or remove the corresponding embed scopes on the actor's role to control each capability. A capability without a scope grant is disabled.
+
+<Warning>
+Before selecting `'roles'`, grant every embed capability the actor needs. JWT flags and their defaults do not provide fallback access: PDF export requires `view:EmbedPagePdfExport`, even though it defaults to enabled in `'default'` mode.
+</Warning>
+
+### Compiled SQL
+
+Embedded field details, metric details in the metrics catalog, and AI agent answers can show the SQL behind a field. Embeds hide it unless the actor has the `view:EmbedCompiledSql` scope, which has no JWT flag. Built-in roles include it from developer up. Hiding it doesn't stop fields from being queried; the SQL is also removed from the API responses the embed receives.
+
+| Token | Compiled SQL is shown when |
+| --- | --- |
+| Dashboard, omitted or `'default'` mode | Never |
+| Dashboard, `'roles'` mode | The actor has `view:EmbedCompiledSql` |
+| Chart, metrics catalog, or AI agent with `writeActions` | The actor has `view:EmbedCompiledSql`, in either mode |
+| Any token without `writeActions` | Never |
+
+To keep SQL from external viewers while the actor stays a developer, give the actor a [custom role](/workspace-admin/custom-roles) without `view:EmbedCompiledSql`.
 
 ### AI agent access
 
@@ -911,59 +935,368 @@ Both modes require an AI agent token, a resolved actor who can view the project 
 To make the actor's role control access to embedded AI, add the mode to the [AI agent token](#ai-agent-token):
 
 ```javascript
-const token = jwt.sign({
-  content: {
-    type: 'aiAgent',
-    agentUuid: 'your-agent-uuid',
-  },
-  writeActions: {
-    serviceAccountUserUuid: 'service-account-user-uuid',
-    writeSpaceUuids: ['destination-space-uuid'],
-    permissionsMode: 'roles',
-  },
-}, SECRET, { expiresIn: '1h' });
-```
-
-With `permissionsMode: 'roles'`, the actor additionally needs `view:EmbedAiAgent` to use the agent at all.
-
-## Debug information
-
-Show the AI Debug panel on agent answers so embedded users can inspect prompts, tool calls, and model output.
-
-```typescript
-content: {
-  type: 'aiAgent',
-  canViewDebugInfo?: boolean,  // Shows the Debug panel in 'default' mode
+writeActions: {
+  userUuid: 'lightdash-user-uuid',
+  writeSpaceUuids: ['destination-space-uuid'],
+  permissionsMode: 'roles',
 }
 ```
 
-`content.canViewDebugInfo` only takes effect in `'default'` [permission mode](#permission-modes). In `'roles'` mode, the Debug panel needs the actor's `view:EmbedAiAgentDebug` scope instead; `canViewDebugInfo` is ignored.
+Grant `view:EmbedAiAgent` to allow access, or remove its last effective grant to block access. There is no AI-access boolean flag that bypasses this scope in `'roles'` mode. This controls embedded AI access, not access to AI in the main Lightdash app, and does not change AI Explore interactivity flags. Dashboard tokens do not authorize AI agent endpoints.
 
-## SQL and downloads on answers
+#### Debug information
 
-**View SQL** and **Download** on an agent's chart or table answers follow the actor's role, independent of `permissionsMode`:
+Agent answers have a Debug action that opens a panel with the chart's query configuration, field IDs, and the agent's tool calls with their arguments and raw output. Embedded viewers only see it when it is enabled:
 
-| Control | Requires |
+| Mode | Debug is shown when |
 | --- | --- |
-| **View SQL** | Actor's `view:Sql` permission |
-| **Download** (CSV/image) | Actor's export permissions, same as dashboard export |
+| Omitted or `'default'` | The token sets `content.canViewDebugInfo: true`. The actor's role is ignored. |
+| `'roles'` | The actor has the `view:EmbedAiAgentDebug` scope. `canViewDebugInfo` is ignored. |
 
-There's no JWT flag for these — grant the actor's underlying role the permission if you want embedded viewers to see it.
+Built-in roles from interactive viewer up include `view:EmbedAiAgentDebug`. To hide Debug in `'roles'` mode, give the actor a [custom role](/workspace-admin/custom-roles) without it.
+
+When Debug is hidden, the embed's thread and streaming responses also omit the raw output of the agent's tool calls. The steps under "How this chart was built" still show, including the fields the agent used. Debug is always available in the main Lightdash app.
+
+#### SQL and downloads on answers
+
+The actor's role controls two more actions on embedded chart answers, in both modes. Neither has a JWT flag.
+
+| Action | Shown when the actor has |
+| --- | --- |
+| **View SQL** | `view:EmbedCompiledSql` (built-in from developer up) |
+| **Download** | `view:EmbedCsvExport` (built-in from viewer up) |
+
+Download exports the answer's results as CSV or XLSX, exactly as shown, without row-limit options. Without `view:EmbedCompiledSql`, the SQL in the agent's tool-call steps is hidden too.
+
+### Verify role changes
+
+After changing the actor's scopes, reload the embed with the same unexpired JWT. The backend checks the actor's current permissions on subsequent requests; you do not need to issue another token for a role change. Changes affect all embeds using that actor and mode, not just one external viewer.
+
+To change the mode or a JWT flag, issue a newly signed token. Removing embed scopes does not revoke tokens using `'default'` mode. Keep tokens short-lived and choose `'roles'` when you want centralized role control.
+
+## Allowed content
+
+### Allowed dashboards
+
+Only dashboards added to the "allowed dashboards" list can be embedded.
+
+<Frame>
+  ![The Allowed dashboards card with its dashboard picker open, listing two selectable dashboards](/images/embed/embed-add-dashboard-cb6bef5fde69ba9d6eaeb693744d75cc.png)
+</Frame>
+
+You can use the "Allow all dashboards" toggle to bypass dashboard selection. When enabled, any dashboard in your project can be embedded.
+
+### Allowed charts
+
+Charts must be explicitly allowed for embedding. Add charts to the allowed list in your embed settings.
+
+<Info>
+Chart embeds provide more granular access control than dashboards. Each chart must be individually allowed.
+</Info>
+
+### Default allow settings via environment variables
+
+For self-hosted deployments, you can configure new project embeds to allow all dashboards and/or charts by default using environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `EMBED_ALLOW_ALL_DASHBOARDS_BY_DEFAULT` | When creating new embeds, allow all dashboards by default | `false` |
+| `EMBED_ALLOW_ALL_CHARTS_BY_DEFAULT` | When creating new embeds, allow all charts by default | `false` |
+
+When these are set to `true`, new project embeddings will automatically have all dashboards or charts allowed without needing to manually configure the allowed content list.
+
+See [embedding self-hosting](/self-host/enterprise-features#embedding) for the complete list of embedding-related configuration options.
+
+## User attributes
+
+User attributes enable row-level and column-level security by filtering data based on user properties. Column-level security is especially useful when embedded users can [Explore from here](#explore-from-here), since it ensures restricted fields stay hidden in the explore view as well.
+
+```typescript
+userAttributes?: {
+  [attributeName: string]: string,
+}
+```
+
+**Example:**
+
+```javascript
+{
+  userAttributes: {
+    tenant_id: 'customer-123',
+    region: 'us-west',
+    department: 'sales',
+  }
+}
+```
+
+The JWT `userAttributes` field drives both row-level and column-level access controls, the same ones available to Lightdash account users:
+
+- **Row-level filtering**: attributes are substituted into any `sql_filter` on the dbt model (e.g. `${lightdash.attributes.tenant_id}`), restricting which rows the embedded user can query.
+- **Column-level filtering**: attributes are matched against [`required_attributes`](/workspace-admin/user-attributes#column-filtering-with-required_attributes) and `any_attributes` rules on dimensions, metrics, and tables. Fields whose rules the embedded user's attributes don't satisfy are stripped from the explore entirely: they don't appear in the field list, can't be queried, and return Forbidden if requested directly. Metrics defined under a hidden column are hidden too unless they set their own attributes; model-level metrics only follow their own and the table's rules (see [metric access control](/workspace-admin/user-attributes#metric-access-control)).
+
+See the complete [User attributes guide](/workspace-admin/user-attributes).
 
 ## User metadata
 
-Identify embedded viewers for query result caching, usage tracking, and (for some embed types) warehouse query tags.
+Pass user information to identify who's viewing embedded content.
 
 ```typescript
 user?: {
-  externalId?: string,
-  email?: string,
+  externalId?: string,  // Your internal user ID
+  email?: string,       // User's email address
 }
 ```
 
-- `externalId` — a stable identifier for the embedded viewer in your system. Lightdash uses it to key query result caching and usage analytics, keeping each viewer's cached results and audit trail separate.
-- `email` — shown as a convenience label in Lightdash's project usage analytics alongside `externalId`.
+How `externalId` reaches your warehouse depends on who runs the query:
 
-For dashboard, chart, and metrics catalog embeds, `externalId` is also sent as a warehouse query tag on the queries that viewer runs, alongside standard Lightdash tags (user, project, and query identifiers) — use it to attribute warehouse spend or set up per-viewer query tagging in your warehouse. AI agent queries run as the write actor and are tagged with the actor's identity instead; neither `externalId` nor `email` is sent as a query tag for AI agent embeds.
+- **Dashboard and chart embeds** run queries as the embed viewer. Each query carries the `embed` and `external_id` [query tags](/workspace-admin/usage-analytics#query-tags), where `external_id` is your `externalId`. If you don't provide an `externalId`, Lightdash automatically generates one based on the embed token.
+- **AI agent embeds** run queries as the [write actions](#write-actions) actor. Those queries carry the actor's `user_uuid` and no `external_id`, so `externalId` does not identify the viewer in your warehouse. To attribute agent queries to a viewer, add an identifier to [`userAttributes`](#user-attributes). Every attribute on the token is emitted as a `user_attribute_<name>` [tag](/workspace-admin/usage-analytics#user-attribute-tags), whether or not it is defined in Lightdash.
 
-Neither field grants access by itself — the content, write space, and user attribute rules still apply. Both are optional; omit them if you don't need per-viewer tracking.
+`email` is not sent as a query tag.
+
+**Example:**
+
+```javascript
+{
+  user: {
+    externalId: 'user-12345',
+    email: 'jane@example.com',
+  }
+}
+```
+
+## Token expiration
+
+JWTs should have short expiration times for security. Use your JWT library's expiration parameter:
+
+```javascript
+jwt.sign(payload, secret, { expiresIn: '1h' })
+```
+
+**Recommended expiration times:**
+
+- **Development/testing**: `'24h'` or `'1 week'`
+- **Production dashboards**: `'1h'` to `'4h'`
+- **Production charts**: `'24h'` (if used in public pages)
+- **Explore sessions**: `'4h'` to `'8h'` (longer for analysis sessions)
+
+<Warning>
+Always generate tokens server-side with short expiration times. Never generate long-lived tokens in frontend code.
+</Warning>
+
+## Code examples
+
+### Node.js
+
+```javascript
+import jwt from 'jsonwebtoken';
+
+const LIGHTDASH_EMBED_SECRET = process.env.LIGHTDASH_EMBED_SECRET;
+const projectUuid = 'your-project-uuid';
+
+// Dashboard embed
+const dashboardToken = jwt.sign({
+  content: {
+    type: 'dashboard',
+    dashboardUuid: 'dashboard-uuid',
+    dashboardFiltersInteractivity: { enabled: 'all' },
+    canExportCsv: true,
+  },
+  userAttributes: { tenant_id: 'tenant-123' },
+}, LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
+
+const dashboardUrl = `https://app.lightdash.cloud/embed/${projectUuid}#${dashboardToken}`;
+
+// Chart embed
+const chartToken = jwt.sign({
+  content: {
+    type: 'chart',
+    contentId: 'chart-uuid',
+    canExportCsv: true,
+  },
+}, LIGHTDASH_EMBED_SECRET, { expiresIn: '24h' });
+
+const chartUrl = `https://app.lightdash.cloud/embed/${projectUuid}/chart/chart-uuid#${chartToken}`;
+```
+
+### Python
+
+```python
+import jwt
+import datetime
+import os
+
+LIGHTDASH_EMBED_SECRET = os.getenv('LIGHTDASH_EMBED_SECRET')
+project_uuid = 'your-project-uuid'
+
+# Dashboard embed
+dashboard_payload = {
+    'content': {
+        'type': 'dashboard',
+        'dashboardUuid': 'dashboard-uuid',
+        'dashboardFiltersInteractivity': { 'enabled': 'all' },
+        'canExportCsv': True,
+    },
+    'userAttributes': { 'tenant_id': 'tenant-123' },
+    'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)
+}
+
+dashboard_token = jwt.encode(dashboard_payload, LIGHTDASH_EMBED_SECRET, algorithm='HS256')
+dashboard_url = f"https://app.lightdash.cloud/embed/{project_uuid}#{dashboard_token}"
+
+# Chart embed
+chart_payload = {
+    'content': {
+        'type': 'chart',
+        'contentId': 'chart-uuid',
+        'canExportCsv': True,
+    },
+    'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+}
+
+chart_token = jwt.encode(chart_payload, LIGHTDASH_EMBED_SECRET, algorithm='HS256')
+chart_url = f"https://app.lightdash.cloud/embed/{project_uuid}/chart/chart-uuid#{chart_token}"
+```
+
+### Ruby
+
+```ruby
+require 'jwt'
+
+lightdash_embed_secret = ENV['LIGHTDASH_EMBED_SECRET']
+project_uuid = 'your-project-uuid'
+
+# Dashboard embed
+dashboard_payload = {
+  content: {
+    type: 'dashboard',
+    dashboardUuid: 'dashboard-uuid',
+    dashboardFiltersInteractivity: { enabled: 'all' },
+    canExportCsv: true
+  },
+  userAttributes: { tenant_id: 'tenant-123' },
+  exp: Time.now.to_i + 3600  # 1 hour
+}
+
+dashboard_token = JWT.encode(dashboard_payload, lightdash_embed_secret, 'HS256')
+dashboard_url = "https://app.lightdash.cloud/embed/#{project_uuid}##{dashboard_token}"
+
+# Chart embed
+chart_payload = {
+  content: {
+    type: 'chart',
+    contentId: 'chart-uuid',
+    canExportCsv: true
+  },
+  exp: Time.now.to_i + 86400  # 24 hours
+}
+
+chart_token = JWT.encode(chart_payload, lightdash_embed_secret, 'HS256')
+chart_url = "https://app.lightdash.cloud/embed/#{project_uuid}/chart/chart-uuid##{chart_token}"
+```
+
+### Java
+
+```java
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+
+String LIGHTDASH_EMBED_SECRET = System.getenv("LIGHTDASH_EMBED_SECRET");
+String projectUuid = "your-project-uuid";
+
+// Dashboard embed
+Map<String, Object> dashboardContent = new HashMap<>();
+dashboardContent.put("type", "dashboard");
+dashboardContent.put("dashboardUuid", "dashboard-uuid");
+dashboardContent.put("canExportCsv", true);
+
+Map<String, Object> userAttrs = new HashMap<>();
+userAttrs.put("tenant_id", "tenant-123");
+
+Map<String, Object> dashboardClaims = new HashMap<>();
+dashboardClaims.put("content", dashboardContent);
+dashboardClaims.put("userAttributes", userAttrs);
+
+String dashboardToken = Jwts.builder()
+    .setClaims(dashboardClaims)
+    .setExpiration(new Date(System.currentTimeMillis() + 3600000)) // 1 hour
+    .signWith(SignatureAlgorithm.HS256, LIGHTDASH_EMBED_SECRET)
+    .compact();
+
+String dashboardUrl = String.format(
+    "https://app.lightdash.cloud/embed/%s#%s",
+    projectUuid, dashboardToken
+);
+```
+
+## Security best practices
+
+### Never expose embed secret
+
+```javascript
+// ❌ BAD: Never do this
+const token = jwt.sign(payload, 'my-secret-key');  // Hardcoded secret
+
+// ✅ GOOD: Use environment variables
+const token = jwt.sign(payload, process.env.LIGHTDASH_EMBED_SECRET);
+```
+
+### Generate tokens server-side only
+
+```javascript
+// ❌ BAD: Don't generate tokens in frontend/browser
+// This exposes your secret!
+
+// ✅ GOOD: Create a backend API endpoint
+app.get('/api/embed-token', authenticateUser, (req, res) => {
+  const token = jwt.sign({
+    content: { type: 'dashboard', dashboardUuid: 'xyz' },
+    userAttributes: { tenant_id: req.user.tenantId },
+  }, process.env.SECRET);
+
+  res.json({ token });
+});
+```
+
+### Use short-lived tokens
+
+```javascript
+// ✅ GOOD: Tokens expire quickly
+jwt.sign(payload, secret, { expiresIn: '1h' })
+
+// ⚠️ CAUTION: Long-lived tokens are riskier
+jwt.sign(payload, secret, { expiresIn: '30d' })
+```
+
+### Validate user ownership
+
+```javascript
+app.get('/api/embed-token', authenticateUser, async (req, res) => {
+  const user = await getUser(req.user.id);
+  const requestedDashboard = req.query.dashboardId;
+
+  // ✅ Verify user has access to dashboard
+  if (!userHasAccessTo(user, requestedDashboard)) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  const token = jwt.sign({ content: { ... } }, secret);
+  res.json({ token });
+});
+```
+
+### Use user attributes for row- and column-level security
+
+```javascript
+// ✅ Filter data by user's tenant
+{
+  userAttributes: {
+    tenant_id: user.tenantId,  // From server-side user object
+  }
+}
+```
+
+See [User attributes reference](/workspace-admin/user-attributes) for complete implementation guide.
