@@ -88,19 +88,9 @@ Slack-triggered prompts can only use SQL mode when your organization has the **\
 
 ## Post-process results with DuckDB and Python
 
-<Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> Some questions need a step after the query: joining two explores, comparing results against a CSV you attach, ranking or bucketing rows, or fitting a forecast. For these, the agent runs one or more source queries, then transforms their results with DuckDB SQL or Python before it answers. It writes the SQL or Python itself. You just ask the question.
+<Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> Some questions need a step after the query: joining two explores, comparing results against a CSV you attach, ranking or bucketing rows, or fitting a forecast. For these, the agent runs one or more queries, then post-processes their results with DuckDB SQL or Python before it answers. This is in beta and off by default. [Reach out to us](mailto:support@lightdash.com) to turn it on for your organization.
 
 The semantic layer runs first (or the SQL query, if approved in [SQL mode](#sql-mode)). DuckDB and Python only ever see the rows those queries returned, so metric definitions, joins, [data access](/agents/data-access) rules and SQL approvals apply exactly as they do for any other query. Neither DuckDB nor Python connects to your warehouse.
-
-### What you can ask
-
-- *"Compare monthly revenue from Orders with ad spend from Marketing, and show return on ad spend by month."*
-- *"Here are our quarterly targets (attached CSV). How is each region tracking against them?"*
-- *"Forecast weekly signups for the next 8 weeks from the last year of data."*
-- *"Which customers are in the top 10% by lifetime value, and what share of revenue do they drive?"*
-- *"Run a linear regression of order volume on discount rate and tell me how strong the relationship is."*
-
-A question that one metric query can answer still runs as a single query. The agent only adds DuckDB or Python steps when the question needs them.
 
 ### How it works
 
@@ -108,13 +98,13 @@ A question that one metric query can answer still runs as a single query. The ag
 | --- | --- | --- |
 | **Semantic layer** | A metric query against an explore | Your warehouse, through the semantic layer |
 | **Warehouse SQL** | A read-only `SELECT` or `WITH` statement, with [approval](#how-approvals-work) | Your warehouse, in [SQL mode](#sql-mode) |
-| **External data** | DuckDB SQL over a CSV attached to the thread | Lightdash's DuckDB engine |
-| **Transformation** | DuckDB SQL over the results of other steps | Lightdash's DuckDB engine |
-| **Python** | pandas code over the results of other steps | An isolated sandbox |
+| **DuckDB** | DuckDB SQL over the results of other steps | A sandbox inside Lightdash |
+| **Python** | pandas code over the results of other steps | A sandbox inside Lightdash |
+| **External data** | DuckDB SQL over a CSV attached to the thread | A sandbox inside Lightdash |
 
-Python steps can use pandas, numpy, scipy, pyarrow, scikit-learn and polars. They have no network access and can't install packages. Each run gets a fresh sandbox that only receives the result rows the step references, and the sandbox is destroyed afterwards.
+A question that one metric query can answer still runs as a single query. The agent only adds DuckDB or Python steps when the question needs them.
 
-To attach a CSV, select **+** in the message input and choose **Attach a CSV**, or drop a CSV or TSV file onto the input. Attaching a CSV needs permission to manage external sources in the project and isn't available in embedded agents.
+DuckDB and Python both run in a sandboxed environment that only receives the result rows the step references, and is destroyed after each run. Python steps can use pandas, numpy, scipy, pyarrow, scikit-learn and polars. They have no network access and can't install packages.
 
 ### Reading the result
 
@@ -124,8 +114,8 @@ Opening a result runs the steps as the person viewing it, so viewers only ever s
 
 ### Limitations
 
-- A result built with DuckDB or Python lives in its thread. It can't be saved as a chart or added to a dashboard. A result with a single semantic layer step and no transformations is a regular chart and can be saved.
-- Each step is subject to the AI query row limit. A transformation only sees the rows the step before it returned, so the agent aggregates early when a step would hit its limit.
+- A result built with DuckDB or Python lives in its thread. It can't be saved as a chart or added to a dashboard. A result with a single semantic layer step and no post-processing is a regular chart and can be saved.
+- Each step is subject to the AI query row limit. A DuckDB or Python step only sees the rows the steps before it returned, so the agent aggregates early when a step would hit its limit.
 
 ## Query execution stats
 
