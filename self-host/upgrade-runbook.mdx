@@ -536,6 +536,12 @@ If you missed the window, the database still has the durable record. `migrate st
 
 To retry after you have fixed the cause, re-run `helm upgrade` to recreate the hook Job. See [what resumes on its own](#after-an-unlock-what-resumes-on-its-own).
 
+`backoffLimit` only counts pods that start and then fail. A Job whose pod never starts, for example one stuck `Pending` on a volume that won't mount, holds the pre-upgrade hook open indefinitely. To put a hard limit on it, set `migrationJob.activeDeadlineSeconds` (chart `2.16.1128` and later; unset by default). The deadline covers the whole Job, including pending time and, on a `Recreate` upgrade, the scale-down. Size it as the scale-down wait (`migrationJob.scaleDownWorkloads.timeoutSeconds`, default `300`) plus image pull, pending time, and your longest expected migration:
+
+- If the deadline fires after workloads were scaled to zero, the upgrade fails with every workload still at zero replicas.
+- Raise `ttlSecondsAfterFinished` when you set a deadline, so the timed-out Job's logs are still there to read.
+- With Argo CD automated self-heal, a deadline shorter than the migration reruns the hook repeatedly while workloads stay down.
+
 ### A migration is stuck
 
 Start by looking, not by fixing:
@@ -548,6 +554,14 @@ kubectl exec deploy/lightdash-backend -- \
 - **`migrating`** with a recent heartbeat: it is working. Migrations on large tables can take a long time. Leave it alone.
 - **`stale`**: the holder died. The lease expires 75 seconds after its last heartbeat, and another process takes it over automatically. No action needed in most cases.
 - **`parked`**: the migration failed its retries (three attempts with backoff) and stopped deliberately. The same app version will refuse to retry, which is what stops a crash-looping pod from hammering a half-applied migration. Fix the cause, then deploy a fixed version, or unlock with attribution and retry.
+
+If the cluster autoscaler evicts the migration pod while it drains a node, the migration stops partway. On the `migrationJob.enabled` path, prevent this by annotating the migration pod:
+
+```yaml
+migrationJob:
+  podAnnotations:
+    cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+```
 
 <Warning>
 Do **not** edit the `knex_migrations_lock` table by hand on `1.123.0` and later. The lease runtime holds locks that live migrations legitimately own, and clearing them manually can let a second migrator start on top of the first. Use `migrate status` to inspect and `migrate unlock` to release.
@@ -597,6 +611,8 @@ The image you roll back **to** determines what happens when it meets a database 
 - **Before `1.123.0`**: the image validates the migration directory at boot and treats any database-only migration as a corrupt migration directory. It will refuse to start. Set `ALLOW_MISSING_MIGRATIONS=true` on that deployment so it can start against the newer database.
 
 So a rollback from `1.130.0` to `1.124.0` needs nothing extra, while a rollback from `1.130.0` to `1.122.0` needs `ALLOW_MISSING_MIGRATIONS=true`.
+
+On a pre-`1.123.0` image, the refusal reads `The migration directory is corrupt, the following files are missing:` followed by migration file names. If you see it during an upgrade rather than a rollback, check that the named files exist under `packages/backend/src/database/migrations/` in the release tag you are deploying. If they do, the image you are running doesn't contain that release's migrations, so look at your image build and deploy pipeline. `ALLOW_MISSING_MIGRATIONS=true` only skips this file check, so set it only once you know why the database is ahead of the image.
 
 ### Migration batch granularity
 
