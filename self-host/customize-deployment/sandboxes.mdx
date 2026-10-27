@@ -45,7 +45,7 @@ the provider with the `SANDBOX_PROVIDER` environment variable.
 | --- | --- | --- | --- | --- |
 | **E2B** (default) | `e2b` | Production / managed | microVM | <Icon icon="check" /> |
 | **AWS Lambda MicroVMs** | `lambda-microvm` | Production on AWS (self-hosted) | microVM | <Icon icon="x" className="matrix-no" /> |
-| **Azure Container Apps Sandboxes** | `azure-sandboxes` | Production on Azure (self-hosted) | microVM | <Icon icon="x" className="matrix-no" /> |
+| **Azure Container Apps Sandboxes** | `azure-sandboxes` | Production on Azure (self-hosted) | microVM | <Icon icon="check" /> |
 | **Google Cloud Run Sandboxes** | `gcp-cloud-run` | GCP (self-hosted, preview) | gVisor | <Icon icon="check" /> |
 | **Local Docker** | `docker` | Local development only | container | <Icon icon="check" /> |
 
@@ -224,7 +224,8 @@ in**, using the [`aca` CLI](https://aka.ms/aca/sandboxes/dev) or the
 [Sandboxes portal](https://aka.ms/aca/sandboxes/portal):
 
 - **A sandbox group per feature** — one for data app generation and one for AI writeback
-  (they bundle different toolchains). A sandbox group (`Microsoft.App/SandboxGroups`) is the
+  (they bundle different toolchains), plus an optional third for
+  [Python execution](#python-execution). A sandbox group (`Microsoft.App/SandboxGroups`) is the
   management boundary that holds a feature's sandboxes and disk image. Give each group a
   **Memory-mode auto-suspend** lifecycle policy so idle sandboxes snapshot and scale to zero.
 - **A disk image per group** — build the two images from the Dockerfiles in the Lightdash
@@ -236,7 +237,9 @@ in**, using the [`aca` CLI](https://aka.ms/aca/sandboxes/dev) or the
   checkout does not contain — build and pack it into `sandboxes/data-apps/` first with
   `./sandboxes/data-apps/pack-query-sdk.sh`, using the toolchain listed in
   [Build the gateway image](#2-build-the-gateway-image) under the Cloud Run provider.
-  The writeback Dockerfile has no such prerequisite.
+  The writeback Dockerfile has no such prerequisite. For Python execution, build a third
+  image from `sandboxes/python-runner/`, which needs a `Dockerfile.local` derived first —
+  see [Make sure the Python sandbox exists](#make-sure-the-python-sandbox-exists).
 - **A workload identity with the data-plane role** — grant your backend's managed identity
   the **Container Apps SandboxGroup Data Owner** role on each sandbox group. Lightdash uses
   `DefaultAzureCredential` (workload identity on AKS, or the standard Azure credential chain)
@@ -258,6 +261,10 @@ AZURE_SANDBOXES_DATA_APP_GROUP=lightdash-data-app
 AZURE_SANDBOXES_DATA_APP_DISK_IMAGE=<data-app-disk-image-id>
 AZURE_SANDBOXES_AI_WRITEBACK_GROUP=lightdash-writeback
 AZURE_SANDBOXES_AI_WRITEBACK_DISK_IMAGE=<writeback-disk-image-id>
+
+# Python execution only — sandbox group + disk image ID for Python sandboxes
+AZURE_SANDBOXES_PYTHON_GROUP=lightdash-python
+AZURE_SANDBOXES_PYTHON_DISK_IMAGE=<python-disk-image-id>
 
 # Optional — sandbox size (XS/S/M/L, default M)
 AZURE_SANDBOXES_RESOURCE_TIER=M
@@ -639,10 +646,8 @@ must return a pandas DataFrame.
 
 ### Supported providers
 
-Python execution runs on the **E2B**, **Google Cloud Run**, and **Local Docker** providers.
-On `lambda-microvm` and `azure-sandboxes`, Python queries fail with
-`Python queries are not supported on the <provider> sandbox provider yet`. Other sandbox
-features keep working on those providers.
+Python execution runs on the **E2B**, **Azure Container Apps Sandboxes**, **Google Cloud
+Run**, and **Local Docker** providers. It doesn't work on `lambda-microvm`.
 
 ### Make sure the Python sandbox exists
 
@@ -663,18 +668,43 @@ features keep working on those providers.
 - **Google Cloud Run** — deploy the separate Python gateway and set
   `GCP_CLOUD_RUN_PYTHON_SANDBOX_URL` and `GCP_CLOUD_RUN_PYTHON_SANDBOX_SECRET`. See
   [Deploy the Python gateway](#6-deploy-the-python-gateway-optional).
+- **Azure Container Apps Sandboxes** — build the image from `sandboxes/python-runner/` and
+  register it as a disk image in a dedicated Python sandbox group. The directory ships an
+  E2B Dockerfile, so first derive `Dockerfile.local` from it with
+  `./sandboxes/python-runner/build-local-image.sh` (you can ignore the local image it then
+  builds). Azure sandboxes run on `linux/amd64`, so build for that platform and register the
+  result:
+
+  ```bash
+  az acr build --registry <acr> --platform linux/amd64 \
+    --image lightdash-python-runner:<lightdash-version> \
+    --file sandboxes/python-runner/Dockerfile.local sandboxes/python-runner
+
+  aca sandboxgroup disk create --group <python-group> --region <region> \
+    --image <acr>.azurecr.io/lightdash-python-runner:<lightdash-version> \
+    --username 00000000-0000-0000-0000-000000000000 \
+    --token "$(az acr login --name <acr> --expose-token --query accessToken -o tsv)"
+
+  aca sandboxgroup disk list --group <python-group> --region <region> -o json
+  ```
+
+  Set `AZURE_SANDBOXES_PYTHON_GROUP` to the group and `AZURE_SANDBOXES_PYTHON_DISK_IMAGE` to
+  the disk image ID from `disk list`, and grant the backend identity the same data-plane role
+  on the group. See
+  [Azure Container Apps Sandboxes](#azure-container-apps-sandboxes-self-hosted-production).
 - **Local Docker** — build `lightdash-python-runner:local` with
   `./sandboxes/python-runner/build-local-image.sh`, or set `SANDBOX_PYTHON_DOCKER_IMAGE` to
   your own tag. See [Local Docker provider](#local-docker-provider-development).
 
 ### Turn it on
 
-Two feature flags control Python execution, and both are off by default. To turn it on, set
+Python execution is part of the composer, gated by the `compose-sql-runner` feature flag,
+which is off by default. To turn it on, set
 [`LIGHTDASH_ENABLE_FEATURE_FLAGS`](/self-host/customize-deployment/environment-variables#feature-flags)
 on the backend and the scheduler:
 
 ```bash
-LIGHTDASH_ENABLE_FEATURE_FLAGS=compose-sql-runner,python-query-runner
+LIGHTDASH_ENABLE_FEATURE_FLAGS=compose-sql-runner
 ```
 
 ## Snapshot lifecycle
@@ -722,6 +752,8 @@ destroy the sandbox, so nothing idles in the first place.
 | `AZURE_SANDBOXES_DATA_APP_DISK_IMAGE` | — | Disk image ID for data app sandboxes (required when `azure-sandboxes`). |
 | `AZURE_SANDBOXES_AI_WRITEBACK_GROUP` | — | Sandbox group for writeback sandboxes (required when `azure-sandboxes`). |
 | `AZURE_SANDBOXES_AI_WRITEBACK_DISK_IMAGE` | — | Disk image ID for writeback sandboxes (required when `azure-sandboxes`). |
+| `AZURE_SANDBOXES_PYTHON_GROUP` | — | Sandbox group for Python execution sandboxes (required for Python execution when `azure-sandboxes`). |
+| `AZURE_SANDBOXES_PYTHON_DISK_IMAGE` | — | Disk image ID for Python execution sandboxes (required for Python execution when `azure-sandboxes`). |
 | `AZURE_SANDBOXES_RESOURCE_TIER` | `M` | Sandbox size: `XS`, `S`, `M`, or `L`. |
 | `AZURE_SANDBOXES_API_VERSION` | `2026-02-01-preview` | Azure Sandboxes data-plane API version. |
 | `AZURE_SANDBOXES_TOKEN_SCOPE` | `https://management.azuredevcompute.io/.default` | Entra token scope for the data plane. |
