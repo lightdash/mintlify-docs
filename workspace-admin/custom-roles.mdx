@@ -239,6 +239,7 @@ The existing single-role endpoints keep working. Their responses report the **pr
 - **A user lost their extra roles** — a single-role write (an older client, script, or IdP payload) replaced the set. Re-assign the extras with the picker or the `…/set` endpoint.
 - **A custom role in the set does not seem to restrict anything** — sets are additive; check whether a system role sits in the same set or at the organization level. See [How additive permissions work](#how-additive-permissions-work).
 - **Changes not visible yet** — the affected user may need to refresh; permissions rebuild on their next request.
+- **`403 Cannot grant permissions exceeding your own`** — to create or edit an organization role, or assign one, your own organization roles must cover every scope it grants. If your set has no system role, only your custom roles' scopes count, not the system Admin scopes. When you move admins onto custom organization roles, keep at least one person on the system **Admin** role, so someone can still grant any scope. If no one can, contact [Lightdash support](mailto:support@lightdash.com).
 
 ## Scope reference
 
@@ -280,6 +281,15 @@ With this setup, the user can:
 - Run `lightdash download` against the production project to pull YAML for local editing.
 - Run `lightdash preview` and `lightdash upload` against their own preview projects to validate changes.
 - Receive a `403` when attempting `lightdash upload` against the production project — production writes must go through the promotion pipeline.
+
+### Deploy scopes
+
+Two scopes control [`lightdash deploy`](/workflow/cli/deploy), separately from content as code and from compiling and refreshing (`manage:CompileProject`):
+
+- **Deploy dbt projects via CLI** (`manage:DeployProject`) deploys to any project the role applies to.
+- **Deploy to preview projects created by the user** (`manage:DeployProject@self`) deploys only to preview projects the user created.
+
+To stop someone deploying to production from their own machine while keeping their preview deploys, clone the Developer role, remove `manage:DeployProject`, and assign the clone at the project level. Organization Admins can deploy to every project whatever their project role. To deploy production only from CI, give `manage:DeployProject` to a [service account](/workspace-admin/service-accounts) and not to people.
 
 ### Verified-content scopes
 
@@ -376,6 +386,13 @@ Combine this with the [content-as-code preview restriction](#restrict-developers
 ### Agent permission scopes
 
 The **Agent permissions** group in **AI Features** limits what AI agents can do for people with the role. See [Agent permissions](/agents/agent-permissions#custom-roles).
+
+### Ask AI settings scopes
+
+Two scopes decide what someone sees under **Ask AI** in the settings:
+
+- **`manage:AiAgent`** is a project scope. It shows the Ask AI section, such as **Threads** and **Agents**, with data limited to the projects where the role applies.
+- **`manage:OrganizationAiAgent`** (description: *Configure organization AI settings*) is an organization-only scope, so add it to an organization-level custom role. It adds **Ask AI** → **General** and covers every project. Organization Developers and Admins hold it.
 
 ### SQL-related scopes
 
