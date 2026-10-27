@@ -12,7 +12,7 @@ The **Lightdash analytics** project brings your organization's usage data into L
 
 This project is separate from the [project-level User Activity dashboard](/workspace-admin/usage-analytics#user-activity-dashboard). It covers captured activity across your organization, rather than one project's fixed report.
 
-Use this page to [create the project](#create-your-analytics-project), [grant access](#grant-access), [update its content](#update-models-and-dashboards), [choose a dashboard](#built-in-dashboards), or [build your own analysis](#build-your-own-analysis).
+Use this page to [create the project](#create-your-analytics-project), [grant access](#grant-access), [update its content](#update-models-and-dashboards), [choose a dashboard](#built-in-dashboards), [build your own analysis](#build-your-own-analysis), or [import retained history](#historical-backfill).
 
 ## Create your analytics project
 
@@ -23,7 +23,7 @@ Use this page to [create the project](#create-your-analytics-project), [grant ac
 
 Organization administrators have access automatically. Other users need an explicit [analytics permission](#grant-access), even if they have access to other projects.
 
-Creating the project does not create historical events. Read [Data freshness and history](#data-freshness-and-history) if a chart is empty after setup.
+Creating the project starts a background [historical backfill](#historical-backfill) of supported records still held in the Lightdash database. You can use the project while it runs. Events without a retained database equivalent still require [normal capture and processing](#data-freshness-and-history).
 
 ## Grant access
 
@@ -46,7 +46,7 @@ An organization administrator can grant access using [custom roles](/workspace-a
 
 The permission can also be included in an **Organization** custom role. A project-level assignment makes the intended access explicit. Follow [custom-role assignment](/workspace-admin/custom-roles#assigning-custom-roles) for users and groups, or [project-scoped service accounts](/workspace-admin/service-accounts#project-scoped-service-accounts) for automation.
 
-Creating, syncing and deleting the managed project through analytics settings still require organization administration permissions. The read permission does not grant those operations or access to SQL Runner, which is unavailable for managed analytics projects.
+Creating, syncing, backfilling and deleting the managed project through analytics settings still require organization administration permissions. The read permission does not grant those operations or access to SQL Runner, which is unavailable for managed analytics projects.
 
 ### Agents and MCP
 
@@ -99,10 +99,11 @@ Choose the Explore that matches what you want to count. An event, an app load, a
 | **AI usage** | Individual AI model calls and reported token usage, grouped by feature, provider or model. |
 | **Agent steps** | Individual steps within agent execution. One request can involve several steps. |
 | **Agent request events** | The captured request lifecycle events underlying Agent requests. |
-| **Query events** | Captured query outcomes, timing, context and cache use. |
+| **Query events** | Captured query outcomes, timing, context and cache use, plus supported retained query history. |
 | **Semantic usage** | Direct metric and dimension references captured from queries. |
 | **Export events** | Captured result-download events and formats. |
 | **Tool activity** | MCP calls by tool, client, source and actor, including known outcomes and latency. |
+| **Historical activity** | Retained database records recovered by [historical backfill](#historical-backfill), with their own activity types and counting rules. |
 
 ### Who uses which dashboards and apps?
 
@@ -133,7 +134,7 @@ Use **AI usage** for model calls and token consumption. Its `ai.usage` event rep
 
 Usage data is collected after capture is enabled for your organization. The scheduled refresh processes closed UTC days at **00:30 UTC** and updates the snapshots used for names and content inventory. Allow that job to finish before expecting the previous day's data; these dashboards are not real-time monitors.
 
-Available history depends on when each event stream started capturing and how long its files are retained. Upgrading or syncing does not reconstruct earlier visits, missing identities or historical ownership. Names and inventory metadata can reflect the latest snapshot rather than the value at the event's time.
+Captured history depends on when each event stream started and how long its files are retained. [Historical backfill](#historical-backfill) can recover supported database records from before capture began. It cannot reconstruct activity that was never stored. Names and inventory metadata can reflect the latest snapshot rather than the value at the event's time.
 
 Keep these distinctions in mind when reading a chart:
 
@@ -141,6 +142,42 @@ Keep these distinctions in mind when reading a chart:
 - **Distinct users are not additive.** A person can appear on several days or use several items. Recalculate the distinct count for the whole period instead of adding daily or per-item counts.
 - **No observed use is not proof of safe deletion.** Check the capture window and content dependencies before removing an item.
 - **Missing values are unknown.** Historical errors, timings or identities may not have been captured; a blank value is not necessarily zero.
+
+## Historical backfill
+
+Backfill imports supported history that is still stored in your organization's Lightdash database into the analytics project. It can recover records from before event capture was enabled; it is not a replay of every past action or an import from your warehouse's query logs.
+
+The **Historical activity** section in **Settings → Lightdash analytics** is available on releases that support backfill. Creating a project starts the import automatically. For an existing project, an organization administrator can click **Backfill available history** there. Projects that have already been collecting events for weeks or months can use the same action until a backfill succeeds.
+
+The import runs in the background. You can leave the page and continue using Analytics. Imported datasets become queryable as they are published; no additional compaction run or overnight wait is required for those rows. Refresh an open chart or dashboard to load imported results. Names may remain unavailable until the normal metadata refresh finishes.
+
+The action is disabled while backfill is running and disappears after a successful import, including when there are no eligible records. If the import fails, use **Backfill available history** again. If the status check fails, use **Retry check** first. A retry keeps completed work and does not duplicate imported records. **Sync content** does not start a backfill.
+
+### What is included
+
+All retained dates are eligible, including eligible records from today before each source is read. How far back you can go depends on database retention and when that kind of record began to be stored.
+
+| Data | Where to explore it | What is recovered |
+| --- | --- | --- |
+| Queries | **Query events** | Completed queries, plus execution errors with recorded warehouse execution time. Includes available user, project, context, content IDs, execution time and row count. Historical dates use query submission time. |
+| AI model usage | **AI usage** | Retained model-call records from the AI usage ledger: outcomes, model/provider, feature and reported token counts. This requires ledger records; conversation text alone cannot recreate model calls or token usage. |
+| Chart, dashboard and app activity | **Historical activity** | Retained chart view-or-execution, dashboard view and app view records; app creation/deletion and version records. A chart execution is not necessarily a page view. |
+| Agent activity | **Historical activity** | Retained thread, prompt, response/latest-retry, sharing, compaction, interruption, steering, routing, tool, research and delivery facts. Available status, feedback and prompt token totals describe stored snapshots. |
+| Tools, exports and artifacts | **Historical activity** | Recorded MCP calls and permission decisions; download requests and export jobs; evaluation, artifact/version and file-upload records. A download request does not prove a successful download. |
+
+Query and AI records join their existing datasets. If the same identity already has a captured event, the captured event takes precedence, including when it arrives after backfill. Existing data does not make the whole day ineligible: missing records can still be imported without overlapping identities being counted twice.
+
+**Historical activity** uses different counting rules from captured events. Filter by **Activity type** and treat its rows as retained facts, not a complete event timeline. They are not added to the native view, request, tool or export totals. Do not add prompt or research snapshot token totals to **AI usage** model-call totals; they can describe the same underlying consumption.
+
+### What is not included
+
+- Activity never stored in a supported database record, or database records that have been removed or expired. Backfill cannot guarantee a fixed number of months of history.
+- Preview-project queries, unfinished queries, and query errors without recorded warehouse execution time.
+- SQL text, conversation or reasoning text, error messages, tool arguments/results, uploaded file contents, credentials or export destinations.
+- Reconstructed historical names, ownership, permissions, missing identities, timings or a full sequence of status changes. Unavailable values remain unknown.
+- Rebuilt historical **People / User activity** summaries or a replay into every captured-event Explore. Use **Query events**, **AI usage** and **Historical activity** for the imported data.
+
+Backfill recovers selected facts belonging to your organization. It does not export the entire Lightdash database, and it is not continuous synchronization of database records after the import.
 
 ## Troubleshooting
 
