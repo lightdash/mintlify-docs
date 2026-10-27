@@ -174,6 +174,23 @@ Lightdash supports operator-configurable Prometheus counter metrics that are dri
 
 Each entry in the config file creates a counter metric that increments when a matching application event fires. This allows you to track custom business-level metrics such as user logins or query executions without modifying the application code.
 
+To turn it on, set `LIGHTDASH_PROMETHEUS_ENABLED=true` and `LIGHTDASH_PROMETHEUS_EVENT_METRICS_ENABLED=true`, and point `LIGHTDASH_CUSTOM_METRICS_CONFIG_PATH` at a JSON file inside the Lightdash working directory. Set them on every process you scrape, including scheduler workers, because each process only counts the events it emits.
+
+```json
+{
+  "metrics": [
+    {
+      "eventName": "ai_agent_tool_call_failed",
+      "metricName": "lightdash_ai_agent_tool_call_failed_total",
+      "help": "AI agent tool calls that returned an error",
+      "labelNames": ["toolName"]
+    }
+  ]
+}
+```
+
+Each entry needs `eventName`, `metricName`, `help`, and `labelNames`. Label names must match the event's property keys exactly (for example `projectId`, not `project_id`); a property the event doesn't have is recorded as `unknown`. Avoid high-cardinality labels such as `threadId` or `promptId`. For AI agents, useful events include `ai_agent_request.outcome` (label `outcome`, `success` or `error`), `ai_agent_tool_call_failed` (labels `toolName`, `aiAgentId`), and `ai_agent.response_streamed` (label `aiAgentId`).
+
 ## Using metrics for monitoring and alerting
 
 You can use these metrics to create dashboards and alerts in your monitoring system. Some common use cases include:
