@@ -281,6 +281,7 @@ For embedding a Lightdash [AI agent](/agents) so users can chat with their data 
   // Required: AI agent embeds must include writeActions
   writeActions: {
     writeSpaceUuids: string[],          // Spaces the agent reads from and saves to; the first scopes threads
+    sourceSpaceUuids?: string[],        // Extra spaces the agent can read from and bind to; see Add charts from other spaces
     serviceAccountUserUuid?: string,    // Use a service account as the actor
     userUuid?: string,                  // Or use an existing Lightdash user as the actor
     permissionsMode?: 'default' | 'roles',
@@ -300,7 +301,7 @@ For embedding a Lightdash [AI agent](/agents) so users can chat with their data 
 ```
 
 <Info>
-AI agent tokens are scoped to a single agent. A token issued for one `agentUuid` cannot be used to access another agent, and dashboard or chart tokens are rejected on AI agent routes. The agent can only read dashboards and saved charts from the token's write spaces, and saves new charts into one of them. Embedded viewers can open saved charts from those spaces in the chat side panel and saved dashboards as a read-only view, with the token's `userAttributes` applied. Threads are scoped to the first write space; see [Embedding AI agents](/embed/embed-ai-agents#access-control).
+AI agent tokens are scoped to a single agent. A token issued for one `agentUuid` cannot be used to access another agent, and dashboard or chart tokens are rejected on AI agent routes. The agent can read dashboards and saved charts from the token's write spaces and `sourceSpaceUuids`, and saves new charts into one of the write spaces. Embedded viewers can open saved charts from those spaces in the chat side panel and saved dashboards as a read-only view, with the token's `userAttributes` applied. Threads are scoped to the first write space; see [Embedding AI agents](/embed/embed-ai-agents#access-control).
 </Info>
 
 **Example:**
@@ -743,7 +744,7 @@ This is useful when you want to let your customers explore data, change charts a
 ```typescript
 writeActions?: {
   writeSpaceUuids: string[],          // Required: spaces users can write to; the first is the default
-  sourceSpaceUuids?: string[],        // Dashboards only: extra spaces to add existing charts from
+  sourceSpaceUuids?: string[],        // Dashboard and AI agent tokens: extra spaces to read existing content from
   serviceAccountUserUuid?: string,    // Use a service account as the actor
   userUuid?: string,                  // Or use an existing Lightdash user as the actor
   permissionsMode?: 'default' | 'roles', // Dashboard and AI agent permission mode
@@ -772,7 +773,7 @@ Configure write actions from **Settings → Embedding** by toggling **Enable wri
 - **Service account** — the Lightdash actor that performs the write. You can pick an existing service account or create one inline. Only service accounts with a writable role (Admin, Developer, Editor, or an equivalent custom role) can be used.
 - **Default space for created content** — the first write space. You can pick an existing space or create one inline. On the Dashboards and Charts tabs, it's the selected dashboard's or chart's space.
 - **Additional write spaces** — optional. Embedded users can also edit content in these spaces and choose them when saving. The service account needs edit access to each one.
-- **Spaces to add charts from** — optional, Dashboards tab only. Sets [`sourceSpaceUuids`](#add-charts-from-other-spaces).
+- **Spaces to add charts from** (Dashboards tab) or **Extra spaces the agent can use** (AI agents tab) — optional. Sets [`sourceSpaceUuids`](#add-charts-from-other-spaces).
 
 The settings panel generates a JWT snippet that includes the `writeActions` claim with the selected service account user UUID and the space UUIDs. Copy that snippet into your backend token-generation code.
 
@@ -832,7 +833,7 @@ When the actor can create charts in more than one of the write spaces, the save 
 
 ### Add charts from other spaces
 
-Set `sourceSpaceUuids` on a dashboard token to let embedded users add existing charts from spaces they can't write to, such as a shared library of curated charts. It takes up to 100 space UUIDs.
+Set `sourceSpaceUuids` on a dashboard or AI agent token to give embedded users, or the agent, read access to spaces beyond the write spaces — for example a shared library of curated charts. It takes up to 100 space UUIDs.
 
 ```javascript
 writeActions: {
@@ -842,10 +843,12 @@ writeActions: {
 }
 ```
 
-- The add-chart picker lists saved charts from the write spaces and the source spaces. The actor needs view access to each source space.
+- On a dashboard token, the add-chart picker lists saved charts from the write spaces and the source spaces.
 - Charts from a source space stay in that space and can't be edited from the dashboard. Charts saved inside a dashboard can't be added from a source space, and SQL charts from a source space can appear in the picker but fail when the dashboard is saved.
+- On an [AI agent token](#ai-agent-token), `sourceSpaceUuids` adds spaces the agent can read charts and dashboards from and bind threads to, without being able to save new content there. See [Embedding AI agents](/embed/embed-ai-agents#access-control).
 - When the claim is set, the token can only list content in the write and source spaces.
-- `sourceSpaceUuids` only applies to dashboard tokens. Other token types ignore it.
+- The write actor needs its own view access to every write and source space on the token — on dashboard tokens as much as AI agent tokens. On an AI agent token, each write and source space is also checked against the agent's own space access: when the agent is restricted to certain spaces, a token space outside that list is silently dropped from what the agent can read or bind to, and the token as a whole is rejected only if the agent has access to none of the write spaces.
+- Chart, metrics catalog, data app, and API access tokens ignore the claim.
 
 ## Permission modes
 
