@@ -51,7 +51,7 @@ The more context you give the agent, the better the result. You can attach sever
 - **Sample data** - each chart and dashboard chip has an **Include sample data** toggle. When you turn it on, Lightdash runs the query and passes the first 10 rows to the agent so it can make better decisions about formatting, content, and copy. Sample data is opt-in per resource because rows can be sensitive - the agent will see whatever you send it. On self-hosted instances, `LIGHTDASH_APP_SAMPLE_DATA_ENABLED=false` turns sample data off for every organization and hides the toggle; see [environment variables](/self-host/customize-deployment/environment-variables#data-apps-runtime).
 - **Live-linked charts** - each chart chip also has a **Link** toggle next to Include sample data. When Link is off (the default), the agent embeds a frozen copy of the chart's metric query into the app - later edits to the chart in Lightdash won't flow through. When Link is on, the app runs the chart live by its UUID on every load, so changes made to the saved chart in Lightdash (metric swaps, filter tweaks, additional dimensions) show up in the app on the next refresh. Linked charts still respect the viewer's permissions and appear in the Queries tab of the inspector like any other query. Link is not yet supported for embedded apps that authenticate via JWT.
 
-  Dashboard filters propagate to linked charts inside a data app tile the same way they propagate to any other chart on the dashboard: filters that reference a field on the linked chart's explore narrow the chart, and filters that reference fields outside that explore are silently ignored for that tile. This propagation is handled by the dashboard itself, so **existing data apps pick it up without regeneration**.
+  Dashboard filters propagate to every query a data app tile runs, linked charts and the app's own queries alike, the same way they propagate to any other chart on the dashboard: filters that reference a field on the query's explore narrow the results, and filters that reference fields outside that explore are silently ignored for that query. This propagation is handled by the dashboard itself, so **existing data apps pick it up without regeneration**.
 
   Interactive filter controls, downloads, and drill-downs on linked charts work end-to-end. When a user changes a filter control the app is wiring into a linked chart, the chart re-runs against Lightdash with those filters ANDed onto the chart's own filters - the query can only narrow, never widen or replace what the saved chart defines. Filters on a linked chart apply to dimension fields only (metric-threshold filters need to live in the saved chart itself). Downloading a linked chart's results and drilling into an underlying row both work the same way they do on any other Lightdash chart, and drill-downs from a filtered linked chart inherit the active filters so you drill into the rows you're actually seeing.
 
@@ -96,6 +96,8 @@ If a recent prompt took the app in the wrong direction, you can roll back to any
 3. Confirm in the dialog.
 
 Restoring duplicates the selected version to the head of the timeline as a new latest version. Your next prompt iterates from the restored version, while the intermediate versions stay in the timeline as history. The restore happens instantly — there's no rebuild.
+
+A version stores the app's code, not its data. Previewing or restoring an earlier version runs that version's queries against your current semantic layer and warehouse, so you see today's results, not the numbers the app showed when that version was built.
 
 <Frame>
   ![Clean Shot 2026 05 20 At 11 28 07@2x](/images/CleanShot-2026-05-20-at-11.28.07@2x.png)
@@ -242,6 +244,8 @@ Your [project role](/workspace-admin/roles#project-roles-and-permissions) determ
   **Project roles can be inherited from organization roles.** If you're an Editor at the organization level, you're at least an Editor on every project. You can be given a higher role on a specific project, but never a lower one. See [Roles in your Lightdash instance](/workspace-admin/roles#roles-in-your-lightdash-instance) for details.
 </Info>
 
+In a [custom role](/workspace-admin/custom-roles), **View Data App** (`view:DataApp`) depends on **Manage Explore** (`manage:Explore`), because apps run queries on the fly. A role with both can also build queries in Explore, but saving charts still needs its own scopes.
+
 ### Space access
 
 Once an app is added to a space, the user's [space access level](/workspace-admin/roles#space-roles) decides whether they can see and edit it within that space:
@@ -259,6 +263,8 @@ Personal apps stay tied to whoever created them until they're moved into a space
 ### Sharing a link to the current view
 
 As you use an app, Lightdash keeps its view state, such as the selected filters and the active tab, in the `state` parameter of the page address. To share that view, copy the address bar: anyone who opens the link sees the app with the same selections. The app decides which controls are kept in the link, so if one you need isn't, ask the agent to include it in the shareable URL.
+
+You can also build a link by hand to open an app with a value already set. The `state` parameter is a URL-encoded JSON object of the keys the app reads, for example `?state=%7B%22region%22%3A%22EMEA%22%7D` for `{"region":"EMEA"}`, and is ignored if it is longer than 4,096 characters or isn't a JSON object. In app code, read a key with `useUrlState('region', '')` from `@lightdash/query-sdk`, and validate the value before using it, since anyone can edit the link. Apps shown as dashboard tiles don't read or write the `state` parameter.
 
 ## Promoting an app
 
@@ -301,6 +307,7 @@ Data apps don't ship with their own copy of your data. They run inside a sandbox
 This means:
 
 - **Permissions are enforced by Lightdash, not the app.** Whoever opens the app sees data based on their own role, group memberships, and user attributes - exactly as if they had run the query themselves in an explore.
+- **Apps run in the browser only.** An app is a React app with no Python runtime or server-side code, and it can't call outside services directly. To call a third-party API, link an [external connection](/data-apps/external-connections). To send results on a schedule, use [scheduled deliveries and syncs](/data-apps/deliveries-and-syncs); for custom scripts, use the [Lightdash API](/api-reference/v1/introduction).
 - **The agent generates code, not data.** When the app is being built, the configured coding agent sees your dbt model catalog (tables, dimensions, metrics) and any context you attach to the prompt. It writes queries against your semantic layer; it does not get a dump of your warehouse.
 - **The agent can see anything you attach.** Charts, dashboards, images, files, and sample data you include in the prompt are passed to the agent as context. Don't include data you wouldn't be comfortable sending to the model.
 - **Build errors go back to the agent.** If the generated code fails to build or fails Lightdash's app checks, Lightdash sends the compiler output or the check's message to the agent so it can fix the code, up to two times. These messages describe the code, not your query results.
