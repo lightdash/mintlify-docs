@@ -46,18 +46,17 @@ models:
             hidden: true
 ```
 
-```yaml Lightdash YAML
-type: model
-name: users
-
-dimensions:
-  - name: first_name
-    hidden: true
-```
-
 </CodeGroup>
 
-The same thing goes for metrics:
+This `hidden: true` tag can be added to [dimensions](/semantic-layer/dimensions#hiding-dimensions-in-lightdash) and [metrics](/semantic-layer/metrics#hiding-metrics-in-lightdash) in Lightdash.
+
+### Grouping fields
+
+We can group both metrics and dimensions in Lightdash by adding the `group_label` tag to our .yml files.
+
+#### Grouping dimensions
+
+If, for example, we wanted to put all of our user's name related dimensions under a different section, we could add in the `group_label` tag, like this:
 
 <CodeGroup>
 
@@ -68,10 +67,14 @@ models:
       - name: first_name
         config:
           meta:
-            metrics:
-              count_unique_first_names:
-                type: count_distinct
-                hidden: true
+            dimension:
+              group_label: 'User name'
+
+      - name: last_name
+        config:
+          meta:
+            dimension:
+              group_label: 'User name'
 ```
 
 ```yaml dbt v1.9 and earlier
@@ -80,242 +83,94 @@ models:
     columns:
       - name: first_name
         meta:
-          metrics:
-            count_unique_first_names:
-              type: count_distinct
-              hidden: true
-```
+          dimension:
+            group_label: 'User name'
 
-```yaml Lightdash YAML
-type: model
-name: users
-
-dimensions:
-  - name: first_name
-
-metrics:
-  count_unique_first_names:
-    type: count_distinct
-    sql: ${TABLE}.first_name
-    hidden: true
-```
-
-</CodeGroup>
-
-By default, all of your dimensions and metrics have been set to `hidden: false`.
-
-### Grouping fields in the sidebar
-
-You can group related metrics and dimensions together using the model meta `group_details` block in combination with the `groups` property in your .yaml files. You can as well add descriptions to your groups using the property `description` that will be displayed when hovering over the group label.
-
-<Info>
-  **Max grouping levels.**
-
-  There is a max of 2 levels of grouping in the sidebar.
-</Info>
-
-For example you might want to group the percentile metrics into two sub categories one being for over 40 percentiles and the other for under 40 percentiles. You can do this by adding the `group` property to your metrics like so:
-
-<CodeGroup>
-
-```yaml dbt v1.10+
-models:
-  - name: events
-    config:
-      meta:
-        group_details:
-          events:
-            label: Events
-            description: Event-related fields.
-          percentile:
-            label: Percentiles
-            description: Grouping of percentiles
-          sub:
-            label: Percentiles under 40
-            description: Grouping of percentiles under 40
-          over:
-            label: Percentiles over 40
-            description: Grouping percentiles over 40
-    columns:
-      - name: event_id
-        description: ''
-        config:
-          meta:
-            dimension:
-              type: number
-              groups: ['events']
-            metrics:
-              percentile_25:
-                type: percentile
-                percentile: 25
-                groups: ['percentile', 'sub']
-              percentile_50:
-                type: percentile
-                percentile: 50
-                groups: ['percentile', 'over']
-              percentile_75:
-                type: percentile
-                percentile: 75
-                groups: ['percentile', 'over']
-```
-
-```yaml dbt v1.9 and earlier
-models:
-  - name: events
-    meta:
-      group_details:
-        events:
-          label: Events
-          description: Event-related fields.
-        percentile:
-          label: Percentiles
-          description: Grouping of percentiles
-        sub:
-          label: Percentiles under 40
-          description: Grouping of percentiles under 40
-        over:
-          label: Percentiles over 40
-          description: Grouping percentiles over 40
-    columns:
-      - name: event_id
-        description: ''
+      - name: last_name
         meta:
           dimension:
-            type: number
-            groups: ['events']
-          metrics:
-            percentile_25:
-              type: percentile
-              percentile: 25
-              groups: ['percentile', 'sub']
-            percentile_50:
-              type: percentile
-              percentile: 50
-              groups: ['percentile', 'over']
-            percentile_75:
-              type: percentile
-              percentile: 75
-              groups: ['percentile', 'over']
-```
-
-```yaml Lightdash YAML
-type: model
-name: events
-
-group_details:
-  events:
-    label: Events
-    description: Event-related fields.
-  percentile:
-    label: Percentiles
-    description: Grouping of percentiles
-  sub:
-    label: Percentiles under 40
-    description: Grouping of percentiles under 40
-  over:
-    label: Percentiles over 40
-    description: Grouping percentiles over 40
-
-dimensions:
-  - name: event_id
-    description: ''
-    type: number
-    groups: ['events']
-
-metrics:
-  percentile_25:
-    type: percentile
-    percentile: 25
-    sql: ${TABLE}.event_id
-    groups: ['percentile', 'sub']
-  percentile_50:
-    type: percentile
-    percentile: 50
-    sql: ${TABLE}.event_id
-    groups: ['percentile', 'over']
-  percentile_75:
-    type: percentile
-    percentile: 75
-    sql: ${TABLE}.event_id
-    groups: ['percentile', 'over']
+            group_label: 'User name'
 ```
 
 </CodeGroup>
 
+Then, in the Explore view, our two dimensions would be grouped together under a collapsible section called `User name`, like this:
+
 <Frame>
-  <img src="/images/explore/formatting-your-fields/sub-group-label.png" alt="The sidebar field tree with metrics nested under a Percentile group and further split into Sub and Over subgroups" />
+  <img src="/images/explore/formatting-your-fields/grouping-dimensions.png" alt="Dimensions grouped under a collapsible 'User name' section in the Explore view"/>
 </Frame>
 
-You can use groups across metrics and dimensions. In the sidebar, your metrics will get grouped together under your label in the `metrics` section, and your dimensions will get grouped together under your label in the `dimensions` section.
+To learn more about the dimension `group_label` configuration, check out our [dimension reference doc](/semantic-layer/dimensions#group-label).
 
+#### Grouping metrics
 
-### Adding custom descriptions
-
-
-#### Dimensions
-
-By default, Lightdash pulls in the descriptions you've included for your dimensions. But, you can override the description you see in Lightdash using the `description` property.
+You can do the same with metrics. For example, let's group all of our order-related metrics together:
 
 <CodeGroup>
 
 ```yaml dbt v1.10+
 models:
-  - name: users
+  - name: orders
     columns:
-      - name: user_id
-        description: "Id generated by the Lightdash API on user's first login. On legacy systems, SHA64. On new systems since 2012, FARM_FINGERPRINT()"
-        config:
-          meta:
-            dimension:
-              description: 'Unique identifier for a user'
-```
-
-```yaml dbt v1.9 and earlier
-models:
-  - name: users
-    columns:
-      - name: user_id
-        description: "Id generated by the Lightdash API on user's first login. On legacy systems, SHA64. On new systems since 2012, FARM_FINGERPRINT()"
-        meta:
-          dimension:
-            description: 'Unique identifier for a user'
-```
-
-```yaml Lightdash YAML
-type: model
-name: users
-
-dimensions:
-  - name: user_id
-    description: 'Unique identifier for a user'
-```
-
-</CodeGroup>
-
-You can see the descriptions of your dimensions when you hover over the fields in Lightdash.
-
-<Frame>
-  <img src="/images/explore/formatting-your-fields/description-on-hover.png" alt="A field in the sidebar hovered, showing its YAML description in a tooltip" />
-</Frame>
-
-#### Metrics
-
-If you don't add a custom description for your metric, Lightdash will show a description for you in the app, by default. To override this default description, you can use the `description` property.
-
-<CodeGroup>
-
-```yaml dbt v1.10+
-models:
-  - name: users
-    columns:
-      - name: user_id
-        description: "Id generated by the Lightdash API on user's first login. On legacy systems, SHA64. On new systems since 2012, FARM_FINGERPRINT()"
+      - name: order_id
         config:
           meta:
             metrics:
-              count_unique_users:
+              unique_order_count:
                 type: count_distinct
-                description: 'Count the unique number of user IDs'
+                group_label: 'Order metrics'
+
+      - name: order_amount
+        config:
+          meta:
+            metrics:
+              total_order_amount:
+                type: sum
+                group_label: 'Order metrics'
+```
+
+```yaml dbt v1.9 and earlier
+models:
+  - name: orders
+    columns:
+      - name: order_id
+        meta:
+          metrics:
+            unique_order_count:
+              type: count_distinct
+              group_label: 'Order metrics'
+
+      - name: order_amount
+        meta:
+          metrics:
+            total_order_amount:
+              type: sum
+              group_label: 'Order metrics'
+```
+
+</CodeGroup>
+
+To learn more about the metric `group_label` configuration, check out our [metric reference doc](/semantic-layer/metrics#group-label).
+
+### Relabelling fields
+
+Sometimes the names of things in our dbt project don't match up to what we want to call things in Lightdash. You can easily update the labels of things using the `label` tag in your .yml files.
+
+#### Relabelling dimensions
+
+For example, if we wanted to relabel our dimension `user_id` to be called `Unique ID`, we could add the `label` tag, like this:
+
+<CodeGroup>
+
+```yaml dbt v1.10+
+models:
+  - name: users
+    columns:
+      - name: user_id
+        config:
+          meta:
+            dimension:
+              label: 'Unique ID'
 ```
 
 ```yaml dbt v1.9 and earlier
@@ -323,80 +178,18 @@ models:
   - name: users
     columns:
       - name: user_id
-        description: "Id generated by the Lightdash API on user's first login. On legacy systems, SHA64. On new systems since 2012, FARM_FINGERPRINT()"
-        meta:
-          metrics:
-            count_unique_users:
-              type: count_distinct
-              description: 'Count the unique number of user IDs'
-```
-
-```yaml Lightdash YAML
-type: model
-name: users
-
-dimensions:
-  - name: user_id
-
-metrics:
-  count_unique_users:
-    type: count_distinct
-    sql: ${TABLE}.user_id
-    description: 'Count the unique number of user IDs'
-```
-
-</CodeGroup>
-
-Check out [this doc](/semantic-layer/metrics#metric-configuration) to see all of the other properties you can customize for metrics.
-
-
-### Renaming fields
-
-Sometimes, the labels we use for the fields in our dbt project aren't very user friendly. We might want to change these in Lightdash, and we can!
-
-To change the name you'll see for your field in Lightdash, you just use the `label` property.
-
-So, if I had a field `user_id_sha64`, I could relabel it to `User ID`.
-
-<CodeGroup>
-
-```yaml dbt v1.10+
-models:
-  - name: users
-    columns:
-      - name: user_id_sha64
-        config:
-          meta:
-            dimension:
-              label: 'User ID'
-```
-
-```yaml dbt v1.9 and earlier
-models:
-  - name: users
-    columns:
-      - name: user_id_sha64
         meta:
           dimension:
-            label: 'User ID'
-```
-
-```yaml Lightdash YAML
-type: model
-name: users
-
-dimensions:
-  - name: user_id_sha64
-    label: 'User ID'
+            label: 'Unique ID'
 ```
 
 </CodeGroup>
 
-Same thing goes for metrics!
+To learn more about the dimension `label` configuration, check out our [dimension reference doc](/semantic-layer/dimensions#label).
 
-<Info>
-  Relabelling a metric will not break any saved charts that use the old metric name. Instead, your saved charts will just use the new metric name in their results tables.
-</Info>
+#### Relabelling metrics
+
+Same goes for metrics. If we wanted to relabel our metric `unique_user_id_count` to `Total users`, we could use the `label` tag, like this:
 
 <CodeGroup>
 
@@ -404,11 +197,11 @@ Same thing goes for metrics!
 models:
   - name: users
     columns:
-      - name: user_id_sha64
+      - name: user_id
         config:
           meta:
             metrics:
-              count_unique_user_ids:
+              unique_user_id_count:
                 type: count_distinct
                 label: 'Total users'
 ```
@@ -417,29 +210,200 @@ models:
 models:
   - name: users
     columns:
-      - name: user_id_sha64
+      - name: user_id
         meta:
           metrics:
-            count_unique_user_ids:
+            unique_user_id_count:
               type: count_distinct
               label: 'Total users'
 ```
 
-```yaml Lightdash YAML
-type: model
-name: users
+</CodeGroup>
 
-dimensions:
-  - name: user_id_sha64
+To learn more about the metric `label` configuration, check out our [metric reference doc](/semantic-layer/metrics#label).
 
-metrics:
-  count_unique_user_ids:
-    type: count_distinct
-    sql: ${TABLE}.user_id_sha64
-    label: 'Total users'
+### Changing a field's table
+
+When you create a dimension in Lightdash, it'll automatically be listed under the table that it was created in, in your dbt project. So, if you create a dimension in your `users.yml` model, it will be listed under the `Users` table in Lightdash.
+
+But, sometimes, you might want to move your dimension to a different table in Lightdash. You can do this by using the `table` tag.
+
+#### Changing a dimension's table
+
+For example, let's say I have a dimension about someone's `first_name`, but I actually want this to appear under a different table in Lightdash, called `Persons`, instead of `Users`, which is the table it would appear under by default (because that's the base table of the model where this dimension sits). I can use the `table` tag to do this, like so:
+
+<CodeGroup>
+
+```yaml dbt v1.10+
+models:
+  - name: users
+    columns:
+      - name: first_name
+        config:
+          meta:
+            dimension:
+              table: 'persons'
+```
+
+```yaml dbt v1.9 and earlier
+models:
+  - name: users
+    columns:
+      - name: first_name
+        meta:
+          dimension:
+            table: 'persons'
 ```
 
 </CodeGroup>
+
+To learn more about the dimension `table` configuration, check out our [dimension reference doc](/semantic-layer/dimensions#table).
+
+#### Changing a metric's table
+
+Same goes for metrics. If I have a metric about a `unique_user_id_count`, but I actually want this to appear under a different table in Lightdash, called `Persons`, instead of `Users`, which is the table it would appear under by default (because that's the base table of the model where this dimension sits), I can use the `table` tag to do this, like so:
+
+<CodeGroup>
+
+```yaml dbt v1.10+
+models:
+  - name: users
+    columns:
+      - name: user_id
+        config:
+          meta:
+            metrics:
+              unique_user_id_count:
+                type: count_distinct
+                table: 'persons'
+```
+
+```yaml dbt v1.9 and earlier
+models:
+  - name: users
+    columns:
+      - name: user_id
+        meta:
+          metrics:
+            unique_user_id_count:
+              type: count_distinct
+              table: 'persons'
+```
+
+</CodeGroup>
+
+To learn more about the metric `table` configuration, check out our [metric reference doc](/semantic-layer/metrics#table).
+
+### Describing fields
+
+You can add descriptions to your dimensions and metrics, which will appear when you hover over the field name's `(i)` icon in the Explore view.
+
+#### Describing dimensions
+
+If your dimension already has a `description` tag for dbt docs, Lightdash will automatically use this as the field's description too! But, if you want to override this with a different description, you can add the `description` tag under the `dimension` meta tag, like this:
+
+<CodeGroup>
+
+```yaml dbt v1.10+
+models:
+  - name: users
+    columns:
+      - name: user_id_sha64
+        description: 'Unique identifier for a user, hashed using SHA-64 algorithm.'
+        config:
+          meta:
+            dimension:
+              description: 'A unique identifier for a user, like a backstage pass but less exciting. No groupies included.'
+```
+
+```yaml dbt v1.9 and earlier
+models:
+  - name: users
+    columns:
+      - name: user_id_sha64
+        description: 'Unique identifier for a user, hashed using SHA-64 algorithm.'
+        meta:
+          dimension:
+            description: 'A unique identifier for a user, like a backstage pass but less exciting. No groupies included.'
+```
+
+</CodeGroup>
+
+To learn more about the dimension `description` configuration, check out our [dimension reference doc](/semantic-layer/dimensions#description).
+
+#### Describing metrics
+
+Metrics are a little different to dimensions. Because metrics are something that are defined by us in the `meta` tag (they're not something that already exists in our dbt project), they don't have a `description` field in dbt. So, if we want to add a description to them, we just need to add it using the `description` tag, under our metric's definition, like this:
+
+<CodeGroup>
+
+```yaml dbt v1.10+
+models:
+  - name: users
+
+    columns:
+      - name: user_id_sha64
+
+    config:
+      meta:
+        metrics:
+          count_unique_user_ids:
+            type: count_distinct
+            sql: ${TABLE}.user_id_sha64
+            description: 'Unique count of user ids'
+```
+
+```yaml dbt v1.9 and earlier
+models:
+  - name: users
+
+    columns:
+      - name: user_id_sha64
+
+    meta:
+      metrics:
+        count_unique_user_ids:
+          type: count_distinct
+          sql: ${TABLE}.user_id_sha64
+          description: 'Unique count of user ids'
+```
+
+</CodeGroup>
+
+To learn more about the metric `description` configuration, check out our [metric reference doc](/semantic-layer/metrics#description).
+
+### Hiding a table's name from a field's full name
+
+By default, the full name of a dimension or metric in Lightdash includes the table name, like `Users First name` or `Orders Total order amount`. You can hide the table name from the field's full name by adding the `hidden: true` tag under the `label` property of your table's `meta` tag (not the dimension or metric's `meta` tag).
+
+For example, if we wanted to hide the `Users` table name from the `First name` dimension, so it just appears as `First name` instead of `Users First name`, we could do this:
+
+<CodeGroup>
+
+```yaml dbt v1.10+
+models:
+  - name: users
+    config:
+      meta:
+        label:
+          hidden: true
+    columns:
+      - name: first_name
+```
+
+```yaml dbt v1.9 and earlier
+models:
+  - name: users
+    meta:
+      label:
+        hidden: true
+    columns:
+      - name: first_name
+```
+
+</CodeGroup>
+
+### Formatting your metrics and dimensions
 
 Check out [this doc](/semantic-layer/dimensions#dimension-configuration) to see all of the other properties you can customize for dimensions, and [this one](/semantic-layer/metrics#metric-configuration) for all of the other properties you can customize for your metrics.
 
@@ -459,134 +423,30 @@ Like this:
 models:
   - name: sales
     columns:
-      - name: revenue
+      - name: total_amount
         config:
           meta:
             dimension:
-              format: '0.00'
+              format: '0' # rounds to the nearest whole number
 ```
 
 ```yaml dbt v1.9 and earlier
 models:
   - name: sales
     columns:
-      - name: revenue
+      - name: total_amount
         meta:
           dimension:
-            format: '0.00'
-```
-
-```yaml Lightdash YAML
-type: model
-name: sales
-
-dimensions:
-  - name: revenue
-    format: '0.00'
+            format: '0' # rounds to the nearest whole number
 ```
 
 </CodeGroup>
-
-
-#### Rounding metrics
-
-Like this:
-
-<CodeGroup>
-
-```yaml dbt v1.10+
-models:
-  - name: sales
-    columns:
-      - name: revenue
-        config:
-          meta:
-            metrics:
-              total_revenue:
-                type: sum
-                format: '0.00'
-```
-
-```yaml dbt v1.9 and earlier
-models:
-  - name: sales
-    columns:
-      - name: revenue
-        meta:
-          metrics:
-            total_revenue:
-              type: sum
-              format: '0.00'
-```
-
-```yaml Lightdash YAML
-type: model
-name: sales
-
-dimensions:
-  - name: revenue
-
-metrics:
-  total_revenue:
-    type: sum
-    sql: ${TABLE}.revenue
-    format: '0.00'
-```
-
-</CodeGroup>
-
-Check out [this doc](/semantic-layer/metrics#metric-configuration) to see all of the other properties you can customize for metrics.
-
-
-### Compacting big numbers
-
-You can compact big numbers with the `format` property so a value like `1,500` shows as `1.50K`.
-
-#### Compact dimensions
-
-Like this:
-
-<CodeGroup>
-
-```yaml dbt v1.10+
-models:
-  - name: sales
-    columns:
-      - name: revenue
-        config:
-          meta:
-            dimension:
-              format: '0," K"'
-```
-
-```yaml dbt v1.9 and earlier
-models:
-  - name: sales
-    columns:
-      - name: revenue
-        meta:
-          dimension:
-            format: '0," K"'
-```
-
-```yaml Lightdash YAML
-type: model
-name: sales
-
-dimensions:
-  - name: revenue
-    format: '0," K"'
-```
-
-</CodeGroup>
-
-As an example, this option will compact the number value from 1,500 to 1.50K.
 
 Check out [this doc](/semantic-layer/dimensions#format) to see all the other compact values. to see all the other formatting options.
 
-#### Compact metrics
+#### Rounding metrics
 
-Like this:
+Same concept applies to metrics:
 
 <CodeGroup>
 
@@ -594,56 +454,38 @@ Like this:
 models:
   - name: sales
     columns:
-      - name: revenue
+      - name: amount
         config:
           meta:
             metrics:
-              total_revenue:
+              total_amount:
                 type: sum
-                format: '0.00,,," B"'
+                format: '0' # rounds to the nearest whole number
 ```
 
 ```yaml dbt v1.9 and earlier
 models:
   - name: sales
     columns:
-      - name: revenue
+      - name: amount
         meta:
           metrics:
-            total_revenue:
+            total_amount:
               type: sum
-              format: '0.00,,," B"'
-```
-
-```yaml Lightdash YAML
-type: model
-name: sales
-
-dimensions:
-  - name: revenue
-
-metrics:
-  total_revenue:
-    type: sum
-    sql: ${TABLE}.revenue
-    format: '0.00,,," B"'
+              format: '0' # rounds to the nearest whole number
 ```
 
 </CodeGroup>
 
-As an example, this option will compact the number value from 1,500,000,000 to 1.50B.
-
 Check out [this doc](/semantic-layer/metrics#format) to see all the other formatting options.
 
-### Add units to your values
+### Adding currency symbols, percentages, or other symbols to your metrics and dimensions
 
-Some columns need a special format to convey what units they're in. For example, if you're a global company, and you have a `revenue` field. Is that in GBP? USD?
+You can add symbols to the beginning or end of your numbers using the `format` property.
 
-In Lightdash, you can use the `format` label to add units to your fields.
+#### Adding symbols to dimensions
 
-#### Add units to dimensions
-
-You can add a `format` to your dimensions this:
+For example, if we wanted to add a `$` to the beginning of our `total_amount` dimension, we could do this:
 
 <CodeGroup>
 
@@ -651,39 +493,30 @@ You can add a `format` to your dimensions this:
 models:
   - name: sales
     columns:
-      - name: revenue
+      - name: total_amount
         config:
           meta:
             dimension:
-              format: '[$£]#,##0.00'
+              format: '"$"#,##0.00'
 ```
 
 ```yaml dbt v1.9 and earlier
 models:
   - name: sales
     columns:
-      - name: revenue
+      - name: total_amount
         meta:
           dimension:
-            format: '[$£]#,##0.00'
-```
-
-```yaml Lightdash YAML
-type: model
-name: sales
-
-dimensions:
-  - name: revenue
-    format: '[$£]#,##0.00'
+            format: '"$"#,##0.00'
 ```
 
 </CodeGroup>
 
 To see which format types are available for dimensions, [check the reference docs here.](/semantic-layer/dimensions#format). Check out [this doc](/semantic-layer/dimensions#dimension-configuration) to see all of the other properties you can customize for dimensions.
 
-#### Add units to metrics
+#### Adding symbols to metrics
 
-You can add a `format` to your metrics this:
+Same goes for metrics:
 
 <CodeGroup>
 
@@ -691,74 +524,38 @@ You can add a `format` to your metrics this:
 models:
   - name: sales
     columns:
-      - name: revenue
+      - name: amount
         config:
           meta:
             metrics:
-              total_revenue:
+              total_amount:
                 type: sum
-                format: '[$£]#,##0.00'
+                format: '"$"#,##0.00'
 ```
 
 ```yaml dbt v1.9 and earlier
 models:
   - name: sales
     columns:
-      - name: revenue
+      - name: amount
         meta:
           metrics:
-            total_revenue:
+            total_amount:
               type: sum
-              format: '[$£]#,##0.00'
-```
-
-```yaml Lightdash YAML
-type: model
-name: sales
-
-dimensions:
-  - name: revenue
-
-metrics:
-  total_revenue:
-    type: sum
-    sql: ${TABLE}.revenue
-    format: '[$£]#,##0.00'
+              format: '"$"#,##0.00'
 ```
 
 </CodeGroup>
 
 To see which format types are available for metrics, [check the reference docs here.](/semantic-layer/metrics#format)Check out [this doc](/semantic-layer/metrics#metric-configuration) to see all of the other properties you can customize for metrics.
 
+### Compacting your metrics and dimensions
 
-### Conditional formatting using parameters
+You can compact your numbers using the `compact` property in your .yml file. For example, you might want to express `1,000,000` as `1M`, to save some space, and make your numbers easier to read.
 
-You can make your field formatting dynamic by using [parameters](/semantic-layer/parameters) in your format strings. This allows the format to change based on user selections without needing to reconfigure your charts.
+#### Compacting dimensions
 
-#### Simple parameter substitution
-
-You can reference parameter values directly in your format strings using the syntax `${ld.parameters.parameterName}`.
-
-For example, if you have a parameter called `currency_symbol`, you can use it in your format like this:
-
-**Step 1: Define your parameter**
-
-In your `lightdash.config.yml` file:
-
-```yaml
-parameters:
-  currency_symbol:
-    label: "Currency symbol"
-    description: "Conditional formatting for currency symbol"
-    default: "$"
-    options:
-      - "$"
-      - "€"
-```
-
-**Step 2: Use the parameter in your format string**
-
-In your model YAML file:
+For example, if we wanted to compact our `total_amount` dimension, we could do this:
 
 <CodeGroup>
 
@@ -766,76 +563,30 @@ In your model YAML file:
 models:
   - name: sales
     columns:
-      - name: revenue
+      - name: total_amount
         config:
           meta:
-            metrics:
-              total_revenue:
-                type: sum
-                format: '${ld.parameters.currency_symbol}0,0.00'
+            dimension:
+              compact: 'thousands'
 ```
 
 ```yaml dbt v1.9 and earlier
 models:
   - name: sales
     columns:
-      - name: revenue
+      - name: total_amount
         meta:
-          metrics:
-            total_revenue:
-              type: sum
-              format: '${ld.parameters.currency_symbol}0,0.00'
-```
-
-```yaml Lightdash YAML
-type: model
-name: sales
-
-dimensions:
-  - name: revenue
-
-metrics:
-  total_revenue:
-    type: sum
-    sql: ${TABLE}.revenue
-    format: '${ld.parameters.currency_symbol}0,0.00'
+          dimension:
+            compact: 'thousands'
 ```
 
 </CodeGroup>
 
-The format `'${ld.parameters.currency_symbol}0,0.00'` will substitute the selected currency symbol value directly into the format.
+Check out [this doc](/semantic-layer/dimensions#compact) to see all the other compact values.
 
-When users select `$` from the parameter dropdown, numbers will display as `$1,234.56`. When they select `€`, numbers will display as `€1,234.56`.
+#### Compacting metrics
 
-#### Conditional formatting with ternary expressions
-
-For more complex formatting logic, you can use ternary expressions in your format strings. The syntax is:
-
-```
-${ld.parameters.parameterName=="value"?"format_if_true":"format_if_false"}
-```
-
-Here's an example that displays different currency symbols based on a `currency` parameter:
-
-**Step 1: Define your parameter**
-
-In your `lightdash.config.yml` file:
-
-```yaml
-parameters:
-  currency:
-    label: "Currency"
-    description: "Conditional formatting for currency"
-    default: "usd"
-    options:
-      - "usd"
-      - "eur"
-      - "gbp"
-```
-
-**Step 2: Use the parameter in your format string with conditional logic**
-
-In your model YAML file:
+Same goes for metrics:
 
 <CodeGroup>
 
@@ -843,66 +594,38 @@ In your model YAML file:
 models:
   - name: sales
     columns:
-      - name: revenue
+      - name: amount
         config:
           meta:
             metrics:
-              total_revenue:
+              total_amount:
                 type: sum
-                format: '${ld.parameters.currency=="usd"?"$":""}${ld.parameters.currency=="eur"?"€":""}${ld.parameters.currency=="eur"?"£":""}0,0.00'
+                compact: 'thousands'
 ```
 
 ```yaml dbt v1.9 and earlier
 models:
   - name: sales
     columns:
-      - name: revenue
+      - name: amount
         meta:
           metrics:
-            total_revenue:
+            total_amount:
               type: sum
-              format: '${ld.parameters.currency=="usd"?"$":""}${ld.parameters.currency=="eur"?"€":""}${ld.parameters.currency=="eur"?"£":""}0,0.00'
-```
-
-```yaml Lightdash YAML
-type: model
-name: sales
-
-dimensions:
-  - name: revenue
-
-metrics:
-  total_revenue:
-    type: sum
-    sql: ${TABLE}.revenue
-    format: '${ld.parameters.currency=="usd"?"$":""}${ld.parameters.currency=="eur"?"€":""}${ld.parameters.currency=="eur"?"£":""}0,0.00'
+              compact: 'thousands'
 ```
 
 </CodeGroup>
 
-The format uses multiple ternary expressions to check the parameter value:
-- When `currency` is `"usd"`, displays `$1,234.56`
-- When `currency` is `"eur"`, displays `€1,234.56`
-- When `currency` is `"gbp"`, displays `£1,234.56`
+Check out [this doc](/semantic-layer/metrics#compact) to see all the other compact values.
 
-**Another example: Controlling decimal places**
+### Changing number separators for metrics and dimensions
 
-You can use conditional formatting to toggle between different precision levels.
+You can change the separators used in your numbers, for example, from `1,000,000.00` to `1.000.000,00`, using the `format` property, combined with the `round` property.
 
-Define your parameter in `lightdash.config.yml`:
+#### Changing separators for dimensions
 
-```yaml
-parameters:
-  decimals:
-    label: "Decimals"
-    description: "Conditional formatting for decimals"
-    default: "true"
-    options:
-      - "true"
-      - "false"
-```
-
-Then use it in your model YAML file:
+For example, let's say we want to change our number separators for our `total_amount` dimension, from `1,000,000.00` to `1.000.000,00`, we could do this:
 
 <CodeGroup>
 
@@ -910,44 +633,127 @@ Then use it in your model YAML file:
 models:
   - name: sales
     columns:
-      - name: revenue
+      - name: total_amount
         config:
           meta:
-            metrics:
-              total_revenue:
-                type: sum
-                format: '0,0${ld.parameters.decimals=="true"?".00":""}'
+            dimension:
+              round: 2
+              format: '#.##0,00'
 ```
 
 ```yaml dbt v1.9 and earlier
 models:
   - name: sales
     columns:
-      - name: revenue
+      - name: total_amount
         meta:
-          metrics:
-            total_revenue:
-              type: sum
-              format: '0,0${ld.parameters.decimals=="true"?".00":""}'
-```
-
-```yaml Lightdash YAML
-type: model
-name: sales
-
-dimensions:
-  - name: revenue
-
-metrics:
-  total_revenue:
-    type: sum
-    sql: ${TABLE}.revenue
-    format: '0,0${ld.parameters.decimals=="true"?".00":""}'
+          dimension:
+            round: 2
+            format: '#.##0,00'
 ```
 
 </CodeGroup>
 
-When `decimals` is `"true"`, numbers display as `$1,234.56`. When `decimals` is `"false"`, numbers display as `$1,235`.
+#### Changing separators for metrics
+
+Same goes for metrics:
+
+<CodeGroup>
+
+```yaml dbt v1.10+
+models:
+  - name: sales
+    columns:
+      - name: amount
+        config:
+          meta:
+            metrics:
+              total_amount:
+                type: sum
+                round: 2
+                format: '#.##0,00'
+```
+
+```yaml dbt v1.9 and earlier
+models:
+  - name: sales
+    columns:
+      - name: amount
+        meta:
+          metrics:
+            total_amount:
+              type: sum
+              round: 2
+              format: '#.##0,00'
+```
+
+</CodeGroup>
+
+### Formatting dates and timestamps
+
+You can customize how your date and timestamp dimensions are displayed in Lightdash using the `format` property.
+
+<CodeGroup>
+
+```yaml dbt v1.10+
+models:
+  - name: sales
+    columns:
+      - name: created_at
+        config:
+          meta:
+            dimension:
+              format: 'yyyy-mm-dd'
+```
+
+```yaml dbt v1.9 and earlier
+models:
+  - name: sales
+    columns:
+      - name: created_at
+        meta:
+          dimension:
+            format: 'yyyy-mm-dd'
+```
+
+</CodeGroup>
+
+Check out [this doc](/semantic-layer/dimensions#format) to see all the other date and timestamp format options.
+
+### Using conditional formatting
+
+You can use conditional formatting to highlight your metrics and dimensions based on their value. For example, you might want to highlight all values that are negative in red, or all values that are above a certain threshold in green.
+
+To use conditional formatting, you need to use the `round` property, combined with the `format` property, and some rules that define the conditions.
+
+<CodeGroup>
+
+```yaml dbt v1.10+
+models:
+  - name: sales
+    columns:
+      - name: total_amount
+        config:
+          meta:
+            metrics:
+              total_amount:
+                type: sum
+                format: '[Red][<0]-#,##0;[Green][>=0]#,##0'
+```
+
+```yaml dbt v1.9 and earlier
+models:
+  - name: sales
+    columns:
+      - name: total_amount
+        meta:
+          metrics:
+            total_amount:
+              type: sum
+              format: '[Red][<0]-#,##0;[Green][>=0]#,##0'
+```
+
+</CodeGroup>
 
 ## Formatting your fields in the Lightdash UI
 
@@ -1014,24 +820,47 @@ Once you've created your table calculation, you can format it by clicking on the
   <img src="/images/explore/formatting-your-fields/table-calculation-format.png" alt="The Format tab of the table calculation editor, with the formatting type options" />
 </Frame>
 
-You can then choose from the following formatting types:
+Next to the `Format` heading, a data type selector tells Lightdash what your table calculation returns: `Number`, `String`, `Date`, `Timestamp`, or `Boolean`. Lightdash can't work this out from your formula, so set it to match the value the calculation returns before you pick a formatting type — a table calculation that references a timestamp dimension needs its data type set to `Timestamp`, otherwise a custom date format is ignored and the raw value shows instead.
 
-* `percent`: Formats your metric as a percentage, with the following options:
+<Note>
+  Switching the data type between a number and a date-like type (or back) resets the formatting type you've chosen, so set the data type first.
+</Note>
 
-  * `round` value to your metric to round it to a certain number of decimal places
-  * `separator`, e.g. from `.` to `,`
+The formatting types available depend on the data type you pick:
 
-* `currency`: Formats your metric as a currency
+* `String` and `Boolean` have no formatting options — these always display as-is.
 
-  * `round` value to your metric to round it to a certain number of decimal places
-  * `separator`, e.g. from `.` to `,`
-  * `currency` symbol, e.g. from `$` to `£`
-  * `compact` value to compact your metric to a certain unit, e.g. from `1,000,000` to `1M`
+* `Date` and `Timestamp` offer:
 
-* `number`: Formats your metric as a number
+  * `Default`: Lightdash's standard date or timestamp display
+  * `Custom`: enter a spreadsheet-style date expression, e.g. `dddd hh:mm AM/PM`. Check out [this doc](/semantic-layer/metrics#format) for more example format expressions.
 
-  * `round` value to your metric to round it to a certain number of decimal places
-  * `separator`, e.g. from `.` to `,`
-  * `compact` value to compact your metric to a certain unit, e.g. from `1,000,000` to `1M`
-  * `prefix` value to add a prefix to your metric, e.g. `+` or `-`
-  * `suffix` value to add a suffix to your metric, e.g. `%`
+* `Number` offers:
+
+  * `Plain`: no formatting applied
+  * `Number`:
+
+    * `round` value to your metric to round it to a certain number of decimal places
+    * `separator`, e.g. from `.` to `,`
+    * `compact` value to compact your metric to a certain unit, e.g. from `1,000,000` to `1M`
+    * `prefix` value to add a prefix to your metric, e.g. `+` or `-`
+    * `suffix` value to add a suffix to your metric, e.g. `%`
+
+  * `Currency`:
+
+    * `round` value to your metric to round it to a certain number of decimal places
+    * `separator`, e.g. from `.` to `,`
+    * `currency` symbol, e.g. from `$` to `£`
+    * `compact` value to compact your metric to a certain unit, e.g. from `1,000,000` to `1M`
+
+  * `Percent`:
+
+    * `round` value to your metric to round it to a certain number of decimal places
+    * `separator`, e.g. from `.` to `,`
+
+  * `Bytes`: formats your metric as a byte size
+
+    * unit system, `SI` (KB, MB, GB) or `IEC` (KiB, MiB, GiB)
+    * `compact` value to compact your metric to a certain unit
+
+  * `Custom`: enter a spreadsheet-style format expression, e.g. `#,##0.00`. Check out [this doc](/semantic-layer/metrics#format) for more example format expressions.
