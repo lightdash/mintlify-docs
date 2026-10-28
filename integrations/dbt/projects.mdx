@@ -296,6 +296,8 @@ On refresh, Lightdash compiles every source and merges the resulting manifests i
 
 **Name collisions.** If the same model name exists in more than one source, **compilation fails** with an error that names each collision and which sources define it (in the form `<section> "<key>" is defined in both "<source A>" and "<source B>"`, listing up to 10 entries and ending with "Rename or remove the duplicate(s) before deploying."). Rename or remove the duplicates in one of the sources before deploying. Only identical dbt built-in macros and docs are merged silently.
 
+A dbt package installed in more than one source causes the same failure, because each of those manifests contains the package's models under the same IDs. The [dbt selector](#dbt-selector) doesn't prevent it: Lightdash checks every model in each source's manifest for collisions, not only the selected ones. Keep the package's models enabled in one source and disable them in the others with dbt's [`enabled`](https://docs.getdbt.com/reference/resource-configs/enabled) config.
+
 <Warning>
   **The CLI's `--combine-manifest` flag is a different mechanism.** It merges an external manifest into the manifest the CLI just generated, and unlike the additional-sources merge it does not fail on collisions — see [`lightdash deploy`](/workflow/cli/reference#lightdash-deploy) in the CLI reference.
 </Warning>
@@ -522,6 +524,12 @@ We support all dbt selectors. [Read more about selectors in the dbt docs](https:
 </Warning>
 
 In a project with [multiple dbt sources](#connecting-multiple-dbt-sources), each source has its own selector. Other sources can still use [cross-project refs](#cross-project-refs-between-sources) to a model outside its source's selector, but that model produces no Explore and you cannot join to it. This lets you connect a repository only so that other sources can reference its models: give it a selector that matches none of its models, such as `tag:reference_only`.
+
+The selector doesn't filter seeds: Lightdash always includes every seed in the project. To see which models a selector matches, run `dbt ls --select "<your selector>"` locally; it doesn't list seeds. Tags set with `+tags` on a folder in `dbt_project.yml` apply to every model in that folder, so they count towards the selector too.
+
+When you add or rename a model, it has no Explore until it matches the selector. Charts and dashboards that use it show `Explore "<name>" does not exist.`, and refreshing again doesn't help. Give the model the tag or other property the selector matches, merge the change, then refresh.
+
+Lightdash reads warehouse metadata only for the tables of the models and seeds it compiles. On BigQuery and Athena, if the warehouse credentials can't read one of those tables, the model still compiles without column types from the warehouse, and querying it fails until the credentials can read it.
 
 ## dbt targets
 
