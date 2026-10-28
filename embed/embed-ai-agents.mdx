@@ -93,7 +93,9 @@ In a bound thread:
 - The thread context, up to 10,000 characters, is given to the agent on every turn as background from the user. It is never shown as a chat message, and embedded viewers can't read it back.
 - Neither the binding nor the context can be changed after the thread is created.
 
-The dashboard must be in one of the token's write spaces.
+The dashboard must be in one of the token's write spaces or `sourceSpaceUuids`. When it's in a source space, the agent reads it and answers questions about it but can't change it; anything the agent creates from it, such as a copy filtered to one region, is saved into a write space.
+
+To refresh an embedded dashboard after the agent edits it, see [Refresh a dashboard after the agent saves it](/embed/react-sdk#refresh-a-dashboard-after-the-agent-saves-it).
 
 ### From the React SDK
 
@@ -122,7 +124,7 @@ Create the thread with the same embed token setup your viewers use. A thread cre
 | Response | Cause |
 | --- | --- |
 | `400` | No `prompt`, `binding`, or `threadContext`, or a `threadContext` longer than 10,000 characters |
-| `403` | The dashboard is outside the token's write spaces, or the actor can't view it |
+| `403` | The dashboard is outside the token's write spaces and `sourceSpaceUuids`, or the actor can't view it |
 | `404` | The dashboard doesn't exist, is in the trash, or belongs to another project |
 
 If the bound dashboard is deleted later, the thread stays bound and shows **Dashboard no longer available**. The agent can still answer questions and run queries, but can't create or change saved content in that thread.
@@ -157,7 +159,7 @@ const token = jwt.sign({
 
 - `content.type` — must be `"aiAgent"`.
 - `content.agentUuid` — the agent the embed is allowed to use. Tokens cannot switch to a different agent at runtime.
-- `writeActions.writeSpaceUuids` — the spaces the agent can read charts and dashboards from and save AI-generated charts into. The first space is the default save target and scopes the embed's threads.
+- `writeActions.writeSpaceUuids` — the spaces the agent can create and update charts and dashboards in, and read them from. The first space is the default save target and scopes the embed's threads.
 - One of `writeActions.serviceAccountUserUuid` or `writeActions.userUuid` — the actor whose permissions are used when the agent runs queries and saves charts, and whose name appears next to messages in the chat. See [Write actions](/embed/reference#write-actions).
 
 Every space on the token — each write space, and each space in `writeActions.sourceSpaceUuids` — is gated twice: the write actor needs its own view access to it, and if the agent itself is restricted to certain spaces, the space must be on the agent's own list. A space that fails either check is silently dropped from what the agent can read or bind to; the token as a whole is only rejected once the agent has access to none of the write spaces. See [Add charts from other spaces](/embed/reference#add-charts-from-other-spaces) for the full rules, including `sourceSpaceUuids`.
@@ -166,7 +168,7 @@ Every space on the token — each write space, and each space in `writeActions.s
 
 - `content.projectUuid` — pins the embed to a specific project.
 - `content.canViewDebugInfo` — shows the Debug panel on agent answers. See [Debug information](/embed/reference#debug-information).
-- `writeActions.sourceSpaceUuids` — extra spaces the agent can read charts and dashboards from and bind threads to, without being able to save into them. See [Add charts from other spaces](/embed/reference#add-charts-from-other-spaces).
+- `writeActions.sourceSpaceUuids` — extra spaces the agent can read, search, and bind threads to dashboards in, without being able to create or update content in them. See [Add charts from other spaces](/embed/reference#add-charts-from-other-spaces).
 - `userAttributes` — applies row-level filters to the agent's queries, identical to other embed types.
 - `user.externalId` / `user.email` — identifies the embedded viewer. Agent queries run as the write actor, so neither value is sent as a warehouse query tag; see [User metadata](/embed/reference#user-metadata) for per-viewer attribution.
 
