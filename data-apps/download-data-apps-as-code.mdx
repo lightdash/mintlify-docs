@@ -48,7 +48,7 @@ Every downloaded app is a locally buildable Vite + React project:
 | Path | What it is | Uploaded? |
 | --- | --- | --- |
 | `src/` | The app's source. **This is the only directory the CLI uploads — edit here.** | Yes |
-| `lightdash-app.yml` | The manifest: `slug` (the app's identity), `name`, `description`, linked external connections, an optional [`access` block](/workflow/content-as-code#data-app-access-blocks) for direct sharing, and bookkeeping fields. | Yes (as metadata) |
+| `lightdash-app.yml` | The manifest: `slug` (the app's identity), `name`, `description`, `spaceSlug` (the app's space, if it's in one), linked external connections, an optional [`access` block](/workflow/content-as-code#data-app-access-blocks) for direct sharing, and bookkeeping fields. | Yes (as metadata) |
 | `package.json`, `pnpm-lock.yaml` | The dependency set. Template-only apps ship the standard set; see [Custom dependencies](#experimental-custom-dependencies). | Only when deps differ from the template |
 | `vite.config.js`, `tsconfig.json`, `index.html`, … | Local build scaffolding. Editing these has no effect on the deployed app — the server builds against its own trusted copies. | No |
 | `README.md`, `AGENTS.md`, `.claude/skills/`, `.agents/skills/`, `references/` | Docs and agent skills for humans and AI assistants working on the app. Every app gets an identical copy. | No |
@@ -173,7 +173,9 @@ lightdash upload --apps revenue-explorer --project <target-project-uuid>
 
 The destination rebuilds the source in its own sandbox — no built artifacts move between instances.
 
-Pass `--app-space <spaceRef>` (slug or space UUID) to land any new apps this upload creates in a specific space. Existing apps keep their space, so this flag only affects the first upload of an app to a project:
+The manifest's `spaceSlug` records the app's space as a path. On upload, the app is placed in that space in the target project, and the space is created if it doesn't exist there. A manifest without `spaceSlug` (a personal app) leaves an existing app where it is and creates a new one as a personal app.
+
+Pass `--app-space <spaceRef>` (slug or space UUID) to land any new apps this upload creates in a specific space instead. It takes precedence over `spaceSlug` and only affects the first upload of an app to a project:
 
 ```bash
 lightdash upload --apps revenue-explorer --project <target-project-uuid> --app-space finance
@@ -294,6 +296,8 @@ Both files matter: the dependency set is `package.json` plus a matching `pnpm-lo
   + deck.gl@^9.3.5 (not in default template)
 Upload "revenue-explorer" with custom dependencies?
 ```
+
+If the upload fails with `Custom app dependencies are not enabled for your organization`, you have the `manage:DataAppDependency` permission, but custom dependencies aren't turned on for your organization.
 
 **Rules the CLI and server enforce:**
 
