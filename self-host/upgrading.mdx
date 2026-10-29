@@ -91,11 +91,11 @@ migrationJob:
   enabled: true
 ```
 
-With chart `2.16.284` or later, this combination makes the chart remove its HorizontalPodAutoscalers, scale every Lightdash workload to zero, and wait for the pods to stop before the migration Job runs.
+With chart `2.16.284` or later, this combination makes the chart remove the backend HorizontalPodAutoscaler (HPA), scale the backend and worker Deployments to zero, and wait for their pods to stop before running migrations. The chart stops the upgrade if shutdown or migration fails.
 </Step>
 
 <Step title="Optional: scale workloads down by hand" id="scale-application-workloads-manually-when-required">
-Only for chart `2.16.283` and earlier, or a custom deployment, with an `UNSAFE` verdict and the migration Job enabled. Old pods must not run against the new schema, so remove the HPAs, scale to zero and wait until no Lightdash pods remain:
+Only for chart `2.16.283` and earlier, or a custom deployment, with an `UNSAFE` verdict and the migration Job enabled. Old pods must not run against the new schema, so remove the backend HPA, scale to zero and wait until no Lightdash pods remain:
 
 ```bash
 kubectl delete hpa -l app.kubernetes.io/instance=lightdash
@@ -103,7 +103,7 @@ kubectl scale deployments -l app.kubernetes.io/instance=lightdash --replicas=0
 kubectl get pods -l app.kubernetes.io/instance=lightdash
 ```
 
-Helm restores the replicas and HPAs after a successful upgrade.
+Helm restores the replicas and the backend HPA after a successful upgrade if autoscaling is enabled.
 </Step>
 
 <Step title="Upgrade">
@@ -114,7 +114,7 @@ helm repo update lightdash
 helm upgrade -f values.yml lightdash lightdash/lightdash
 ```
 
-The migration Job runs as a pre-upgrade hook. Without the Job, the first pod to start migrates and the others wait.
+The migration Job runs as a pre-install and pre-upgrade hook, and the backend starts without migrating. If you override `image.command`, your command must also skip startup migrations. Without the Job, the first pod to start migrates and the others wait.
 </Step>
 
 <Step title="Confirm the instance is ready" id="check-readiness">
@@ -123,7 +123,7 @@ kubectl logs -f job/lightdash-migrate
 curl -sS -o /dev/null -w '%{http_code}\n' https://lightdash.example.com/api/v1/readyz
 ```
 
-`/api/v1/readyz` returns `200` once migrations are complete. A `503` includes a `reason`. See [health probes](/self-host/production-deployment-checklist#health-probes) for which endpoint to use for which probe.
+`/api/v1/readyz` returns `503` with `reason: schema_pending` while the running code needs migrations, or `reason: db_unavailable` when the database check fails. Once the schema is ready, it returns `200`; a parked migration run or an uninitialized migration ledger appears in `warnings` without failing readiness. See [health probes](/self-host/production-deployment-checklist#health-probes) for which endpoint to use for which probe.
 
 These examples assume a release named `lightdash`. Find yours with `kubectl get deploy,job -l app.kubernetes.io/instance=<release>`.
 </Step>
@@ -169,7 +169,9 @@ Expect `idle` and `200`.
 
 <Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge>
 
-[`examples/upgrade-automation`](https://github.com/lightdash/lightdash/tree/main/examples/upgrade-automation) in the Lightdash repository is a reference GitHub Actions workflow. It runs the check, steps through required stops, and opens a pull request that bumps your pinned tag. It auto-merges `SAFE` upgrades and holds the rest for a person. After deploying, it waits for `/api/v1/readyz` to return `200`, and if that fails it opens an issue and pauses upgrades until someone closes it.
+[`examples/upgrade-automation`](https://github.com/lightdash/lightdash/tree/main/examples/upgrade-automation) in the Lightdash repository is a reference GitHub Actions workflow. It runs the check, steps through required stops, and opens a pull request that bumps your pinned tag. Set `auto_merge: 'true'` to enable auto-merge for safe upgrades. Unsafe or unknown upgrades open as `HOLD:` pull requests for a person to review.
+
+After deploying, the workflow requires three consecutive ready checks with the expected running version. A parked migration fails verification even when `/api/v1/readyz` returns `200`. On failure, it opens a freeze issue and pauses upgrades until the issue is closed. It never rolls back automatically.
 
 To build your own, set the Helm mode from the check on every run:
 
@@ -241,7 +243,7 @@ kubectl exec deploy/lightdash-backend -- \
   pnpm -F backend migrate-production unlock --actor "alex@example.com"
 ```
 
-`unlock` refuses while a live process holds the lease. Stop that process first, and only then use `--force`. Afterwards, re-run `helm upgrade` if you use the migration Job, or `docker compose restart lightdash` with Docker Compose.
+`unlock` refuses while a live process holds the lease or a lock remains in `knex_migrations_lock`. Stop any process using those locks before you use `--force`. Afterwards, re-run `helm upgrade` if you use the migration Job, or `docker compose restart lightdash` with Docker Compose.
 
 ### Preflight a new image
 
@@ -253,15 +255,15 @@ docker compose run --rm --entrypoint pnpm lightdash \
   -F backend migrate-production preflight
 ```
 
-On Kubernetes, run the same command as a one-off Job on the new tag with your backend's ConfigMap and Secret. Preflight checks the migration path, PostgreSQL version, privileges, and locks or long transactions on the affected tables, and ends with `proceed`, `proceed-with-warnings` or `abort`.
+On Kubernetes, run the same command as a one-off Job on the new tag with your backend's ConfigMap and Secret. Preflight checks the migration path, PostgreSQL version, privileges, and locks or long transactions on the affected tables.
+
+When a pending migration scans or rewrites a table, preflight also checks for at least 5 GiB of free disk. Set `MIGRATION_PREFLIGHT_DISK_HEADROOM_BYTES` to the available bytes; PostgreSQL cannot report this value, so leaving it unset produces a warning. Preflight ends with `proceed`, `proceed-with-warnings`, `abort` or `force-proceed`. `--strict` treats warnings as blockers, and `--force` overrides an abort.
 
 ## Roll back
 
 Roll back by redeploying the previous image tag. This keeps the migrated schema; to undo schema changes, restore a backup and lose everything written since. Roll back promptly, because the new version may write data the old one can't read.
 
-`upgrade-check` is for upgrades, so plan rollbacks with this section. An image from `1.123.0` or later starts against a database with newer migrations. For an older image, set `ALLOW_MISSING_MIGRATIONS=true`.
-
-An image older than `1.123.0` refuses to start with `The migration directory is corrupt, the following files are missing:`. If you see this during an upgrade rather than a rollback, the image you deployed doesn't contain that release's migrations, so check your image build and deploy pipeline before you set `ALLOW_MISSING_MIGRATIONS=true`.
+`upgrade-check` rejects rollback spans. An image from `1.259.1` or later can start against a database with newer migrations when every migration that image needs has already run. This does not guarantee that older application code can read data written by the newer release.
 
 To rebuild an instance from scratch you need the Postgres backup, your `LIGHTDASH_SECRET` and your Helm values. Without `LIGHTDASH_SECRET` you can't decrypt data stored in the database.
 
