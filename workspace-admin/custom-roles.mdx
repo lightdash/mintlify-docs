@@ -453,3 +453,69 @@ lightdash upload --organization
 ```
 
 Each file is upserted by role name — the backend creates a new role if the name is unused, updates the role's description and scopes if they've drifted, or reports no change if the file already matches the server. Uploads never delete roles; remove unwanted roles in the UI.
+
+### YAML format
+
+```yaml
+version: 1
+name: analytics-viewer
+description: Read-only access to analytics content
+level: organization
+scopes:
+  - view:Dashboard
+  - view:SavedChart
+  - view:Space
+```
+
+| Field | Description |
+| --- | --- |
+| `version` | Format version. Currently always `1`. |
+| `name` | The role's display name. Used as the portable identity — a role is matched to an existing role by exact name. |
+| `description` | Optional description. Set to `null` to clear an existing description. |
+| `level` | Either `organization` or `project`. Determines which scopes are allowed and is immutable after the role is created. |
+| `scopes` | List of scope grants. See the [scope reference](#scope-reference) above for available scopes and note that organization-only scopes cannot appear on a `level: project` role. |
+
+Malformed files, unknown scopes, and scopes that aren't allowed at the role's level are rejected per file with the file path and error message; other files continue to process. The CLI exits with a non-zero status if any file fails validation.
+
+For the full workflow, including examples and CI/CD integration alongside charts and dashboards, see [Custom roles as code](/workflow/content-as-code#custom-roles-as-code).
+
+## Troubleshooting
+
+### Custom role doesn't restrict a permission (e.g., Google Sheets export)
+
+Custom roles can only **add** permissions—they cannot remove permissions granted by the user's organization role. If you toggled off a scope in a custom role but the user still has access, their org role is granting that permission.
+
+**To fix this:** Downgrade the user's org role to Viewer or Member, then use a custom project role to grant only the specific permissions they need. See [Restricting permissions with custom roles](#restricting-permissions-with-custom-roles) above.
+
+### Users can't see expected content
+
+- Verify the custom role includes the necessary view scopes
+- Check that the role is assigned at the project level where the content exists
+- Remember that organization-level permissions may override custom role limitations
+
+### Role Changes Not Taking Effect
+
+- Users may need to refresh the page for role changes to take effect
+- Verify the role was saved successfully and assigned to the correct users/groups
+
+## Managing Existing Custom Roles
+
+### Edit a Custom Role
+
+1. Go to **Settings** → **General Settings** → **Custom Roles**
+2. Click on the role you want to edit
+3. Modify the name, description, or scopes
+4. Click **Save** - changes will apply to all users and groups assigned this role
+
+### Delete a Custom Role
+
+1. First, ensure no users or groups are assigned this role
+2. Go to **Settings** → **General Settings** → **Custom Roles**
+3. Click the **trash icon** next to the role
+4. Confirm the deletion
+
+<Info>
+  **Deleting Roles**: Once deleted, a custom role cannot be recovered. You can't remove a role that is currently assinged to users or groups.
+</Info>
+
+Custom roles provide powerful flexibility in managing access to your Lightdash organization. By carefully designing roles that match your team's responsibilities and workflows, you can ensure users have exactly the permissions they need while maintaining security and organization.
