@@ -88,6 +88,30 @@ curl -s -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
   | jq '.results.query'
 ```
 
+## List SQL charts in a project using the API
+
+This recipe lists the SQL charts you can view in a project and fetches the SQL behind each one, for example to audit which tables your SQL charts query.
+
+### Step 1: List the project's SQL charts
+
+The content API returns every kind of chart. Each chart has a `source` field: `sql` for a chart saved from the SQL runner, `dbt_explore` for a chart built from an explore. Filter for `sql`:
+
+```bash
+curl -s -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+  "https://{{your.lightdash.instance}}/api/v2/content?projectUuids={{your_project_uuid}}&contentTypes=chart&pageSize=100&page=1" \
+  | jq '.results.data[] | select(.source == "sql") | {uuid, name}'
+```
+
+Results are paginated. If `.results.pagination.totalPageCount` is greater than 1, repeat the request with `page=2`, `page=3`, and so on.
+
+### Step 2: Fetch the SQL for each chart
+
+```bash
+curl -s -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+  https://{{your.lightdash.instance}}/api/v1/projects/{{your_project_uuid}}/sqlRunner/saved/{{your_sql_chart_uuid}} \
+  | jq -r '.results.sql'
+```
+
 ## Dashboard cleanup & usage audit for a project
 
 This Python script helps you **clean up dashboards** in a specific Lightdash project. It uses the v2 Content API and can export results to CSV, Excel, or JSON for deeper analysis. This script provides:
@@ -239,6 +263,34 @@ USER_PERMS_FILEPATH = '~/Documents/user_permission_list.csv'
 ```
 python assign_project_access_to_user_list.py
 ```
+
+## Assign Metrics Catalog categories using the API
+
+Categories are the labels shown in the Metrics Catalog. Use this recipe to create a category and assign it to metrics from a script, for example to mark metrics as reviewed. The token's user needs the editor role or above in the project. To manage categories in your dbt project instead, see [Assigning categories to metrics](/explore/metrics-catalog/curate-the-catalog#assigning-categories-to-metrics).
+
+### Step 1: Create a category
+
+Set `color` to one of the colors the catalog offers: `gray`, `violet`, `red`, `orange`, `green`, `blue`, `indigo`, `pink`, or `yellow`. The response returns the new category's `tagUuid`. To find an existing category's `tagUuid`, send a `GET` to the same URL.
+
+```bash
+curl -s -X POST -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Reviewed", "color": "green"}' \
+  https://{{your.lightdash.instance}}/api/v1/projects/{{your_project_uuid}}/tags
+```
+
+### Step 2: Assign the category to a metric
+
+Find the metric's `catalogSearchUuid` in the results of `GET /api/v1/projects/{{your_project_uuid}}/dataCatalog/metrics`, then assign the category:
+
+```bash
+curl -s -X POST -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"tagUuid": "{{your_tag_uuid}}"}' \
+  https://{{your.lightdash.instance}}/api/v1/projects/{{your_project_uuid}}/dataCatalog/{{catalog_search_uuid}}/categories
+```
+
+To remove it, send a `DELETE` to `/api/v1/projects/{{your_project_uuid}}/dataCatalog/{{catalog_search_uuid}}/categories/{{your_tag_uuid}}`.
 
 ## Filter metrics by tag using the data catalog API
 
