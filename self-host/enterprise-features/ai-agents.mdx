@@ -156,6 +156,48 @@ A gateway that supports only Bedrock Converse, for example, can serve AI Analyst
 5. Check gateway access logs for the expected paths in the table above. Redact authorization headers and tokens from logs.
 6. Restrict direct provider egress only after all enabled consumers succeed through the gateway.
 
+## Post-processing with DuckDB and Python
+
+<Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> Agents can [post-process query results with DuckDB and Python](/agents/use-ai-agents#post-process-results-with-duckdb-and-python). On Lightdash Cloud this is managed for you. On a self-hosted instance each step type has its own requirement:
+
+| Step | Runs in | Needs |
+| --- | --- | --- |
+| **DuckDB** | An embedded DuckDB engine inside Lightdash | Results storage in S3-compatible object storage |
+| **Python** | A one-off [sandbox](/self-host/customize-deployment/sandboxes#python-execution) | A sandbox provider with a Python image |
+| **External data** (attached CSVs) | The embedded DuckDB engine | The pre-aggregates bucket (`PRE_AGGREGATE_RESULTS_S3_*`) |
+
+### 1. Configure results storage
+
+DuckDB steps read the result files of the queries they reference straight from object storage, so results storage is required. Set `S3_ENDPOINT`, `S3_BUCKET` and `S3_REGION`, or the `RESULTS_S3_*` overrides. See [external object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage).
+
+If the endpoint uses HTTPS, the Lightdash image needs a CA certificate bundle. The official image ships one. On a custom image, install `ca-certificates` or set `SSL_CERT_FILE` to a PEM bundle. Without one, DuckDB steps fail with a configuration error.
+
+DuckDB shares the pre-aggregate memory budget. To cap it, set `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` (for example `2GB`).
+
+### 2. Set up the Python sandbox (optional)
+
+Python steps need a sandbox provider that supports Python execution: E2B, Azure Container Apps Sandboxes, or Google Cloud Run. AWS Lambda MicroVMs doesn't support it. Follow [Python execution](/self-host/customize-deployment/sandboxes#python-execution) to build the image and configure the provider. Without a Python sandbox, DuckDB steps still work, but Python steps fail.
+
+### 3. Configure external data (optional)
+
+To let users attach CSVs to a thread, configure the pre-aggregates bucket with `PRE_AGGREGATE_RESULTS_S3_*`. See [pre-aggregate workers](/self-host/nats-workers/pre-aggregate-workers).
+
+### 4. Turn it on
+
+Post-processing is gated by the `compose-sql-runner` feature flag, off by default. Set it on the backend and the scheduler, then restart both:
+
+```bash
+LIGHTDASH_ENABLE_FEATURE_FLAGS=compose-sql-runner
+```
+
+Agents also need [data access](/agents/data-access) that lets them read rows. With the flag on, each agent has a **Composer queries** setting, on by default, that admins can turn off per agent.
+
+### Data boundaries
+
+- DuckDB and Python never connect to your warehouse. They only see the rows that semantic layer or SQL steps already returned, so [data access](/agents/data-access) rules and SQL approvals still apply.
+- Each DuckDB step runs in a session that can only read the result files it references.
+- The Python sandbox receives only the referenced rows. It has no credentials and no network access, and Lightdash destroys it after each run.
+
 ## Verified answers
 
 Verified answers use vector embeddings to match new questions to previously validated ones. Enable embeddings with `AI_EMBEDDING_ENABLED=true` and pick an embedding provider with `AI_DEFAULT_EMBEDDING_PROVIDER` (`openai`, `bedrock`, or `azure`). The embedding provider can differ from the chat provider — see [verified answers](/agents/verified-answers) for how they're used at query time.
