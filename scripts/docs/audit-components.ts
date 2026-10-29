@@ -16,7 +16,7 @@ import {
   isInside,
   TABLER_ICONS,
   labelDrift,
-  MATURITY_PAGE,
+  FEATURE_BADGES_PAGE,
   codeGroupLabels,
   describeProblem,
   MAX_DESCRIPTION,
@@ -133,7 +133,7 @@ export function auditComponents({ root = process.cwd() }: AuditComponentsOptions
   const findings: Finding[] = [];
 
   for (const file of pages) {
-    if (file.startsWith(`${MATURITY_PAGE}`)) continue;
+    if (file.startsWith(`${FEATURE_BADGES_PAGE}`)) continue;
     const content = snippets.get(file) ?? fs.readFileSync(path.join(root, file), 'utf8');
     const regions = componentRegions(content);
     const { fields } = parseFrontmatter(content);
@@ -323,7 +323,7 @@ export function auditComponents({ root = process.cwd() }: AuditComponentsOptions
         'lifecycle.unexplained-tag',
         file,
         1,
-        `Tagged "${tag}" but the page never links what that means — add the shared maturity badge linking to /${MATURITY_PAGE}.`,
+        `Tagged "${tag}" but the page never links what that means — add the shared maturity badge linking to /${FEATURE_BADGES_PAGE}.`,
         { severity: 'warning', target: tag },
       ));
     }

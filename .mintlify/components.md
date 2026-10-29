@@ -37,7 +37,7 @@ When removing a box, preserve its instructions, caveats, links, and placement be
 
 ## Lifecycle and availability
 
-Maturity describes stability; availability describes access. A feature can be Beta and Enterprise-only. [Feature maturity levels](../support/feature-maturity-levels.mdx) and [feature availability](../support/feature-availability.mdx) own their definitions.
+Maturity describes stability; availability describes access. A feature can be Beta and Enterprise-only. [Feature badges reference](../support/feature-badges.mdx) owns their definitions.
 
 **Maturity lives in badges and nav tags.** A non-GA page declares `tag: "Experimental"` or `tag: "Beta"` and renders the matching shared badge before its opening prose. A non-GA section renders its badge after the heading without tagging the whole page. Deprecated features use `Deprecated` in the same places; deprecation is separate from maturity.
 
@@ -47,8 +47,8 @@ Maturity describes stability; availability describes access. A feature can be Be
 | --- | --- |
 | Maturity | `Experimental`, `Beta` |
 | Deprecation | `Deprecated` |
-| Plan access | `Cloud Pro`, `Enterprise`, `Add-on` |
-| Deployment | `Cloud`, `Self-hosted` |
+| Plan access | `Pro`, `Enterprise`, `Add-on` |
+| Deployment | `Cloud-only`, `Self-hosted` |
 
 **Use `FeatureBadge`; do not retype its markup.** `snippets/feature-badge.jsx` owns the native badge's colour, icon, size, accessible link label, and definition anchor. `styles.css` removes link underlines only for `.feature-badge-link` and keeps a visible keyboard focus outline. The component works in badge rows, prose, and table cells.
 
@@ -71,7 +71,9 @@ The in-page badge links directly to its definition. Nav tags identify maturity w
 
 **Badges carry shared meaning; callouts carry specific requirements.** Do not add a maturity-only callout, a repeated explanation of Beta or Experimental, or a separate "What Beta means" link. Keep an `<Info>` for requirements the badge cannot express: requesting a feature flag, setting an environment variable, configuring a provider, or requiring a particular version. Place the badge row before that callout, with both before the content they qualify.
 
-**Access badges state verified eligibility.** Use the product's plan name, `Cloud Pro`, rather than shortening it to `Pro`. Separate alternative eligible plans with "or"; an add-on is an additional requirement, not a plan tier. Do not infer availability from maturity or guess which plans include a feature. Deployment badges qualify differences a reader needs to act on, not the audience already named by the self-host area.
+**Access badges state verified eligibility.** Use `Pro` on the badge and `Cloud Pro` in prose. Show both `Pro` and `Enterprise` when both plans include a feature; use `Enterprise` alone for features that require that tier. Enterprise includes everything in Pro. `Add-on` marks a separate purchase, and the nearby prose names it. Use `Cloud-only` when self-hosted deployments cannot use the feature. Do not infer availability from maturity or guess which plans include a feature. Deployment badges qualify differences a reader needs to act on, not the audience already named by the self-host area.
+
+Before changing an access badge, follow [Verify feature availability](feature-availability.md). [Lightdash pricing](https://www.lightdash.com/pricing) is the source of truth for plans and add-ons; a license check does not establish a Cloud plan or add-on entitlement. Apply gates to the feature or section they actually restrict; do not copy a page-wide gate to a nested feature that has the same requirements. An unbadged feature makes no promise about plan access.
 
 **The colour carries the axis, the icon carries the value.** Availability is blue throughout, so a reader learns that blue means "who can reach this" and reads the icon for which condition. Lifecycle spends its colours on urgency instead: orange for the earliest stage, purple for the settled-but-moving one, grey for the one on its way out.
 
