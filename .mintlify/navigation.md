@@ -53,4 +53,5 @@ Grounded in a survey of Mintlify's own docs, Dub, Mem0, Neutron, and Trigger.dev
 
 - A title long enough to wrap its `tag` pill onto its own line gets a `sidebarTitle` (shortened, never divergent — ia-rules principle 6).
 - `tag` is a one-pill slot: lifecycle badge outranks doc-type pill.
+- Tags navigate with the page or group, not to definitions. The shared in-page maturity badge provides the definition link. A tagged area root also declares its matching group `tag` in `docs.json`.
 - Verify sidebar changes in `mint dev` against both group styles and an expanded long group before shipping.

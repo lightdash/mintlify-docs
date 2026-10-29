@@ -221,6 +221,10 @@ export function maturityMarks(content: string): MaturityMark[] {
     marks.push({ level, line, pageLevel: firstHeading === 0 || line < firstHeading });
   };
 
+  for (const match of clean.matchAll(/<FeatureBadge\b[^>]*\blabel=["'](Experimental|Beta|Deprecated)["'][^>]*\/>/g)) {
+    addMark(match[1] as MaturityLevel, match.index);
+  }
+
   for (const match of clean.matchAll(/<Badge\b[^>]*>\s*(Experimental|Beta|Deprecated)\s*<\/Badge>/g)) {
     const level = match[1] as MaturityLevel | undefined;
     if (level === undefined || match.index === undefined) continue;
@@ -258,11 +262,18 @@ export function textLifecycleMarkers(content: string): { text: string; line: num
     .map((match) => ({ text: match[0], line: lineOf(clean, match.index as number) }));
 }
 
-export function snippetImports(content: string): string[] {
-  return [...content.matchAll(/^import\s+\w+\s+from\s+['"]([^'"]+)['"]/gm)]
-    .map((match) => match[1])
-    .filter((path): path is string => path !== undefined)
-    .map((path) => path.replace(/^\//, ''));
+export function snippetUses(content: string): { path: string; line: number; pageLevel: boolean }[] {
+  const clean = withoutCodeBlocks(content);
+  const firstHeading = clean.split('\n').findIndex((line) => /^\s{0,3}#{1,6}\s/.test(line)) + 1;
+  return [...clean.matchAll(/^import\s+(\w+)\s+from\s+['"]([^'"]+)['"]/gm)].flatMap((import_) => {
+    const name = import_[1];
+    const path = import_[2]?.replace(/^\//, '');
+    if (name === undefined || path === undefined) return [];
+    return [...clean.matchAll(new RegExp(`<${name}\\b[^>]*>`, 'g'))].map((use) => {
+      const line = lineOf(clean, use.index);
+      return { path, line, pageLevel: firstHeading === 0 || line < firstHeading };
+    });
+  });
 }
 
 export interface TabsBlock {
@@ -485,7 +496,7 @@ export function unbadgedStatuses(content: string): number[] {
     if (!(TYPED_CALLOUTS as readonly string[]).includes(region.tag)) continue;
     const body = lines.slice(region.startLine - 1, region.endLine).join('\n');
     if (!body.includes(MATURITY_PAGE)) continue;
-    if (/<Badge\b/.test(body)) continue;
+    if (/<(?:Badge|FeatureBadge)\b/.test(body)) continue;
     found.push(region.startLine);
   }
   return found;
@@ -518,6 +529,8 @@ export const BADGE_TAXONOMY: Record<string, { color: string; icon: string }> = {
   Beta: { color: 'purple', icon: 'flask' },
   Deprecated: { color: 'gray', icon: 'haze-moon' },
   Enterprise: { color: 'blue', icon: 'building-plus' },
+  'Cloud Pro': { color: 'blue', icon: 'bolt' },
+  'Add-on': { color: 'blue', icon: 'puzzle' },
   'Self-hosted': { color: 'blue', icon: 'server' },
   Cloud: { color: 'blue', icon: 'cloud-bolt' },
 };
@@ -530,10 +543,17 @@ export interface BadgeProblem {
   detail: string;
 }
 
-/** Badges that drift from the taxonomy, and badges dressed up as links. */
+/** Badge appearance and definition destinations. */
 export function badgeProblems(content: string): BadgeProblem[] {
   const clean = withoutCodeBlocks(content);
   const problems: BadgeProblem[] = [];
+
+  for (const match of clean.matchAll(/<FeatureBadge\b[^>]*\blabel=["']([^"']+)["'][^>]*\/>/g)) {
+    const label = match[1] ?? '';
+    if (BADGE_TAXONOMY[label] === undefined) {
+      problems.push({ line: lineOf(clean, match.index), label, detail: 'is not a defined feature badge' });
+    }
+  }
 
   for (const match of clean.matchAll(BADGE)) {
     const attrs = match[1] ?? '';
@@ -544,16 +564,25 @@ export function badgeProblems(content: string): BadgeProblem[] {
 
     if (/\[|\]\(/.test(match[2] ?? '') || /\[\s*$/.test(clean.slice(0, match.index).slice(-2))
       || /^\s*\]\(/.test(clean.slice(match.index + match[0].length))) {
-      problems.push({ line, label, detail: 'a badge is a label, not a link' });
+      problems.push({ line, label, detail: 'link the whole badge, not its text' });
       continue;
     }
     if (around.includes('](') && around.trimStart().startsWith('[')) {
-      problems.push({ line, label, detail: 'a badge is a label, not a link' });
+      problems.push({ line, label, detail: 'link the whole badge, not its text' });
       continue;
     }
 
     const expected = BADGE_TAXONOMY[label];
     if (expected === undefined) continue;
+    const before = clean.slice(0, match.index);
+    const anchor = /<a\b([^>]*)>\s*$/.exec(before);
+    const href = /href="([^"]+)"/.exec(anchor?.[1] ?? '')?.[1];
+    const definition = (MATURITY_LEVELS as readonly string[]).includes(label)
+      ? `/${MATURITY_PAGE}#${label.toLowerCase()}`
+      : `/support/feature-availability#${label === 'Cloud Pro' ? 'cloud-pro' : label === 'Add-on' ? 'add-ons' : label.toLowerCase()}`;
+    if (anchor !== null && href !== definition) {
+      problems.push({ line, label, detail: `links to ${definition}` });
+    }
     const color = /color="([^"]+)"/.exec(attrs)?.[1];
     const icon = /icon="([^"]+)"/.exec(attrs)?.[1];
     const size = /size="([^"]+)"/.exec(attrs)?.[1];

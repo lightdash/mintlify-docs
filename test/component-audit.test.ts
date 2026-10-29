@@ -193,6 +193,16 @@ test('reads a maturity level only where the page cites the maturity guide', () =
   assert.deepEqual(maturityMarks(comparison), []);
 });
 
+test('shared feature badges declare maturity at their rendered location and reject unknown labels', () => {
+  const content = '<FeatureBadge label="Beta" />\n\nIntro.\n\n## Optional feature\n\n<FeatureBadge label="Experimental" />';
+  assert.deepEqual(maturityMarks(content), [
+    { level: 'Beta', line: 1, pageLevel: true },
+    { level: 'Experimental', line: 7, pageLevel: false },
+  ]);
+  assert.deepEqual(badgeProblems('<FeatureBadge label="Beta" />'), []);
+  assert.equal(badgeProblems('<FeatureBadge label="Alpha" />').at(0)?.detail, 'is not a defined feature badge');
+});
+
 test('a non-GA page needs its level in frontmatter for the sidebar pill', () => {
   const gate = '<Info>\n  Pre-aggregates are a [Beta](/support/feature-maturity-levels) feature.\n</Info>';
   const root = fixture({
@@ -230,9 +240,15 @@ test('holds every badge to one colour, icon, and size', () => {
   assert.deepEqual(badgeProblems('<Badge color="gray" size="sm" shape="pill">Coming soon</Badge>'), []);
 });
 
-test('refuses a badge that is a link', () => {
+test('keeps definition links around the whole badge rather than inside its text', () => {
   const linked = '<Badge icon="flask" color="purple" size="sm" shape="pill">[Beta](/support/x)</Badge>';
-  assert.equal(badgeProblems(linked).at(0)?.detail, 'a badge is a label, not a link');
+  assert.equal(badgeProblems(linked).at(0)?.detail, 'link the whole badge, not its text');
+  const badge = '<Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge>';
+  assert.deepEqual(badgeProblems(`<a className="feature-badge-link" href="/support/feature-maturity-levels#beta">${badge}</a>`), []);
+  assert.equal(
+    badgeProblems(`<a className="feature-badge-link" href="/support/feature-maturity-levels#experimental">${badge}</a>`).at(0)?.detail,
+    'links to /support/feature-maturity-levels#beta',
+  );
 });
 
 test('spends one colour per axis so the set stays learnable', () => {
@@ -292,6 +308,21 @@ test('inherits a maturity level from an imported availability snippet', () => {
     report.findings.filter(({ file }) => file === 'index.mdx').map(({ rule }) => rule),
     ['lifecycle.missing-tag'],
   );
+});
+
+test('a reusable maturity badge applies only where it is rendered', () => {
+  const imported = "import Beta from '/snippets/badges/beta.mdx';\n\n";
+  const root = fixture({
+    'docs.json': NAV(['page-wide', 'section-only', 'unused']),
+    'snippets/badges/beta.mdx': '<a className="feature-badge-link" href="/support/feature-maturity-levels#beta"><Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge></a>',
+    'page-wide.mdx': page(`${imported}<Beta />\n\nIntro.`),
+    'section-only.mdx': page(`${imported}Intro.\n\n## Optional feature\n\n<Beta />`),
+    'unused.mdx': page(`${imported}Intro.`),
+  });
+
+  const findings = auditComponents({ root }).findings.filter(({ rule }) => rule === 'lifecycle.missing-tag');
+  assert.deepEqual(findings.map(({ file }) => file), ['page-wide.mdx']);
+  assert.equal(findings[0]?.line, 8);
 });
 
 test('names bold lifecycle text as a badge that should exist', () => {

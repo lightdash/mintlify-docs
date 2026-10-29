@@ -3,9 +3,14 @@ title: "Pre-aggregates"
 description: "Speed up dashboards and cut warehouse costs with pre-computed, materialized summaries"
 ---
 
-import PreAggregatesAvailability from '/snippets/pre-aggregates-availability.mdx';
+import { FeatureBadge } from '/snippets/feature-badge.jsx';
 
-<PreAggregatesAvailability />
+
+<FeatureBadge label="Enterprise" />
+
+<Info>
+  Pre-aggregates require the `pre-aggregates` feature flag. Contact Lightdash support if the feature isn't available for your Cloud organization. Self-hosted operators must [configure pre-aggregates](/self-host/enterprise-features/pre-aggregates) on their instance.
+</Info>
 
 Pre-aggregates let you define materialized summaries of your data directly in your dbt YAML. When a user runs a query in Lightdash, the system checks if the query can be answered from a pre-aggregate instead of querying your warehouse. If it matches, the query is served from the pre-computed results, making it significantly faster and reducing warehouse load.
 
@@ -145,9 +150,7 @@ pre_aggregates:
 | `refresh` | No | When Lightdash re-materializes the pre-aggregate: a `cron` schedule, and whether Lightdash rebuilds it on the compile that changes its definition (`on_change`, default `true`). See [Scheduling refreshes](#scheduling-refreshes). |
 | `materialization_role` | No | Fixed access context to use when materializing the pre-aggregate. This is useful when your model or joined tables use [`required_attributes`](/semantic-layer/tables#required-attributes) or [`any_attributes`](/semantic-layer/tables#any-attributes). See [Materialization role](#materialization-role). |
 
-<Note>
-  If you specify `time_dimension`, you **must** also specify `granularity`, and vice versa.
-</Note>
+If you specify `time_dimension`, you **must** also specify `granularity`, and vice versa.
 
 ## Query matching
 
@@ -158,9 +161,7 @@ When a user runs a query, Lightdash checks whether a pre-aggregate can serve it 
 - **Scope is compatible** — if the pre-aggregate defines its own `filters`, the query includes an **equal or narrower** filter, so the subset can be filtered from the pre-aggregate base.
 - **Metrics re-aggregate cleanly** — all metrics are [supported types](#supported-metric-types). Non-additive metrics like `count_distinct`, `median`, and `percentile` can't be faithfully re-computed from stored rows, so they only match on an [exact match](#exact-match-queries) of the pre-aggregate. Raw SQL table calculations and SQL that depends on [Parameters](/semantic-layer/parameters) are resolved at query time and are never eligible. Model [`sql_filter`](/semantic-layer/tables#sql-filter-row-level-security) is eligible as long as every field it references is a pre-aggregate dimension — see [`sql_filter` and pre-aggregates](#sql_filter-and-pre-aggregates).
 
-<Tip>
-  A **day** pre-aggregate serves `day`, `week`, `month`, `quarter`, and `year` queries. A **month** pre-aggregate serves `month`, `quarter`, and `year` — but **not** `day` or `week`, since those need finer-grained data.
-</Tip>
+A **day** pre-aggregate serves `day`, `week`, `month`, `quarter`, and `year` queries. A **month** pre-aggregate serves `month`, `quarter`, and `year` — but **not** `day` or `week`, since those need finer-grained data.
 
 When multiple pre-aggregates match a query, Lightdash picks the smallest one (fewest dimensions, then fewest metrics as tiebreaker).
 
@@ -267,13 +268,11 @@ For the example above:
 
 A field used only for filtering still belongs in the pre-aggregate's `dimensions` list, so Lightdash can match and re-aggregate queries correctly.
 
-<Warning>
-  Filter compatibility is only checked when the query filter and the pre-aggregate filter use the **same operator** — relative-to-relative (for example, `inThePast` compared against `inThePast`), or absolute-to-absolute (for example, `equals` compared against `equals`).
+Filter compatibility is only checked when the query filter and the pre-aggregate filter use the **same operator** — relative-to-relative (for example, `inThePast` compared against `inThePast`), or absolute-to-absolute (for example, `equals` compared against `equals`).
 
-  Lightdash does not resolve a relative filter into a concrete date range at match time, so an absolute date filter like `order_date is 2026-01-15` will not match a pre-aggregate filter like `order_date inThePast 52 weeks`, even when the selected date falls inside that window. The reverse is also true.
+Lightdash does not resolve a relative filter into a concrete date range at match time, so an absolute date filter like `order_date is 2026-01-15` will not match a pre-aggregate filter like `order_date inThePast 52 weeks`, even when the selected date falls inside that window. The reverse is also true.
 
-  If a rolling window is what you're after, filter the query with the same relative operator to hit the pre-aggregate.
-</Warning>
+If a rolling window is what you're after, filter the query with the same relative operator to hit the pre-aggregate.
 
 ## Required filters and pre-aggregates
 
@@ -421,9 +420,7 @@ The `sorts` key accepts four shapes, each with a different meaning:
 | `[]` (empty list)       | Materialization is written without an `ORDER BY`.                                                   |
 | `false`                 | Same as `[]` — materialization is written without an `ORDER BY`.                                    |
 
-<Note>
-  Every `fieldId` in `sorts` must also appear in the pre-aggregate's `dimensions` list. Metrics and time dimensions expanded from `time_dimension` + `granularity` use their canonical IDs (for example, `orders_order_date_day`).
-</Note>
+Every `fieldId` in `sorts` must also appear in the pre-aggregate's `dimensions` list. Metrics and time dimensions expanded from `time_dimension` + `granularity` use their canonical IDs (for example, `orders_order_date_day`).
 
 ## Materialization role
 

@@ -24,7 +24,7 @@ import {
   maturityMarks,
   MAX_TABLE_COLUMNS,
   componentRegions,
-  snippetImports,
+  snippetUses,
   tabsBlocks,
   textLifecycleMarkers,
   restatedStatuses,
@@ -285,8 +285,12 @@ export function auditComponents({ root = process.cwd() }: AuditComponentsOptions
       ));
     }
 
-    const inherited = snippetImports(content).flatMap((snippet) => (
-      maturityMarks(snippets.get(snippet) ?? '')
+    const inherited = snippetUses(content).flatMap((use) => (
+      maturityMarks(snippets.get(use.path) ?? '').map((mark) => ({
+        ...mark,
+        line: use.line,
+        pageLevel: use.pageLevel && mark.pageLevel,
+      }))
     ));
     // A mark below the first heading describes one section, not the page.
     const marks = [...maturityMarks(content), ...inherited].filter(({ pageLevel }) => pageLevel);
@@ -319,7 +323,7 @@ export function auditComponents({ root = process.cwd() }: AuditComponentsOptions
         'lifecycle.unexplained-tag',
         file,
         1,
-        `Tagged "${tag}" but the page never links what that means — add the scope-gate <Info> citing /${MATURITY_PAGE}.`,
+        `Tagged "${tag}" but the page never links what that means — add the shared maturity badge linking to /${MATURITY_PAGE}.`,
         { severity: 'warning', target: tag },
       ));
     }

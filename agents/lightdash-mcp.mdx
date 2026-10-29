@@ -10,9 +10,7 @@ doc-type: reference
 
 The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) lets external AI assistants — Claude, ChatGPT, OpenAI Codex, Cursor, VS Code, and custom agents — connect to Lightdash and query your data directly. Lightdash runs the MCP server and your assistant is the client, so it can explore your data models, search for metrics and dimensions, run queries, and surface data-driven insights through natural conversation. MCP uses secure OAuth authentication and respects all your existing access controls, so data stays protected.
 
-<Note>
-  This is for pointing an outside assistant **into** Lightdash. To give your Lightdash agents tools from outside services like Notion, Linear, or Confluence, that's the reverse direction — see [Connect external MCP servers](/agents/connect-external-mcp-servers).
-</Note>
+This is for pointing an outside assistant **into** Lightdash. To give your Lightdash agents tools from outside services like Notion, Linear, or Confluence, that's the reverse direction — see [Connect external MCP servers](/agents/connect-external-mcp-servers).
 
 ## Connect a client
 
@@ -294,9 +292,7 @@ curl https://<your_instance_name>.lightdash.cloud/api/v1/mcp \
 ```
 </CodeGroup>
 
-<Info>
-  If the header value isn't a valid UUID, it's ignored and the request falls back to the user's stored project context. When the request also sends [`X-Lightdash-Agent`](#pin-an-agent-with-the-x-lightdash-agent-header), an invalid value is rejected with a `400` error instead. Permissions are always checked against the resolved project, so a header for a project the caller can't view will return a "no access" error.
-</Info>
+If the header value isn't a valid UUID, it's ignored and the request falls back to the user's stored project context. When the request also sends [`X-Lightdash-Agent`](#pin-an-agent-with-the-x-lightdash-agent-header), an invalid value is rejected with a `400` error instead. Permissions are always checked against the resolved project, so a header for a project the caller can't view will return a "no access" error.
 
 <a id="pin-an-agent-with-the-x-lightdash-agent-header" />
 
@@ -337,9 +333,7 @@ curl https://<your_instance_name>.lightdash.cloud/api/v1/mcp \
 ```
 </CodeGroup>
 
-<Note>
-  The request fails with a `400` error when the header isn't a valid UUID, when no agent has that UUID, or when the request also pins a different project. It fails with a `403` error when AI agents or agents over MCP aren't enabled for your organization, or when the caller can't access the agent or view its project.
-</Note>
+The request fails with a `400` error when the header isn't a valid UUID, when no agent has that UUID, or when the request also pins a different project. It fails with a `403` error when AI agents or agents over MCP aren't enabled for your organization, or when the caller can't access the agent or view its project.
 
 <a id="override-user-attributes" />
 
@@ -347,18 +341,14 @@ curl https://<your_instance_name>.lightdash.cloud/api/v1/mcp \
 
 The `X-Lightdash-User-Attributes` header overrides the authenticated user's Lightdash user attributes for that specific MCP request. This is designed for agents that act on behalf of multiple end-users with row-level security: one PAT (or service account) user handles all requests, and per-request RLS scoping is applied via the header.
 
-<Info>
-  The PAT or service account user must have the **org admin** role to use this header. Non-admins will receive a `ForbiddenError`.
-</Info>
+The PAT or service account user must have the **org admin** role to use this header. Non-admins will receive a `ForbiddenError`.
 
 The header value must be a JSON object where each value is either a string or an array of strings. For example:
 
 - `{"user_id": "abc123"}`
 - `{"user_id": ["abc123", "def456"]}`
 
-<Info>
-  If the agent user already has a value set for an attribute, the header can only **narrow** that value (set a subset of the pre-configured values), not expand access. If no value is pre-configured for the attribute on the agent user, any value can be set via the header.
-</Info>
+If the agent user already has a value set for an attribute, the header can only **narrow** that value (set a subset of the pre-configured values), not expand access. If no value is pre-configured for the attribute on the agent user, any value can be set via the header.
 
 <CodeGroup>
 ```bash curl
@@ -383,9 +373,7 @@ curl https://<your_instance_name>.lightdash.cloud/api/v1/mcp \
 ```
 </CodeGroup>
 
-<Info>
-  Setting the header statically in an MCP client config is suitable for development and testing. For production, where the attribute needs to change per end-user, the calling application must set the `X-Lightdash-User-Attributes` header programmatically on each request.
-</Info>
+Setting the header statically in an MCP client config is suitable for development and testing. For production, where the attribute needs to change per end-user, the calling application must set the `X-Lightdash-User-Attributes` header programmatically on each request.
 
 ## Network requirements
 
@@ -420,9 +408,7 @@ MCP provides AI assistants with powerful tools to interact with your Lightdash d
 - **Set active project** - Switch context between different projects (required before accessing any data). Accepts an optional `tags` array to filter the explores and fields visible in the session to those matching the given tags — the same tag-based filtering used by [AI agents](/agents/data-access#limiting-access-to-specific-explores-and-fields), but available directly in an MCP session without needing an agent. Useful when tags work in the Lightdash UI but you also want to scope an MCP session to a specific domain (e.g., `["sales"]`).
 - **Get current project** - Check which project is currently active
 
-<Info>
-  An active project must be set before MCP can retrieve any data. Your AI assistant will typically handle this automatically by listing available projects and asking you to select one.
-</Info>
+An active project must be set before MCP can retrieve any data. Your AI assistant will typically handle this automatically by listing available projects and asking you to select one.
 
 #### Data exploration
 
@@ -441,9 +427,7 @@ MCP provides AI assistants with powerful tools to interact with your Lightdash d
 - **Run SQL** - Execute arbitrary SQL queries directly against the project's data warehouse. Useful for ad-hoc analysis or queries that don't fit the explore-based model. Returns up to 500 rows by default (configurable up to 5,000). Completed results include a best-effort `sqlRunnerUrl` so you can open the compiled SQL in [SQL Runner](/explore/sql-runner).
 - **Get query result** - Poll for the result of a long-running query. `run_metric_query` and `run_sql` each wait about 50 seconds for the query to finish; if it hasn't, the response has no `exploreUrl` (or `sqlRunnerUrl`) yet — just a `queryUuid` to poll. Call `get_query_result` with that `queryUuid` until the warehouse completes the query — so long queries don't time out the session. The completed (`done`) response includes the same best-effort `exploreUrl` (or `sqlRunnerUrl` for `run_sql` queries) as a synchronously-completed call.
 
-<Info>
-  **Run SQL** requires the `manage SqlRunner` permission, which Developers and Admins have by default and [custom roles](/workspace-admin/custom-roles) can add. Without it, `run_sql` doesn't appear in your client's tools list at all, rather than returning a permission error when called. The SQL is executed directly against your warehouse, so use the appropriate SQL dialect for your connection (e.g., PostgreSQL, BigQuery, Snowflake). Lightdash runs the query as soon as the tool is called; any confirmation step comes from your MCP client's own tool-approval setting.
-</Info>
+**Run SQL** requires the `manage SqlRunner` permission, which Developers and Admins have by default and [custom roles](/workspace-admin/custom-roles) can add. Without it, `run_sql` doesn't appear in your client's tools list at all, rather than returning a permission error when called. The SQL is executed directly against your warehouse, so use the appropriate SQL dialect for your connection (e.g., PostgreSQL, BigQuery, Snowflake). Lightdash runs the query as soon as the tool is called; any confirmation step comes from your MCP client's own tool-approval setting.
 
 <Accordion title="run_sql response shape (for developers)">
   When you call `run_sql` from a custom MCP client or live artifact, the tool returns both a CSV text payload and a `structuredContent` object. Prefer `structuredContent.rows` over parsing the CSV — values arrive as JSON-serializable primitives (numbers, strings, booleans, ISO date strings, or `null`), so you don't need `parseFloat` or `parseInt` on numeric columns.
@@ -518,9 +502,7 @@ A writeback run typically takes a few minutes — longer than most MCP transport
 
 Polling has no session affinity — you can call `get_ai_writeback_status` from a different MCP session or a different API token, as long as the caller has view access to the project the run belongs to. This makes the pair usable from short-lived automations and shell scripts, not just interactive chat clients.
 
-<Info>
-  The in-product AI writeback chat card is unaffected by this split: the chat continues to auto-update once the background run finishes, without you polling anything.
-</Info>
+The in-product AI writeback chat card is unaffected by this split: the chat continues to auto-update once the background run finishes, without you polling anything.
 
 ##### `run_ai_writeback` — start a run
 
@@ -588,15 +570,13 @@ while (true) {
 }
 ```
 
-<Info>
-  **Who can write content over MCP.** Organization admins control the feature for everyone with **Allow content changes via MCP** in **Settings → MCP → General**, which is **on by default**. When it's off, `create_content` and `edit_content` are not registered for any MCP client in the organization. Reading content over MCP is unaffected.
+**Who can write content over MCP.** Organization admins control the feature for everyone with **Allow content changes via MCP** in **Settings → MCP → General**, which is **on by default**. When it's off, `create_content` and `edit_content` are not registered for any MCP client in the organization. Reading content over MCP is unaffected.
 
-  When content changes are allowed, the two tools are also registered only for callers who can save content in the project. This is the same check as the **Save** button in the Lightdash app: the caller's role must let them create charts or dashboards, and they must either be able to create spaces or have editor access to at least one space in the project. The check runs at tool registration, so users who can't save content don't see these tools in the tools list. For example, an Interactive Viewer with editor access to a space gets `create_content` and `edit_content`.
+When content changes are allowed, the two tools are also registered only for callers who can save content in the project. This is the same check as the **Save** button in the Lightdash app: the caller's role must let them create charts or dashboards, and they must either be able to create spaces or have editor access to at least one space in the project. The check runs at tool registration, so users who can't save content don't see these tools in the tools list. For example, an Interactive Viewer with editor access to a space gets `create_content` and `edit_content`.
 
-  Project, space, and content-level checks still run at invocation time on top of the registration gate.
+Project, space, and content-level checks still run at invocation time on top of the registration gate.
 
-  This is independent of the per-agent **Allow agent to manage Lightdash content** toggle described in [Creating and editing content](/agents/enable-content-tools#enabling-content-editing). That toggle only controls whether one agent can create or edit content in its own chats, in the Lightdash app and Slack. It has no effect on `create_content` or `edit_content` called directly over MCP. A user with no access to any agent can still create and edit charts and dashboards over MCP, as long as the org-wide setting above is on and they can save content in at least one space in the project.
-</Info>
+This is independent of the per-agent **Allow agent to manage Lightdash content** toggle described in [Creating and editing content](/agents/enable-content-tools#enabling-content-editing). That toggle only controls whether one agent can create or edit content in its own chats, in the Lightdash app and Slack. It has no effect on `create_content` or `edit_content` called directly over MCP. A user with no access to any agent can still create and edit charts and dashboards over MCP, as long as the org-wide setting above is on and they can save content in at least one space in the project.
 
 When prompting an agent to build content, ask it to use [verified content](#data-exploration) as a reference. The agent can call `find_content` and `read_content` on a verified chart, then use that JSON as the template for `create_content`, so what it saves follows the patterns your team has already approved.
 
@@ -621,12 +601,10 @@ Builds run in the background, so the assistant reports that the build has starte
 
 An app built over MCP is created as the calling user's **personal app**: at the project root, in no space, visible only to them until they move it into a space from the Lightdash UI. This mirrors what the in-product [AI agent](/agents) does.
 
-<Info>
-  **What enables these tools.** The data app tools only appear in the tools list when both of these are true:
+**What enables these tools.** The data app tools only appear in the tools list when both of these are true:
 
-  1. Data apps are enabled for your organization.
-  2. The caller can create data apps in the active project.
-</Info>
+1. Data apps are enabled for your organization.
+2. The caller can create data apps in the active project.
 
 **Example prompts:**
 
@@ -649,9 +627,7 @@ Once a chart type is built, the assistant can use it in two ways:
 - **Render a query with it** - `render_chart` draws a completed metric query with the chart type, binding the query's fields to the chart type's inputs. Like other rendered charts, it only displays in MCP App-capable clients.
 - **Save a chart with it** - `create_content` saves a chart that uses the chart type, with the same field mapping. The saved chart behaves like one [built in the Explorer](/visualizations/chart-studio#using-a-chart-type-in-a-chart).
 
-<Info>
-  **What enables these tools.** `list_custom_chart_types` and `find_custom_chart_types` appear in the tools list when chart types are enabled for your organization and the caller can explore data in the active project. `create_custom_chart_type` and `iterate_custom_chart_type` appear when [Chart Studio](/visualizations/chart-studio) is available and the caller can [build chart types](/visualizations/chart-studio#permissions) in the active project.
-</Info>
+**What enables these tools.** `list_custom_chart_types` and `find_custom_chart_types` appear in the tools list when chart types are enabled for your organization and the caller can explore data in the active project. `create_custom_chart_type` and `iterate_custom_chart_type` appear when [Chart Studio](/visualizations/chart-studio) is available and the caller can [build chart types](/visualizations/chart-studio#permissions) in the active project.
 
 **Example prompts:**
 
@@ -663,14 +639,12 @@ Once a chart type is built, the assistant can use it in two ways:
 
 - **Create scheduled delivery** (`create_scheduled_delivery`) - Schedule an existing chart or dashboard to Slack, email, or another supported destination on a cron schedule. Point the tool at the content by slug and pass the schedule and recipients — the delivery is created against the active project using the caller's permissions.
 
-<Info>
-  **What enables this tool.** `create_scheduled_delivery` only appears in the tools list when both of these are true:
+**What enables this tool.** `create_scheduled_delivery` only appears in the tools list when both of these are true:
 
-  1. **Allow content changes via MCP** is on (**Settings → MCP → General**).
-  2. The caller's role holds the `create:ScheduledDeliveries` scope.
+1. **Allow content changes via MCP** is on (**Settings → MCP → General**).
+2. The caller's role holds the `create:ScheduledDeliveries` scope.
 
-  **Roles that get `create:ScheduledDeliveries` by default:** Interactive Viewers, Editors, Developers, Admins. **Viewers** do not. Custom roles must add the scope explicitly.
-</Info>
+**Roles that get `create:ScheduledDeliveries` by default:** Interactive Viewers, Editors, Developers, Admins. **Viewers** do not. Custom roles must add the scope explicitly.
 
 **Example prompt:** _"Set up a scheduled delivery of the `weekly-ecom-orders` chart to #analytics-updates in Slack every Monday at 9am."_
 
@@ -685,9 +659,7 @@ To work as an agent, the AI assistant passes the agent's `agentUuid` to the tool
 
 These tools are covered in detail in the [Using AI agent context](#using-ai-agent-context) section below.
 
-<Info>
-  When a tool call passes an `agentUuid`, the agent's scope applies to that call: data exploration is limited to the agent's explores, and content tools (find, list, read, create, and edit) only see spaces the agent has access to.
-</Info>
+When a tool call passes an `agentUuid`, the agent's scope applies to that call: data exploration is limited to the agent's explores, and content tools (find, list, read, create, and edit) only see spaces the agent has access to.
 
 #### Skills
 
@@ -820,9 +792,7 @@ When you activate an agent in your MCP session, your AI assistant receives:
 
 To skip routing and always use one agent, [pin it with the `X-Lightdash-Agent` header](#pin-an-agent-with-the-x-lightdash-agent-header).
 
-<Tip>
-  `route_agent` chooses between agents the user can already access — it never widens permissions. If only one agent is accessible, it activates that agent directly; if none are accessible, it returns an error so the assistant can fall back to the unscoped project context.
-</Tip>
+`route_agent` chooses between agents the user can already access — it never widens permissions. If only one agent is accessible, it activates that agent directly; if none are accessible, it returns an error so the assistant can fall back to the unscoped project context.
 
 **Prompt:** _"What AI agents are available?"_
 
@@ -868,9 +838,7 @@ The assistant will automatically use the `orders` explore, include a monthly tim
 
 The Lightdash MCP server includes a built-in **`lightdash-analyst`** prompt with guidelines for querying data effectively. MCP clients that support prompts can use this automatically, so you don't need to configure custom instructions manually.
 
-<Info>
-  When an [AI agent](#using-ai-agent-context) is active, the prompt automatically adapts to include the agent's context.
-</Info>
+When an [AI agent](#using-ai-agent-context) is active, the prompt automatically adapts to include the agent's context.
 
 ## Best practices
 
