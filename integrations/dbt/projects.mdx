@@ -150,7 +150,7 @@ Push and merge your changes to the branch your Lightdash project is connected to
 
     **Trade-offs:** manual; relies on a human remembering to click it.
 
-    The button is on the **Query from tables** page.
+    The button is on the **Query from tables** page. Only people with the project **Developer** or **Admin** role see it, because it needs the `manage:CompileProject` and `manage:Job` scopes. To take it away from someone on a git-connected project, give them a role without `manage:CompileProject`, such as **Editor** or a [custom role](/workspace-admin/custom-roles), which also removes their ability to compile the project. On a project with dbt connection type **None**, you can hide it for everyone with **Hide refresh button in the app** in the dbt connection settings.
 
     <Frame>
       ![The Refresh dbt button on the Query from tables page](/images/integrations/dbt/projects/dbt-refresh.png)
@@ -288,6 +288,7 @@ Each additional source has:
 
 - A **display name**: how it appears in the sources panel and in collision errors.
 - Its own **dbt connection**: GitHub only. The primary source can use any of Lightdash's supported connection types (GitHub, GitLab, Azure DevOps, Bitbucket, dbt Cloud), but additional sources are limited to GitHub, each with its own repo, branch, subfolder, credentials, and environment variables.
+- **Where this source's models live**: the database and schema the source's models are read from in the project's warehouse. Leave them blank to use the warehouse connection's values, or set them when that dbt project's profile targets a different database or schema.
 - A **precedence**: the order in which sources are merged. Collisions fail the deploy rather than being resolved by precedence (see below). Precedence determines which source is reported as holding the existing definition and which as the duplicate.
 
 ### How compilation and merging works
@@ -487,13 +488,10 @@ If it can't decide, it doesn't guess. It asks you to pick from the candidate sou
 
 #### Explore write-back
 
-Supported for the **primary source only**. Writing custom metrics and dimensions back as a PR from the Explore view always opens the PR against the primary source's repo. This means:
-
-- For models that come from the **primary source**, Explore write-back works normally.
-- For models that come from an **additional source**, Explore write-back will fail because the model's YAML file isn't in the primary repo.
+Not available on a project with an additional git-backed source, even for models in the primary source. Lightdash can't tell which source owns the model, so writing custom metrics and dimensions back as a PR from the Explore view fails with an error that starts `Explore write-back cannot determine which dbt source owns this model on a project with multiple git-backed dbt sources`.
 
 <Warning>
-  To edit models in additional sources, use AI agent write-back or edit the source's dbt project directly.
+  To edit models in a multi-source project, use AI agent write-back or edit the owning source's dbt project directly. The next refresh picks up the change.
 </Warning>
 
 ## dbt project settings
