@@ -1,13 +1,13 @@
 export const FeatureBadge = ({ label }) => {
   const badges = {
-    Experimental: { color: "orange", icon: "test-pipe-2", href: "/support/feature-maturity-levels#experimental" },
-    Beta: { color: "purple", icon: "flask", href: "/support/feature-maturity-levels#beta" },
-    Deprecated: { color: "gray", icon: "haze-moon", href: "/support/feature-maturity-levels#deprecated" },
-    "Cloud Pro": { color: "blue", icon: "bolt", href: "/support/feature-availability#cloud-pro" },
-    Enterprise: { color: "blue", icon: "building-plus", href: "/support/feature-availability#enterprise" },
-    "Add-on": { color: "blue", icon: "puzzle", href: "/support/feature-availability#add-ons" },
-    Cloud: { color: "blue", icon: "cloud-bolt", href: "/support/feature-availability#cloud" },
-    "Self-hosted": { color: "blue", icon: "server", href: "/support/feature-availability#self-hosted" },
+    Experimental: { color: "orange", icon: "test-pipe-2", href: "/support/feature-badges#experimental" },
+    Beta: { color: "purple", icon: "flask", href: "/support/feature-badges#beta" },
+    Deprecated: { color: "gray", icon: "haze-moon", href: "/support/feature-badges#deprecated" },
+    Pro: { color: "blue", icon: "bolt", href: "/support/feature-badges#pro" },
+    Enterprise: { color: "blue", icon: "building-plus", href: "/support/feature-badges#enterprise" },
+    "Add-on": { color: "blue", icon: "puzzle", href: "/support/feature-badges#add-ons" },
+    "Cloud-only": { color: "blue", icon: "cloud-bolt", href: "/support/feature-badges#cloud-only" },
+    "Self-hosted": { color: "blue", icon: "server", href: "/support/feature-badges#self-hosted" },
   };
   const badge = badges[label];
   if (!badge) throw new Error(`Unknown feature badge: ${label}`);

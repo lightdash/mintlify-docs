@@ -7,7 +7,7 @@ export const TABLER_ICONS = new Set<string>(iconNames);
 export const MATURITY_LEVELS = ['Experimental', 'Beta', 'Deprecated'] as const;
 export type MaturityLevel = (typeof MATURITY_LEVELS)[number];
 
-export const MATURITY_PAGE = 'support/feature-maturity-levels';
+export const FEATURE_BADGES_PAGE = 'support/feature-badges';
 
 /**
  * Directories whose child pages carry their own icon. Icons otherwise belong to
@@ -230,7 +230,7 @@ export function maturityMarks(content: string): MaturityMark[] {
     if (level === undefined || match.index === undefined) continue;
     const line = lineOf(clean, match.index);
     const context = lines.slice(Math.max(0, line - 4), line + 3).join('\n');
-    if (!context.includes(MATURITY_PAGE)) continue;
+    if (!context.includes(FEATURE_BADGES_PAGE)) continue;
     addMark(level, match.index);
   }
 
@@ -238,7 +238,7 @@ export function maturityMarks(content: string): MaturityMark[] {
     const level = match[1] as MaturityLevel | undefined;
     const target = match[2]?.replace(/^\//, '');
     if (level === undefined || match.index === undefined) continue;
-    if (target !== MATURITY_PAGE && !target?.startsWith(`${MATURITY_PAGE}#`)) continue;
+    if (target !== FEATURE_BADGES_PAGE && !target?.startsWith(`${FEATURE_BADGES_PAGE}#`)) continue;
     addMark(level, match.index);
   }
 
@@ -495,7 +495,8 @@ export function unbadgedStatuses(content: string): number[] {
   for (const region of componentRegions(clean)) {
     if (!(TYPED_CALLOUTS as readonly string[]).includes(region.tag)) continue;
     const body = lines.slice(region.startLine - 1, region.endLine).join('\n');
-    if (!body.includes(MATURITY_PAGE)) continue;
+    if (!body.includes(FEATURE_BADGES_PAGE)) continue;
+    if (!MATURITY_LEVELS.some((level) => new RegExp(`\\b${level}\\b`).test(body))) continue;
     if (/<(?:Badge|FeatureBadge)\b/.test(body)) continue;
     found.push(region.startLine);
   }
@@ -529,10 +530,10 @@ export const BADGE_TAXONOMY: Record<string, { color: string; icon: string }> = {
   Beta: { color: 'purple', icon: 'flask' },
   Deprecated: { color: 'gray', icon: 'haze-moon' },
   Enterprise: { color: 'blue', icon: 'building-plus' },
-  'Cloud Pro': { color: 'blue', icon: 'bolt' },
+  Pro: { color: 'blue', icon: 'bolt' },
   'Add-on': { color: 'blue', icon: 'puzzle' },
   'Self-hosted': { color: 'blue', icon: 'server' },
-  Cloud: { color: 'blue', icon: 'cloud-bolt' },
+  'Cloud-only': { color: 'blue', icon: 'cloud-bolt' },
 };
 
 const BADGE = /<Badge\b([^>]*)>([^<]*)<\/Badge>/g;
@@ -577,9 +578,7 @@ export function badgeProblems(content: string): BadgeProblem[] {
     const before = clean.slice(0, match.index);
     const anchor = /<a\b([^>]*)>\s*$/.exec(before);
     const href = /href="([^"]+)"/.exec(anchor?.[1] ?? '')?.[1];
-    const definition = (MATURITY_LEVELS as readonly string[]).includes(label)
-      ? `/${MATURITY_PAGE}#${label.toLowerCase()}`
-      : `/support/feature-availability#${label === 'Cloud Pro' ? 'cloud-pro' : label === 'Add-on' ? 'add-ons' : label.toLowerCase()}`;
+    const definition = `/${FEATURE_BADGES_PAGE}#${label === 'Add-on' ? 'add-ons' : label.toLowerCase()}`;
     if (anchor !== null && href !== definition) {
       problems.push({ line, label, detail: `links to ${definition}` });
     }

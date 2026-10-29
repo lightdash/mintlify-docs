@@ -183,9 +183,9 @@ test('flags an icon on a nested navigation group', () => {
 });
 
 test('reads a maturity level only where the page cites the maturity guide', () => {
-  const lightdash = '<Info>\n  Autopilot is a [Beta](/support/feature-maturity-levels) feature.\n</Info>';
+  const lightdash = '<Info>\n  Autopilot is a [Beta](/support/feature-badges) feature.\n</Info>';
   const thirdParty = '<Note>\n  Azure Container Apps is currently an Azure **preview** feature.\n</Note>';
-  const comparison = 'Availability is separate from [maturity](/support/feature-maturity-levels): '
+  const comparison = 'Availability is separate from [maturity](/support/feature-badges): '
     + 'a feature can be Experimental or Beta and Enterprise-only, or GA and available to everybody.';
 
   assert.deepEqual(maturityMarks(lightdash).map(({ level }) => level), ['Beta']);
@@ -203,8 +203,21 @@ test('shared feature badges declare maturity at their rendered location and reje
   assert.equal(badgeProblems('<FeatureBadge label="Alpha" />').at(0)?.detail, 'is not a defined feature badge');
 });
 
+test('distinguishes Pro plan badges from Cloud-only deployment badges and links their definitions', () => {
+  for (const [label, icon, anchor] of [['Pro', 'bolt', 'pro'], ['Cloud-only', 'cloud-bolt', 'cloud-only']]) {
+    assert.deepEqual(badgeProblems(`<FeatureBadge label="${label}" />`), []);
+    const badge = `<Badge icon="${icon}" color="blue" size="sm" shape="pill">${label}</Badge>`;
+    assert.deepEqual(badgeProblems(`<a href="/support/feature-badges#${anchor}">${badge}</a>`), []);
+    assert.equal(badgeProblems(`<a href="/support/feature-badges#enterprise">${badge}</a>`).at(0)?.detail,
+      `links to /support/feature-badges#${anchor}`);
+  }
+  for (const label of ['Cloud Pro', 'Cloud']) {
+    assert.equal(badgeProblems(`<FeatureBadge label="${label}" />`).at(0)?.detail, 'is not a defined feature badge');
+  }
+});
+
 test('a non-GA page needs its level in frontmatter for the sidebar pill', () => {
-  const gate = '<Info>\n  Pre-aggregates are a [Beta](/support/feature-maturity-levels) feature.\n</Info>';
+  const gate = '<Info>\n  Pre-aggregates are a [Beta](/support/feature-badges) feature.\n</Info>';
   const root = fixture({
     'docs.json': NAV(['untagged', 'tagged', 'mismatched']),
     'untagged.mdx': page(gate),
@@ -221,9 +234,9 @@ test('a non-GA page needs its level in frontmatter for the sidebar pill', () => 
 });
 
 test('wants the status worn as a badge, not linked in the prose', () => {
-  const linked = '<Info>\n  **Availability:** A [Beta](/support/feature-maturity-levels) feature.\n</Info>';
+  const linked = '<Info>\n  **Availability:** A [Beta](/support/feature-badges) feature.\n</Info>';
   const badged = '<Info>\n  <Badge color="purple" size="sm" shape="pill">Beta</Badge> Available on all plans. '
-    + '[What Beta means](/support/feature-maturity-levels).\n</Info>';
+    + '[What Beta means](/support/feature-badges).\n</Info>';
 
   assert.deepEqual(unbadgedStatuses(linked), [1]);
   assert.deepEqual(unbadgedStatuses(badged), []);
@@ -240,14 +253,19 @@ test('holds every badge to one colour, icon, and size', () => {
   assert.deepEqual(badgeProblems('<Badge color="gray" size="sm" shape="pill">Coming soon</Badge>'), []);
 });
 
+test('a plan callout linking the unified reference does not need a maturity badge', () => {
+  const gate = '<Info>See the [plan definitions](/support/feature-badges#pro) for access requirements.</Info>';
+  assert.deepEqual(unbadgedStatuses(gate), []);
+});
+
 test('keeps definition links around the whole badge rather than inside its text', () => {
   const linked = '<Badge icon="flask" color="purple" size="sm" shape="pill">[Beta](/support/x)</Badge>';
   assert.equal(badgeProblems(linked).at(0)?.detail, 'link the whole badge, not its text');
   const badge = '<Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge>';
-  assert.deepEqual(badgeProblems(`<a className="feature-badge-link" href="/support/feature-maturity-levels#beta">${badge}</a>`), []);
+  assert.deepEqual(badgeProblems(`<a className="feature-badge-link" href="/support/feature-badges#beta">${badge}</a>`), []);
   assert.equal(
-    badgeProblems(`<a className="feature-badge-link" href="/support/feature-maturity-levels#experimental">${badge}</a>`).at(0)?.detail,
-    'links to /support/feature-maturity-levels#beta',
+    badgeProblems(`<a className="feature-badge-link" href="/support/feature-badges#experimental">${badge}</a>`).at(0)?.detail,
+    'links to /support/feature-badges#beta',
   );
 });
 
@@ -273,7 +291,7 @@ test('spends one colour per axis so the set stays learnable', () => {
 test('flags a sentence that repeats its own badge', () => {
   const twice = '<Badge color="purple" size="sm" shape="pill">Beta</Badge> Agent memory is a Beta feature.';
   const once = '<Badge color="purple" size="sm" shape="pill">Beta</Badge> Available wherever agents are. '
-    + '[What Beta means](/support/feature-maturity-levels).';
+    + '[What Beta means](/support/feature-badges).';
 
   assert.deepEqual(restatedStatuses(twice), [1]);
   assert.deepEqual(restatedStatuses(once), []);
@@ -286,7 +304,7 @@ test('holds descriptions to one short sentence', () => {
 });
 
 test('reads a level below the first heading as a section mark, not the page', () => {
-  const gate = '<Info>\n  A [Beta](/support/feature-maturity-levels) feature.\n</Info>';
+  const gate = '<Info>\n  A [Beta](/support/feature-badges) feature.\n</Info>';
   const root = fixture({
     'docs.json': NAV(['index']),
     'index.mdx': page(`Intro prose.\n\n## One option\n\n${gate}`),
@@ -299,7 +317,7 @@ test('reads a level below the first heading as a section mark, not the page', ()
 test('inherits a maturity level from an imported availability snippet', () => {
   const root = fixture({
     'docs.json': NAV(['index']),
-    'snippets/availability.mdx': '<Info>\n  A [Beta](/support/feature-maturity-levels) feature.\n</Info>',
+    'snippets/availability.mdx': '<Info>\n  A [Beta](/support/feature-badges) feature.\n</Info>',
     'index.mdx': page("import Availability from '/snippets/availability.mdx';\n\n<Availability />"),
   });
 
@@ -314,7 +332,7 @@ test('a reusable maturity badge applies only where it is rendered', () => {
   const imported = "import Beta from '/snippets/badges/beta.mdx';\n\n";
   const root = fixture({
     'docs.json': NAV(['page-wide', 'section-only', 'unused']),
-    'snippets/badges/beta.mdx': '<a className="feature-badge-link" href="/support/feature-maturity-levels#beta"><Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge></a>',
+    'snippets/badges/beta.mdx': '<a className="feature-badge-link" href="/support/feature-badges#beta"><Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge></a>',
     'page-wide.mdx': page(`${imported}<Beta />\n\nIntro.`),
     'section-only.mdx': page(`${imported}Intro.\n\n## Optional feature\n\n<Beta />`),
     'unused.mdx': page(`${imported}Intro.`),
@@ -503,7 +521,7 @@ test('promotes exactly the blocking rules into the validator', async () => {
 });
 
 test('annotates blocking component findings only through the validator', () => {
-  const gate = '<Info>\n  A [Beta](/support/feature-maturity-levels) feature.\n</Info>';
+  const gate = '<Info>\n  A [Beta](/support/feature-badges) feature.\n</Info>';
   const root = fixture({
     'docs.json': NAV(['blocking', 'advisory']),
     'blocking.mdx': page(gate),

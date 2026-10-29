@@ -85,6 +85,7 @@ Pages meant to be fetched by URL rather than browsed declare `hidden: true` in f
 
 - [`ia-rules.md`](.mintlify/ia-rules.md) — doc-type contracts, placement, the patch and cleanup profiles
 - [`components.md`](.mintlify/components.md) — which component does which job, lifecycle badges, media, icons, colour tokens
+- [`feature-availability.md`](.mintlify/feature-availability.md) — verify commercial access, deployment support, enablement, and permissions in product sources
 - [`component-reference.md`](.mintlify/component-reference.md) — Mintlify's component surface and prop lists
 - [`navigation.md`](.mintlify/navigation.md) — docs.json navigation primitives and mapping rules
 - [`sidebar-rendering.md`](.mintlify/sidebar-rendering.md) — mint-theme sidebar DOM internals behind the `styles.css` override

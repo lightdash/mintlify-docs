@@ -8,7 +8,7 @@ Every page is plain docs unless it declares otherwise. Three marked types exist,
 
 **Doc-type pills are suppressed in the sidebar.** A pill earns its place only when it tells a reader something the neighbouring pages don't, and today too many Tutorials are the *only* documentation of their feature rather than a layer on top of it — so the label differentiates nothing, and a cluster of them is actively noisy. Keep declaring `doc-type`: it drives the form contract and the audit, and the pill comes back once Tutorials and Guides are consistently additional resources rather than load-bearing docs.
 
-The `tag` slot therefore carries lifecycle badges only (`Experimental`, `Beta` — GA is the unbadged default; see feature-maturity-levels).
+The `tag` slot therefore carries lifecycle badges only (`Experimental`, `Beta` — GA is the unbadged default; see [Feature badges reference](../support/feature-badges.mdx)).
 
 | Type | Declaration | Form contract |
 | --- | --- | --- |
