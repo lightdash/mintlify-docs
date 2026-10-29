@@ -86,6 +86,62 @@ Each SQL call is approved individually. To stop the prompts for the rest of a th
 
 Slack-triggered prompts can only use SQL mode when your organization has the **\"Require Slack users to authenticate with Lightdash\"** setting (`aiRequireOAuth`) turned on. Without it, Slack messages run under a shared workspace-default identity, so SQL execution is disabled fail-closed whether or not SQL mode is on. See [Slack AI bot setup](/agents/set-up-agents) for how to configure OAuth.
 
+## Post-process results with DuckDB and Python
+
+<Frame caption="Ask for anomalous weeks, then open Lineage to see the semantic layer step feeding a Python step, and select the Python step to read its code">
+  <iframe
+    width="100%"
+    height="420"
+    src="https://www.loom.com/embed/a59ba375ee024f109e96af15534c8ff5"
+    frameborder="0"
+    webkitallowfullscreen
+    mozallowfullscreen
+    allowfullscreen
+  />
+</Frame>
+
+<Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge> Some questions need a step after the query: joining two explores, comparing results against a CSV you attach, ranking or bucketing rows, or fitting a forecast. For these, the agent runs one or more queries, then post-processes their results with DuckDB SQL or Python before it answers. It is off by default. [Reach out to us](mailto:support@lightdash.com) to turn it on for your organization.
+
+The semantic layer runs first (or the SQL query, if approved in [SQL mode](#sql-mode)). DuckDB and Python only ever see the rows those queries returned, so metric definitions, joins, [data access](/agents/data-access) rules and SQL approvals apply exactly as they do for any other query. Neither DuckDB nor Python connects to your warehouse.
+
+<Frame>
+  <img
+    alt="Your warehouse and CSV feed Lightdash, where the semantic layer, warehouse SQL and external data steps run through a DuckDB and Python sandbox to produce the result"
+    className="block dark:hidden"
+    src="/images/agents/post-process-duckdb-python_light.png"
+  />
+  <img
+    alt="Your warehouse and CSV feed Lightdash, where the semantic layer, warehouse SQL and external data steps run through a DuckDB and Python sandbox to produce the result"
+    className="hidden dark:block"
+    src="/images/agents/post-process-duckdb-python_dark.png"
+  />
+</Frame>
+
+### How it works
+
+| Step | What it runs | Where it runs |
+| --- | --- | --- |
+| **Semantic layer** | A metric query against an explore | Your warehouse, through the semantic layer |
+| **Warehouse SQL** | A read-only `SELECT` or `WITH` statement, with [approval](#how-approvals-work) | Your warehouse, in [SQL mode](#sql-mode) |
+| **DuckDB** | DuckDB SQL over the results of other steps | A sandbox inside Lightdash |
+| **Python** | pandas code over the results of other steps | A sandbox inside Lightdash |
+| **External data** | DuckDB SQL over a CSV attached to the thread | A sandbox inside Lightdash |
+
+A question that one metric query can answer still runs as a single query. The agent only adds DuckDB or Python steps when the question needs them.
+
+DuckDB and Python both run in a sandboxed environment that only receives the result rows the step references, and is destroyed after each run. Python steps can use pandas, numpy, scipy, pyarrow, scikit-learn and polars. They have no network access and can't install packages.
+
+### Reading the result
+
+The agent shows the result as a card, the same way it shows a chart. Below it, the **Queries** bar shows how many steps ran. Expand it to see each step, grouped into **Sources**, **Transformations** and **Result**, or switch to **Graph** to see how they connect. **View query** shows a step's SQL and **View code** shows a Python step's code. Select a step to see its own rows, and **Back to result** to return.
+
+Opening a result runs the steps as the person viewing it, so viewers only ever see data they have access to.
+
+### Limitations
+
+- A result built with DuckDB or Python lives in its thread. It can't be saved as a chart or added to a dashboard. A result with a single semantic layer step and no post-processing is a regular chart and can be saved.
+- Each step is subject to the AI query row limit. A DuckDB or Python step only sees the rows the steps before it returned, so the agent aggregates early when a step would hit its limit.
+
 ## Query execution stats
 
 When an agent runs a query against BigQuery, it gets the warehouse's statistics for the job back with the results. You can ask the agent how much data a query scanned or how long it took. For example: "How many bytes did that query process?"
@@ -302,11 +358,15 @@ To steer everyone without a personal default toward one agent, enable the AI Rou
 
 ### Data analysis and calculations
 
-AI agents can query your actual data through metric queries, field value search, and [SQL mode](#sql-mode), and can define [custom metrics](/explore/create-custom-fields) and formula [table calculations](/explore/table-calculations) on the fly. They don't include built-in forecasting or predictive models: statistical work is limited to what can be expressed in SQL or table calculation formulas. Reading result rows is subject to your [data access setting](/agents/data-access).
+AI agents can query your actual data through metric queries, field value search, and [SQL mode](#sql-mode), and can define [custom metrics](/explore/create-custom-fields) and formula [table calculations](/explore/table-calculations) on the fly. For forecasts, regressions and other statistical work, agents can [post-process results with DuckDB and Python](#post-process-results-with-duckdb-and-python). Reading result rows is subject to your [data access setting](/agents/data-access).
 
 ### Query and visualizations constraints
 
 Results are limited by configurable query limits set at server level to ensure good performance. These limits can only be adjusted through environment variables at the moment.
+
+When you ask an agent to join data across two explores that have no join defined in your dbt models, it runs the join as a merge — the same mechanism behind the Explorer's **Merge another query** flow. Each side runs as its own query capped at the configured query limit, and Lightdash joins the results afterwards; if a side is cut off by its limit, the merge fails rather than returning a partial join. See [How a merge runs](/explore/merge-queries#how-a-merge-runs) and [Row limits](/explore/merge-queries#current-limits) for the full mechanics.
+
+A join defined in your dbt models doesn't go through this path: the agent's metric query pushes the whole join down to your warehouse as a single query, so it isn't subject to this per-side limit. If a pair of explores hits the merge limit often, model the join between them in dbt instead.
 
 Agents can create tables, bar charts, vertical bar charts, line charts, scatter plots, pie/donut charts, and funnel charts, but don't yet support [custom visualizations](/visualizations/custom-charts) or big number charts.
 

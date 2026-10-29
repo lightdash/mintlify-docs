@@ -539,6 +539,7 @@ type AiAgentProps = {
   binding?: AiThreadBinding;        // Bind threads started here to a dashboard
   threadContext?: string;           // Background for threads started here (max 10,000 characters)
   renderMode?: 'iframe' | 'native'; // Beta: 'native' renders in your page. Default 'iframe'
+  onEvent?: LightdashEventHandler;  // Charts and dashboards the agent creates or edits
   onError?: (error: SdkError) => void;
   theme?: 'light' | 'dark';
   styles?: {
@@ -554,7 +555,7 @@ type AiThreadBinding = {
 ```
 
 <Info>
-`Lightdash.AiAgent` does not accept `filters`, `contentOverrides`, `uiOverrides`, `onExplore`, or `onEvent`. Threads, navigation, and chart actions are managed inside the embedded agent UI. In iframe mode, an open agent doesn't pick up a replaced `token`; see [Rotating tokens](#rotating-tokens).
+`Lightdash.AiAgent` does not accept `filters`, `contentOverrides`, `uiOverrides`, or `onExplore`. Threads, navigation, and chart actions are managed inside the embedded agent UI. In iframe mode, an open agent doesn't pick up a replaced `token`; see [Rotating tokens](#rotating-tokens).
 </Info>
 
 `onThreadChange` fires whenever the embedded agent creates a new thread or opens an existing one. Use it together with `threadUuid` to persist the current conversation in your app (for example in `localStorage` or your own backend) and resume it the next time the user returns. In iframe mode, the SDK passes a `targetOrigin` query parameter to the iframe and listens for `lightdash:aiAgentThreadChanged` `postMessage` events from the embedded page — no extra setup is required on your side.
@@ -633,7 +634,7 @@ Pass `binding` to bind the thread the embed creates to a dashboard, and `threadC
 />
 ```
 
-The dashboard must be in one of the token's write spaces. Errors, such as a dashboard outside those spaces, surface when the first message is sent. See [Bind a thread to a dashboard](/embed/embed-ai-agents#bind-a-thread-to-a-dashboard) for what a bound thread does and how to create one from your backend.
+The dashboard must be in one of the token's write spaces or `sourceSpaceUuids`. Errors, such as a dashboard outside those spaces, surface when the first message is sent. See [Bind a thread to a dashboard](/embed/embed-ai-agents#bind-a-thread-to-a-dashboard) for what a bound thread does and how to create one from your backend.
 
 #### Render the agent natively
 
@@ -659,7 +660,7 @@ In native mode:
 - The agent calls the Lightdash API from your page, like the other SDK components, so your origin must be allowed in [CORS](#set-up-cors).
 - `styles.fontFamily` applies, and `onError` reports every load and request failure. In iframe mode, `onError` only reports token errors.
 - `onThreadChange` is called directly instead of through `postMessage`. Setting `threadUuid` to `undefined` opens a new thread.
-- The agent shows no toast notifications, and `Lightdash.AiAgent` doesn't accept `onEvent`, so `onError` is the only failure signal.
+- The agent shows no toast notifications. Its messages reach [`onEvent`](#listen-to-events) as `notification` events instead, and `onError` reports failures.
 
 #### Token generation for AI agents
 
@@ -686,6 +687,8 @@ export function generateAiAgentToken() {
   }, process.env.LIGHTDASH_EMBED_SECRET, { expiresIn: '1h' });
 }
 ```
+
+To let the agent read dashboards and charts it must not change, such as a library of curated dashboards, list their spaces in `writeActions.sourceSpaceUuids`. The agent can read those spaces, search them, and bind threads to dashboards in them, but creates and updates content only in `writeSpaceUuids`. See [Add charts from other spaces](/embed/reference#add-charts-from-other-spaces).
 
 See [Embedding AI agents](/embed/embed-ai-agents) for the full guide and [AI agent token](/embed/reference#ai-agent-token) for the complete JWT structure.
 
@@ -1131,7 +1134,7 @@ This applies to `Lightdash.Dashboard`, `Lightdash.DashboardBuilder`, `Lightdash.
 
 ## Listen to events
 
-Pass `onEvent` to `Lightdash.Dashboard`, `Lightdash.DashboardBuilder`, `Lightdash.Chart`, `Lightdash.Explore`, or `Lightdash.MetricsCatalog` to react to what viewers do in the embed, for example to confirm a save in your own UI or link to the new chart.
+Pass `onEvent` to `Lightdash.Dashboard`, `Lightdash.DashboardBuilder`, `Lightdash.Chart`, `Lightdash.Explore`, `Lightdash.MetricsCatalog`, or `Lightdash.AiAgent` to react to what viewers, or the agent, do in the embed, for example to confirm a save in your own UI or link to the new chart.
 
 ```tsx
 import Lightdash, { type LightdashEvent } from '@lightdash/sdk';
@@ -1156,16 +1159,66 @@ Each event has a `type` and a `payload`:
 
 | `type` | `payload` | Sent when |
 | --- | --- | --- |
-| `chartSaved` | `{ chartUuid: string; action: 'created' \| 'updated' }` | A viewer saves a new chart, or a new version of an existing one, from Explore, chart edit mode, or a dashboard tile |
-| `dashboardSaved` | `{ dashboardUuid: string }` | A viewer saves a dashboard in edit mode |
-| `filterChanged` | `{ hasFilters: boolean; filterCount: number }` | Dashboard filters change |
+| `chartSaved` | `{ chartUuid: string; action: 'created' \| 'updated' }` | A viewer saves a new chart, or a new version of an existing one, from Explore, chart edit mode, or a dashboard tile, or the AI agent creates or edits a chart |
+| `dashboardSaved` | `{ dashboardUuid: string; action: 'created' \| 'updated' }` | A viewer saves a dashboard in edit mode, or the AI agent creates or edits a dashboard |
+| `filterChanged` | `{ hasFilters: boolean; filterCount: number }` | Dashboard filters change. Filter values aren't included |
 | `tabChanged` | `{ tabIndex: number }` | A viewer switches dashboard tab |
-| `allTilesLoaded` | `{ tilesCount: number; loadTimeMs: number }` | Every tile on the dashboard has loaded |
+| `allTilesLoaded` | `{ tilesCount: number; loadTimeMs: number }` | Every tile on the dashboard has loaded, including tiles that failed. It's sent again each time the tiles reload, for example after a tab or filter change |
 | `notification` | `{ id: string; variant: 'success' \| 'error' \| 'info' \| 'warning'; title: string \| null; message: string \| null }` | The embed has something to tell the viewer |
+
+The `LightdashEvent` type also lists `locationChanged` and `error`. SDK components don't send either: `locationChanged` comes only from [iframe embeds](/embed/iframe), and failures go to [`onError`](#handle-errors).
 
 SDK components don't show toast notifications themselves. Render `notification` events in your own UI, or viewers won't see save confirmations and error messages. A notification can be sent more than once with the same `id`, for example while an export goes from in progress to done; update the same message instead of adding another.
 
-`Lightdash.AiAgent` does not accept `onEvent`; use `onThreadChange` to follow its threads.
+### Events from the AI agent
+
+`Lightdash.AiAgent` sends `chartSaved` and `dashboardSaved` once each time the agent creates or edits a saved chart or dashboard. Adding a chart to a dashboard sends one `dashboardSaved`. SQL charts and documents send nothing. In native mode, the agent's `notification` events reach `onEvent` too; use `onThreadChange` to follow its threads.
+
+In iframe mode, the agent posts events from the iframe to your page with `postMessage`, so your Lightdash instance must allow it:
+
+- On Lightdash Cloud, ask Lightdash support to turn on embed events with `postMessage` and add your page's origin, such as `https://app.example.com`, to the iframe embedding domains.
+- On self-hosted instances, set `EMBED_EVENT_SYSTEM_ENABLED` and `EMBED_EVENT_SYSTEM_POST_MESSAGE_ENABLED` to `true`, and add your page's exact origin to `LIGHTDASH_IFRAME_EMBEDDING_DOMAINS`. Wildcard entries don't match. See [embedding variables](/self-host/customize-deployment/environment-variables#embedding).
+
+Without these, the agent works but `onEvent` never fires. Native mode calls `onEvent` directly and needs no instance setup.
+
+### Refresh a dashboard after the agent saves it
+
+An embedded `Lightdash.Dashboard` doesn't reload when the agent next to it edits the dashboard. Listen for `dashboardSaved` on the agent and remount the dashboard with a new `key`:
+
+```tsx
+import Lightdash, { type LightdashEvent } from '@lightdash/sdk';
+import { useState } from 'react';
+
+function DashboardWithAgent({ dashboardUuid, dashboardToken, agentToken }) {
+  const [revision, setRevision] = useState(0);
+
+  return (
+    <>
+      <Lightdash.Dashboard
+        key={revision}
+        instanceUrl="https://app.lightdash.cloud"
+        token={dashboardToken}
+      />
+      <Lightdash.AiAgent
+        instanceUrl="https://app.lightdash.cloud"
+        agentUuid="your-agent-uuid"
+        token={agentToken}
+        binding={{ type: 'dashboard', dashboardUuid }}
+        onEvent={(event: LightdashEvent) => {
+          if (
+            event.type === 'dashboardSaved' &&
+            event.payload.dashboardUuid === dashboardUuid
+          ) {
+            setRevision((current) => current + 1);
+          }
+        }}
+      />
+    </>
+  );
+}
+```
+
+Remounting resets the dashboard's filters and selected tab. If the agent saves a new dashboard instead, `action` is `'created'` and `dashboardUuid` is the new dashboard; mint a dashboard token for it to show it.
 
 ## Handle errors
 
