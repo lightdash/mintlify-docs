@@ -1,10 +1,109 @@
 ---
 title: SQL templates
 description: Copy-paste SQL patterns for common table calculations like running totals and rankings
-mode: wide
 doc-type: reference
 ---
 
 <Tip>
-Looking for a simpler alternative to raw SQL? Check out the built-in [row functions](/explore/table-calculations/functions/row-functions) and [pivot functions](/explore/table-calculations/functions/pivot-functions) — they handle common patterns like accessing previous rows and working across pivot columns without needing to write window function SQL.
+Most of these patterns don't need hand-written SQL. [Formula table calculations](/explore/table-calculations/formulas) have window functions such as `LAG`, `RANK`, `RUNNING_TOTAL`, and `MOVING_AVG`, and the [row functions](/explore/table-calculations/functions/row-functions) and [pivot functions](/explore/table-calculations/functions/pivot-functions) cover previous rows and pivot columns.
 </Tip>
+
+Each template is a window function over your results table. Swap the `${table.column_...}` placeholders for your own fields, using the `${table_name.field_name}` format or autocomplete.
+
+The `ORDER BY` columns in a template should match the dimensions and sort order of your results table. Add every dimension in the results table, in the same order, so each row compares against the row directly above it. Columns sort ascending by default; add `DESC` to sort descending.
+
+For the percent templates, set the table calculation's format to **Percent** in the **Format** tab so the result shows as a percentage instead of a ratio.
+
+<Frame>
+  <img src="/images/explore/table-calculations/sql-templates/format-percent-6d905aa48e29631b298dd27a38a8b183.jpg" alt="The Format tab of the table calculation editor with the format set to percent"/>
+</Frame>
+
+## Percent change from previous
+
+Divides each value by the value in the row above it, using `LAG` ordered by your results table's dimensions, then subtracts 1. The first row has no previous value, so it returns `NULL`.
+
+```sql
+(
+  ${table.column_i_want_to_compare} /
+    LAG(${table.column_i_want_to_compare}) OVER (
+      ORDER BY
+        ${table.column_I_want_to_order_by},
+        ${table.optional_other_column_I_want_to_order_by}
+    )
+) - 1
+```
+
+## Percent of previous value
+
+Divides each value by the value in the row above it, using `LAG` ordered by your results table's dimensions. The first row returns `NULL`.
+
+```sql
+${table.column_i_want_to_compare} /
+  LAG(${table.column_i_want_to_compare}) OVER (
+    ORDER BY
+      ${table.column_I_want_to_order_by},
+      ${table.optional_other_column_I_want_to_order_by}
+  )
+```
+
+## Percent of column total
+
+Divides each value by the sum of the whole column. The empty `OVER()` makes the window every row in the results table.
+
+```sql
+${table.column_i_want_to_see_the_percent_of_total} /
+  SUM(${table.column_i_want_to_see_the_percent_of_total}) OVER()
+```
+
+## Percent of group total
+
+Divides each value by the sum of its group. `PARTITION BY` splits the rows into groups by `column_i_want_to_group_by`, such as a month or a pivot dimension, and the sum restarts for each group.
+
+```sql
+${table.column_i_want_to_see_the_percent_of_total} /
+  SUM(${table.column_i_want_to_see_the_percent_of_total}) OVER (
+    PARTITION BY
+      ${table.column_i_want_to_group_by}
+  )
+```
+
+## Rank in column
+
+Numbers the rows by the column you want to rank. `DESC` gives the largest value rank 1; `ASC` gives the smallest value rank 1. To rank within groups, add a `PARTITION BY` clause before `ORDER BY`.
+
+```sql
+ROW_NUMBER() OVER (
+  ORDER BY
+    ${table.column_i_want_to_rank} DESC
+)
+```
+
+## Running total
+
+Sums each value with every value above it. The window runs from the first row (`UNBOUNDED PRECEDING`) to the current row, in the order of your results table's dimensions.
+
+```sql
+SUM(${table.column_I_want_to_sum}) OVER (
+  ORDER BY
+    ${table.column_I_want_to_order_by},
+    ${table.optional_other_column_I_want_to_order_by}
+  ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+)
+```
+
+## Rolling window
+
+Sums the current row and the `N` rows before it, so a four-week window uses `N = 3`. Dividing one rolling sum by a second rolling sum gives a rolling average or ratio; drop the second `SUM` for a plain rolling total. Replace `N` with a number before you run it.
+
+```sql
+SUM(${table.column_I_want_to_sum}) OVER (
+  ORDER BY
+    ${table.column_I_want_to_order_by}
+  ROWS BETWEEN N PRECEDING AND CURRENT ROW
+) /
+  SUM(${table.second_column_I_want_to_sum}) OVER (
+    ORDER BY
+      ${table.column_I_want_to_order_by}
+    ROWS BETWEEN N PRECEDING AND CURRENT ROW
+  )
+```

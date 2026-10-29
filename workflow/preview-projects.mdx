@@ -94,8 +94,18 @@ While your preview is running, you can run `dbt compile` in a separate terminal 
 <Info>
 **Problems with credentials?**
 
-  When you create preview projects, Lightdash will use the same warehouse connection settings you have in your `profiles.yml` file for your current dbt project. This can be a problem if you're using a local database that your laptop can reach but your Lightdash instance cannot. To use the upstream project's warehouse connection instead, run `lightdash preview --no-warehouse-credentials`.
+  When you create preview projects, Lightdash will use the same warehouse connection settings you have in your `profiles.yml` file for your current dbt project. This can be a problem if you're using a local database that your laptop can reach but your Lightdash instance cannot.
+
+  It can also fail if your own warehouse identity doesn't have permission to run queries. For example, with BigQuery, the preview authenticates as whichever account your dbt target uses, so that account needs `roles/bigquery.jobUser` ("to run queries in your project", see [BigQuery permissions](/integrations/connect-project#service-account-json-key-file)) — the same role a BigQuery service account needs for a regular connection. Without it, `lightdash preview` fails with a BigQuery access-denied error when it runs its first query.
+
+  To use the upstream project's saved warehouse connection instead of your own credentials, run `lightdash preview --no-warehouse-credentials`.
 </Info>
+
+### Switch between previews
+
+The CLI keeps one active preview: the last one you started. `lightdash deploy`, `lightdash upload`, and `lightdash download` ask whether to use it or your production project, and use the preview in non-interactive mode. Starting another preview doesn't delete the previous one. It stays on the server until you run `lightdash stop-preview --name` with its name, or it [expires](#preview-expiration).
+
+To switch back to an earlier preview, run `lightdash start-preview` with its `--name` again. The CLI updates that preview with your local project and makes it active instead of creating a new one. `lightdash config set-project` doesn't list previews, so you can't set one as your default project.
 
 ### Redshift with `method: iam`
 

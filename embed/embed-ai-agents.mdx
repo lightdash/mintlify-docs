@@ -33,11 +33,11 @@ Embedded AI agents support:
 - Resuming a previous conversation on load, and listing past threads to build your own thread history UI
 - [Binding a thread to a dashboard](#bind-a-thread-to-a-dashboard) and giving it background context
 - Viewing agent-generated charts and tables in the response
-- Opening saved charts and dashboards the agent references, when they live in one of the token's write spaces: charts in a side panel next to the chat, dashboards as a read-only view inside the embed
+- Opening saved charts and dashboards the agent references, when they live in one of the token's write spaces or `sourceSpaceUuids`: charts in a side panel next to the chat, dashboards as a read-only view inside the embed
 - Saving AI-generated charts into the token's write spaces (via [write actions](/embed/reference#write-actions))
 - Row-level filtering via [user attributes](/workspace-admin/user-attributes)
 
-Embedded AI sessions hide non-embed UI surfaces by default — including thread history sidebars, dashboard navigation, SQL mode, MCP server tools, and user preference screens. Saved charts from the write spaces open in a read-only side panel, and saved dashboards from those spaces open as a read-only view with a "Back to AI" control, both inside the embed. "Explore from here" appears only when the token sets `content.canExplore` or the actor's role grants `view:EmbedExplore`, and Explore stays inside the embed. The Debug panel on agent answers is hidden unless the token sets `content.canViewDebugInfo` (or the actor's role grants it in `roles` mode); see [Debug information](/embed/reference#debug-information). **View SQL** and **Download** on chart answers follow the actor's role; see [SQL and downloads on answers](/embed/reference#sql-and-downloads-on-answers). Links to other content, such as documents or scheduled deliveries, are shown as plain references.
+Embedded AI sessions hide non-embed UI surfaces by default — including thread history sidebars, dashboard navigation, SQL mode, MCP server tools, and user preference screens. Saved charts from the write spaces open in a read-only side panel, and saved dashboards from those spaces open as a read-only view with a "Back to AI" control, both inside the embed. "Explore from here" appears only when the token sets `content.canExplore` or the actor's role grants `view:EmbedExplore`, and Explore stays inside the embed. The Debug panel on agent answers is hidden unless the token sets `content.canViewDebugInfo` (or the actor's role grants it in `roles` mode); see [Debug information](/embed/reference#debug-information). **View SQL** and **Download** on chart answers follow the actor's role; see [SQL and downloads on answers](/embed/reference#sql-and-downloads-on-answers). Embedded users can't [verify answers](/agents/verified-answers), whatever the token or the actor's role, so verify them in the Lightdash app. Links to other content, such as documents or scheduled deliveries, are shown as plain references.
 
 ## Prerequisites
 
@@ -93,7 +93,9 @@ In a bound thread:
 - The thread context, up to 10,000 characters, is given to the agent on every turn as background from the user. It is never shown as a chat message, and embedded viewers can't read it back.
 - Neither the binding nor the context can be changed after the thread is created.
 
-The dashboard must be in one of the token's write spaces.
+The dashboard must be in one of the token's write spaces or `sourceSpaceUuids`. When it's in a source space, the agent reads it and answers questions about it but can't change it; anything the agent creates from it, such as a copy filtered to one region, is saved into a write space.
+
+To refresh an embedded dashboard after the agent edits it, see [Refresh a dashboard after the agent saves it](/embed/react-sdk#refresh-a-dashboard-after-the-agent-saves-it).
 
 ### From the React SDK
 
@@ -122,7 +124,7 @@ Create the thread with the same embed token setup your viewers use. A thread cre
 | Response | Cause |
 | --- | --- |
 | `400` | No `prompt`, `binding`, or `threadContext`, or a `threadContext` longer than 10,000 characters |
-| `403` | The dashboard is outside the token's write spaces, or the actor can't view it |
+| `403` | The dashboard is outside the token's write spaces and `sourceSpaceUuids`, or the actor can't view it |
 | `404` | The dashboard doesn't exist, is in the trash, or belongs to another project |
 
 If the bound dashboard is deleted later, the thread stays bound and shows **Dashboard no longer available**. The agent can still answer questions and run queries, but can't create or change saved content in that thread.
@@ -157,13 +159,16 @@ const token = jwt.sign({
 
 - `content.type` — must be `"aiAgent"`.
 - `content.agentUuid` — the agent the embed is allowed to use. Tokens cannot switch to a different agent at runtime.
-- `writeActions.writeSpaceUuids` — the spaces the agent can read charts and dashboards from and save AI-generated charts into. The first space is the default save target and scopes the embed's threads. If the agent is restricted to certain spaces, it must have access to the first one.
+- `writeActions.writeSpaceUuids` — the spaces the agent can create and update charts and dashboards in, and read them from. The first space is the default save target and scopes the embed's threads.
 - One of `writeActions.serviceAccountUserUuid` or `writeActions.userUuid` — the actor whose permissions are used when the agent runs queries and saves charts, and whose name appears next to messages in the chat. See [Write actions](/embed/reference#write-actions).
+
+Every space on the token — each write space, and each space in `writeActions.sourceSpaceUuids` — is gated twice: the write actor needs its own view access to it, and if the agent itself is restricted to certain spaces, the space must be on the agent's own list. A space that fails either check is silently dropped from what the agent can read or bind to; the token as a whole is only rejected once the agent has access to none of the write spaces. See [Add charts from other spaces](/embed/reference#add-charts-from-other-spaces) for the full rules, including `sourceSpaceUuids`.
 
 **Optional fields:**
 
 - `content.projectUuid` — pins the embed to a specific project.
 - `content.canViewDebugInfo` — shows the Debug panel on agent answers. See [Debug information](/embed/reference#debug-information).
+- `writeActions.sourceSpaceUuids` — extra spaces the agent can read, search, and bind threads to dashboards in, without being able to create or update content in them. See [Add charts from other spaces](/embed/reference#add-charts-from-other-spaces).
 - `userAttributes` — applies row-level filters to the agent's queries, identical to other embed types.
 - `user.externalId` / `user.email` — identifies the embedded viewer. Agent queries run as the write actor, so neither value is sent as a warehouse query tag; see [User metadata](/embed/reference#user-metadata) for per-viewer attribution.
 
@@ -174,8 +179,8 @@ To let the actor's role enable or disable embedded AI access, configure [Permiss
 AI agent embeds enforce a tight scope:
 
 - A token issued for agent A cannot access agent B, even within the same project.
-- The agent can only read dashboards and saved charts that live in the token's write spaces. Other content returns a not-found error.
-- Embedded viewers can open those saved charts in the chat side panel and those dashboards as a read-only view. Both run with the write actor's permissions and the token's `userAttributes`; content outside the write spaces is rejected.
+- The agent can read dashboards and saved charts that live in the token's write spaces or `sourceSpaceUuids`, and only the spaces the write actor can view and the agent itself has access to. Other content returns a not-found error.
+- Embedded viewers can open those saved charts in the chat side panel and those dashboards as a read-only view. Both run with the write actor's permissions and the token's `userAttributes`; content outside that scope is rejected.
 - Charts are saved into the first write space by default. When the actor can create charts in more than one write space, the save dialog lets embedded users choose among them.
 - Threads belong to the write actor and the first write space. Changing which space comes first changes which past threads viewers see.
 - In a [bound thread](#bind-a-thread-to-a-dashboard), the agent can only change the bound dashboard and the charts saved in it.

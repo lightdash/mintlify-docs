@@ -96,6 +96,13 @@ If scheduled deliveries fail for large dashboards, try the following in order:
    to give it more attempts.
 4. If jobs are timing out entirely, increase `SCHEDULER_JOB_TIMEOUT`. The default
    of 10 minutes should be sufficient for most dashboards.
+
+## Run Lightdash behind an identity-aware proxy
+
+If `SITE_URL` sits behind an identity-aware proxy such as Google Cloud IAP, scheduled deliveries and Slack unfurls fail with an error like `Unable to get cookie for user <user-uuid>: Invalid IAP credentials: empty token`. Before each screenshot, the Lightdash backend signs the headless browser in with a server-to-server request to `INTERNAL_LIGHTDASH_HOST`, which defaults to `SITE_URL`. That request carries no proxy credentials, so the proxy rejects it.
+
+Set `INTERNAL_LIGHTDASH_HOST` on the backend and scheduler to an in-cluster URL that doesn't go through the proxy, such as the Lightdash Kubernetes service (`http://lightdash.lightdash.svc.cluster.local:8080`). The headless browser loads charts and dashboards from the same host, so it must be reachable from the headless browser container too. With `SECURE_COOKIES=true`, the internal host must use HTTPS — see the next section.
+
 ## Run Lightdash on a fully internal HTTPS network
 
 If you run Lightdash with `SECURE_COOKIES=true` and you don't want the headless browser to leave the cluster to reach Lightdash, `INTERNAL_LIGHTDASH_HOST` still needs to be **HTTPS**. Plain HTTP does not work in this configuration: Lightdash emits HSTS on every response, so once Chrome (running inside browserless) has loaded a page from the internal hostname over HTTP it pins that hostname to HTTPS and auto-upgrades every subsequent asset request — which then fails against a plain-HTTP ClusterIP.

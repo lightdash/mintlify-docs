@@ -14,11 +14,7 @@ import EmbedResources from '/snippets/embedding-resources.mdx';
 
 ## Overview
 
-iframe embedding is the simplest way to embed Lightdash **dashboards** and standalone **data apps** in your application. It requires no special libraries, dependencies, or CORS configuration—just generate a JWT and construct an embed URL.
-
-<Warning>
-iframe embedding supports [dashboards](/embed/embed-dashboards) and [data apps](/embed/embed-data-apps). [Chart embedding](/embed/embed-charts) requires the [React SDK](/embed/react-sdk).
-</Warning>
+iframe embedding is the simplest way to embed Lightdash **dashboards**, **charts**, standalone **data apps**, and **AI agents** in your application. It requires no special libraries, dependencies, or CORS configuration—just generate a JWT and construct an embed URL. To compare iframe embedding with the other methods for each content type, see the [embedding quickstart](/embed/set-up-embedding#quick-comparison).
 
 ### Benefits of iframe embedding
 
@@ -45,6 +41,10 @@ Consider the [React SDK](/embed/react-sdk) if you need:
 - TypeScript type definitions
 
 For JWT structure and configuration options, see the [embedding reference](/embed/reference).
+
+<Note>
+`theme` and `backgroundColor` (below) are the only built-in style overrides for iframe embeds — the `fontFamily` style is a React SDK prop. For font or other visual customization on an iframe-embedded dashboard, see [Known limitations](/embed/reference#known-limitations).
+</Note>
 
 ## iframe URL patterns
 
@@ -80,11 +80,32 @@ The JWT must use `content.type: 'dataApp'` and the same `appUuid` as the URL. A 
 https://app.lightdash.cloud/embed/abc-123-def-456/app/app-uuid-789#eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
-Because the JWT sits in the hash fragment, it is never sent to the server with HTTP requests and never appears in server logs or browser history.
+### Chart URL
 
-<Warning>
-**Chart embedding via iframe is not currently supported.** Charts can only be embedded using the [React SDK](/embed/react-sdk).
-</Warning>
+[Chart](/embed/embed-charts) embeds put both the project UUID and the chart UUID in the path:
+
+```text
+https://your-instance.lightdash.cloud/embed/{projectUuid}/chart/{chartUuid}#{jwtToken}
+```
+
+The JWT must use `content.type: 'chart'` and the same chart UUID as `content.contentId`. A token for one chart cannot render any other chart.
+
+**Example:**
+```text
+https://app.lightdash.cloud/embed/abc-123-def-456/chart/chart-uuid-789#eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+### AI agent URL
+
+[AI agent](/embed/embed-ai-agents) embeds put the project UUID and the agent UUID in the path:
+
+```text
+https://your-instance.lightdash.cloud/embed/{projectUuid}/ai-agents/{agentUuid}/threads#{jwtToken}
+```
+
+The JWT must use `content.type: 'aiAgent'` for the same agent. To open an existing conversation, add the thread UUID after `/threads`; see [Resuming a thread from an iframe embed](/embed/embed-ai-agents#resuming-a-thread-from-an-iframe-embed).
+
+Because the JWT sits in the hash fragment, it is never sent to the server with HTTP requests and never appears in server logs or browser history.
 
 ## URL construction
 
@@ -262,7 +283,7 @@ https://app.lightdash.cloud/embed/abc-123?timezone=America%2FLos_Angeles#eyJhbGc
 ```
 
 <Info>
-The embed `timezone` param sits at the top of the [timezone resolution priority](/personal-settings/timezone#report-timezone-resolution) for that session and overrides any per-chart timezone pin. It only applies to direct iframe and shareable URL embeds, not the React SDK, where the host app's URL is unrelated to the embed.
+The embed `timezone` param sits at the top of the [timezone resolution priority](/personal-settings/timezone#report-timezone-resolution) for that session and overrides any per-chart timezone pin. It only applies to iframe embed URLs, including ones [opened as a link](#open-an-embed-url-as-a-link), not the React SDK, where the host app's URL is unrelated to the embed.
 </Info>
 
 ### Combining parameters
@@ -569,6 +590,21 @@ function lightdash_embed_shortcode($atts) {
 }
 add_shortcode('lightdash', 'lightdash_embed_shortcode');
 ```
+
+Tools with an embed block that takes a URL, such as Notion's `/embed` block, can show a dashboard from its embed URL. Paste the full URL, including the JWT after the `#`. The page has no way to refresh the token, so the embed stops working when the JWT expires; generate the URL with a [long-lived token](#option-1-long-lived-tokens) and replace it before it expires.
+
+### Open an embed URL as a link
+
+The generated embed URL can also be used directly as a temporary link, useful for sharing content with people that don't have a Lightdash account. When they open the link, the browser will render the iframe itself.
+
+1. Go to **Settings** → **Embed** and open the tab for the content type.
+2. Pick the content, an expiry, and the interactivity and user attributes the viewer should get.
+3. Click **Generate & copy URL**, then send the URL.
+
+The link has the same limits as the embed:
+
+- Anyone with the URL can open it until the token expires. You can't see who has it or revoke a single URL; [regenerating the embed secret](/embed/set-up-embedding#step-1-create-an-embed-secret) invalidates every embed URL in the project.
+- The viewer sees exactly what the embed shows. A chart, for example, has no CSV or image export; see [chart embed limitations](/embed/embed-charts#limitations).
 
 ## Token refresh
 
