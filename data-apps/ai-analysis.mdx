@@ -1,29 +1,31 @@
 ---
 title: "AI analysis"
 sidebarTitle: "AI analysis"
-description: "Summarize what a data app shows, flag notable data points, and let an agent investigate why"
+description: "Summarize what a data app or dashboard shows, flag notable data points, and let an agent investigate why"
 tag: "Experimental"
 ---
 
 <Info>
-  <Badge icon="test-pipe-2" color="orange" size="sm" shape="pill">Experimental</Badge> AI analysis is off by default. It needs [AI agents](/agents/set-up-agents#enable-ai-features) enabled for your organization and the `enable-data-app-analysis` feature flag, which Lightdash support turns on for Cloud organizations on request. [What Experimental means](/support/feature-maturity-levels).
+  <Badge icon="test-pipe-2" color="orange" size="sm" shape="pill">Experimental</Badge> AI analysis is off by default. It needs [AI agents](/agents/set-up-agents#enable-ai-features) enabled for your organization and a feature flag — `enable-data-app-analysis` for data apps, `enable-dashboard-analysis` for [classic dashboards](#on-classic-dashboards) — which Lightdash support turns on for Cloud organizations on request. [What Experimental means](/support/feature-maturity-levels).
 </Info>
 
 AI analysis reads the results a data app has loaded for the viewer's current filters and tells them what stands out: a headline, a short summary, a list of notable data points, and what the data could not show. For any notable point, an AI agent can then investigate the likely causes using data beyond the page.
 
 Nothing about this is written into the app. Lightdash runs the analysis over the queries the app already executed, so every result respects the viewer's permissions and user attributes, and an app can pick the analysis up and render it in place without a single line of AI code of its own.
 
+The same analysis also works on [classic dashboards](#on-classic-dashboards) — no data app required.
+
 ## Turn it on
 
 An organization admin enables AI analysis under **Settings → Data apps → AI analysis**. The page is only shown once the feature flag is on.
 
-- **AI analysis** turns it on for every data app in the organization. It sends query results a viewer already has access to, to your configured AI provider. If you have [brought your own provider keys](/agents/set-up-agents#bring-your-own-ai-providers-and-models), the calls go through your account; otherwise they run on Lightdash's key.
+- **AI analysis** turns it on for every data app — and, with the dashboards flag, every [dashboard](#on-classic-dashboards) — in the organization. It sends query results a viewer already has access to, to your configured AI provider. If you have [brought your own provider keys](/agents/set-up-agents#bring-your-own-ai-providers-and-models), the calls go through your account; otherwise they run on Lightdash's key.
 - **Continue investigations in Ask AI** lets viewers carry an investigation on as an Ask AI thread. Turn it off to keep viewers at the written explanation.
 - **Summary instructions** set organization-wide guidance every analysis summary follows — a language ("write in British English"), formats ("amounts in ZAR"), or a line of domain vocabulary. An app's own [analysis instructions](#steer-the-summaries) are applied on top of these. Changing the instructions means stored analyses no longer match, so the next view runs fresh.
 
 AI analysis does not depend on Ask AI being shown elsewhere in Lightdash. To run it in data apps while hiding the Ask AI homepage card, navbar action and agent chat, turn off **Lightdash UI** under **Settings → Ask AI → General → Visibility**.
 
-Self-hosted instances add `enable-data-app-analysis` to `LIGHTDASH_ENABLE_FEATURE_FLAGS`; see [feature flags](/self-host/customize-deployment/environment-variables#feature-flags).
+Self-hosted instances add `enable-data-app-analysis` (and/or `enable-dashboard-analysis`) to `LIGHTDASH_ENABLE_FEATURE_FLAGS`; see [feature flags](/self-host/customize-deployment/environment-variables#feature-flags).
 
 ### Limits
 
@@ -120,6 +122,16 @@ If you [edit app code locally](/data-apps/download-data-apps-as-code), two hooks
 - `useAiPrompt()` lets the app ask its own short question about results it has already loaded, for an author-written takeaway under a chart or an explanation of a clicked row. Answers are plain text. Prompts are capped at 2,000 characters and count against the prompt limits above.
 
 Neither hook sends rows anywhere: the app names the query, and Lightdash reads the results from the viewer's own query history. Both report the feature as unavailable, and render nothing, outside a Lightdash host that has analysis on. The app template's `references/ai-analysis.md` documents both in full.
+
+## On classic dashboards
+
+The same analysis runs on any dashboard, without building a data app. It is gated by its own `enable-dashboard-analysis` feature flag — independent of the data-apps flags, so an organization can have dashboard analysis without data apps — which Lightdash support turns on for Cloud organizations on request; self-hosted instances add it to `LIGHTDASH_ENABLE_FEATURE_FLAGS`. The same organization consent toggle under [Settings → AI analysis](#turn-it-on) applies (when data apps are not enabled, the page appears as a top-level settings item), and so do the same [limits](#limits), [reuse](#reuse), and 30-day retention.
+
+Open a dashboard in view mode and pick **Analyse this view** from the AI launcher in the corner. The analysis covers the queries the dashboard ran for the current filters, and **charts on the active tab only** — unlike apps, where hidden tabs may be included. A different tab, filter, or parameter value is a different view, analysed (or served from storage) separately. Hovering a finding scrolls the chart it came from into view, and once an analysis exists, the launcher greets the next viewer of that view with an **Insights on this view** card — the headline and top findings — instead of waiting for a click.
+
+[Investigations](#investigate-a-finding) and [Continue in Ask AI](#continue-in-ask-ai) work exactly as they do for apps. Dashboards have no app code to carry [analysis instructions](#steer-the-summaries), so the organization-wide **Summary instructions** are the way to steer dashboard summaries.
+
+Dashboard analysis is for signed-in viewers: it is not offered in edit mode, on embedded dashboards, or in scheduled deliveries.
 
 ## Where it works
 
