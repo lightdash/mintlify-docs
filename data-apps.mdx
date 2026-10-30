@@ -48,9 +48,10 @@ We encourage you to try out Custom apps to make something wildly different - the
 The more context you give the agent, the better the result. You can attach several types of context to your prompt:
 
 - **Charts** - pick existing saved charts to give the agent a working metric query it can reuse. The agent gets the structure of the query (the dimensions, metrics, filters, and table) so it knows exactly which fields to use.
-- **Dashboards** - attach a dashboard to pull in every query on it at once.
+- **Dashboards** - attach a dashboard to pull in every query on it at once. The agent also gets the dashboard's layout - its tabs, tile positions, tile types and titles, and dashboard filters - and recreates that structure unless you ask for a different design. If the app drifts from the dashboard, ask it to keep each tile's chart type and the dashboard's filters, or attach a screenshot of the dashboard. For a dashboard with many charts, ask for a few tiles at a time.
 - **Images** - upload screenshots, mockups, or design references. Images are one of the fastest ways to nail the visual style you want.
-- **Files** - attach a PDF or a text-based file (JSON, CSV, Markdown, Tableau `.twb` workbooks, code, and similar) using the attach button, or by pasting or dragging it into the prompt box. The agent reads the file's contents alongside your prompt - for example, it can read a Tableau workbook's XML to recreate its charts, or work from a JSON export from another tool. Each file is capped at 10MB, and you can attach up to 10 files to a single prompt.
+- **Files** - attach a PDF or a text-based file (JSON, CSV, Markdown, Tableau `.twb` workbooks, code, and similar) using the attach button, or by pasting or dragging it into the prompt box. The agent reads the file's contents alongside your prompt - for example, it can read a Tableau workbook's XML to recreate its charts, or work from a JSON export from another tool. Each file is capped at 10MB, and you can attach up to 10 files to a single prompt. Files are reference material for that build only: they aren't added to the app, so the running app can't read them or refresh from them. Values the agent copies from a file into the app stay fixed until you prompt again, so for data that has to stay current, query your semantic layer or use an [external connection](/data-apps/external-connections).
+- **Elements of the running app** - turn on the element picker (the pointer icon next to the screenshot button), then click an element in the preview to insert a reference to it in your prompt. Put one reference per line, each followed by the change you want, to make several targeted edits in one prompt.
 - **Screenshots of the running app** - the preview panel has a **Screenshot** button that captures the current state of the running app and attaches it as context to your next prompt. Use it when you want the agent to react to what you're looking at right now ("make this header smaller", "the spacing here is off") instead of describing it from scratch.
 - **Sample data** - each chart and dashboard chip has an **Include sample data** toggle. When you turn it on, Lightdash runs the query and passes the first 10 rows to the agent so it can make better decisions about formatting, content, and copy. Sample data is opt-in per resource because rows can be sensitive - the agent will see whatever you send it. On self-hosted instances, `LIGHTDASH_APP_SAMPLE_DATA_ENABLED=false` turns sample data off for every organization and hides the toggle; see [environment variables](/self-host/customize-deployment/environment-variables#data-apps-runtime).
 - **Live-linked charts** - each chart chip also has a **Link** toggle next to Include sample data. When Link is off (the default), the agent embeds a frozen copy of the chart's metric query into the app - later edits to the chart in Lightdash won't flow through. When Link is on, the app runs the chart live by its UUID on every load, so changes made to the saved chart in Lightdash (metric swaps, filter tweaks, additional dimensions) show up in the app on the next refresh. Linked charts still respect the viewer's permissions and appear in the Queries tab of the inspector like any other query. Link is not yet supported for embedded apps that authenticate via JWT.
@@ -88,6 +89,12 @@ You can change the model on every prompt - including mid-iteration. The existing
 Every prompt you send creates a new version of the app. The agent works from the current app source, so follow-up prompts like "make the header smaller" or "swap the bar chart for a line chart" land as targeted changes instead of full rewrites.
 
 If a build is taking too long or going in the wrong direction, you can cancel it and try a different prompt.
+
+The agent keeps the conversation between prompts. With Claude, a long conversation is summarized automatically before the next build, so build time depends on how much a request changes and on the model, not on how many versions the app has. To start a fresh conversation, click **Clear agent context** (the eraser icon next to the model picker). The agent forgets the conversation and starts from your latest ready version, and unfinished changes from a cancelled build are discarded.
+
+### Upgrading an app
+
+An app keeps the template and SDK it was built with, so later improvements to them don't reach it on their own. When a newer version is available, the app's **⋯** menu shows **Upgrade app** with a **New** badge. Upgrading creates a new version on the latest template and lists what's now active and which new features you can ask the agent to add. Nothing that changes your app is added automatically.
 
 ### Restoring an earlier version
 
@@ -188,6 +195,8 @@ When the agent wires up an export control, it can offer the user:
 
 Exports respect the same permissions, user attributes, and export limits as exports started from a chart or dashboard. Rows are generated by Lightdash and streamed to the browser as a real file download - the app itself never serializes the data.
 
+CSV and XLSX are the only built-in file formats. Other formats, such as PowerPoint or Word files, need a client-side library added as a [custom dependency](/data-apps/download-data-apps-as-code#experimental-custom-dependencies).
+
 ### Exporting to PDF
 
 You can ask the agent to add a PDF download button to any app — for example, "add a download as PDF button to the header" or "let me export this report as a PDF". This works especially well with the **PDF report** template, which is laid out for print, but you can add PDF export to any app.
@@ -227,6 +236,10 @@ Data apps also power reusable custom chart types, which are built and managed in
 ## Sharing an app
 
 Newly created apps are personal - only you can see them. Apps will initially appear in **Settings \> My apps.** To share an app with your team, add it to a space or use [Direct access](/workspace-admin/direct-access).
+
+To open the app without the build chat, select **Preview latest** in the app's **⋯** menu. It opens the app's `/view` address in a new tab - the same page people see when they open the app from a space - which always shows the latest ready version. Share that address rather than the builder's. To show a specific version, use `/versions/<version>/view` in place of `/view`.
+
+An app opened on its own page has no comments. To discuss an app with your team, add it to a dashboard: data app tiles carry their own [comment thread](/explore/dashboards/interact#comment-on-a-tile) like any other tile.
 
 Access to a data app combines the user's **project role** with their **space access** or [direct content role](/workspace-admin/direct-access#how-roles-combine).
 
@@ -306,11 +319,21 @@ This means:
 
 - **Permissions are enforced by Lightdash, not the app.** Whoever opens the app sees data based on their own role, group memberships, and user attributes - exactly as if they had run the query themselves in an explore.
 - **Apps run in the browser only.** An app is a React app with no Python runtime or server-side code, and it can't call outside services directly. To call a third-party API, link an [external connection](/data-apps/external-connections). To send results on a schedule, use [scheduled deliveries and syncs](/data-apps/deliveries-and-syncs); for custom scripts, use the [Lightdash API](/api-reference/v1/introduction).
-- **The agent generates code, not data.** When the app is being built, the configured coding agent sees your dbt model catalog (tables, dimensions, metrics) and any context you attach to the prompt. It writes queries against your semantic layer; it does not get a dump of your warehouse.
-- **The agent can see anything you attach.** Charts, dashboards, images, files, and sample data you include in the prompt are passed to the agent as context. Don't include data you wouldn't be comfortable sending to the model.
+- **The agent generates code, not data.** When the app is being built, the configured coding agent sees your dbt model catalog (tables, dimensions, metrics) and any context you attach to the prompt. It writes queries against your semantic layer; it does not get a dump of your warehouse. Clarifying questions before a build use only your prompt, a summary of your tables, and the names of the charts and dashboards you attached.
+- **The sandbox only runs during builds.** The coding agent works in an isolated sandbox while it builds or edits the app. When someone opens the app, it runs in their browser and its queries go from the browser to Lightdash to your warehouse, so query results never pass through the sandbox or reach the agent.
+- **The agent can see anything you attach.** Charts, dashboards, images, files, screenshots, and sample data you include in the prompt are passed to the agent as context. These are the only ways rows from your warehouse reach the agent. Don't include data you wouldn't be comfortable sending to the model.
 - **Build errors go back to the agent.** If the generated code fails to build or fails Lightdash's app checks, Lightdash sends the compiler output or the check's message to the agent so it can fix the code, up to two times. These messages describe the code, not your query results.
-- **The agent can see anything you attach.** Charts, dashboards, images, and sample data you include in the prompt are passed to the agent as context. Don't include data you wouldn't be comfortable sending to the model.
 - **Apps can render field links from the semantic layer.** Query result columns include the link patterns configured with a dimension's [`urls`](/semantic-layer/dimensions#urls). The app's code decides how to display them. Ask the agent to make values clickable using their configured field links, rather than copying the URL pattern into your prompt. If you edit the app's code, use `resolveColumnUrls` from `@lightdash/query-sdk` in your cell renderer to resolve the patterns for each row.
+
+### Links out of an app
+
+The app's sandboxed iframe limits how a link can leave the app:
+
+- A link that opens in a new tab (`target="_blank"`, or `window.open(url, '_blank')`) works, and the new tab is an ordinary browser tab.
+- A link with `target="_top"` replaces the Lightdash page, but only when the viewer clicks it. The app can't redirect the page on load or on a timer.
+- A link with no target loads inside the app's own frame instead of replacing the page.
+
+Ask the agent for the behavior you want, for example "make each card open its URL in a new tab".
 
 ### Turning off screenshots and attachments
 
@@ -328,7 +351,8 @@ On self-hosted instances, `LIGHTDASH_APP_CAPTURES_ENABLED=false` turns this off 
 - **Iterate.** Most apps get substantially better after a few rounds of iteration. Start with the rough shape, then refine.
 - **Use images to lock in style.** A screenshot of a dashboard, a brand guideline, or even a hand-drawn mockup goes a long way toward getting the layout, typography, and colors right on the first try.
 - **Attach sample data when content matters.** If the app is making decisions based on what's actually in your data - picking a chart type, writing copy, or formatting values - turn on sample data for the relevant charts. Just remember the agent will see the rows you share.
-- **Reference existing charts and dashboards.** Pointing the agent at a working metric query is faster and more reliable than describing the query in prose.
+- **Reference existing charts and dashboards.** Pointing the agent at a working metric query is faster and more reliable than describing the query in prose. Attach only the charts the app needs: a long list, or several copies of the same chart, makes the output less consistent.
+- **Describe drill-downs in full.** Say what a click opens, what it shows, and what data it needs - for example, "clicking a month opens a dialog with that month's daily order count".
 - **Use the network inspector early.** If something looks off, check the queries and external requests the app is running before tweaking the prompt.
 - **Build what-if inputs on existing metrics.** The app gets each query's rows in its own code, so a slider or input that scales a result (for example, a growth rate applied to revenue) can work on any metric you already have, with no dbt changes. You only need [parameters](/semantic-layer/parameters) when the input should change the query's SQL itself; the app then passes the value with the query.
 
