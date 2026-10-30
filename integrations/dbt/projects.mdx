@@ -5,6 +5,9 @@ description: "Sync your dbt project to Lightdash by deploying with the CLI or re
 doc-type: reference
 ---
 
+import { FeatureBadge } from '/snippets/feature-badge.jsx';
+
+
 <Info>
   Lightdash supports dbt v1.4.0 and above. If you are using an older version of dbt, you will need to upgrade to sync your project to Lightdash.
 </Info>
@@ -62,9 +65,7 @@ For projects loaded through the CLI only, without a remote git connection:
 
 Not sure whether to use `lightdash deploy` or `lightdash refresh`? Read about the [differences between the two commands](/workflow/cli/reference#lightdash-deploy-vs-lightdash-refresh) in the CLI reference.
 
-<Note>
-  When you create a project, **Connect via CLI** sets it up for CLI deploy, and **Connect manually** lets you pick a dbt connection type such as GitHub or GitLab for a Git connection. You can change the dbt connection type later in **Project settings**.
-</Note>
+When you create a project, **Connect via CLI** sets it up for CLI deploy, and **Connect manually** lets you pick a dbt connection type such as GitHub or GitLab for a Git connection. You can change the dbt connection type later in **Project settings**.
 
 For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://github.com/lightdash/cli-actions) repo.
 
@@ -263,9 +264,7 @@ All sources are compiled together into one set of Explores, so tables from diffe
 - Multiple teams that each own their own dbt project, but share the same warehouse and want a single place to explore the data.
 - Shared/common dbt packages you want to pull into a project alongside team-specific models.
 
-<Info>
-  All sources share the Lightdash project's warehouse connection. On a project with [multiple warehouse connections](/workspace-admin/multiple-warehouse-connections), you can run an additional source on another connection.
-</Info>
+All sources share the Lightdash project's warehouse connection. On a project with [multiple warehouse connections](/workspace-admin/multiple-warehouse-connections), you can run an additional source on another connection.
 
 For BigQuery joins across sources, check the [dataset location requirements](/integrations/connect-project#bigquery) in the connection settings.
 
@@ -280,9 +279,7 @@ From the panel you can:
 - **Remove an additional source**: additional sources can be removed at any time.
 - **Edit the primary source**: the primary source is edited via the normal dbt connection form. It cannot be removed.
 
-<Info>
-  If a source's saved credentials can't be loaded, its row in the sources panel shows a warning icon. Other sources keep working normally. Only operations that need that specific source's connection will fail.
-</Info>
+If a source's saved credentials can't be loaded, its row in the sources panel shows a warning icon. Other sources keep working normally. Only operations that need that specific source's connection will fail.
 
 Each additional source has:
 
@@ -301,9 +298,7 @@ On refresh, Lightdash compiles every source and merges the resulting manifests i
 
 A dbt package installed in more than one source causes the same failure, because each of those manifests contains the package's models under the same IDs. The [dbt selector](#dbt-selector) doesn't prevent it: Lightdash checks every model in each source's manifest for collisions, not only the selected ones. Keep the package's models enabled in one source and disable them in the others with dbt's [`enabled`](https://docs.getdbt.com/reference/resource-configs/enabled) config.
 
-<Warning>
-  **The CLI's `--combine-manifest` flag is a different mechanism.** It merges an external manifest into the manifest the CLI just generated, and unlike the additional-sources merge it does not fail on collisions — see [`lightdash deploy`](/workflow/cli/reference#lightdash-deploy) in the CLI reference.
-</Warning>
+**The CLI's `--combine-manifest` flag is a different mechanism.** It merges an external manifest into the manifest the CLI just generated, and unlike the additional-sources merge it does not fail on collisions — see [`lightdash deploy`](/workflow/cli/reference#lightdash-deploy) in the CLI reference.
 
 **What's merged vs. deduplicated.**
 
@@ -315,7 +310,7 @@ A dbt package installed in more than one source causes the same failure, because
 
 ### Cross-project refs between sources
 
-<Badge icon="test-pipe-2" color="orange" size="sm" shape="pill">Experimental</Badge>
+<FeatureBadge label="Experimental" />
 
 A model in one source can reference a model in another connected source. Use dbt's two-argument `ref`, the same syntax as dbt Mesh and dbt-loom:
 
@@ -327,7 +322,7 @@ The first argument is the `name` from the upstream project's `dbt_project.yml`. 
 
 To set up cross-project refs:
 
-1. Enable the `cross-source-dbt-refs` feature flag, which is off by default, next to `multi-dbt-sources`. On Lightdash Cloud, `multi-dbt-sources` is already on; contact [Lightdash support](mailto:support@lightdash.com) to enable `cross-source-dbt-refs` for your organization. On self-hosted deployments, add both flags to `LIGHTDASH_ENABLE_FEATURE_FLAGS`. [What Experimental means](/support/feature-maturity-levels).
+1. Enable the `cross-source-dbt-refs` feature flag, which is off by default, next to `multi-dbt-sources`. On Lightdash Cloud, `multi-dbt-sources` is already on; contact [Lightdash support](mailto:support@lightdash.com) to enable `cross-source-dbt-refs` for your organization. On self-hosted deployments, add both flags to `LIGHTDASH_ENABLE_FEATURE_FLAGS`.
 2. Connect every upstream repository as a dbt source of the same Lightdash project, as described in [Adding and managing sources](#adding-and-managing-sources).
 3. Use the [dbt selector](#dbt-selector) of each source to choose which of its models become Explores. A source whose selector matches none of its models still resolves refs from other sources, but you cannot join to its models.
 4. Refresh the project.
@@ -456,12 +451,14 @@ A preview of a multi-source project contains models from every source, not just 
 **From the CLI** (`lightdash preview` and `lightdash start-preview`). The CLI compiles your local repo, then fetches the parent project's merged manifest from Lightdash and combines the two before uploading. Your locally compiled models win on conflicts, so you get your working changes on top of everything else in the project. This is automatic — you don't need to pass `--combine-manifest`.
 
 <Warning>
-  **The CLI's automatic combine is fail-open.** If the parent's merged manifest can't be fetched, the CLI prints a warning and continues with your local models alone, which produces a preview missing the other sources' models rather than an error. Read the CLI output if a preview looks short of models. The most common causes are:
-
-  - The parent project has not completed a server-side refresh since additional sources were added, so it has no merged manifest yet. Run **Test & deploy** on the parent first.
-  - Your local repo isn't recognised as one of the parent's sources, in which case the CLI says `the local dbt project is not a source of this Lightdash project`.
-  - You passed `--no-combine`, which skips the fetch.
+  If the CLI cannot fetch the parent's merged manifest, it continues with your local models alone, producing a preview that is missing the other sources' models. Read the CLI output if a preview looks short of models.
 </Warning>
+
+The most common causes are:
+
+- The parent project has not completed a server-side refresh since additional sources were added, so it has no merged manifest yet. Run **Test & deploy** on the parent first.
+- Your local repo isn't recognised as one of the parent's sources, in which case the CLI says `the local dbt project is not a source of this Lightdash project`.
+- You passed `--no-combine`, which skips the fetch.
 
 Passing `--combine-manifest <path-or-url>` explicitly overrides the automatic fetch, and is still the right option when you want a specific manifest rather than the parent's. It takes a single file, so in a project with more than two sources that file must already contain the full merged set.
 
@@ -482,17 +479,13 @@ Fully supported across all git-backed sources. AI agents that open PRs with dbt 
 
 If it can't decide, it doesn't guess. It asks you to pick from the candidate sources. The chosen source is remembered for the whole thread, so follow-up messages keep editing the same repo and updating the same PR.
 
-<Info>
-  Only git-backed sources (GitHub, GitLab, and other git connection types) can be targeted by agent write-back. If the primary source is not git-backed, the agent will skip it in favor of git-backed additional sources.
-</Info>
+Only git-backed sources (GitHub, GitLab, and other git connection types) can be targeted by agent write-back. If the primary source is not git-backed, the agent will skip it in favor of git-backed additional sources.
 
 #### Explore write-back
 
 Not available on a project with an additional git-backed source, even for models in the primary source. Lightdash can't tell which source owns the model, so writing custom metrics and dimensions back as a PR from the Explore view fails with an error that starts `Explore write-back cannot determine which dbt source owns this model on a project with multiple git-backed dbt sources`.
 
-<Warning>
-  To edit models in a multi-source project, use AI agent write-back or edit the owning source's dbt project directly. The next refresh picks up the change.
-</Warning>
+To edit models in additional sources, use AI agent write-back or edit the source's dbt project directly. The next refresh picks up the change.
 
 ## dbt project settings
 
@@ -502,7 +495,7 @@ Below are details about the universal fields for all connected dbt projects.
 
 ### dbt selector
 
-<Info>This setting is found under Advanced configuration options</Info>
+This setting is found under Advanced configuration options
 
 You can filter out models in your dbt project that you don't want to see in Lightdash. This is useful if you have a large dbt project and you want to speed up the sync process. Unlike [Tables configuration](/semantic-layer/tables#choosing-which-tables-appear-in-lightdash), this selector is applied to the dbt models, so it will skip the entire compilation process for the models that you don't want to see in Lightdash. For a side-by-side comparison of the two settings, see [Tables configuration vs. dbt selector](/semantic-layer/tables#tables-configuration-vs-dbt-selector).
 
@@ -652,9 +645,7 @@ Then Lightdash will create/query this model in the `staging` schema - not `analy
 
 This gives you clean, professional schema names in production (`staging`, `marts`, `reporting`) while maintaining developer isolation in development environments (`dbt_jane_staging`, `dbt_john_staging`).
 
-<Tip>
-The `generate_schema_name` macro is a default dbt macro and its behavior can be overridden by adding a macro to dbt with the same name. If this macro is not showing up in your dbt project, it means that your project is using the default macro. It is a good idea to check your project for custom macros which can alter your project's configurations.  
-</Tip>
+The `generate_schema_name` macro is a default dbt macro and its behavior can be overridden by adding a macro to dbt with the same name. If this macro is not showing up in your dbt project, it means that your project is using the default macro. It is a good idea to check your project for custom macros which can alter your project's configurations.
 
 **Example: Warehouse configuration**
 
@@ -688,7 +679,7 @@ Environment variables allow you to set dynamic values that your dbt macros can r
 
 ### Configuring environment variables in Lightdash
 
-<Info>This setting is found under Advanced configuration options</Info>
+This setting is found under Advanced configuration options
 
 If your dbt project uses [environment variables in your dbt `profiles.yml` file](https://docs.getdbt.com/reference/dbt-jinja-functions/env%5Fvar), you can add these to Lightdash in your project settings. For each environment variable, you'll need to add the `key` + `value` pair for the item.
 

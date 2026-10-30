@@ -6,9 +6,7 @@ doc-type: tutorial
 
 
 
-<Note>
-  Every workflow on this page has a ready-to-use template in the [cli-actions](https://github.com/lightdash/cli-actions) repo. Copy the template you need into `.github/workflows/` in your dbt repo and adapt it to your project.
-</Note>
+Every workflow on this page has a ready-to-use template in the [cli-actions](https://github.com/lightdash/cli-actions) repo. Copy the template you need into `.github/workflows/` in your dbt repo and adapt it to your project.
 
 We've used [GitHub Actions](https://docs.github.com/en/actions) as an example, since it's most popular with our users, but you can use any CI/CD tool that can run commands in a terminal.
 
@@ -27,9 +25,7 @@ All of these workflows require secrets so that the CI/CD tool can authenticate w
 
 The workflows read their credentials from repository secrets. Follow GitHub's guide to [using secrets in GitHub Actions](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions) to add each secret below to your dbt repo.
 
-<Info>
-  If you already have a GitHub action for Lightdash, then you can use the same Lightdash secrets you created for your other action.
-</Info>
+If you already have a GitHub action for Lightdash, then you can use the same Lightdash secrets you created for your other action.
 
 Every workflow needs these secrets:
 
@@ -41,7 +37,7 @@ Every workflow needs these secrets:
 
 For automation, use a dedicated identity rather than an individual's [personal access token](/personal-settings/create-personal-tokens#token-ownership):
 
-* Invite a dedicated user (for example `ci@yourcompany.com`) with the [`Developer` role](/workspace-admin/roles) — at the organization level if any of your workflows [create preview projects](#add-previews-to-pull-requests), since that needs an organization admin or developer — and generate the personal access token while signed in as that user.
+* Invite a dedicated user (for example `ci@yourcompany.com`) with the [`Developer` role](/workspace-admin/roles) on each project your workflows deploy to, or at the organization level, and generate the personal access token while signed in as that user. Either grant lets it [create preview projects](#add-previews-to-pull-requests): a project-level Developer can create previews from that project, and an organization-level Developer can create them from any project.
 * Use a [service account token](/workspace-admin/service-accounts), with the role required by your workflows. See the service account documentation for availability and setup.
 
 * `LIGHTDASH_PROJECT` is the UUID for your project. For example, if your URL looks like `https://app.lightdash.cloud/projects/3538ab33-dc90-aabb-bc00-e50bba3a5f69/tables`, then `3538ab33-dc90-45f0-aabb-e50bba3a5f69` is your `LIGHTDASH_PROJECT`.
@@ -234,13 +230,11 @@ Now that you have your secrets set up, you can use them in the sections below to
 
 If you've connected Lightdash to GitHub, you can setup a `github action` and get Lightdash to create new dynamic `preview` projects automatically when a new `pull request` is created, and it will automatically delete the `preview` project when the `pull request` is closed or merged.
 
-<Tip>
-  **Hosted by Lightdash and using GitHub?** Just tell your AI agent "Setup preview deploys for me". The agent will:
+**Hosted by Lightdash and using GitHub?** Just tell your AI agent "Setup preview deploys for me". The agent will:
 
-  - Walk you through the next steps to set up the required environment variables.
-  - Open a pull request for you to review and merge.
-  - Once merged, future semantic layer changes will automatically generate a preview environment and get commented on the pull request.
-</Tip>
+- Walk you through the next steps to set up the required environment variables.
+- Open a pull request for you to review and merge.
+- Once merged, future semantic layer changes will automatically generate a preview environment and get commented on the pull request.
 
 
 ### Create preview workflow
@@ -280,27 +274,25 @@ on:
 
 When developing in dbt, you typically have a different set of credentials and dataset/schema than when you are running in production. Here are two options on how to set them up based on the developer that opened the Pull Request.
 
-<Info>
-  If you use dbt cloud IDE to create commits and pull requests you need a few extra steps. We need to add a step in the GitHub action to fetch the user that created the pull request.
+If you use dbt cloud IDE to create commits and pull requests you need a few extra steps. We need to add a step in the GitHub action to fetch the user that created the pull request.
 
-  ```yaml
-  - uses: actions/github-script@v6
-    id: get_pr_creator
-    with:
-      script: |
-        return (
-          await github.rest.repos.listPullRequestsAssociatedWithCommit({
-            commit_sha: context.sha,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-          })
-        ).data[0].user.login;
-      result-encoding: string
+```yaml
+- uses: actions/github-script@v6
+  id: get_pr_creator
+  with:
+    script: |
+      return (
+        await github.rest.repos.listPullRequestsAssociatedWithCommit({
+          commit_sha: context.sha,
+          owner: context.repo.owner,
+          repo: context.repo.repo,
+        })
+      ).data[0].user.login;
+    result-encoding: string
 
-  ```
+```
 
-  When copying the following templates, you should replace `${{ github.actor }}` with `${{steps.get_pr_creator.outputs.result}}`.
-</Info>
+When copying the following templates, you should replace `${{ github.actor }}` with `${{steps.get_pr_creator.outputs.result}}`.
 
 
 #### Use profile targets
@@ -478,11 +470,9 @@ The [compile.yml](https://github.com/lightdash/cli-actions/blob/main/compile.yml
 
 Create a new workflow in your repo, just like you did for the [preview workflow](#create-preview-workflow), and copy in [this compile.yml file](https://github.com/lightdash/cli-actions/blob/main/compile.yml).
 
-<Info>
-  If you only use a subset of your dbt models in Lightdash, then you'll want to specify that subset in the workflow's compile step [here](https://github.com/lightdash/cli-actions/blob/d91de777ed3668b537acd141b734eca75def4e52/compile.yml#L65).
+If you only use a subset of your dbt models in Lightdash, then you'll want to specify that subset in the workflow's compile step [here](https://github.com/lightdash/cli-actions/blob/d91de777ed3668b537acd141b734eca75def4e52/compile.yml#L65).
 
-  For example, to only compile models with the tag `lightdash`, you would change this line to: `run: lightdash compile --select tag:lightdash --project-dir "$PROJECT_DIR" --profiles-dir . --profile prod || lightdash compile --select tag:lightdash --project-dir "$PROJECT_DIR" --profiles-dir .`
-</Info>
+For example, to only compile models with the tag `lightdash`, you would change this line to: `run: lightdash compile --select tag:lightdash --project-dir "$PROJECT_DIR" --profiles-dir . --profile prod || lightdash compile --select tag:lightdash --project-dir "$PROJECT_DIR" --profiles-dir .`
 
 To understand how compilation works and how to enable strict compilation, see [Compilation](/workflow/cli/compile).
 
@@ -493,9 +483,7 @@ To understand how compilation works and how to enable strict compilation, see [C
 
 The [refresh.yml](https://github.com/lightdash/cli-actions/blob/main/refresh.yml) workflow is an alternative to [deploying changes](#deploy-changes-to-lightdash). Instead of compiling your dbt project in the workflow using your `DBT_PROFILES` secret, it runs [`lightdash refresh`](/workflow/cli/reference#lightdash-refresh) on every merge to your main branch, and Lightdash compiles your project server-side using the connection settings saved in your project.
 
-<Info>
-  Your Lightdash project must be connected to a remote git repository for `lightdash refresh` to work, since Lightdash pulls your dbt code from that repository.
-</Info>
+Your Lightdash project must be connected to a remote git repository for `lightdash refresh` to work, since Lightdash pulls your dbt code from that repository.
 
 
 ### Create refresh workflow

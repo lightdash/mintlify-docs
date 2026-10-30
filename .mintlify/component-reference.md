@@ -18,6 +18,8 @@ Props marked **req** are required. Icon-bearing props accept a Tabler name (this
 
 ## Badge
 
+For maturity, plan access, and deployment badges, use `FeatureBadge` from `snippets/feature-badge.jsx` as described in [`components.md`](components.md#lifecycle-and-availability). It wraps the native badge in a styled definition link.
+
 | Prop | Type | Default | Values |
 | --- | --- | --- | --- |
 | `color` | string | `gray` | `gray` `blue` `green` `yellow` `orange` `red` `purple` `white` `surface` `white-destructive` `surface-destructive` |

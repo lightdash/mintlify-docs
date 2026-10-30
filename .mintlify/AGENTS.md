@@ -44,18 +44,18 @@ Write the way the best pages here already read (`explore/dashboards.mdx` is a go
 - **Exact over vague.** Name the setting, the default, the limit and who can do it (the role or permission). "Admins and editors" beats "users with access".
 - **Steps are numbered and one action each.** Say where the reader is before telling them what to click, and show the result when it isn't obvious.
 - **Descriptions are one line.** The frontmatter `description` says what the page lets the reader do, in a phrase with no trailing full stop.
-- **No promises or prices.** No roadmap, timelines or "coming soon"; no prices or plan costs. Scope a plan-gated feature with the `<Info>` gate in [`components.md`](.mintlify/components.md), not prose.
+- **No promises or prices.** No roadmap, timelines or "coming soon"; no prices or plan costs. Use the shared plan badges in [`components.md`](.mintlify/components.md); reserve `<Info>` for feature-specific enablement requirements.
 
 ## Components
 
 Pick a component by the job it does for the reader, never by how it looks. The full system — callout semantics, lifecycle badges, media, tabs vs code groups, icons, and the colour tokens — is [`components.md`](.mintlify/components.md). The rules you'll hit on almost every change:
 
-- **`<Note>` is the default callout.** `<Info>` is a scope gate (plan, deployment, version) and goes first on the page; `<Warning>` means a real cost for ignoring it. Never two callouts back to back.
-- **Lifecycle is a badge, never bold text.** `tag: "Beta"` in frontmatter for a whole page, `<Badge>` for a section. Experimental, Beta, and GA are the only levels.
+- **Prose is the default.** Reserve callouts for availability gates, specific risks, surprising exceptions, and optional shortcuts. Follow the variant and density tests in [`components.md`](.mintlify/components.md); never put two callouts back to back, including through snippets.
+- **Maturity uses shared linked badges.** Import `FeatureBadge` from `snippets/feature-badge.jsx`; use a matching frontmatter `tag` for a whole page. Keep feature-specific enablement instructions in `<Info>`. See [`components.md`](.mintlify/components.md) for placement and plan-access badges.
 - **Every image, video, and iframe is wrapped in `<Frame>`**, with a root-relative `/images/…` path and descriptive `alt`.
 - **Code-only alternatives are a `<CodeGroup>`;** `<Tabs>` is for alternatives with prose in them. Labels sync across the page on exact match, so use the canonical strings.
 - **Icons are Tabler**, set in `docs.json` and in page frontmatter; in prose they only ever mark yes/no cells in a support matrix.
-- **Never pick a colour.** Typed components carry their own; hex appears only in mermaid diagrams and two sanctioned custom callouts.
+- **Never pick a colour.** Typed components carry their own; hex appears only in mermaid diagrams and the sanctioned custom callout.
 
 ## Moving, renaming, or merging
 
@@ -85,6 +85,7 @@ Pages meant to be fetched by URL rather than browsed declare `hidden: true` in f
 
 - [`ia-rules.md`](.mintlify/ia-rules.md) — doc-type contracts, placement, the patch and cleanup profiles
 - [`components.md`](.mintlify/components.md) — which component does which job, lifecycle badges, media, icons, colour tokens
+- [`feature-availability.md`](.mintlify/feature-availability.md) — verify commercial access, deployment support, enablement, and permissions in product sources
 - [`component-reference.md`](.mintlify/component-reference.md) — Mintlify's component surface and prop lists
 - [`navigation.md`](.mintlify/navigation.md) — docs.json navigation primitives and mapping rules
 - [`sidebar-rendering.md`](.mintlify/sidebar-rendering.md) — mint-theme sidebar DOM internals behind the `styles.css` override

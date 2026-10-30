@@ -8,75 +8,80 @@ Which component does which job on this site, and what a page is allowed to choos
 
 ## Callouts
 
-Six variants, one job each. The job is defined by what the reader should *do*, which is what makes the choice testable.
+**Prose is the default.** Use a callout only when the reader needs to notice a prerequisite, avoid a specific consequence, or take a useful detour from the main task. Definitions, instructions, examples, defaults, permissions, and ordinary limitations belong in the section that explains them.
+
+Choose whether the content needs a box before choosing its variant. Being useful or important is not enough: the main text should already be useful and important.
 
 | Component | Job | Test |
 | --- | --- | --- |
-| `<Note>` | Context worth knowing that changes nothing | The reader can skip it and still succeed |
-| `<Tip>` | An optional better way | They succeed without it; they do better with it |
-| `<Info>` | A scope gate — whether this page applies to them at all | Plan, deployment, permission, or version prerequisite |
-| `<Warning>` | A cost they'll pay for ignoring it | Ignoring it means a wrong result, lost work, or a broken deploy |
-| `<Check>` | Confirmation a step worked | "You should now see…" — only inside a procedure |
-| `<Danger>` | Irreversible destruction | Drops data or deletes content with no undo |
+| `<Note>` | A short, surprising exception beside the main explanation | Does this prevent a likely misunderstanding that the surrounding prose cannot address clearly? |
+| `<Tip>` | An optional shortcut or alternative | Can the reader finish the task without it, and does it offer a concrete improvement? |
+| `<Info>` | An availability gate | Does a plan, deployment, feature flag, permission, or version determine whether the page or section applies? |
+| `<Warning>` | A specific risk and how to avoid it | Does ignoring this cause incorrect results, exposed data, lost work, or a failed operation? |
+| `<Check>` | A verification result inside a procedure | Has the reader completed an action, and does this tell them how to confirm it worked? |
+| `<Danger>` | Permanent destruction with no undo | Does the next action irreversibly delete data, content, or an account? |
 
-`<Note>` is the default. When two fit, take the weaker one: a `<Warning>` in a page of nine `<Warning>`s warns nobody.
+Use the least urgent variant that accurately describes the consequence. A recommendation is not a warning; an example of poor practice is not danger; the next step is not a success check. Describe normal results in prose unless a separate verification checkpoint helps the reader.
 
-**Scope gates go first and go once.** An `<Info>` stating plan or deployment availability sits directly under the frontmatter, before the first sentence — a reader who isn't eligible should learn it before reading the page, not on the way out. One per page. Availability that appears on more than one page is a `snippets/` transclusion, not a retyped sentence (ia-rules principle 5).
+**Put gates before the content they qualify.** A page-wide `<Info>` sits before the opening prose, after any imports and badge row. A section with different enablement requirements can have its own gate under its heading and badges; do not repeat the page-wide gate. Routine role requirements for a step belong in that step or a prerequisites list. Availability instructions that appear on more than one page use a `snippets/` transclusion, not a retyped sentence (ia-rules principle 5).
 
-**Density.** Never two callouts back to back — merge them or demote one to prose. Never a callout as the first thing under a heading unless it's the page's scope gate. Never a heading inside a callout: a callout that needs a heading is a section.
+**Keep boxes short and exceptional.** One point, usually one or two sentences. Keep procedures, reference lists, code examples, and media outside the box. Never put a heading inside a callout: content that needs a heading is a section.
+
+Never put two callouts back to back, including boxes rendered by snippets. Combine related risks, or move ordinary explanation into prose. Put a warning immediately before the risky action; otherwise orient the reader before an aside. Availability gates are the exception because eligibility comes first.
+
+Review a page with more than three callouts for overuse; on a long reference page, review each section separately. This is an editorial trigger, not a quota: keep independent security and data-loss warnings where readers need them. If every subsection has a box, check whether those boxes are actually the main explanation. Advice in a guide usually belongs in its main text.
+
+When removing a box, preserve its instructions, caveats, links, and placement beside the relevant action. Delete content only when it repeats the surrounding explanation or no longer describes supported behavior.
 
 **`<Callout>`** — the custom-icon, custom-colour variant — is not a general escape hatch. It is reserved for the small set of site-level editorial moments listed under [Colour](#colour). Everything else uses a typed callout above.
 
 ## Lifecycle and availability
 
-Two independent axes. A feature can be Beta *and* Enterprise-only; they are separate marks and never collapse into one.
+Maturity describes stability; availability describes access. A feature can be Beta and Enterprise-only. [Feature badges reference](../support/feature-badges.mdx) owns their definitions.
 
-**Lifecycle** is the three levels defined in [feature maturity levels](../support/feature-maturity-levels.mdx) — Experimental, Beta, and GA. There is no fourth level: "Preview", "Alpha", and "Early access" are not states this product has, and a feature described that way is one of the three.
+**Maturity lives in badges and nav tags.** A non-GA page declares `tag: "Experimental"` or `tag: "Beta"` and renders the matching shared badge before its opening prose. A non-GA section renders its badge after the heading without tagging the whole page. Deprecated features use `Deprecated` in the same places; deprecation is separate from maturity.
 
 **GA is the unmarked default.** It gets no badge, no `tag`, and no sentence saying so — marking the normal case just teaches readers to ignore the marks that matter.
 
-| Status | Frontmatter | Badge |
-| --- | --- | --- |
-| Experimental | `tag: "Experimental"` | `<Badge icon="test-pipe-2" color="orange" size="sm" shape="pill">Experimental</Badge>` |
-| Beta | `tag: "Beta"` | `<Badge icon="flask" color="purple" size="sm" shape="pill">Beta</Badge>` |
-| Deprecated | `tag: "Deprecated"` | `<Badge icon="haze-moon" color="gray" size="sm" shape="pill">Deprecated</Badge>` |
-| GA | — | — |
+| Kind | Labels |
+| --- | --- |
+| Maturity | `Experimental`, `Beta` |
+| Deprecation | `Deprecated` |
+| Plan access | `Pro`, `Enterprise`, `Add-on` |
+| Deployment | `Cloud-only`, `Self-hosted` |
 
-Deprecated is not a maturity level — it is where a feature goes after GA. Its badge is grey because the feature still works and needs no attention from most readers; red would read as broken.
-
-**A status is always a badge, never styled text.** That holds everywhere the status appears, including inside a scope gate. Bold or linked words carry no consistent styling and nothing a reader learns to scan for:
+**Use `FeatureBadge`; do not retype its markup.** `snippets/feature-badge.jsx` owns the native badge's colour, icon, size, accessible link label, and definition anchor. `styles.css` removes link underlines only for `.feature-badge-link` and keeps a visible keyboard focus outline. The component works in badge rows, prose, and table cells.
 
 ```mdx
+import { FeatureBadge } from '/snippets/feature-badge.jsx';
+
+<div className="feature-badges">
+  <FeatureBadge label="Beta" />
+  <FeatureBadge label="Enterprise" />
+</div>
+
 <Info>
-  <Badge color="purple" size="sm" shape="pill">Beta</Badge> Custom granularities are available on all plans. [What Beta means](/support/feature-maturity-levels).
+  Contact Lightdash support to enable the feature for your organization.
 </Info>
 ```
 
-**A page about a non-GA feature carries the `tag` in frontmatter**, which is what puts the pill in the sidebar — a reader should see the level before they click, not after. The inline `<Badge>` is for a non-GA *section* of an otherwise-GA page, and a page carrying the `tag` doesn't repeat it as a badge on its own title.
+The in-page badge links directly to its definition. Nav tags identify maturity while navigating to the feature page; they are plain strings inside the existing navigation control, not separate links. For an area root rendered as a group, set the matching group `tag` in `docs.json` too.
 
 **Lifecycle marks describe Lightdash features.** A third party's beta or preview status — an Azure preview service, a Cloud Run feature — is a fact about that vendor and stays prose. Badging the page would tell readers a Lightdash feature is Beta when it isn't.
 
-**Availability** is which customers can reach the feature.
+**Badges carry shared meaning; callouts carry specific requirements.** Do not add a maturity-only callout, a repeated explanation of Beta or Experimental, or a separate "What Beta means" link. Keep an `<Info>` for requirements the badge cannot express: requesting a feature flag, setting an environment variable, configuring a provider, or requiring a particular version. Place the badge row before that callout, with both before the content they qualify.
 
-| Condition | Badge |
-| --- | --- |
-| Enterprise plan | `<Badge icon="building-plus" color="blue" size="sm" shape="pill">Enterprise</Badge>` |
-| Self-hosted deployments only | `<Badge icon="server" color="blue" size="sm" shape="pill">Self-hosted</Badge>` |
-| Lightdash Cloud only | `<Badge icon="cloud-bolt" color="blue" size="sm" shape="pill">Cloud</Badge>` |
+**Access badges state verified eligibility.** Use `Pro` on the badge and `Cloud Pro` in prose. Show both `Pro` and `Enterprise` when both plans include a feature; use `Enterprise` alone for features that require that tier. Enterprise includes everything in Pro. `Add-on` marks a separate purchase, and the nearby prose names it. Use `Cloud-only` when self-hosted deployments cannot use the feature. Do not infer availability from maturity or guess which plans include a feature. Deployment badges qualify differences a reader needs to act on, not the audience already named by the self-host area.
 
-**A badge gates, it never labels.** It answers whether the reader can use the thing, and a reader who cannot is meant to stop. A badge describing what the page is about — the tool it uses, the surface it covers — fails the test, because that badge could be justified on any page and so distinguishes none of them. If the page's area, title, or first sentence already implies it, it is a label.
+Before changing an access badge, follow [Verify feature availability](feature-availability.md). [Lightdash pricing](https://www.lightdash.com/pricing) is the source of truth for plans and add-ons; a license check does not establish a Cloud plan or add-on entitlement. Apply gates to the feature or section they actually restrict; do not copy a page-wide gate to a nested feature that has the same requirements. An unbadged feature makes no promise about plan access.
 
 **The colour carries the axis, the icon carries the value.** Availability is blue throughout, so a reader learns that blue means "who can reach this" and reads the icon for which condition. Lifecycle spends its colours on urgency instead: orange for the earliest stage, purple for the settled-but-moving one, grey for the one on its way out.
 
-**Never link a badge, or wrap one in a link.** The theme underlines links with the surrounding text colour, which either cuts through the pill or draws a line beneath it. A badge is a label, not a control.
+**Keep headings free of badges.** Put the shared badge immediately below the heading so the table of contents and heading anchor use the feature name. Preserve an existing explicit anchor when moving a badge out of a shipped heading.
 
 **Reserved, and unused today.** Doc type would be the third axis if it is ever shown, in green so it cannot be mistaken for either of the others: Guide `map-check`, Tutorial `list-numbers`. Do not use them until the sidebar shows doc-type pills again.
 
-Badges sit on the line they qualify — leading a scope gate, immediately after a heading, or inline in the sentence naming the feature. Bold text (`**Beta:**`, `**Availability:**`, `**Enterprise only.**`) is never a substitute.
-
-A badge states the level and stops — the sentence beside it never names the level again. `<Badge>Beta</Badge> Agent memory is a Beta feature` says one thing twice and leaves the reader nothing to act on. Use the sentence for what the level *means here*: who can reach it, what might change, what it costs.
-
-A gate whose sentence only restates its badge is not carrying its weight; the frontmatter `tag` already puts that level in the sidebar.
+Import the component directly into each page that uses it. Shared availability snippets with feature-specific instructions remain separate from the badge row.
 
 ## Frontmatter descriptions
 
@@ -237,14 +242,13 @@ The tokens, from the Lightdash palette:
 
 **Mermaid diagrams** are the first place hexes appear. Colour carries meaning or it's left off — a flowchart whose nodes are coloured for variety is harder to read than one that's plain. Lifecycle diagrams read Experimental → `Series mint`, Beta → `Series lilac`, GA → `Brand`; sequences read left-to-right from `Series mint` through `Series lilac` to `Brand`. Node text on Brand is white, on everything else `Glass`.
 
-**Custom `<Callout>`s** are the second, and there are two sanctioned ones:
+**Custom `<Callout>`s** are the second, with one sanctioned use:
 
 | Moment | Form |
 | --- | --- |
 | Point an agent at machine-readable docs | `<Callout icon="message-chatbot" color="#9990C4">` |
-| Name the audience a page is written for | `<Callout icon="tool" color="#9990C4">` |
 
-Anything else that wants a custom callout is a typed callout that hasn't been chosen yet.
+Audience orientation belongs in the opening prose; use `<Info>` only when it gates availability. Other content follows the typed-callout tests above.
 
 Site-wide colour — brand primary, dark mode, backgrounds — lives in `docs.json` `colors` and `styles.css`. Changing it is a design decision, not a docs change.
 
