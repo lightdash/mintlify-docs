@@ -10,6 +10,14 @@ Every workflow on this page has a ready-to-use template in the [cli-actions](htt
 
 We've used [GitHub Actions](https://docs.github.com/en/actions) as an example, since it's most popular with our users, but you can use any CI/CD tool that can run commands in a terminal.
 
+If your workflow installs the CLI from npm, the runner needs the Node.js version listed in [Advanced: install via npm](/workflow/cli/install#advanced-install-via-npm). In GitHub Actions, set it with an `actions/setup-node` step before the install step:
+
+```yaml
+- uses: actions/setup-node@v4
+  with:
+    node-version: "24"
+```
+
 The repo includes templates for the most popular automations:
 
 1. [Add Lightdash preview projects to pull requests](#add-previews-to-pull-requests)
@@ -457,6 +465,15 @@ Create a new workflow in your repo, just like you did for the [preview workflow]
 Every time someone opens or updates a pull request, the workflow validates your project against the changes and posts the results as a comment on the pull request.
 
 If you want validation to block merging instead, see [validating a preview environment](/workflow/cli/validate#configure-github-actions).
+
+By default, the CLI runs `dbt compile` and reads column types from your warehouse catalog before it validates. To validate before your dbt build has run, for example with a `manifest.json` from a dbt Cloud CI job, add `--skip-dbt-compile` to use the existing `./target/manifest.json` and `--skip-warehouse-catalog` to use the column types declared in your YAML. `lightdash start-preview` takes the same flags:
+
+```yaml
+- name: Start preview
+  run: lightdash start-preview --name "pr-${{ github.event.pull_request.number }}" --skip-dbt-compile --skip-warehouse-catalog
+- name: Validate preview
+  run: lightdash validate --preview --skip-dbt-compile --skip-warehouse-catalog
+```
 
 ---
 
