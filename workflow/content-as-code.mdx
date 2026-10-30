@@ -48,7 +48,7 @@ An approach where your **Git repository is the single source of truth** for char
 
 #### Lock down the UI
 
-For this workflow to succeed, you need to prevent ad-hoc UI edits from drifting out of sync with your repository. Lightdash doesn't commit UI edits back to Git: `lightdash download` and `lightdash upload` are one-way copies that you run yourself. Use **space permissions** to enforce this:
+For this workflow to succeed, you need to prevent ad-hoc UI edits from drifting out of sync with your repository. Lightdash doesn't commit UI edits back to Git on its own: `lightdash download` and `lightdash upload` are one-way copies that you run yourself, and [content review](#review-ui-edits-to-git-backed-content) only opens a pull request when a reviewer asks for one. Use **space permissions** to enforce this:
 
 - Set the spaces containing your code-managed dashboards and charts to **view-only** for all non-admin roles
 - This ensures the YAML files in your repository are always the definitive version of the content
@@ -74,6 +74,19 @@ To fully automate this workflow, set up two CI jobs:
 - **Preview environments on PRs** (optional) — automatically create a preview environment on every PR so reviewers can see dashboard changes before approving. On PR open or update, run `lightdash start-preview` and `lightdash upload --force`, then post the preview link as a PR comment. On PR close, run `lightdash stop-preview` to clean up.
 
 See the [Lightdash CLI reference](/workflow/cli/reference) for full details on available commands.
+
+#### Review UI edits to Git-backed content
+
+To let people keep editing in the UI while your repository stays the source of truth, turn on sync in your [`lightdash.config.yml`](/semantic-layer/lightdash-config-yml):
+
+```yaml
+content_as_code:
+  sync: true
+```
+
+`lightdash upload` reads this setting from your project directory and saves it on the Lightdash project. Every chart and dashboard you then upload is Git-backed. Saving a change to Git-backed content in the UI doesn't publish it, whatever your role: it's saved as a draft that only you see, marked **Unpublished changes**. Content that was never uploaded with sync on saves normally.
+
+To publish a draft, a developer or admin opens **Project settings** → **Content review**, picks the draft, and clicks **Write back to repo**. Lightdash opens a pull request with the draft's content; merge it and run `lightdash upload`, for example from your deploy CI job, to publish the change. **Dismiss** closes a draft without writing it back. **Content review** appears only on projects connected to GitHub or GitLab.
 
 ## `lightdash download`
 
@@ -184,6 +197,8 @@ lightdash download --project 21eef0b9-5bae-40f3-851e-9554588e71a6
 ```
 
 You can find a project's UUID from your Lightdash URL. For example, `https://app.lightdash.cloud/projects/123-project-uuid/`. Here, the project UUID here is `123-project-uuid` .
+
+Admins download every chart and dashboard in the project, including content saved in users' [personal spaces](/explore/default-user-spaces). Other users download only content in spaces they can view.
 
 ### View a chart or dashboard as code in Lightdash
 
@@ -360,6 +375,8 @@ When a chart changes from `copy-of-total-orders` to `total-orders`, Lightdash ke
 - re-running the same rename is a safe no-op;
 - you can rename the chart back to a previous slug without losing the newer slug—it becomes the alias instead.
 
+Chart and dashboard links work with either the slug or the UUID, so links in both forms keep working after a rename. Changing a chart's or dashboard's name doesn't change its slug; only a slug rename does.
+
 If the API rename succeeds but the CLI cannot write the local files, the command reports that Lightdash was updated. Fix the local filesystem issue and run the same command again; the server-side rename is idempotent and the CLI will finish updating the local files.
 
 Use `--path <path>` when your content-as-code files are not in the default `lightdash/` directory:
@@ -515,7 +532,7 @@ When `access` is present, the CLI replaces the space's **complete direct policy*
 - **Legacy files without `access`** never mutate permissions. They still update `spaceName` and other metadata, so the round-trip is safe on projects that haven't adopted the access contract yet.
 - **Non-portable identities** — users or groups that can't be safely resolved on the destination (missing primary email, deleted user, ambiguous group name, SCIM-owned identity that doesn't match) — cause the space to download as a legacy metadata-only file with a destructive-change warning rather than silently revoking access on the next upload. Re-uploading that file leaves the space's access unchanged.
 - **Ambiguous or deleted identities** in an uploaded file produce explicit destructive warnings and cause the CLI to exit with a non-zero status rather than a silent no-op.
-- **Personal spaces** that Lightdash generates automatically are excluded from download and upload. **SCIM-owned users and groups** stay SCIM-owned; you cannot toggle their SCIM ownership through `.space.yml`.
+- **Personal spaces** that Lightdash generates automatically never get a `.space.yml` file, and a `.space.yml` file for one is rejected on upload. Charts and dashboards saved in them still download for admins. **SCIM-owned users and groups** stay SCIM-owned; you cannot toggle their SCIM ownership through `.space.yml`.
 
 #### Authorization
 
@@ -573,6 +590,25 @@ Filtered chart and dashboard operations (`-c`, `-d`) never reconcile unrelated s
 ## Virtual views
 
 You can manage virtual views as code alongside your charts and dashboards — the same `lightdash download` / `lightdash upload` workflow, opt-in with `--include-virtual-views` or `--virtual-views <slug>`. See [Manage virtual views as code](/semantic-layer/virtual-views#manage-virtual-views-as-code) for the YAML contract, flags, and validation rules.
+
+## Scheduled deliveries, alerts, and Google Sheets syncs
+
+You can download the [scheduled deliveries](/explore/create-scheduled-deliveries), [alerts](/explore/create-alerts), and [Google Sheets syncs](/integrations/google-sheets) on your charts and dashboards as code, for example to move them to another project or instance along with the content they send. They're opt-in on download, and `--include-all` includes them too:
+
+```bash
+# Download all of them
+lightdash download --include-scheduled-deliveries --include-alerts --include-google-sheets
+
+# Or pick them by slug
+lightdash download --scheduled-deliveries weekly-revenue --alerts low-stock
+```
+
+Files are written to `lightdash/scheduled-deliveries/`, `lightdash/alerts/`, and `lightdash/google-sheets/`. A bare `lightdash upload` includes them; leave them out with `--skip-scheduled-deliveries`, `--skip-alerts`, or `--skip-google-sheets`.
+
+- Each file references its chart or dashboard, and any dashboard tabs, by slug, so that content must already exist in the destination project or be part of the same upload.
+- Only email and Slack recipients are carried. Schedules that send to Microsoft Teams or Google Chat, and schedules on anything other than a chart or dashboard, are skipped and listed in the download output.
+- A schedule that the upload creates is owned by the user who runs `lightdash upload`.
+- The upload doesn't check access to a Google Sheets sync's spreadsheet, so confirm each sync runs after you upload.
 
 ## Dashboard as code yml reference
 

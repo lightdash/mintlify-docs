@@ -171,6 +171,7 @@ This document describes the steps required to integrate SCIM into your Enterpris
     </Frame>
 
     If Okta's provisioning log shows an `invalidValueTypeForProperty` ("Invalid value data type") error on `roles` while the user is still created in Lightdash, the error comes from Okta's own app profile. Okta discovers Lightdash's multi-valued `roles` attribute and adds it to the Profile Editor as a base attribute typed as Group or string array, which can't store the roles Lightdash returns. Delete the base `roles` attribute from the Lightdash app's profile: it never needs a value or a mapping, because roles are set through `org_role` and your project role attributes. Then retry provisioning for the affected users and check that their group memberships arrived.
+
   </Accordion>
   <Accordion title="Azure">
     Configuring SCIM for your organization requires `Hybrid identity administrator` permissions in Entra ID.
@@ -272,7 +273,7 @@ You can find the full API docs and examples for SCIM [here](/api-reference/scim/
 ## SCIM behavior and implementation details
 
 - `userName` is mapped to the user's primary email in Lightdash. Make sure your identity provider sets `userName` to the user's primary email (and, if sending an `emails` array, the primary email should match).
-- When a user is updated to be inactive (`active: false`) via SCIM, Lightdash will mark the user as inactive, lower their organization role to `member`, and remove their access from all projects and groups. If you later reactivate the user, you'll need to re-assign their group and project access via SCIM or in Lightdash.
+- When a user is updated to be inactive (`active: false`) via SCIM, Lightdash will mark the user as inactive, lower their organization role to `member`, and remove their access from all projects and groups. To reactivate the user, put them back in scope in your IdP so it sends `active: true` for the existing account. You'll need to re-assign their group and project access via SCIM or in Lightdash.
 - An organization must always have at least one `admin`. Any SCIM request that would leave the organization with no admins (for example, demoting or deactivating the sole remaining admin) will be rejected with an error.
 - A user can only have one role per organization and per project, unless [custom roles](/workspace-admin/custom-roles#assigning-multiple-roles-role-sets) are enabled for the organization (which includes role sets) — see [Provisioning role sets](#provisioning-role-sets) below.
 - A user must have an organization role.
@@ -477,6 +478,8 @@ Organizations typically choose one of the following patterns:
 - Users should not have direct project access as they inherit access through their organization role and group membership.
 - To limit users to the projects their groups can access, provision them with the `member` organization role. Any higher organization role gives access to every project, and a group's project role can't narrow it. When you lower users to `member`, give their groups project roles first so nobody loses access in between.
 - During its periodic sync, SCIM will remove any project roles that were assigned to users via the Lightdash UI.
+
+On self-hosted instances, the deprecated `AUTH_ENABLE_GROUP_SYNC` setting fills groups separately from SCIM. At each SSO sign-in it adds the user to existing Lightdash groups whose names match the groups in their SSO token, and it never removes them. Turn it off once SCIM manages group membership, so memberships that SCIM removes don't come back at the user's next sign-in.
 
 ## Rotating a SCIM access token
 

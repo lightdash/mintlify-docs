@@ -128,6 +128,8 @@ For ready-to-use workflow templates, see the [`lightdash/cli-actions`](https://g
 
 The project is connected to a remote git source (GitHub, GitLab, Azure DevOps, or Bitbucket) or to dbt Cloud in Project Settings. Every method triggers the same server-side refresh: Lightdash pulls the connected branch, compiles it using the UI Connection Settings, and updates the project. A [dbt Cloud connection](/integrations/connect-project#dbt-cloud) doesn't compile: the refresh reads what dbt Cloud recorded in the environment's last run. The methods differ only in how you trigger that refresh.
 
+The server-side compile doesn't use dbt, a `profiles.yml` or warehouse credentials on your own machine, so a local `dbt debug` or warehouse permission error doesn't stop Lightdash from refreshing the project.
+
 You can also run [`lightdash deploy`](#cli-deploy-methods) against a git-connected project. It compiles locally or in CI instead of pulling the connected branch, and its result stays in place until the next refresh. Don't use it on projects with [multiple dbt sources](#connecting-multiple-dbt-sources).
 
 Push and merge your changes to the branch your Lightdash project is connected to before you trigger a refresh.
@@ -297,6 +299,8 @@ On refresh, Lightdash compiles every source and merges the resulting manifests i
 **Name collisions.** If the same model name exists in more than one source, **compilation fails** with an error that names each collision and which sources define it (in the form `<section> "<key>" is defined in both "<source A>" and "<source B>"`, listing up to 10 entries and ending with "Rename or remove the duplicate(s) before deploying."). Rename or remove the duplicates in one of the sources before deploying. Only identical dbt built-in macros and docs are merged silently.
 
 A dbt package installed in more than one source causes the same failure, because each of those manifests contains the package's models under the same IDs. The [dbt selector](#dbt-selector) doesn't prevent it: Lightdash checks every model in each source's manifest for collisions, not only the selected ones. Keep the package's models enabled in one source and disable them in the others with dbt's [`enabled`](https://docs.getdbt.com/reference/resource-configs/enabled) config.
+
+The error says the sources `use the same dbt project name` and suggests changing `name:` in `dbt_project.yml`, but a package's name is fixed, so disable its models instead.
 
 **The CLI's `--combine-manifest` flag is a different mechanism.** It merges an external manifest into the manifest the CLI just generated, and unlike the additional-sources merge it does not fail on collisions — see [`lightdash deploy`](/workflow/cli/reference#lightdash-deploy) in the CLI reference.
 

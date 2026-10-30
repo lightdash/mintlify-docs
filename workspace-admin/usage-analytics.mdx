@@ -59,7 +59,18 @@ Self-hosted instances can set the `EXTENDED_USAGE_ANALYTICS=true` environment va
 
 Views are counted the same way here as in the view counter shown next to charts and dashboards in Lightdash. A dashboard view is counted each time the dashboard is loaded, including refreshes. A chart view is counted each time the chart is loaded, including each time it loads as a tile on a dashboard, so a chart usually has more views than the dashboard it sits on. Views aren't deduplicated per user or per day; hover over the view counter to see the number of unique viewers.
 
-View counts are per dashboard and per chart. They don't record which dashboard tab a chart was viewed on, or clicks and other interactions with individual tiles. For more detailed reporting, see the [usage analytics project](/workspace-admin/usage-analytics-project#build-your-own-analysis).
+View counts are per dashboard and per chart. They don't record which dashboard tab a chart was viewed on, or clicks and other interactions with individual tiles. Tiles on a dashboard tab load the first time a viewer opens that tab, so charts on tabs nobody opens don't gain views. For more detailed reporting, see the [usage analytics project](/workspace-admin/usage-analytics-project#build-your-own-analysis).
+
+#### Export raw views
+
+Click **Export CSV** on the User Activity dashboard to download the project's raw chart and dashboard views. Each row is one view, with the item's type, name, UUID and space, the viewer's name and UUID, and the time to the second. The export holds the most recent 100,000 views, newest first, and has no date range.
+
+Chart tiles on [embedded](/embed/reference) dashboards add chart views with an empty user, because embed viewers aren't Lightdash users, and embedded dashboards don't add dashboard views. To see which embed viewer ran a query, use the `embed` and `external_id` [query tags](#query-tags).
+
+To get the same data from the API, authenticate with a [personal access token](/personal-settings/create-personal-tokens) whose user has **View Analytics** on the project:
+
+- `GET /api/v1/analytics/user-activity/{projectUuid}` returns the dashboard's tables as JSON.
+- `POST /api/v1/analytics/user-activity/{projectUuid}/download` returns a URL for the CSV export. Fetch that URL with the same `Authorization` header.
 
 ## Query tags
 
@@ -88,6 +99,8 @@ The following query tags are sent:
 | agent_client | The client of the AI agent, for example an MCP OAuth client ID or a Slack app ID. Only set with [agent identity](/agents/agent-identity#find-agent-queries-in-the-warehouse). |
 | agent_uuid | The UUID of the Lightdash AI agent that ran the query, for in-app chat and Slack agents. Not set for MCP queries. Only set with [agent identity](/agents/agent-identity#find-agent-queries-in-the-warehouse). |
 | user_attribute_`<name>` | One tag per [user attribute](/workspace-admin/user-attributes) value assigned to the querying user. Applies to both regular users and embed viewers, and requires no configuration. |
+
+Query tags name the explore but not the metrics or dimensions a query selected. To count how often each field is used, use the **Semantic usage** explore in the [usage analytics project](/workspace-admin/usage-analytics-project#build-your-own-analysis).
 
 ### Query contexts
 
@@ -159,7 +172,7 @@ Query tags are stored differently in each data warehouse:
 
 ### Attribute BigQuery cost with job labels
 
-On BigQuery, every query tag is a label on the job. BigQuery records the account that ran the job in `user_email`. That is the connection's service account, or the agent's own account with [agent identity](/agents/agent-identity), never the Lightdash user. To find who a job ran for, read the `user_uuid` label. To find which AI agent ran it, read `agent_uuid`.
+On BigQuery, every query tag is a label on the job. BigQuery records the account that ran the job in `user_email`. That is the connection's service account, the person's own Google account when they query with [personal warehouse credentials](/personal-settings/personal-warehouse-connections), or the agent's own account with [agent identity](/agents/agent-identity), never the Lightdash user. To find who a job ran for, read the `user_uuid` label. To find which AI agent ran it, read `agent_uuid`.
 
 BigQuery allows 64 labels on a job. When a query has more tags than that, Lightdash keeps `agent`, `agent_surface`, `agent_client`, `agent_uuid` and `user_uuid` first, then the other query tags, then the user attribute tags. The labels beyond 64 are dropped, so `user_uuid` and the agent labels always stay on the job.
 
@@ -202,4 +215,4 @@ ORDER BY tib_billed DESC;
 
 </CodeGroup>
 
-`total_bytes_billed` drives on-demand cost, and `total_slot_ms` drives cost with capacity pricing. Label values are lower case. To match a `user_uuid` or `agent_uuid` to a name, compare it with the user or agent UUID in Lightdash. The same labels are in the BigQuery [billing export](https://cloud.google.com/billing/docs/how-to/export-data-bigquery), so you can also group billed cost by them there.
+`total_bytes_billed` drives on-demand cost, and `total_slot_ms` drives cost with capacity pricing. Label values are lower case, and any character other than a letter, digit, `_` or `-` becomes `_`, so `exploreView` is stored as `exploreview` and `mcp.run_metric_query` as `mcp_run_metric_query`. To match a `user_uuid` or `agent_uuid` to a name, compare it with the user or agent UUID in Lightdash.

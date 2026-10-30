@@ -48,7 +48,7 @@ Click `New delivery` to open the scheduled delivery configuration. The sidebar s
 
 ### Setup
 
-Under `Delivery > Setup`, name your delivery, set how often it runs (hourly, daily, weekly, monthly, or a custom Cron expression), and pick a time zone — deliveries follow your project's default time zone unless you override it here. Add recipients as email addresses or Slack channels; you can target a person in Slack with `@persons-name` or a channel with `#channel-name`. If your organization has them enabled, Microsoft Teams and Google Chat also show up here as destinations. A delivery can go to several destinations at once, and a channel or email address can receive any number of deliveries, from the same chart or dashboard or from different ones.
+Under `Delivery > Setup`, name your delivery, set how often it runs (hourly, daily, weekly, monthly, or a custom Cron expression), and pick a time zone — deliveries follow your project's default time zone unless you override it here. Add recipients as email addresses or Slack channels; you can target a person in Slack with `@persons-name` or a channel with `#channel-name`. Google Chat and Microsoft Teams also show up here as destinations. On a self-hosted instance, Microsoft Teams shows only when `MICROSOFT_TEAMS_ENABLED` is `true` (see [environment variables](/self-host/customize-deployment/environment-variables#microsoft-teams-integration)). A delivery can go to several destinations at once, and a channel or email address can receive any number of deliveries, from the same chart or dashboard or from different ones.
 
 <Frame>
   ![The Delivery > Setup panel with name, frequency, time zone and recipient fields, and the next send dates listed beside it](/images/explore/create-scheduled-deliveries/scheduled-delivery-setup.png)
@@ -57,6 +57,8 @@ Under `Delivery > Setup`, name your delivery, set how often it runs (hourly, dai
 ### Data & format
 
 Under `Content > Data & format`, choose how the content is delivered — `Image`, `CSV`, `.xlsx`, or `PDF` — and adjust the [filters](#filters) so different recipients can get a different cut of the same chart or dashboard without you having to duplicate it. Row and cell limits for CSV/XLSX exports are covered in [Export limits](/workspace-admin/export-limits).
+
+In Slack, `Image` shows the chart or dashboard in the message itself, so a table chart delivered as `Image` shows its rows without a download; with **Also include image as PDF attachment**, the PDF goes in the message's thread. `PDF` posts the message and then the PDF as a file, which recipients open to view.
 
 #### Filters
 
@@ -103,11 +105,13 @@ For dashboards with more than one [tab](/explore/dashboards#add-tabs), **Include
 
 #### One PDF page per tab
 
-For dashboards that use [tabs](/explore/dashboards#add-tabs), a **Each tab on its own page (with dashboard and tab title)** checkbox appears when the format is `PDF`, or `Image` with `Also send as PDF` enabled. Turn it on to render each tab as its own PDF page — every page includes the dashboard title and the tab name, and hidden tabs are skipped. Tiles that aren't assigned to any tab (from dashboards created before tabs existed) render on the first exported tab's page.
+For dashboards that use [tabs](/explore/dashboards#add-tabs), a **Each tab on its own page (with dashboard and tab title)** checkbox appears when the format is `PDF`, or `Image` with **Also include image as PDF attachment** enabled. Turn it on to render each tab as its own PDF page — every page includes the dashboard title and the tab name, and hidden tabs are skipped. Tiles that aren't assigned to any tab (from dashboards created before tabs existed) render on the first exported tab's page.
 
 #### Render width
 
-For dashboard deliveries in `Image` or `PDF` format, the **Render width** menu under the preview sets how wide the dashboard is laid out before Lightdash captures it: Tablet (1000px), Laptop Screen (1400px, the default), External Monitor (1500px), TV Screen (1600px), Large Monitor (1920px), or Ultra-wide Monitor (2560px). Dashboards are responsive, so a different width changes how tiles wrap and how much of the image each tile fills. The size an email client or Slack displays the image at is set by that client, not by this setting.
+For dashboard deliveries in `Image` or `PDF` format, the **Render width** menu under the preview sets how wide the dashboard is laid out before Lightdash captures it: Tablet (1000px), Laptop Screen (1400px, the default), External Monitor (1500px), TV Screen (1600px), Large Monitor (1920px), or Ultra-wide Monitor (2560px). Dashboards are responsive, so a different width changes how tiles wrap and how much of the image each tile fills. The size an email client or Slack displays the image at is set by that client, not by this setting. There's no zoom setting: a wider render width fits more columns but makes text smaller in the image, so pick the narrowest width that fits your widest tile.
+
+To use a width that isn't in the menu, set it in pixels as `customViewportWidth` in the delivery's YAML with [content as code](/workflow/content-as-code): download with `lightdash download --include-scheduled-deliveries`, edit the file under `lightdash/scheduled-deliveries/`, then run `lightdash upload --scheduled-deliveries <delivery-slug>`. Changing **Render width** in the app afterwards replaces the custom width.
 
 **Delivering a [data app](/data-apps)?** Scheduling, recipients, and message options are the same, but what lands in the delivery isn't: an app doesn't declare its queries, so Lightdash captures every query the app runs and sends one file per query. Available formats, row limits, and how you pin a filtered cut all differ — see [Scheduled deliveries and syncs for data apps](/data-apps/deliveries-and-syncs).
 
@@ -181,6 +185,8 @@ Click on any scheduled delivery run to open the **Run Details** modal. This show
 
 You can transfer ownership of scheduled deliveries to another user in your organization. This is useful when team members change roles or leave the organization.
 
+On a project that requires [personal warehouse credentials](/personal-settings/personal-warehouse-connections), each delivery queries the warehouse with its owner's personal credentials. If the owner has none for the project, or their sign-in has expired, the delivery fails, and deliveries owned by a service account always fail. To keep deliveries running, reassign them to one owner who keeps their credentials current.
+
 #### Reassigning a single delivery
 
 1. In the scheduled deliveries overview, find the delivery you want to reassign
@@ -212,8 +218,6 @@ project. Users with viewer roles cannot be assigned as owners.
 <DeliveryDestinations />
 
 ## Sending to Google Chat
-
-Google Chat is available when your organization has this destination enabled.
 
 You can send your Lightdash scheduled deliveries directly to a Google Chat space using an incoming webhook.
 
