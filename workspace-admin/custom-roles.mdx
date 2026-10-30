@@ -60,7 +60,7 @@ To use custom roles to restrict what users can do in a specific project, you nee
 2. **Create a custom project role** with only the specific permissions you want to grant (e.g., explore data, view dashboards, schedule Slack/email deliveries).
 3. **Assign the custom role** to those users or groups at the project level.
 
-For dashboard-only access, leave **Manage Explore** (`manage:Explore`) out of the custom project role. Users can still open dashboards and charts in spaces they can access, but they can't open Explore to build their own queries. Dashboard tiles still follow [`required_attributes` and `any_attributes`](/workspace-admin/user-attributes#column-filtering-with-required_attributes): a tile that queries a protected field returns a `Forbidden` error unless the user has the matching attribute.
+For dashboard-only access, leave **Manage Explore** (`manage:Explore`) out of the custom project role. Users can still open dashboards and charts in spaces they can access, but they can't open Explore to build their own queries. Dashboard tiles still follow [`required_attributes` and `any_attributes`](/workspace-admin/user-attributes#column-filtering-with-required_attributes): a tile that queries a protected field returns a `Forbidden` error unless the user has the matching attribute. The search bar and **Browse** menu stay in the navigation bar for every role, and only list content the user can open.
 
 CSV export (`manage:ExportCsv`) is the exception: Organization Viewer and every org role above it include it. To stop users exporting results to CSV, set their org role to **Member** and leave `manage:ExportCsv` out of their custom project role. Users with Organization Viewer or a higher org role can always export to CSV, whatever their project role.
 
@@ -361,6 +361,8 @@ Without the `@preview` modifier, granting `create:DataApp` also grants app creat
 
 In any other project — production, a teammate's preview, an org-level role assignment with no project context — the scope contributes nothing. A user with only `create:DataApp@preview` attempting `lightdash upload --apps` against production (or a colleague's preview) receives a `403`.
 
+`create:DataApp` lets a user create personal apps anywhere in the project. Creating an app in a space also needs `Can edit` or `Full access` to that space (`manage:DataApp@space`).
+
 #### Restrict data app uploads to previews (agentic development workflow)
 
 To let developers build and iterate on data apps in their own previews via the CLI without allowing direct `lightdash upload --apps` to production:
@@ -413,15 +415,17 @@ The `view:Learn` scope (description: *View and use Learn walkthroughs*), in the 
 
 ### SQL-related scopes
 
-Three scopes control different SQL-authoring features. They are independent — granting one does not grant the others.
+These scopes control different SQL features. They are independent — granting one does not grant the others.
 
-**Manage Sql Runner** controls access to the [SQL Runner](/explore/sql-runner), which lets users write and run ad-hoc SQL queries directly against your data warehouse. It also controls the ability to create [virtual views](/semantic-layer/virtual-views) and [write back dbt models](/integrations/dbt/write-back) from SQL Runner queries.
+**Manage Sql Runner** controls access to the [SQL Runner](/explore/sql-runner), which lets users write and run ad-hoc SQL queries directly against your data warehouse. It also controls raw SQL from AI agents ([SQL mode](/agents/use-ai-agents#sql-mode)) and the MCP **Run SQL** tool. Saving a query as a [virtual view](/semantic-layer/virtual-views) needs `create:VirtualView` (description: *Create virtual views*), and [writing back dbt models](/integrations/dbt/write-back) needs `manage:SourceCode`, so a role can run SQL without either. Leaving `manage:SqlRunner` out of a role doesn't affect dashboards, Explore, or the queries AI agents and the MCP **Run metric query** tool build from your semantic layer (the MCP tool needs `manage:Explore`).
 
 **Manage Custom Sql** (description: *Save SQL charts*) controls the ability to save the output of a SQL Runner query as a saved chart. Users with this scope can save SQL charts; without it, they can still run queries in SQL Runner but cannot persist the output. This scope does **not** grant access to custom SQL dimensions in Explore.
 
-**Manage Custom Fields** (description: *Create and edit custom dimensions*) controls the ability to create and edit [custom SQL dimensions](/explore/create-custom-fields#custom-sql) inside the Explore view. Custom SQL dimensions let users add calculated fields to an existing table using raw SQL. This scope does **not** grant access to the SQL Runner.
+**Manage Custom Fields** (description: *Create and edit custom dimensions*) controls the ability to create and edit [custom SQL dimensions](/explore/create-custom-fields#custom-sql) inside the Explore view. Custom SQL dimensions let users add calculated fields to an existing table using raw SQL. It also covers custom metrics with hand-written SQL. This scope does **not** grant access to the SQL Runner.
 
-If you want a user to query tables that include custom SQL dimensions created by others, they don't need any of these scopes. Any user with access to the Explore view can **use** existing custom SQL dimensions in their queries — these scopes only control who can **author** them.
+**Manage Custom Sql Table Calculations** (description: *Create and edit SQL table calculations*) controls writing SQL [table calculations](/explore/table-calculations). Formula table calculations and quick calculations don't need it; see [project roles and permissions](/workspace-admin/roles#project-roles-and-permissions).
+
+If you want a user to query tables that include custom SQL dimensions created by others, they don't need any of these scopes. Any user with access to the Explore view can **use** existing custom SQL dimensions in their queries — these scopes only control who can **author** them. The same goes for SQL table calculations and custom SQL metrics in saved charts the user can view: they can run and filter those charts, but changing the SQL needs the authoring scope.
 
 **View Compiled Sql** (description: *View compiled SQL for charts, including charts with custom SQL fields*) controls who can read the SQL behind a chart or Explore query that contains custom SQL dimensions or SQL table calculations. Without it, the chart still runs, but the **SQL** panel shows **SQL preview unavailable**. Developers and admins have it by default; to give it to editors or interactive viewers, add it to a custom role.
 
