@@ -72,6 +72,8 @@ curl -s -X POST \
   | jq '.results.query'
 ```
 
+The request body needs a `sorts` array and a numeric `limit`. If `sorts` is empty, the compiled SQL still has an `ORDER BY`: Lightdash sorts by the first selected date or timestamp dimension (descending), otherwise the first metric (descending), otherwise the first dimension (ascending). A query with no dimensions returns one aggregated row and gets no default sort. The SQL uses the `limit` you send; compiling doesn't cap it at the [maximum query rows](/workspace-admin/export-limits), which applies when Lightdash runs a query.
+
 ### One-Step Solution
 
 ```
@@ -108,6 +110,17 @@ Results are paginated. If `.results.pagination.totalPageCount` is greater than 1
 curl -s -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
   https://{{your.lightdash.instance}}/api/v1/projects/{{your_project_uuid}}/sqlRunner/saved/{{your_sql_chart_uuid}} \
   | jq -r '.results.sql'
+```
+
+### Update the SQL of many charts
+
+To rewrite SQL across many charts, for example after renaming a schema, the simplest route is [content as code](/workflow/content-as-code#sql-runner-charts): `lightdash download` writes each SQL chart's `sql` to a file, you edit and review the files, and `lightdash upload` pushes them back. To do it through the API instead, send a `PATCH` to the URL from step 2 with a `versionedData` object. It needs `sql`, `limit` and `config`, so copy `limit` and `config` from the step 2 response and change only `sql`:
+
+```bash
+curl -s -X PATCH -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"versionedData": {"sql": "select * from acme_analytics.orders", "limit": 500, "config": {{config_from_step_2}}}}' \
+  https://{{your.lightdash.instance}}/api/v1/projects/{{your_project_uuid}}/sqlRunner/saved/{{your_sql_chart_uuid}}
 ```
 
 ## Dashboard cleanup & usage audit for a project
@@ -203,6 +216,19 @@ EXPORT_METHOD = 'excel'  # or 'csv'
 python get_all_organization_users.py
 ```
 
+## Invite users to your organization using the API
+
+To invite people who don't have a Lightdash account yet, send one request per email address. Use a token from an organization admin or an admin [service account](/workspace-admin/service-accounts). `role` is optional and defaults to `member`; it takes the organization roles `member`, `viewer`, `interactive_viewer`, `editor`, `developer` or `admin`.
+
+```bash
+curl -s -X POST -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "jane@example.com", "role": "viewer"}' \
+  https://{{your.lightdash.instance}}/api/v1/invite-links
+```
+
+Lightdash emails the invite and returns its `inviteUrl`. `expiresAt` is optional: a future date earlier than your organization's [invite link expiry](/workspace-admin/invite-new-users) is kept, and anything else gets the default expiry. Sending the request again for a pending invite creates a new link. If the email already belongs to a user in your organization or in another organization, the request fails with a `400` error.
+
 ## Assign or update project access for a list of users
 
 This Python script assigns Lightdash **project roles** to a list of users from a CSV file, and upgrades roles when needed. This is useful for **large-scale onboarding**, **role synchronization**, or **managing customer/partner access**. This script handles:
@@ -261,6 +287,21 @@ USER_PERMS_FILEPATH = '~/Documents/user_permission_list.csv'
 ```
 python assign_project_access_to_user_list.py
 ```
+
+### Grant project access to one user
+
+To add a single user without the script, send their `email`, a project `role` and `sendEmail`:
+
+```bash
+curl -s -X POST -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "jane@example.com", "role": "viewer", "sendEmail": true}' \
+  https://{{your.lightdash.instance}}/api/v1/projects/{{your_project_uuid}}/access
+```
+
+`sendEmail` is required, and a request without it fails validation without adding the user. Set it to `true` to email the user a link to the project, or `false` to add them silently. The user must already belong to your organization; [invite](#invite-users-to-your-organization-using-the-api) new people first.
+
+The role assignment endpoint `POST /api/v2/projects/{projectUuid}/roles/assignments/user/{userUuid}` also accepts `sendEmail`, but there it's optional. It sends the email only when it's `true` and the user had no role on the project before.
 
 ## Assign Metrics Catalog categories using the API
 
