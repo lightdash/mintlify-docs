@@ -133,6 +133,18 @@ Because SSO and role credentials are short-lived, the CLI prints a warning showi
 This applies to ephemeral preview projects created from your local dbt profile. For a durable, persistent project connection to Redshift with IAM, use a role the Lightdash backend assumes (`assumeRoleArn`). See [Connect Redshift](/integrations/connect-project#redshift).
 </Note>
 
+### Athena
+
+For an Athena target, `lightdash preview` sends Lightdash only the AWS keys written in your dbt profile. Unlike Redshift with `method: iam`, it doesn't read your local AWS credential chain, so `aws sso login` or a role assumed in your shell isn't enough on its own. For temporary credentials, reference all three values in `profiles.yml`:
+
+```yaml
+aws_access_key_id: "{{ env_var('AWS_ACCESS_KEY_ID') }}"
+aws_secret_access_key: "{{ env_var('AWS_SECRET_ACCESS_KEY') }}"
+aws_session_token: "{{ env_var('AWS_SESSION_TOKEN') }}"
+```
+
+Queries in the preview stop working when temporary credentials expire; refresh them and run `lightdash preview` again. If the target has no keys, the preview uses IAM role authentication, which runs as the Lightdash server's own AWS identity rather than yours. To use the upstream project's saved connection instead, pass `--no-warehouse-credentials`.
+
 ## Permissions
 
 ### Permissions are copied from the parent project
@@ -213,6 +225,8 @@ For example:
 - The `Preview Lightdash Analytics` project has the same chart called `Revenue by source`
 - I change the `Revenue by source` chart in `Lightdash Analytics` (i.e. in the production project)
 - The `Revenue by source` chart in `Preview Lightdash Analytics` is not updated. It is the same chart as when the preview project was first created.
+
+Creating a preview also copies the source project's [AI agents](/agents), so each preview has its own copy of every agent until the preview is deleted. Previews created in the app always copy content. From the CLI, pass `--skip-copy-content` to `lightdash preview` or `lightdash start-preview` to create a preview without copying any content, agents included. If your preview workflow runs `lightdash upload` and you keep [agents as code](/agents/agents-as-code), add `--skip-agents` to leave agents out of the upload.
 
 ### Promoting content from preview projects
 
