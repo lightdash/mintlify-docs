@@ -123,6 +123,29 @@ curl -s -X PATCH -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}"
   https://{{your.lightdash.instance}}/api/v1/projects/{{your_project_uuid}}/sqlRunner/saved/{{your_sql_chart_uuid}}
 ```
 
+## Run a SQL query using the API
+
+Running SQL through the API takes two calls: the first starts the query and returns a `queryUuid`, the second fetches its results. The v1 `POST /api/v1/projects/{projectUuid}/sqlRunner/run` endpoint is deprecated; use these instead.
+
+### Step 1: Start the query
+
+```bash
+curl -s -X POST -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+  -H "Content-Type: application/json" \
+  -d '{"sql": "select * from acme_analytics.orders", "limit": 500}' \
+  https://{{your.lightdash.instance}}/api/v2/projects/{{your_project_uuid}}/query/sql \
+  | jq -r '.results.queryUuid'
+```
+
+### Step 2: Fetch the results
+
+```bash
+curl -s -H "Authorization: ApiKey ldpat_{{your_personal_access_token}}" \
+  "https://{{your.lightdash.instance}}/api/v2/projects/{{your_project_uuid}}/query/{{your_query_uuid}}?page=1&pageSize=500"
+```
+
+While the query runs, `results.status` is `pending`, `queued` or `executing`, so repeat the request until it's `ready`. A ready response holds that page's `rows` and `columns`, and `nextPage` is set while more pages remain. A failed query has the status `error`, with the message in `results.error`.
+
 ## Dashboard cleanup & usage audit for a project
 
 This Python script helps you **clean up dashboards** in a specific Lightdash project. It uses the v2 Content API and can export results to CSV, Excel, or JSON for deeper analysis. This script provides:
