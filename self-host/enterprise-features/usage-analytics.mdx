@@ -39,6 +39,18 @@ Generate activity in the enabled organization, then allow the [scheduled data re
 
 An organization administrator can then [create the analytics project](/workspace-admin/usage-analytics-project#create-your-analytics-project) and run a chart for a closed day with known activity. Check that the user, content and date match that activity. To update installed dashboards after an upgrade, follow [Update models and dashboards](/workspace-admin/usage-analytics-project#update-models-and-dashboards).
 
+### Troubleshoot the nightly refresh
+
+The scheduler runs usage processing once a night, at 00:30 UTC. If that run fails, it does not retry the same day; the next opportunity is the following night's run.
+
+Search the scheduler logs for the paired lines `Usage processing stage started` and `Usage processing stage finished`, logged once for each of the `compaction`, `dimensions` and `users` stages. The finished line carries an `outcome` of `success`, `partial` or `failed`. A `partial` or `failed` outcome on `compaction` or `dimensions` means snapshots used for names and content inventory are stale or incomplete.
+
+The `users` stage builds the user-activity data that the **People** dashboards read; backfill does not build it. A dashboard built on another Explore can show data while **People** stays empty, until a nightly run completes that stage successfully. Look for `User activity refresh: {...}` to confirm the stage ran, and `User activity failed for org_id=.../stream=.../dt=...` for a partition that failed and kept its previous output.
+
+Each run only processes the last 7 closed UTC days and compacts at most 5,000 partitions; anything past that limit is picked up by the next night's run, not the same night.
+
+If the run does not populate data at all, check the license and the scheduler's object storage access before anything else: usage processing needs both the applied license and the usage storage from [Configure the deployment](#configure-the-deployment) to reach the scheduler. An S3 access error in the scheduler logs usually means the scheduler's credentials or bucket permissions are wrong rather than the license. Fix the cause and data appears once the next nightly run completes; this job has no manual trigger.
+
 On releases that support it, [historical backfill](/workspace-admin/usage-analytics-project#historical-backfill) can import supported records still retained in the Lightdash database, including records from before capture was enabled. The linked guide explains included data, exclusions and how to run it for an existing project.
 
 Usage files can contain user identities and content metadata. Restrict bucket access and choose a retention policy that matches your organization's requirements. Disabling the feature stops future eligible capture and processing; it does not delete previously stored files.
