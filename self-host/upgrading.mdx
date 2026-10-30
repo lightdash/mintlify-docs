@@ -95,10 +95,12 @@ migrationJob:
 ```
 
 With chart `2.16.284` or later, this combination makes the chart remove the backend HorizontalPodAutoscaler (HPA), scale the backend and worker Deployments to zero, and wait for their pods to stop before running migrations. The chart stops the upgrade if shutdown or migration fails.
+
+This automatic scale-down only runs under `helm upgrade`, which the chart can detect as an upgrade. A GitOps tool that renders the chart with `helm template` and applies the output itself — ArgoCD, or Flux in template mode — never triggers it: the migration Job still runs as a hook against the old pods, but the scale-down is silently skipped. If you apply this chart through ArgoCD or another GitOps tool, [scale workloads down by hand](#scale-application-workloads-manually-when-required) before syncing whenever the check reports `UNSAFE`.
 </Step>
 
-<Step title="Optional: scale workloads down by hand" id="scale-application-workloads-manually-when-required">
-Only for chart `2.16.283` and earlier, or a custom deployment, with an `UNSAFE` verdict and the migration Job enabled. Old pods must not run against the new schema, so remove the backend HPA, scale to zero and wait until no Lightdash pods remain:
+<Step title="Scale workloads down by hand, when required" id="scale-application-workloads-manually-when-required">
+Required with an `UNSAFE` verdict and the migration Job enabled, whenever the automatic scale-down above doesn't run: chart `2.16.283` and earlier, a custom deployment, or the chart applied through ArgoCD or another GitOps tool — do this before the sync. Old pods must not run against the new schema, so remove the backend HPA, scale to zero and wait until no Lightdash pods remain:
 
 ```bash
 kubectl delete hpa -l app.kubernetes.io/instance=lightdash
