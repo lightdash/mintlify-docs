@@ -71,6 +71,8 @@ The check covers every release after `--from` up to and including `--to`. One re
 
 To size a maintenance window, open `release-safety.json` from each GitHub release in your span. Each entry under `migrations.files` lists the `tables` it touches and whether it `locksTable`, `rewritesTable` or `scansTable`. A flag that is `true` or `unknown` means the migration may take a long time or block writes on a large table, so allow a longer window.
 
+Pause anything that writes to those tables until the migration finishes. For example, a migration on `saved_queries_versions` competes for locks with every `lightdash upload`, because each upload writes new chart versions, so stop CI jobs that run uploads during the window.
+
 `config.changes` in the same file lists environment variables the release removed, renamed, or gave a new default. Check it for any variable you set. The full format is in the [release-safety schema](https://github.com/lightdash/lightdash/blob/main/scripts/release-safety.schema.json).
 
 ## Upgrade with Kubernetes and Helm
@@ -227,7 +229,7 @@ kubectl logs job/lightdash-migrate
 
 Kubernetes deletes the Job, with its logs, about 100 seconds after it finishes. Raise `migrationJob.ttlSecondsAfterFinished` if you need longer. `status` keeps the failure details either way. After you fix the cause, re-run `helm upgrade`.
 
-A Job whose pod never starts, for example one stuck `Pending`, holds the upgrade open indefinitely, because `backoffLimit` only counts pods that start. To cap it, set `migrationJob.activeDeadlineSeconds`, sized to cover the scale-down wait (`migrationJob.scaleDownWorkloads.timeoutSeconds`, default `300`), the image pull and your longest migration. If the deadline fires after the scale-down, the upgrade fails with every workload still at zero replicas.
+A Job whose pod never starts, for example one stuck `Pending`, holds the upgrade open indefinitely, because `backoffLimit` only counts pods that start. To cap it, set `migrationJob.activeDeadlineSeconds`, sized to cover the scale-down wait (`migrationJob.scaleDownWorkloads.timeoutSeconds`, default `300`), the image pull and your longest migration. If the deadline fires after the scale-down, the upgrade fails with every workload still at zero replicas. When you set a deadline, also raise `migrationJob.ttlSecondsAfterFinished`, so a Job stopped by the deadline keeps its logs long enough to read.
 
 The cluster autoscaler can evict the migration pod while it drains a node, which stops the migration partway. To prevent this, annotate the pod:
 
