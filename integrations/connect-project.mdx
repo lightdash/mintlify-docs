@@ -113,6 +113,8 @@ You can choose to connect to BigQuery with a user account (using "Sign in with G
 
 On a self-hosted instance, you can also connect without a key file: set [`AUTH_ENABLE_GCLOUD_ADC=true`](/self-host/customize-deployment/environment-variables#google-cloud-platform) and pick **Application Default Credentials**. Lightdash then uses the Google credentials available in the environment it runs in.
 
+Every connection that uses **Application Default Credentials** runs as that same environment identity, across all projects on the instance. You can't give one connection a different identity this way. To give connections different BigQuery access, use a separate service account key file for each, or run separate Lightdash deployments with different runtime service accounts.
+
 To let AI agents run as a separate service account, see [BigQuery: the shared agent account](/agents/agent-identity#bigquery-the-shared-agent-account).
 
 ##### User Account (Sign in with Google)
@@ -518,6 +520,7 @@ Lightdash Cloud connects from a [static IP](#adding-lightdashs-static-ip-address
 | `password authentication failed for user "postgres"` | Make sure the user is `postgres.<your-project-ref>` (with the project ref suffix) when using the session pooler, not just `postgres`. |
 | Connection times out | Confirm you're using the **session pooler** host and port `5432`, not the direct database host. If you've enabled Network Restrictions in Supabase, add the [Lightdash static IP](#adding-lightdashs-static-ip-addresses-to-your-allow-list) for your region. |
 | `SSL connection required` | Set **SSL mode** to `require`. |
+| `self-signed certificate in certificate chain` | Supabase signs its certificate with its own certificate authority, which Lightdash doesn't trust by default. Download the CA certificate from **Database → SSL Configuration** in Supabase, set **SSL mode** to `verify-full`, and upload the certificate in **SSL root certificate**, not **SSL certificate**. |
 | MCP keeps disconnecting (quickstart repo) | Restart your editor. On Windows, also check that your firewall isn't blocking outbound HTTPS. |
 
 ***
@@ -1162,6 +1165,8 @@ This is the port where the ClickHouse database is running. The default port for 
 
 Enable this option to use HTTPS/SSL for secure connections to your ClickHouse database.
 
+For ClickHouse Cloud, use the HTTPS port, usually `8443`, and turn on **Secure**. ClickHouse connections can't use an SSH tunnel, so if your ClickHouse service restricts access by IP, add Lightdash's [static IP addresses](#adding-lightdashs-static-ip-addresses-to-your-allow-list) to its IP access list.
+
 ##### Retries
 
 The number of times Lightdash should retry ClickHouse queries that result in unhandled server errors. By default, this is set to 3.
@@ -1559,9 +1564,11 @@ Write the path with a leading slash and without your repository name:
 
 ##### Host domain
 
-If you've [customized the domain for your GitHub pages](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/about-custom-domains-and-github-pages), you can add the custom domain for your project in here.
+If your repository is on GitHub Enterprise with its own domain, enter that domain here, for example `github.acme.com`.
 
 By default, this is `github.com`
+
+A custom host domain works with a personal access token or fine-grained token. OAuth connects to `github.com` only. [dbt write-back](/integrations/dbt/write-back) opens pull requests through the `github.com` API, so it doesn't work with a custom host domain.
 
 If you selected **dbt**, fill out the [dbt project details](/integrations/dbt/projects#dbt-project-settings). For **Native Lightdash YAML**, save the connection to compile your models.
 
@@ -1715,6 +1722,7 @@ This means a number of features are **not** available, including:
 * [dbt write-back features](/integrations/dbt/write-back)
 * [Preview environments](/workflow/preview-projects#lightdash-app) created in the UI from git branches
 * Automatic refreshes on new commits to your git repo - you'll need to manually trigger refreshes in Lightdash when you make changes to your dbt project.
+* [`lightdash.config.yml`](/semantic-layer/lightdash-config-yml) and other files in your repository, because Lightdash reads only the metadata dbt Cloud records, not your repository.
 
 **MetricFlow metrics are translated automatically.** If your dbt project defines [MetricFlow](https://docs.getdbt.com/docs/build/about-metricflow) semantic models and metrics, Lightdash pulls them from the dbt Cloud Discovery API on each refresh and translates the supported ones into Lightdash metrics — no dbt Semantic Layer configuration needed. See [dbt MetricFlow metrics](/integrations/dbt/metricflow#using-the-dbt-cloud-connection) for what translates and for dbt Cloud–specific limitations.
 

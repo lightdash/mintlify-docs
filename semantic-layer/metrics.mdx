@@ -1773,6 +1773,8 @@ metrics:
 
 These filters do not appear in the `Filters` tab in the Explore view, instead, they are applied automatically in the SQL query that fetches your results. That means filters added using the `filter` parameter can't be removed in the UI and won't be visible to users unless they look at the SQL query.
 
+A metric's filters compile to `CASE WHEN <filters> THEN <sql> ELSE NULL END` inside the aggregation. When no rows in a group match, a filtered `sum`, `average`, `min`, or `max` returns NULL rather than 0. To show 0 instead, add a [non-aggregate metric](#using-custom-sql-in-non-aggregate-metrics) that wraps it, for example `type: number` with `sql: COALESCE(${total_cost_of_shipped}, 0)`.
+
 ### Available filter types
 
 | Type                          | Example (in English)                           | Example (as code)           |
@@ -1982,7 +1984,9 @@ In this example, the filter checks that `session_start_day` (the `DAY` time inte
 
 ### Metric filters cannot be used with non-aggregate metrics
 
-You can't use filters with non-aggregate metric types. Instead, if your non-aggregate metrics are referencing aggregate metric types, you need to apply metric filters to the aggregate metrics.
+You can't use filters with non-aggregate or post calculation metric types: the table fails to compile with `metric filters cannot be used with non-aggregate or post-calculation metrics`. This includes a `type: number` metric whose own `sql` contains the aggregation, such as `SUM(...)`. For that kind of metric, put the condition inside its SQL instead, for example `SUM(CASE WHEN ${status} = 'shipped' THEN ${item_cost} END)`.
+
+If your non-aggregate metrics are referencing aggregate metric types, apply metric filters to the aggregate metrics.
 
 Here's an example: imagine you wanted to calculate the average cost per item that had the status `shipped`. You would need to do something like this in your .yml:
 
