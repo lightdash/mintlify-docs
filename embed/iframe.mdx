@@ -598,6 +598,24 @@ The link has the same limits as the embed:
 - Anyone with the URL can open it until the token expires. You can't see who has it or revoke a single URL; [regenerating the embed secret](/embed/set-up-embedding#step-1-create-an-embed-secret) invalidates every embed URL in the project.
 - The viewer sees exactly what the embed shows. A chart, for example, has no CSV or image export; see [chart embed limitations](/embed/embed-charts#limitations).
 
+## Listen for embed events
+
+An iframe embed can send events to your page with `window.postMessage`. Each message has a `type`, such as `lightdash:filterChanged`, `lightdash:tabChanged`, `lightdash:allTilesLoaded`, `lightdash:chartSaved` or `lightdash:locationChanged`, plus a `payload` and a `timestamp`. Payloads are the same as for the [React SDK events](/embed/react-sdk#listen-to-events); `locationChanged`, which only iframe embeds send, carries `{ pathname, search, href }`.
+
+Messages are only sent when both of these are true:
+
+- Your instance has embed events with `postMessage` turned on, and your page's exact origin is in its iframe embedding domains. See [Events from the AI agent](/embed/react-sdk#events-from-the-ai-agent) for the Cloud and self-hosted setup.
+- The embed URL has a `targetOrigin` query parameter, before the `#`, set to that same origin: `?targetOrigin=https%3A%2F%2Fapp.example.com`.
+
+```javascript
+window.addEventListener('message', (event) => {
+  if (event.origin !== 'https://app.lightdash.cloud') return;
+  if (event.data?.type === 'lightdash:filterChanged') {
+    console.log(event.data.payload.filterCount);
+  }
+});
+```
+
 ## Token refresh
 
 JWTs expire after the time specified in `expiresIn`. Handle token expiration:
@@ -656,6 +674,8 @@ Then use:
 ```html
 <iframe src="/embed-proxy/dashboard/dashboard-uuid"></iframe>
 ```
+
+The proxy also gives a screen that can't run code, such as a kiosk or a TV dashboard, a URL that never changes or expires. Anyone who can reach the endpoint gets the content, so protect it with authentication or restrict it to known IP addresses. To filter each screen's data, map a value from the path, such as a location ID, to a [user attribute](#url-with-user-attributes) in the token.
 
 ## Troubleshooting
 
