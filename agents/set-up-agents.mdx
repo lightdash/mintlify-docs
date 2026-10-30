@@ -73,7 +73,9 @@ When enabled:
 - Users can interact with AI Agents
 - Admins get [visibility into agent activity](/agents/visibility)
 
-The toggle applies to the whole organization. There is no switch to turn AI features on for some projects only. Inside a project, the **Ask AI** button in the navbar shows to people who can use at least one agent in that project, and to people who can manage the project's agents. In a project with no agents, people who can't manage agents don't see the button.
+The toggle applies to the whole organization. There is no switch to turn AI features on for some projects only. Inside a project, the **Ask AI** button in the navbar shows to people who can use at least one agent in that project, and to people who can manage the project's agents. In a project with no agents, people who can't manage agents don't see the button. To keep AI out of a project, create agents only in the projects where you want it, and restrict [who can use each agent](#user-and-group-access-optional).
+
+Project access granted through a [custom role](/workspace-admin/custom-roles) includes agents only if the role has `view:AiAgent` and `create:AiAgentThread`. A project role can't take these scopes away from someone whose organization role already grants them (Interactive Viewer and above), because [permissions are additive](/workspace-admin/custom-roles#how-additive-permissions-work).
 
 **Free trial available:** New organizations may see a "Free trial" badge next to this toggle, allowing you to try AI features before committing to a paid plan.
 
@@ -116,7 +118,7 @@ Once a provider's key is saved, its block shows an optional **Custom base URL** 
 
 - The value must be an HTTP(S) URL without credentials, a query string, or a fragment.
 - The expected shape mirrors the provider's instance-wide gateway variable: Anthropic takes the base URL before `/v1` (`https://ai-gateway.example.com`), while Google Gemini and OpenAI include the API version path (`https://ai-gateway.example.com/v1beta` and `https://ai-gateway.example.com/v1`).
-- Model names are passed through unchanged, and the model picker still offers only Lightdash's built-in models, so the endpoint must serve those model IDs. The access check that unlocks [key-gated models](#key-gated-models) also runs against this endpoint; listings that return models as `vendor/model` are recognized.
+- Model names are passed through unchanged, and the model picker still offers only Lightdash's built-in models, so the endpoint must serve those model IDs. For example, Claude Sonnet 5.5 is requested as `claude-sonnet-5-5`; a gateway that routes it to another backend needs an alias under that ID. The access check that unlocks [key-gated models](#key-gated-models) also runs against this endpoint; listings that return models as `vendor/model` are recognized.
 - A custom base URL replaces the instance-wide [corporate gateway](/self-host/enterprise-features/ai-agents#corporate-llm-gateways) configuration for that provider. Requests authenticated with the org key only ever go to the endpoint configured here — never to the instance's gateway, and never with the instance gateway's custom headers.
 
 #### Behavior
@@ -135,11 +137,27 @@ Once at least one BYO provider key is set, each provider block gains two control
 - **Available to users** — toggle a provider off to hide all of its models from the model picker across your org. Existing agents that already reference a hidden model keep working; new selections are blocked.
 - **Allowed models** — a multi-select that restricts which of the provider's models users can pick when creating or editing an agent. Leaving it empty allows every model the provider exposes.
 
-At least one model must remain available across your org, so the settings API rejects updates that would leave zero selectable models.
+Once an Anthropic key is set, its block also has **Data Apps models** switches for **Opus**, **Sonnet** and **Haiku**. They choose which tiers users can pick when building a [data app](/data-apps#choosing-a-model), separately from **Allowed models**, because each tier always runs the newest model in its family. Apps already built with a hidden tier keep working.
+
+At least one model must remain available across your org, so the settings API rejects updates that would leave zero selectable models. The same applies to the **Data Apps models** switches.
 
 <Note>
 When an org stores only an Anthropic key (no OpenAI key), OpenAI is automatically hidden — Lightdash will not silently fall back to the instance's OpenAI key. Store an OpenAI key too if you want OpenAI models available.
 </Note>
+
+#### Amazon Bedrock credentials
+
+To run Ask AI on Claude models in your own AWS account and keep inference in one geography, add a credential under **Amazon Bedrock credentials** in the same card. Click **Add credential** and set:
+
+- **Name** — how projects refer to the credential, for example `Europe (Frankfurt)`.
+- **AWS region** — Tokyo, Osaka, Frankfurt, Ireland, N. Virginia or Oregon. Enable the models you want in that region of your AWS account first.
+- **Inference geography** — where Bedrock may process requests. It defaults to the narrowest choice for the region (Japan, United States or Europe); **Global** widens it.
+- **Bedrock API key** — a Bedrock API key, not an AWS access key pair.
+- **Allowed models** — the Claude models users can pick.
+
+You can add several credentials. The organization default serves everything without its own selection, including Slack routing and thread titles. Organization admins and developers can point a project at another credential in **Project settings** → **AI region**, and, when there's more than one credential, an agent under **AI provider credential** in its settings.
+
+While a default Bedrock credential is set, Bedrock is the only provider Ask AI uses and nothing falls back to other providers. Agents set to another provider's model stop working until you change their model, and verified-answer search and [AI writeback](/agents/ai-writeback) are unavailable.
 
 #### Key-gated models
 
@@ -197,6 +215,8 @@ Go to the agent dropdown and click ***Create new agent*** at the bottom
 
 ### Name and image
 Give your agent a memorable name and visual identity
+
+Add a **Description** too. It shows above the message input every time someone opens a new thread, before they type anything, so use it for a short welcome or a list of the topics the agent covers. Instructions can't do this reliably: the model reads them as guidance and decides for itself whether to open with a greeting.
 ### Instructions
 
 Add the role, priorities, analysis defaults, constraints, and communication style that should apply to every conversation with this agent. Keep stable model and field definitions in the semantic layer, and use knowledge documents for longer reference material.
@@ -219,7 +239,7 @@ Lightdash resolves the model for a new chat in this order:
 3. The [organization default model](#set-an-organization-default-ai-model)
 4. The system default
 
-Users can still change the model in each chat, and existing threads continue with the model they were started with.
+Users can still change the model in each chat, and existing threads continue with the model they were started with. Slack has no model picker, so a new Slack thread starts on the agent's default model, or the organization default if the agent has none.
 
 ### Knowledge documents (optional)
 Upload reference material — glossaries, metric definitions, business context, internal procedures — that your agent can consult while answering questions. Use this for the kind of context that doesn't fit neatly into a dbt `ai_hint` or your instructions. See [knowledge documents guidance](/agents/effective-analytics-with-agents#knowledge-documents) for guidance on what to upload.
@@ -231,7 +251,13 @@ Turn prompts you use repeatedly into skills, especially when they contain a clea
 ### Data Access
 By default, agents have data access enabled so they can analyze actual query results and provide insights based on the data. You can turn it off per agent if you want metadata-only behavior. This section also holds the **Pass user information** toggle, which lets the agent [tailor answers to who is asking](/agents/data-access#personalizing-answers-to-who-is-asking). Learn more in [data access control](/agents/data-access).
 ### User and Group Access (optional)
-By default, your agent is available to everyone in the project. While you're still setting it up, you can keep it to **admins and developers only**, then open it up — to everyone, or to **specific users and groups** — once it's ready. You'll find these options under the agent's access settings.
+By default, your agent is available to everyone in the project. To change that, open the agent's settings and go to **Access & privacy** → **Who can use the agent**:
+
+- **Everyone in the project** — every project member can see and use the agent. This is the default.
+- **Admins & developers only** — hidden from everyone else, which is useful while you set up or test the agent.
+- **Specific users & groups** — only the users and groups you pick.
+
+Admins, developers and anyone else with the `manage:AiAgent` scope can always use every agent in the project, whatever you choose here. Someone who can't use any agent in a project doesn't see **Ask AI** in that project, so set this on each agent in the project.
 
 This controls who can use the agent, which is separate from [data access control](/agents/data-access) (what data the agent can query).
 ### Tags (optional)
@@ -285,6 +311,8 @@ You can also link an agent to a channel directly from Slack — see [Linking an 
     alt="A Slack channel where a user mentions the agent to ask what kind of data it can access, with replies threaded below"
   />
 </Frame>
+
+If someone mentions the app without a question, the agent replies with a fixed welcome that asks what they'd like to know. It doesn't use the agent's description or instructions, and you can't change it.
 
 5. You can also `@mention` the Lightdash app in a thread to continue the conversation there. In a thread, the agent only responds to messages that mention it. To let it read the earlier messages in that thread for context, including a question that never mentioned the app, an admin turns on **AI Agents thread access consent** in **Organization Settings** → **Integrations** → **Slack**. The agent reads only that thread, not other messages in the channel.
 
