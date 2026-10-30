@@ -256,7 +256,7 @@ Each parameter is a key-value pair: the key is the parameter name (alphanumeric 
 | `type`                   | No       | `"string"`, `"number"`, or `"date"`                      | The type of the parameter. Defaults to `"string"` if not specified.                                                |
 | `options`                | No       | Array of strings, numbers, or `{ label, value }` objects | A list of possible values for the parameter.                                                                       |
 | `default`                | No       | string, number, or array of strings/numbers              | The default value(s) for the parameter. When using labeled options, the default must match a `value`, not a `label`. For `type: date`, `today` resolves to the current date at query time (see [Dynamic date defaults](#dynamic-date-defaults)). |
-| `multiple`               | No       | boolean                                                  | Whether the parameter input will be a multi-select.                                                               |
+| `multiple`               | No       | boolean                                                  | Whether the parameter input will be a multi-select. On a `type: "date"` parameter, the multi-select replaces the date picker. |
 | `allow_custom_values`    | No       | boolean                                                  | Whether users can input custom values beyond predefined options.                                                  |
 | `options_from_dimension` | No       | Object                                                   | Get parameter options from a dimension in a model. Requires `model` and `dimension` arguments (see below).        |
 
@@ -634,6 +634,25 @@ sql_from: >
 
 The same pattern works for swapping schemas, databases, or any other identifier that can't be expressed as a quoted string.
 
+### Switch SQL with Liquid
+
+To change which SQL a dimension or metric runs, not just a value inside it, wrap the alternatives in a Liquid `if` or `case` block that tests the parameter. Lightdash evaluates the block each time a query runs, before it substitutes `${ld.parameters...}` references, in dimension, metric, and table SQL alike. Inside a Liquid tag, reference the parameter without `${}`: `ld.parameters.grain` for a project-level parameter, or `ld.parameters.orders.grain` for a model-level one. In dbt YAML, wrap the block in `{% raw %}` so dbt doesn't try to render it.
+
+For example, this additional dimension on `order_date` lets users pick a date grain from a `grain` parameter with the options `day`, `week`, and `month` (adjust `DATE_TRUNC` to your warehouse's syntax):
+
+```yaml
+order_date_by_grain:
+  type: date
+  sql: >
+    {% raw %}{% case ld.parameters.grain %}
+    {% when 'week' %} DATE_TRUNC('week', ${order_date})
+    {% when 'month' %} DATE_TRUNC('month', ${order_date})
+    {% else %} ${order_date}
+    {% endcase %}{% endraw %}
+```
+
+A parameter referenced only inside Liquid tags still gets a control in the Explore view and on dashboards. It works independently of dashboard [date zoom](/explore/dashboards/date-zoom); to branch on the date zoom selection instead, use the reserved [`date_zoom`](#date_zoom) parameter.
+
 ### In table calculations
 
 You can reference parameters in table calculations:
@@ -863,7 +882,7 @@ Whether tiles share a control depends on where the parameter is defined:
 
 So if five models each define a `volume_currency` parameter, and the dashboard has tiles built on all five, the dashboard shows five `volume_currency` controls, one per model. Each control only changes the tiles whose charts reference that model's parameter. Each control shows its parameter's `label`, so if the five models use the same label, the controls look identical.
 
-A dashboard parameter control can't be mapped to parameters from other models, and parameters have no equivalent of a dashboard filter's [`Tiles` tab](/explore/dashboards/filter#saved-filters): a parameter's dashboard value applies to every tile whose chart references it. Follow the issues for [mapping one control to parameters from several models](https://github.com/lightdash/lightdash/issues/30208) and [choosing which tiles a dashboard parameter applies to](https://github.com/lightdash/lightdash/issues/23822) for progress.
+A dashboard parameter control can't be mapped to parameters from other models, and parameters have no equivalent of a dashboard filter's [`Tiles` tab](/explore/dashboards/filter#saved-filters): a parameter's dashboard value applies to every tile whose chart references it. Charts can't swap which parameter a field uses, so tiles that need values viewers can change separately must be built on fields that reference different parameters. Follow the issues for [mapping one control to parameters from several models](https://github.com/lightdash/lightdash/issues/30208) and [choosing which tiles a dashboard parameter applies to](https://github.com/lightdash/lightdash/issues/23822) for progress.
 
 ### Sharing one control across models
 
