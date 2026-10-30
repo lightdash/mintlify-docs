@@ -27,12 +27,14 @@ Where you put that instruction depends on how many agents need it:
 - **Every agent that touches the explore:** add a `context` entry to [`lightdash.project_context.yml`](/agents/agent-context) scoped with `objects` to the restricted explore. Any agent reasoning about that explore picks it up, and it survives agents being added or renamed.
 
 ```yaml lightdash.project_context.yml
-version: 1
+version: 2
 entries:
   - id: opportunities-scope-disclosure
     kind: context
     content: "fct_opportunities is filtered by the asking user's territory attributes. When answering from it, say which population the numbers cover, for example 'across the accounts you have access to'."
-    objects: ["fct_opportunities"]
+    objects:
+      - type: explore
+        name: fct_opportunities
 ```
 
 Describe the population, not the mechanism. "Across the accounts you have access to" is enough. Attribute names and values are implementation detail that doesn't belong in an answer.
@@ -69,9 +71,12 @@ An open aggregate explore with enough filters can single out one record. "Churn 
 
 Lightdash has no minimum group size for results, and no per-row masking of a column, because user attributes can't appear in a dimension's `sql:`. Baking a threshold into a few metrics doesn't help much either: an agent composes filters freely, and the next slice won't go through those metrics.
 
-Two levers work:
+Three levers work:
 
 - **Keep identifying records on the restricted explore.** The open explores should carry the aggregates people need and nothing that identifies a single record.
 - **Keep identifying dimensions off the open agent.** Use [field-level agent tags](/agents/data-access#limiting-access-to-specific-explores-and-fields) so the open agent can't slice by high-cardinality or sensitive dimensions such as signup date, programme status, or postcode. Fewer ways to slice means fewer groups of one.
+- **Hide fine-grained dimensions from most users.** Set [`required_attributes` on the dimension](/workspace-admin/user-attributes#column-filtering-with-required_attributes) so only users with the attribute can see or filter by it, in Explore and in every agent that answers from the semantic layer. Tags limit one agent; `required_attributes` follows the user.
+
+An agent instruction such as "don't break results down by postcode" helps the agent choose sensible slices, but it isn't enforced on the query. Use it on top of these levers, not instead of them.
 
 If one metric genuinely needs a threshold, compute it in dbt so the suppression is fixed in the warehouse regardless of which filters ran, for example a metric that returns null when its group is below the threshold, and expose only that metric on the open explore.
