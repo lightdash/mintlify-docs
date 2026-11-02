@@ -345,6 +345,22 @@ These variables are **deprecated**; use the `RESULTS_S3_*` versions instead.
 
 ### Audit log events
 
+Set `LIGHTDASH_LOG_LEVEL=AUDIT` (or `DEBUG`) to write audit log entries alongside your application logs. Each entry has an `actor` (the user, [impersonated session](/support/support-access#how-impersonation-works), service account, or anonymous viewer that performed the action), an `action`, a `resource` (a `type` and a `metadata` object with the details of the change), and a `status` of `allowed`, `denied`, or `allowed-bypass`.
+
+Today, audit logging covers:
+
+- **Group membership changes**, including changes made through SCIM, logged as `resource.metadata.event: "group.membership_changed"` with the `operation` (`add`, `remove`, `replace`, `delete`) and the affected `memberUuids`.
+- **Organization- and project-level role-set changes** — `organization_role_set.replaced`, `project_role_set.replaced`, and `project_group_role_set.replaced` — logged with the role set `before` and `after` the change, and the users or groups `added` and `removed`.
+- **Direct access grants, revokes, and role changes** on dashboards, charts, and apps — `direct_access.grant`, `direct_access.revoke`, `direct_access.role_change`, `direct_access.reset`, and `direct_access.replace` — logged with `beforeRole` and `afterRole` on the resource.
+
+Some older, single-field actions — for example the legacy per-user organization role update, or a user joining an organization — don't yet have a dedicated event carrying the old and new value. Lightdash audits every permission check automatically as a generic `allowed`/`denied` entry, independent of whether a business-level audit event is also written for that action, so these actions still appear in the audit log as a permission check rather than as a change with before and after values.
+
+<Note>
+Audit logging runs on every Lightdash Cloud instance, but the resulting entries currently live only in Lightdash's own infrastructure — there's no way to export or view them from a Cloud account today. The log level and output variables above configure a self-hosted deployment's own log output.
+</Note>
+
+### Audit log events
+
 Lightdash writes audit log events to the application log, at the `audit` log level. `audit` is below `info`, so set `LIGHTDASH_LOG_LEVEL=audit` or `LIGHTDASH_LOG_LEVEL=debug` to write them — with the default level, Lightdash does not write them. Set `LIGHTDASH_LOG_FORMAT=json` to get each entry as structured JSON instead of a plain-text line.
 
 Each entry has:
