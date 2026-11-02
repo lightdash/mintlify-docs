@@ -125,14 +125,33 @@ so the resources can sit in a separate account when the backend's role is in tha
 for example an IRSA role there that trusts your cluster's OIDC provider:
 
 - **Two MicroVM images** — one for data app generation and one for AI writeback (they
-  bundle different toolchains). Build them from the Dockerfiles in the Lightdash repo
-  (`sandboxes/data-apps/`, `sandboxes/ai-writeback/`, and the exec agent in
-  `sandboxes/microvm-agent/`), push them to ECR, and register each as a Lambda MicroVM
+  bundle different toolchains), built from the Dockerfiles in the Lightdash repo
+  (`sandboxes/data-apps/`, `sandboxes/ai-writeback/`) and registered as a Lambda MicroVM
   image on the AWS-managed `al2023` base — `ARM_64`, 4 GB memory, with the agent's
   `/ready` hook on port 8080. Each registration returns an **image ARN** for the config
-  below. The data app Dockerfile copies `lightdash-query-sdk.tgz`, a generated artifact
-  that a fresh checkout does not contain — build and pack it into `sandboxes/data-apps/`
-  first with `./sandboxes/data-apps/pack-query-sdk.sh`, using the toolchain listed in
+  below.
+
+  The recommended way to produce and refresh these ARNs is
+  `sandboxes/microvm-agent/build-microvm-image.sh` in the Lightdash repo, which runs the
+  whole pipeline: it builds the local Docker image for the feature you pass it
+  (`data-app` or `writeback`), provisions the ECR repository, build IAM role, and S3
+  staging bucket if they don't exist yet, and pushes the local image to ECR — Lambda
+  MicroVM registration, like Lambda container-image functions generally, only builds
+  from an ECR-hosted base. It then assembles a thin `FROM <ecr-image>` Dockerfile that
+  adds the exec agent (`sandboxes/microvm-agent/`), zips it, and uploads it to S3 as the
+  build's `codeArtifact` — that zip is a thin wrapper around the ECR image, not the full
+  application. It calls AWS's `create-microvm-image` (or `update-microvm-image` when the
+  image already exists), polls the build to an active version, and prints the image ARN
+  to set as `LAMBDA_MICROVM_DATA_APP_IMAGE_ARN` or `LAMBDA_MICROVM_AI_WRITEBACK_IMAGE_ARN`.
+  Run it with `./sandboxes/microvm-agent/build-microvm-image.sh data-app` and
+  `./sandboxes/microvm-agent/build-microvm-image.sh writeback`. None of this runs at
+  deploy time: the Lightdash backend never builds images or touches ECR or S3 — it only
+  calls AWS's `RunMicrovm` with the image ARN you already registered.
+
+  The data app Dockerfile copies `lightdash-query-sdk.tgz`, a generated artifact that a
+  fresh checkout does not contain. `build-microvm-image.sh` packs it for you; building
+  the Dockerfile directly instead needs
+  `./sandboxes/data-apps/pack-query-sdk.sh` first, using the toolchain listed in
   [Build the gateway image](#2-build-the-gateway-image) under the Cloud Run provider.
   The writeback Dockerfile has no such prerequisite.
 - **Control-plane permissions on your backend's existing IAM role** — add `RunMicrovm`,
