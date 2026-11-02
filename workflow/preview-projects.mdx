@@ -106,6 +106,8 @@ It can also fail if your warehouse identity doesn't have permission to run queri
 
 To use the upstream project's saved warehouse connection instead of your own credentials, run `lightdash preview --no-warehouse-credentials`.
 
+If queries fail with a session-expired error (for example `Your Redshift IAM AWS session has expired`), see [Redshift with `method: iam`](#redshift-with-method-iam) to refresh the credentials on your existing preview instead of recreating it.
+
 ### Switch between previews
 
 The CLI keeps one active preview: the last one you started. `lightdash deploy`, `lightdash upload`, and `lightdash download` ask whether to use it or your production project, and use the preview in non-interactive mode. Starting another preview doesn't delete the previous one. It stays on the server until you run `lightdash stop-preview --name` with its name, or it [expires](#preview-expiration).
@@ -127,7 +129,21 @@ aws sso login --profile my-redshift-profile
 lightdash preview
 ```
 
-Because SSO and role credentials are short-lived, the CLI prints a warning showing the expiry when it forwards temporary credentials. Queries in the preview project will stop working once the session expires. Re-run `aws sso login` and `lightdash preview` to refresh them.
+Because SSO and role credentials are short-lived, the CLI prints a warning showing the expiry when it forwards temporary credentials. Queries in the preview project will stop working once the session expires.
+
+On CLI 2.186.1 or newer, update the CLI (`npm i -g @lightdash/cli@latest`), sign in again, then re-run `start-preview` with the same `--name` to refresh them in place instead of stopping and recreating the preview:
+
+```bash
+aws sso login --profile my-redshift-profile
+lightdash start-preview --name "my-preview"
+```
+
+This pushes the newly resolved credentials into the existing preview, so content you've built there — dashboards, data apps — stays in place. The command prints `Warehouse credentials refreshed` on success, or `Keeping the warehouse credentials already stored on the preview` if the refresh was skipped:
+
+- You declined the prompt to let Lightdash store your warehouse credentials — pass `-y`/`--assume-yes` to accept it automatically.
+- The preview was started with `--no-warehouse-credentials` or an organization warehouse credential, since neither reads credentials from your local `profiles.yml`.
+
+The refreshed connection keeps any SSH tunnel settings inherited from the upstream project, and the same refresh applies to any other local warehouse credentials that expire, such as a Snowflake SSO session.
 
 <Note>
 This applies to ephemeral preview projects created from your local dbt profile. For a durable, persistent project connection to Redshift with IAM, use a role the Lightdash backend assumes (`assumeRoleArn`). See [Connect Redshift](/integrations/connect-project#redshift).
