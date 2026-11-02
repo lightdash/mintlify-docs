@@ -343,6 +343,33 @@ These variables are **deprecated**; use the `RESULTS_S3_*` versions instead.
 
 <LoggingEnv />
 
+### Audit log events
+
+Lightdash writes audit log events to the application log, at the `audit` log level. `audit` is below `info`, so set `LIGHTDASH_LOG_LEVEL=audit` or `LIGHTDASH_LOG_LEVEL=debug` to write them — with the default level, Lightdash does not write them. Set `LIGHTDASH_LOG_FORMAT=json` to get each entry as structured JSON instead of a plain-text line.
+
+Each entry has:
+
+- `id` and `timestamp`.
+- `actor`: `type` (`session`, `pat`, `oauth`, `service-account` or `anonymous`), the user `uuid`, `email`, `organizationRole`, and `impersonatedBy` when the action ran under [impersonation](/support/support-access).
+- `action` and `resource` (`type`, `organizationUuid`, `projectUuid` when relevant, and `metadata`).
+- `context`: `ip`, `userAgent` and `requestId`.
+- `status`: `allowed`, `denied` or `allowed-bypass`.
+
+If your log indexer maps the `actor` field as text, set `LIGHTDASH_LOG_AUDIT_ACTOR_AS_STRING=true` to serialize it to a JSON string instead of a nested object.
+
+Today, these access changes write an explicit event that names the target and, where a role changed, the before and after value:
+
+| Change | `action` | `resource.metadata` |
+| --- | --- | --- |
+| Group membership change (project UI or SCIM) | `update` on resource type `Group`, with `resource.metadata.event = group.membership_changed` | `groupUuid`, `operation` (`add`, `remove`, `replace` or `delete`), `memberUuids` |
+| Organization role set replaced | `organization_role_set.replaced` | target `userUuid`, `before`, `after`, `added`, `removed` |
+| Project role set replaced | `project_role_set.replaced` | target `userUuid`, `before`, `after`, `added`, `removed` |
+| Project group role set replaced | `project_group_role_set.replaced` | target `groupUuid`, `before`, `after`, `added`, `removed` |
+| Direct access grant, revoke or role change on a dashboard, chart, SQL chart, document or app | `direct_access.grant`, `direct_access.revoke` or `direct_access.role_change` (plus `direct_access.reset` and `direct_access.replace` for bulk changes) | `resourceUuid`, `principalType`, `principalUuid`, `beforeRole`, `afterRole` |
+| Login, logout, leaving an organization, impersonation start and stop | `login`, `logout`, `leave_organization`, `impersonation_start`, `impersonation_stop` | login provider and similar context |
+
+Other access changes — a user joining an organization, a single role assignment, adding, updating or removing a user's project access, and adding or removing a user's space access — currently only write the permission-check entry for the request that made the change (`actor`, `action`, `resource`, and `status` of `allowed` or `denied`). That entry doesn't name the user whose access changed or the role involved.
+
 ## Prometheus
 
 <PrometheusEnv />
