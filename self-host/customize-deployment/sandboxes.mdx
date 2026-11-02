@@ -116,6 +116,42 @@ This is the **recommended sandbox provider for customers deploying Lightdash on 
 it keeps the sandbox boundary inside your existing AWS account and avoids sending agent
 workloads or repository contents to a third-party service.
 
+
+Registering a Lambda MicroVM image uses AWS's `create-microvm-image`: a build role, a
+`codeArtifact` zip staged in S3, the AWS-managed `al2023` base image, `ARM_64`, 4 GB
+memory, and the agent's `/ready` hook on port 8080. That call returns an **image ARN**,
+and the ARN is the only thing Lightdash itself needs — the backend passes it to
+`RunMicrovm` and never builds, pulls, or otherwise touches ECR or S3 at runtime. Any
+pipeline that produces a `codeArtifact` zip AWS can build into a MicroVM image works,
+with or without ECR.
+
+<Tip>
+Lightdash's own build script (`./sandboxes/microvm-agent/build-microvm-image.sh`, see
+[Prerequisites](#prerequisites)) pushes a prebuilt image to ECR and builds the registered
+image `FROM` it, to avoid rebuilding the npm/dbt toolchain on every update. That's the
+script's own shortcut, not an AWS or Lightdash requirement.
+</Tip>
+
+```mermaid
+sequenceDiagram
+    participant Build as Your build pipeline
+    participant ECR as ECR (optional)
+    participant S3 as S3 (build-time staging)
+    participant Reg as create-microvm-image
+    participant Backend as Lightdash backend / worker
+    participant Lambda as Lambda MicroVMs control plane
+
+    Note over Build,Reg: Build time — once per image version
+    Build->>ECR: push prebuilt image (optional shortcut)
+    Build->>S3: upload codeArtifact zip
+    Build->>Reg: create-microvm-image (al2023 base, ARM_64, 4 GB, /ready on 8080)
+    Reg-->>Build: image ARN
+
+    Note over Backend,Lambda: Runtime — every sandbox launch
+    Backend->>Lambda: RunMicrovm(imageArn)
+    Lambda-->>Backend: microVM endpoint + token
+```
+
 ### Prerequisites
 
 Provision these with your own IaC, in the region you set as `LAMBDA_MICROVM_REGION` and in
