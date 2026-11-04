@@ -478,6 +478,13 @@ fi
                 );
                 assert.equal(headReport.revision, 'head');
                 assert.equal(headReport.productSha, report.productSha);
+                assert.match(
+                    readFileSync(
+                        path.join(cwd, 'head-scope-tours-generate.log'),
+                        'utf8',
+                    ),
+                    /Docs anchor not found: old\.mdx#missing:1|TypeError: parser exploded/,
+                );
                 if (kind.includes('crash')) {
                     assert.doesNotMatch(
                         readFileSync(path.join(cwd, 'summary'), 'utf8'),
