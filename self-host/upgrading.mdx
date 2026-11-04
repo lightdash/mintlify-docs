@@ -266,6 +266,12 @@ On Kubernetes, run the same command as a one-off Job on the new tag with your ba
 
 When a pending migration scans or rewrites a table, preflight also checks for at least 5 GiB of free disk. Set `MIGRATION_PREFLIGHT_DISK_HEADROOM_BYTES` to the available bytes; PostgreSQL cannot report this value, so leaving it unset produces a warning. Preflight ends with `proceed`, `proceed-with-warnings`, `abort` or `force-proceed`. `--strict` treats warnings as blockers, and `--force` overrides an abort.
 
+### A migration fails with a lock timeout
+
+A migration that changes a table, for example an `ALTER TABLE` or a `CREATE INDEX`, only waits a short time for a lock on it. If another session already holds a lock on that table, the migration fails with `canceling statement due to lock timeout`, retries, and after three failed attempts `status` reports the run as `parked`.
+
+The cause is always another session holding a lock on the same table: a long-open transaction, a CI job uploading content with `lightdash upload`, or a CDC or replication session reading it. Run [`preflight`](#preflight-a-new-image) on the new image to list the locks and long transactions held on the affected tables, then end or pause whatever is holding them. [Release the lock](#release-a-lock) with `unlock --actor <identity>` and re-run the upgrade (`helm upgrade`, or `docker compose restart lightdash`).
+
 ## Roll back
 
 Roll back by redeploying the previous image tag. This keeps the migrated schema; to undo schema changes, restore a backup and lose everything written since. Roll back promptly, because the new version may write data the old one can't read.
