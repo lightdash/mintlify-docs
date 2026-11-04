@@ -121,9 +121,9 @@ For examples and command-specific options, click through the command in the tabl
 |[`lightdash download`](/workflow/cli/reference#lightdash-download)                     | Download all charts and dashboards from your Lightdash project as code             |
 |[`lightdash upload`](/workflow/cli/reference#lightdash-upload)                         | Upload charts and dashboards as code to your Lightdash project                     |
 |[`lightdash slug-update`](/workflow/cli/reference#lightdash-slug-update)               | Rename a chart or dashboard slug and update its local content-as-code references    |
-|[`lightdash apps create`](/workflow/cli/reference#lightdash-apps-create)               | Scaffold a new [data app](/data-apps/download-data-apps-as-code) locally                          |
-|[`lightdash apps preview`](/workflow/cli/reference#lightdash-apps-preview)             | Preview a downloaded [data app](/data-apps/download-data-apps-as-code) locally against real data   |
-|[`lightdash apps validate`](/workflow/cli/reference#lightdash-apps-validate)           | Validate a [data app](/data-apps/download-data-apps-as-code) locally before uploading             |
+|[`lightdash apps create`](/workflow/cli/reference#lightdash-apps-create)               | Scaffold a new [data app](/workflow/local-data-app-development) locally                          |
+|[`lightdash apps preview`](/workflow/cli/reference#lightdash-apps-preview)             | Preview a downloaded [data app](/workflow/local-data-app-development) locally against real data   |
+|[`lightdash apps validate`](/workflow/cli/reference#lightdash-apps-validate)           | Validate a [data app](/workflow/local-data-app-development) locally before uploading             |
 |[`lightdash rename`](/workflow/cli/reference#lightdash-rename)                         | Rename model or field names across all your Lightdash content                      |
 |[`lightdash diagnostics`](/workflow/cli/reference#lightdash-diagnostics)               | Show diagnostic information about the CLI environment                              |
 |[`lightdash sql`](/workflow/cli/reference#lightdash-sql)                               | Run raw SQL query against the warehouse using project credentials                  |
@@ -942,10 +942,10 @@ You can make changes to the code and upload these changes back to your Lightdash
   - (default: false)
   - opt-in flag to download every published [homepage](/workflow/content-as-code#homepages-as-code) in the project as code (enterprise only). Requires Homepage to be enabled and the **Manage project homepage** permission. `--include-all` also includes homepages, and skips them with a warning when Homepage isn't enabled or you lack permission.
 - `--apps <refs...>`
-  - opt-in flag to also download specific [data apps](/data-apps/download-data-apps-as-code) as code (enterprise only). Pass one or more app references — a slug, UUID, or app URL. Works for apps that haven't been added to a space, and is never capped. Each app is written to `lightdash/apps/<slug>/` as a locally buildable project: `lightdash-app.yml` manifest (with the app's `slug`, `name`, `description`, and linked external connections), the app's `src/` tree, `package.json` / `pnpm-lock.yaml`, local build scaffolding (`vite.config.js`, `tsconfig.json`, `index.html`), a read-only `.lightdash/context/` snapshot of the project's semantic layer, and agent skill files (`AGENTS.md`, `.claude/skills/`). The built output is not included — the server rebuilds it on upload. Dashboards you download bring their referenced data apps along automatically. [Custom chart types](/visualizations/chart-studio) are a separate resource: an `--apps` ref that points at a chart type is skipped with a warning — download it with `--chart-types` instead.
+  - opt-in flag to also download specific [data apps](/workflow/local-data-app-development) as code (enterprise only). Pass one or more app references — a slug, UUID, or app URL. Works for apps that haven't been added to a space, and is never capped. Each app is written to `lightdash/apps/<slug>/` as a locally buildable project: `lightdash-app.yml` manifest (with the app's `slug`, `name`, `description`, and linked external connections), the app's `src/` tree, `package.json` / `pnpm-lock.yaml`, local build scaffolding (`vite.config.js`, `tsconfig.json`, `index.html`), a read-only `.lightdash/context/` snapshot of the project's semantic layer, and agent skill files (`AGENTS.md`, `.claude/skills/`). The built output is not included — the server rebuilds it on upload. Dashboards you download bring their referenced data apps along automatically. [Custom chart types](/visualizations/chart-studio) are a separate resource: an `--apps` ref that points at a chart type is skipped with a warning — download it with `--chart-types` instead.
 - `--include-apps`
   - (default: false)
-  - opt-in flag to download every [data app](/data-apps/download-data-apps-as-code) in the project as code (enterprise only), capped at `--apps-limit`. Use `--apps <refs...>` to fetch a specific set instead.
+  - opt-in flag to download every [data app](/workflow/local-data-app-development) in the project as code (enterprise only), capped at `--apps-limit`. Use `--apps <refs...>` to fetch a specific set instead.
 - `--apps-limit <n>`
   - (default: 50)
   - cap on the number of apps returned by `--include-apps`.
@@ -1152,7 +1152,7 @@ If there have been changes made to a chart or dashboard in the application that 
   - (default: false)
   - publish each uploaded homepage and apply the audience in its `publication` block: default status, group assignments, and role assignments. Without it, uploaded layouts are saved as drafts and viewers keep seeing the currently published version. Requires a `publication` block that is not `null`, and every listed group must exist in the destination organization.
 - `--apps [refs...]`
-  - opt-in flag to also upload [data apps](/data-apps/download-data-apps-as-code) as code (enterprise only). Pass one or more refs (slugs, or legacy UUIDs) to upload just those app folders, or use `--include-apps` to upload every folder under `lightdash/apps/`. The CLI posts each app's `src/` tree and manifest and returns immediately — the destination rebuilds the app in its sandbox and publishes a new version. The app shows a `building` status in the UI until the build finishes. Identity is the manifest's `slug`, upserted in the target project: an existing slug appends a new version (and applies edits to `name` / `description`); a new slug creates a new app. If the source, dependencies, and viz schema are byte-for-byte identical to the latest version, the upload is skipped with `matches v<n>` (name/description edits still apply); pass `--force` to rebuild anyway. Each project runs at most 5 app builds concurrently — if the cap is hit, the CLI waits automatically (up to 10 minutes of consecutive waiting) instead of failing. A folder under `lightdash/apps/` that is actually a [custom chart type](/visualizations/chart-studio) is skipped with a warning — move it to `lightdash/chart-types/` and upload it with `--chart-types`. Uploading requires the [`create:DataApp` scope](/workspace-admin/roles), which is granted to Editor, Developer, and Admin roles. Users with only [`create:DataApp@preview`](/workspace-admin/custom-roles#data-app-scopes) can upload apps to preview projects they created themselves, but not to production or to previews created by teammates. Dashboards you upload push their referenced app folders first, even without `--apps`.
+  - opt-in flag to also upload [data apps](/workflow/local-data-app-development) as code (enterprise only). Pass one or more refs (slugs, or legacy UUIDs) to upload just those app folders, or use `--include-apps` to upload every folder under `lightdash/apps/`. The CLI posts each app's `src/` tree and manifest and returns immediately — the destination rebuilds the app in its sandbox and publishes a new version. The app shows a `building` status in the UI until the build finishes. Identity is the manifest's `slug`, upserted in the target project: an existing slug appends a new version (and applies edits to `name` / `description`); a new slug creates a new app. If the source, dependencies, and viz schema are byte-for-byte identical to the latest version, the upload is skipped with `matches v<n>` (name/description edits still apply); pass `--force` to rebuild anyway. Each project runs at most 5 app builds concurrently — if the cap is hit, the CLI waits automatically (up to 10 minutes of consecutive waiting) instead of failing. A folder under `lightdash/apps/` that is actually a [custom chart type](/visualizations/chart-studio) is skipped with a warning — move it to `lightdash/chart-types/` and upload it with `--chart-types`. Uploading requires the [`create:DataApp` scope](/workspace-admin/roles), which is granted to Editor, Developer, and Admin roles. Users with only [`create:DataApp@preview`](/workspace-admin/custom-roles#data-app-scopes) can upload apps to preview projects they created themselves, but not to production or to previews created by teammates. Dashboards you upload push their referenced app folders first, even without `--apps`.
 - `--include-apps`
   - (default: false)
   - upload every app folder under `lightdash/apps/`.
@@ -1174,7 +1174,7 @@ If there have been changes made to a chart or dashboard in the application that 
   - upload only custom chart types, skipping charts, dashboards, and space reconciliation. Bare `--chart-types-only` uploads every folder in `lightdash/chart-types/`; pass `--chart-types <refs...>` to select a subset. Cannot be combined with `--apps-only`.
 - `--allow-custom-dependencies`
   - (default: false)
-  - approve uploading apps that declare [custom dependencies](/data-apps/download-data-apps-as-code#experimental-custom-dependencies) without prompting. Required for non-interactive runs (CI) of apps that add packages beyond the template's base dependencies — without it, the CLI skips those apps with a per-app warning and counts them as failures.
+  - approve uploading apps that declare [custom dependencies](/data-apps/custom-dependencies) without prompting. Required for non-interactive runs (CI) of apps that add packages beyond the template's base dependencies — without it, the CLI skips those apps with a per-app warning and counts them as failures.
 - `--create-new`
   - (default: false)
   - always create a new data app (with a freshly generated slug) from the uploaded source instead of updating the app the manifest references. Useful for forking an app inside the same project.
@@ -1375,7 +1375,7 @@ Aliases reserve their slugs within the project. Creating or uploading another ch
 
 ### `lightdash apps create`
 
-Scaffold a new [data app](/data-apps/download-data-apps-as-code) folder locally. The app is created on the server on your first `lightdash upload`.
+Scaffold a new [data app](/workflow/local-data-app-development) folder locally. The app is created on the server on your first `lightdash upload`.
 
 The command derives a slug from the name, checks it's available in the target project, then installs the template's npm packages and generates the shadcn UI components locally — Node.js 20+ (with npm) is required.
 
@@ -1413,7 +1413,7 @@ lightdash apps create "Revenue explorer" --slug revenue-v2 --description "New pr
 
 ### `lightdash apps preview`
 
-Preview a downloaded (or locally created) [data app](/data-apps/download-data-apps-as-code) on your machine against a real Lightdash instance, authenticated as you. Starts the Vite dev server with a loopback proxy that forwards the app's API calls to Lightdash — your API key never reaches the app or the browser. Requires `npm install` in the app folder first.
+Preview a downloaded (or locally created) [data app](/workflow/local-data-app-development) on your machine against a real Lightdash instance, authenticated as you. Starts the Vite dev server with a loopback proxy that forwards the app's API calls to Lightdash — your API key never reaches the app or the browser. Requires `npm install` in the app folder first.
 
 ```console
 lightdash apps preview [path]
@@ -1452,7 +1452,7 @@ lightdash apps preview lightdash/apps/marketing-funnel
 
 ### `lightdash apps validate`
 
-Validate one or more [data apps](/data-apps/download-data-apps-as-code) locally. Checks the app manifest (`lightdash-app.yml`), dependencies (`package.json` and `pnpm-lock.yaml`), source files under `src/`, external connection aliases, and semantic-layer references used in code.
+Validate one or more [data apps](/workflow/local-data-app-development) locally. Checks the app manifest (`lightdash-app.yml`), dependencies (`package.json` and `pnpm-lock.yaml`), source files under `src/`, external connection aliases, and semantic-layer references used in code.
 
 By default, semantic references are checked against the downloaded semantic-layer snapshot in each app's `.lightdash/context/` folder. Pass `--live` to check against fresh explores fetched from the app's project instead.
 
