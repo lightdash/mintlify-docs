@@ -1,0 +1,164 @@
+---
+title: "Dashboard parameter controls"
+sidebarTitle: Parameter controls
+tag: "Experimental"
+description: "Set parameter values for selected dashboard tiles and save the controls as code"
+---
+
+import { FeatureBadge } from '/snippets/feature-badge.jsx';
+
+<div className="feature-badges"><FeatureBadge label="Experimental" /></div>
+
+<Info>
+Dashboard parameter controls require the `dashboard-controls` feature flag. For Cloud, contact [Lightdash support](/support). For self-hosted instances, add `dashboard-controls` to [`LIGHTDASH_ENABLE_FEATURE_FLAGS`](/self-host/customize-deployment/environment-variables#feature-flags).
+</Info>
+
+Use a dashboard parameter control to set the [parameters](/semantic-layer/parameters) that your chart queries reference. A control can set a parameter on every tile that uses it, or on the tiles you choose.
+
+In this example, the **Revenue comparison** dashboard has two copies of **Order revenue** and a **Payment revenue** tile. The order chart uses `orders.reporting_currency`, and the payment chart uses `payments.settlement_currency`. Both parameters accept `USD`, `EUR`, and `GBP`.
+
+## Set different values on two copies of a chart
+
+1. Open **Revenue comparison** and click **Edit dashboard**.
+2. In the control bar, click **Add** → **Parameter** and select **Reporting currency**.
+3. Set the value to **USD** and click **Choose tiles**.
+4. On the second **Order revenue** tile, clear the selected parameter and click **Apply**.
+5. Add another control for **Reporting currency**. Set it to **EUR**, and open **Choose tiles**. On the second **Order revenue** tile, click **Set this tile**, open **Select a parameter**, and choose **Reporting currency**.
+6. Click **Apply**, then **Save changes**.
+
+Use **Rename** to call the USD control **Primary currency** and the EUR control **Comparison currency**.
+
+The first control for a parameter starts with **Every tile using it**. It also applies to relevant tiles you add later, even if you excluded all the existing tiles. An additional control for the same parameter starts with **Only chosen tiles** and no assignments. Each copy of a chart is a separate tile, so you can assign the same parameter to different controls on each copy.
+
+## Clear a value or exclude a tile
+
+To clear a saved value, open the control in dashboard edit mode, clear its value, click **Apply**, and save the dashboard. Clearing a value keeps the tile assignments.
+
+| Tile assignment | Value the tile uses |
+| --- | --- |
+| Assigned, with a control value | The control value |
+| Assigned, with the control value cleared | The parameter default, then the chart-saved value if there is no default |
+| Excluded from all controls for that parameter | The chart-saved value, then the parameter default if the chart has no saved value |
+
+For example, if `orders.reporting_currency` defaults to `GBP` and **Order revenue** saves `EUR`, clearing the USD control makes its assigned tile use `GBP`. Excluding the tile instead makes it use `EUR`. You can inspect the parameter value and its source from the parameters icon in the tile header.
+
+To exclude every current tile, click **Clear all tiles** in **Choose tiles**, then click **Apply**. You can return to the picker to assign tiles again.
+
+## Set parameters across models
+
+Use the USD control to set both `orders.reporting_currency` and `payments.settlement_currency`. Parameters can share a control when their type, single or multiple selection, and allowed values are compatible.
+
+1. Open the USD control and click **Choose tiles**.
+2. On **Payment revenue**, click **Set this tile**.
+3. Open **Select a parameter** and choose **Settlement currency**.
+4. Click **Apply**, then **Save changes**.
+
+Changing the USD control now sets **Reporting currency** on the first **Order revenue** tile and **Settlement currency** on **Payment revenue**. The second **Order revenue** tile still uses its own control. The first assignment for **Settlement currency** also applies to new tiles that use that parameter.
+
+## Group controls and hide a control from viewers
+
+1. [Create a section](/explore/dashboards/filter#group-filters-into-sections) called **Currency comparison**.
+2. Open **Primary currency** and click **Settings**.
+3. Select **Currency comparison** under **Section**, then click **Apply**.
+4. Repeat for **Comparison currency**.
+5. Open **Comparison currency** again. Click **More** → **Hide for viewers**.
+6. Click **Apply**, then **Save changes**.
+
+Viewers can change the visible USD control. The EUR control stays hidden, and its value still applies to the second **Order revenue** tile. To make the control visible again, open it in edit mode and select **Show for viewers**.
+
+## Save the dashboard as code
+
+This [dashboard YAML](/workflow/content-as-code#dashboard-as-code-yml-reference) uses the same saved chart slug for both **Order revenue** tiles. Each tile has its own `tileSlug`, so the two controls can target the copies independently. The **Order status** filter and both parameter controls share the **Currency comparison** section.
+
+The `parameters` map on each control uses the parameter name as the key. Use `all` for every tile that uses the parameter, `except` to exclude named tiles while still including future matches, or `only` to list the tiles to include. Use `only: []` for an assignment that includes no tiles. Each control has its own `slug`, and its `sectionId` matches the section's `id`.
+
+Save this example as `lightdash/dashboards/revenue-comparison.yml`. Use a project with the two saved chart slugs and model parameters from the example, and an `orders.status` dimension. Replace `spaceSlug` with the slug of your destination space if it differs.
+
+```yaml
+contentType: dashboard
+version: 1
+name: Revenue comparison
+slug: revenue-comparison
+spaceSlug: jaffle-shop
+tabs: []
+tiles:
+  - tileSlug: order-revenue-primary
+    type: saved_chart
+    x: 0
+    y: 0
+    w: 12
+    h: 4
+    properties:
+      chartSlug: order-revenue
+      title: Order revenue (primary)
+      hideTitle: false
+  - tileSlug: order-revenue-comparison
+    type: saved_chart
+    x: 12
+    y: 0
+    w: 12
+    h: 4
+    properties:
+      chartSlug: order-revenue
+      title: Order revenue (comparison)
+      hideTitle: false
+  - tileSlug: payment-revenue
+    type: saved_chart
+    x: 24
+    y: 0
+    w: 12
+    h: 4
+    properties:
+      chartSlug: payment-revenue
+      title: Payment revenue
+      hideTitle: false
+filters:
+  dimensions:
+    - label: Order status
+      sectionId: currency-comparison
+      target:
+        fieldId: orders_status
+        fieldName: status
+        tableName: orders
+      operator: equals
+      values: [completed]
+      disabled: false
+      tileTargets: {}
+config:
+  isDateZoomDisabled: false
+  controlSections:
+    - id: currency-comparison
+      name: Currency comparison
+      collapsed: false
+  parameterControls:
+    - slug: primary-currency
+      label: Primary currency
+      sectionId: currency-comparison
+      value: USD
+      valueType:
+        type: string
+        multiple: false
+      parameters:
+        orders.reporting_currency:
+          except: [order-revenue-comparison]
+        payments.settlement_currency: all
+    - slug: comparison-currency
+      label: Comparison currency
+      sectionId: currency-comparison
+      hidden: true
+      value: EUR
+      valueType:
+        type: string
+        multiple: false
+      parameters:
+        orders.reporting_currency:
+          only: [order-revenue-comparison]
+```
+
+Run the following commands against the project where you want to save the dashboard. The last command downloads a copy to a separate directory so you can inspect the saved configuration.
+
+```bash
+lightdash lint --path lightdash/dashboards/revenue-comparison.yml
+lightdash upload --dashboards revenue-comparison --path ./lightdash --force
+lightdash download --dashboards revenue-comparison --path ./round-trip
+```
