@@ -453,6 +453,8 @@ lightdash download --organization
 
 This writes every user-defined role in your organization to `lightdash/custom-roles/*.yml`. System roles are not included.
 
+Each role is stored in `lightdash/custom-roles/<role-slug>.yml`. The filename is derived from the role name; the CLI creates safe filenames and disambiguates collisions automatically.
+
 ### Upload roles
 
 Edit or add YAML files under `lightdash/custom-roles/`, then run:
@@ -461,7 +463,13 @@ Edit or add YAML files under `lightdash/custom-roles/`, then run:
 lightdash upload --organization
 ```
 
-Each file is upserted by role name — the backend creates a new role if the name is unused, updates the role's description and scopes if they've drifted, or reports no change if the file already matches the server. Uploads never delete roles; remove unwanted roles in the UI.
+For each file in `lightdash/custom-roles/`, the backend matches the role by exact name within the organization and returns one of three outcomes:
+
+- **Created** — no role with that name exists, so a new role is created.
+- **Updated** — the role exists and either the description or the set of scopes has changed.
+- **Unchanged** — the role already matches the file. No write is performed.
+
+A missing or empty `custom-roles/` directory is a no-op. Uploads never delete roles; remove unwanted roles in the UI.
 
 ### YAML format
 
@@ -484,9 +492,15 @@ scopes:
 | `level` | Either `organization` or `project`. Determines which scopes are allowed and is immutable after the role is created. |
 | `scopes` | List of scope grants. See the [scope reference](#scope-reference) above for available scopes and note that organization-only scopes cannot appear on a `level: project` role. |
 
-Malformed files, unknown scopes, and scopes that aren't allowed at the role's level are rejected per file with the file path and error message; other files continue to process. The CLI exits with a non-zero status if any file fails validation.
+### Validation
 
-For the full workflow, including examples and CI/CD integration alongside charts and dashboards, see [Custom roles as code](/workflow/content-as-code#custom-roles-as-code).
+The backend validates the role's version, name, description, level, and scopes on every upload. It rejects malformed files, unknown fields, unsupported versions, unknown scopes, and scopes that aren't allowed at the role's level. Each rejected file is reported with its file path and error message; other files continue to process. The CLI exits with a non-zero status if any file fails validation.
+
+You can't change an existing role's level by editing the YAML and uploading. Create a new role instead.
+
+An existing role may retain a scope that is no longer assignable at its level. Downloading and re-uploading such a role is a no-op; scope-level validation applies only to newly added scopes.
+
+To deploy roles alongside users, groups, and themes, follow the [organization content-as-code workflow](/workflow/content-as-code#organization-content-as-code) for deployment order and organization-mode flag restrictions.
 
 ## Troubleshooting
 
