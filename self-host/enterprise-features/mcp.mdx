@@ -55,7 +55,7 @@ If your Lightdash instance sits behind a firewall or VPN, ensure the MCP client 
 
 The client needs `/api/v1/mcp`, the OAuth endpoints under `/api/v1/oauth/`, and the `/.well-known/oauth-*` discovery paths. Some clients connect from their vendor's cloud rather than from the user's machine, so an instance that's only reachable on your internal network works from one client and fails from another. For those clients, allow the vendor's published outbound IP ranges to reach these paths.
 
-Allow more than `GET`: Claude's cloud calls `POST /api/v1/oauth/token` and `POST /api/v1/oauth/register`, and it needs `POST`, `GET` (it opens an SSE stream), and `DELETE` on `/api/v1/mcp` itself. A `GET`-only or exact-path allowlist rule lets OAuth discovery pass but leaves the connection stuck after you click **Continue connecting** in Claude.
+Allow more than `GET`: Claude's cloud calls `POST /api/v1/oauth/token` and `POST /api/v1/oauth/register`, and it needs `POST` and `GET` (it opens an SSE stream) on `/api/v1/mcp` itself. A `GET`-only or exact-path allowlist rule lets OAuth discovery pass but leaves the connection stuck after you click **Continue connecting** in Claude.
 
 To check that the endpoint is reachable from a given network, run:
 
@@ -73,7 +73,7 @@ Its `issuer` and `token_endpoint` should both be your instance's public HTTPS ad
 
 ### Outbound egress for OAuth client ID metadata documents
 
-Lightdash 2.580.0 and later accepts [OAuth client ID metadata documents](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/) as a way for MCP clients to identify themselves, instead of registering a client first. Claude uses this: it presents an `https` URL as its `client_id`, for example `https://claude.ai/oauth/mcp-oauth-client-metadata`. When a user authorizes that client, the Lightdash backend fetches the document at that URL itself, over HTTPS, with no redirects and a 5-second timeout — so your backend pods need direct outbound HTTPS access to `claude.ai`, not routed through a proxy that blocks it. If that fetch fails, authorization fails even though the consent page rendered correctly.
+Lightdash 2.580.0 and later accepts [OAuth client ID metadata documents](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/) as a way for MCP clients to identify themselves, instead of registering a client first. Claude uses this: it presents an `https` URL as its `client_id`, for example `https://claude.ai/oauth/mcp-oauth-client-metadata`. When a user opens the authorization page for that client, the Lightdash backend fetches the document at that URL itself, over HTTPS, with no redirects and a 5-second timeout — so your backend pods need direct outbound HTTPS access to `claude.ai`, not routed through a proxy that blocks it. If that fetch fails, the authorization page returns `400 Invalid client_id or redirect_uri` instead of the consent page.
 
 <Note>
   Versions 2.580.0–2.589.3 reject client ID metadata documents that advertise extra grant types, which Claude's document does — you need 2.589.4 or later.
@@ -86,5 +86,5 @@ Lightdash 2.580.0 and later accepts [OAuth client ID metadata documents](https:/
 | `/api/v1/mcp` returns an error or 404 | Check the license and deployment configuration, then confirm **Allow MCP access** is enabled in **Settings** → **MCP** → **General** |
 | OAuth flow fails | The Lightdash instance isn't reachable from the browser performing the OAuth redirect |
 | AI assistant can't connect | The MCP URL is wrong or the instance isn't accessible over HTTPS |
-| Connection hangs after **Continue connecting** | The allowlist only permits `GET` or an exact path on `/api/v1/mcp` — allow `POST`, `GET`, and `DELETE` on `/api/v1/mcp`, and `POST` on `/api/v1/oauth/token` and `/api/v1/oauth/register` |
-| Consent page renders, but **Authorize** returns a 400 | Check you're on Lightdash 2.589.4 or later and that backend pods have outbound HTTPS access to the client's `client_id` host (e.g. `claude.ai`). If `client_id` is an opaque ID rather than a URL, the client registered dynamically instead — check `POST /api/v1/oauth/register` is allowed through and look at the backend logs |
+| Connection hangs after **Continue connecting** | The allowlist only permits `GET` or an exact path on `/api/v1/mcp` — allow `POST` and `GET` on `/api/v1/mcp`, and `POST` on `/api/v1/oauth/token` and `/api/v1/oauth/register` |
+| Authorization page returns 400 `Invalid client_id or redirect_uri` | Check you're on Lightdash 2.589.4 or later and that backend pods have outbound HTTPS access to the client's `client_id` host (e.g. `claude.ai`). If `client_id` is an opaque ID rather than a URL, the client registered dynamically instead — check `POST /api/v1/oauth/register` is allowed through and look at the backend logs |

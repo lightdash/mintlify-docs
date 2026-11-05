@@ -79,7 +79,7 @@ Control how many rows a query can return, page sizes, exports, and chart-version
 | `LIGHTDASH_CSV_CELLS_LIMIT`                  | Max cells on CSV file exports (default=100000)                                                                                                                                                                                                                                                                                                   |
 | `LIGHTDASH_DASHBOARD_MAX_TILES_PER_TAB`      | Maximum number of tiles allowed per tab on a dashboard (default=50)                                                                                                                                                                                                                                                                              |
 | `LIGHTDASH_DASHBOARD_MAX_TABS_PER_DASHBOARD` | Maximum number of tabs allowed per dashboard (default=20)                                                                                                                                                                                                                                                                                        |
-| `LIGHTDASH_DASHBOARD_MAX_CONCURRENT_TILE_QUERIES` | Caps how many dashboard tile queries run concurrently instead of every tile firing its query to the warehouse as soon as the dashboard loads. Tiles currently visible on screen are started first; others wait for a free slot. A query started by a data refetch (for example, after a filter change) also waits for a free slot like any other tile query. Unset by default (no cap)                                                       |
+| `LIGHTDASH_DASHBOARD_MAX_CONCURRENT_TILE_QUERIES` | Caps how many tile queries an open dashboard runs concurrently in each viewer's browser, instead of every tile firing its query to the warehouse as soon as the dashboard loads. Tiles currently visible on screen are started first; others wait for a free slot. A query started by a data refetch (for example, after a filter change) also waits for a free slot like any other tile query. Unset by default (no cap)                                                       |
 | `MAX_DOWNLOADS_AS_CODE`                      | Maximum number of downloads as code (default=100)                                                                                                                                                                                                                                                                                                |
 
 ## Scheduler
@@ -348,46 +348,30 @@ These variables are **deprecated**; use the `RESULTS_S3_*` versions instead.
 
 ### Audit log events
 
-Set `LIGHTDASH_LOG_LEVEL=AUDIT` (or `DEBUG`) to write audit log entries alongside your application logs. Each entry has an `actor` (the user, [impersonated session](/support/support-access#how-impersonation-works), service account, or anonymous viewer that performed the action), an `action`, a `resource` (a `type` and a `metadata` object with the details of the change), and a `status` of `allowed`, `denied`, or `allowed-bypass`.
-
-Today, audit logging covers:
-
-- **Group membership changes**, including changes made through SCIM, logged as `resource.metadata.event: "group.membership_changed"` with the `operation` (`add`, `remove`, `replace`, `delete`) and the affected `memberUuids`.
-- **Organization- and project-level role-set changes** — `organization_role_set.replaced`, `project_role_set.replaced`, and `project_group_role_set.replaced` — logged with the role set `before` and `after` the change, and the users or groups `added` and `removed`.
-- **Direct access grants, revokes, and role changes** on dashboards, charts, and apps — `direct_access.grant`, `direct_access.revoke`, `direct_access.role_change`, `direct_access.reset`, and `direct_access.replace` — logged with `beforeRole` and `afterRole` on the resource.
-
-Some older, single-field actions — for example the legacy per-user organization role update, or a user joining an organization — don't yet have a dedicated event carrying the old and new value. Lightdash audits every permission check automatically as a generic `allowed`/`denied` entry, independent of whether a business-level audit event is also written for that action, so these actions still appear in the audit log as a permission check rather than as a change with before and after values.
-
-<Note>
-Audit logging runs on every Lightdash Cloud instance, but the resulting entries currently live only in Lightdash's own infrastructure — there's no way to export or view them from a Cloud account today. The log level and output variables above configure a self-hosted deployment's own log output.
-</Note>
-
-### Audit log events
-
 Lightdash writes audit log events to the application log, at the `audit` log level. `audit` is below `info`, so set `LIGHTDASH_LOG_LEVEL=audit` or `LIGHTDASH_LOG_LEVEL=debug` to write them — with the default level, Lightdash does not write them. Set `LIGHTDASH_LOG_FORMAT=json` to get each entry as structured JSON instead of a plain-text line.
 
 Each entry has:
 
 - `id` and `timestamp`.
-- `actor`: `type` (`session`, `pat`, `oauth`, `service-account` or `anonymous`), the user `uuid`, `email`, `organizationRole`, and `impersonatedBy` when the action ran under [impersonation](/support/support-access).
+- `actor`: `type` (`session`, `pat`, `oauth`, `service-account` or `anonymous`) and, for user actors, the user `uuid`, `email`, `organizationRole`, and `impersonatedBy` when the action ran under [impersonation](/support/support-access).
 - `action` and `resource` (`type`, `organizationUuid`, `projectUuid` when relevant, and `metadata`).
 - `context`: `ip`, `userAgent` and `requestId`.
 - `status`: `allowed`, `denied` or `allowed-bypass`.
 
 If your log indexer maps the `actor` field as text, set `LIGHTDASH_LOG_AUDIT_ACTOR_AS_STRING=true` to serialize it to a JSON string instead of a nested object.
 
-Today, these access changes write an explicit event that names the target and, where a role changed, the before and after value:
+These access changes write an explicit event that names the target and, where a role changed, the before and after value:
 
 | Change | `action` | `resource.metadata` |
 | --- | --- | --- |
-| Group membership change (project UI or SCIM) | `update` on resource type `Group`, with `resource.metadata.event = group.membership_changed` | `groupUuid`, `operation` (`add`, `remove`, `replace` or `delete`), `memberUuids` |
-| Organization role set replaced | `organization_role_set.replaced` | target `userUuid`, `before`, `after`, `added`, `removed` |
-| Project role set replaced | `project_role_set.replaced` | target `userUuid`, `before`, `after`, `added`, `removed` |
-| Project group role set replaced | `project_group_role_set.replaced` | target `groupUuid`, `before`, `after`, `added`, `removed` |
-| Direct access grant, revoke or role change on a dashboard, chart, SQL chart, document or app | `direct_access.grant`, `direct_access.revoke` or `direct_access.role_change` (plus `direct_access.reset` and `direct_access.replace` for bulk changes) | `resourceUuid`, `principalType`, `principalUuid`, `beforeRole`, `afterRole` |
+| Group membership change (in the app, through the API, or SCIM) | `update` on resource type `Group`, with `resource.metadata.event = group.membership_changed` | `groupUuid`, `operation` (`add`, `remove`, `replace` or `delete`), `memberUuids` |
+| Organization role set replaced | `organization_role_set.replaced` | target `userUuid`, the role set `before` and `after`, and the roles `added` and `removed` |
+| Project role set replaced | `project_role_set.replaced` | target `userUuid`, the role set `before` and `after`, and the roles `added` and `removed` |
+| Project group role set replaced | `project_group_role_set.replaced` | target `groupUuid`, the role set `before` and `after`, and the roles `added` and `removed` |
+| Direct access grant, revoke or role change on a dashboard, chart, SQL chart, document or app | `direct_access.grant`, `direct_access.revoke` or `direct_access.role_change` (plus `direct_access.reset` and `direct_access.replace` for bulk changes) | `resourceUuid`, `principalType`, `principalUuid`, `beforeRole`, `afterRole`. `reset` and `replace` carry `revokedUsers`, `revokedGroups`, `appliedUsers` and `appliedGroups` instead |
 | Login, logout, leaving an organization, impersonation start and stop | `login`, `logout`, `leave_organization`, `impersonation_start`, `impersonation_stop` | login provider and similar context |
 
-Other access changes — a user joining an organization, a single role assignment, adding, updating or removing a user's project access, and adding or removing a user's space access — currently only write the permission-check entry for the request that made the change (`actor`, `action`, `resource`, and `status` of `allowed` or `denied`). That entry doesn't name the user whose access changed or the role involved.
+Other access changes — a user joining an organization, a single role assignment, adding, updating or removing a user's project access, and adding or removing a user's space access — only write the permission-check entry for the request that made the change (`actor`, `action`, `resource`, and `status` of `allowed` or `denied`). That entry doesn't name the user whose access changed or the role involved.
 
 ## Prometheus
 
