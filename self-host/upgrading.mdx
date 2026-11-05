@@ -97,7 +97,7 @@ migrationJob:
   enabled: true
 ```
 
-With chart `2.16.284` or later, this combination makes the chart remove the backend HorizontalPodAutoscaler (HPA), scale the backend and worker Deployments to zero, and wait for their pods to stop before running migrations. The chart stops the upgrade if shutdown or migration fails.
+During `helm upgrade`, chart `2.16.284` or later uses this combination to remove the backend HorizontalPodAutoscaler (HPA), scale the backend and worker Deployments to zero, and wait for their pods to stop before running migrations. The chart stops the upgrade if shutdown or migration fails. If you deploy with Argo CD, use the [GitOps configuration](#upgrade-with-argo-cd-or-another-gitops-controller) below.
 </Step>
 
 <Step title="Optional: scale workloads down by hand" id="scale-application-workloads-manually-when-required">
@@ -134,6 +134,34 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://lightdash.example.com/api/v1/r
 These examples assume a release named `lightdash`. Find yours with `kubectl get deploy,job -l app.kubernetes.io/instance=<release>`.
 </Step>
 </Steps>
+
+### Upgrade with Argo CD or another GitOps controller
+
+Enable the pre-migration shutdown when your controller renders the chart with `helm template`, which doesn't mark the release as an upgrade. With chart `2.16.1545` or later, set:
+
+```yaml
+upgrade:
+  mode: Recreate
+migrationJob:
+  enabled: true
+  scaleDownWorkloads:
+    force: true
+```
+
+`force` defaults to `false`. It bypasses the Helm upgrade check for the shutdown steps, their permissions and the backend replica restore. It still requires the migration Job and a `Recreate` strategy; `RollingUpdate` skips shutdown. Keep setting `upgrade.mode` from the [upgrade check](#check-the-upgrade).
+
+With `Recreate` and `force: true`, every full sync stops the application before migrations, even if the image hasn't changed. Plan for downtime. A first install can use the same values when there are no application workloads to stop.
+
+Configure Argo CD so the shutdown lasts until migrations finish and the application restarts afterwards:
+
+- Run a full application sync with the chart's [Helm hooks](https://argo-cd.readthedocs.io/en/stable/user-guide/helm/#helm-hooks) enabled. Don't mix in Argo CD hooks that disable Helm hook handling. Other controllers must provide equivalent hook ordering.
+- Disable selective sync and `ApplyOutOfSyncOnly=true`. The sync must reapply all application Deployments and the backend HPA after the migration Job succeeds, including resources that were unchanged before the hook ran.
+- With autoscaling, use Argo CD's `ignoreDifferences` to ignore the backend's `/spec/replicas` during comparison, so HPA changes don't trigger repeated full syncs. Leave `RespectIgnoreDifferences` off for this rule: the main sync must still restore Deployment replicas, or workloads can remain at zero.
+- Preserve the chart's `app.kubernetes.io/instance` labels. If Argo CD uses this label for tracking, keep the Application name and Helm `releaseName` equal, or [configure a separate tracking label](https://argo-cd.readthedocs.io/en/stable/user-guide/helm/#helm-release-name).
+- Make the database and any referenced Secrets available before the `PreSync` migration Job, including on the first install. Resources created only in the main sync are too late. If you manage migration RBAC yourself, grant the Job's service account the [chart's scale-down permissions](https://github.com/lightdash/helm-charts/tree/main/charts/lightdash).
+- Pause other controllers or autoscalers that could recreate the HPA or restore replicas during migration. The chart removes its own backend HPA; it can't prevent an external controller from starting old pods again.
+
+If shutdown or migration fails, leave the application stopped, [resolve the Job failure](#the-migration-job-failed), then retry a full sync.
 
 ## Upgrade with Docker Compose
 
