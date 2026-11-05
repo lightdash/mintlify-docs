@@ -1,16 +1,19 @@
 ---
-title: "Data apps"
+title: "Self-host data apps"
+sidebarTitle: "Data apps"
 description: "Configure a self-hosted Lightdash instance to run data apps"
 ---
 
 import { FeatureBadge } from '/snippets/feature-badge.jsx';
+import ChartLibraryEnv from '/snippets/self-host/chart-library-env.mdx';
 
+<div className="feature-badges"><FeatureBadge label="Self-hosted" /> <FeatureBadge label="Enterprise" /></div>
 
-<div className="feature-badges"><FeatureBadge label="Enterprise" /></div>
-
-[Data apps](/data-apps) are AI-generated React code, built inside an isolated sandbox and stored in an S3-compatible bucket. To enable the feature on a self-hosted instance you need a sandbox provider, a model provider, and a bucket Lightdash can write to. Claude is the default coding agent, and you can run data apps with OpenAI Codex instead.
+Enable data apps on your self-hosted Lightdash instance by configuring a sandbox provider, a coding-agent provider, and object storage. For creating apps, sharing them, and permissions, see [Data apps](/data-apps).
 
 Sandbox providers are configured separately and cover several runtimes — E2B, AWS Lambda MicroVMs, Azure Container Apps, and Google Cloud Run. See [sandboxes](/self-host/customize-deployment/sandboxes) for the full provider setup; this page covers everything else data apps need.
+
+For custom chart types, see [Chart Studio](#chart-studio) to configure authoring or [Chart library](#chart-library) to install published chart types without a sandbox.
 
 ## Prerequisites
 
@@ -22,77 +25,53 @@ Sandbox providers are configured separately and cover several runtimes — E2B, 
 
 ## Configuration
 
-Add the following environment variables to your Lightdash deployment:
+Enable the runtime in your deployment:
 
-| Variable | Example | Purpose |
-| --- | --- | --- |
-| `APPS_RUNTIME_ENABLED` | `true` | Enables data apps. |
-| `APPS_CODING_AGENT` | `claude` | Coding agent used to generate apps. Supports `claude` (default) or `codex`. |
-| `APPS_S3_BUCKET` | `lightdash-apps` | Bucket Lightdash will write app source and built artifacts to. Falls back to `S3_BUCKET` if unset - set this if you want a dedicated bucket. |
+```bash
+APPS_RUNTIME_ENABLED=true
+```
+
+Data apps use your instance's S3 configuration. Set `APPS_S3_BUCKET` if you want a dedicated bucket for app source and built artifacts. See the [data apps runtime variables](/self-host/customize-deployment/environment-variables#data-apps-runtime) for storage overrides and the full configuration reference.
 
 Choose one of the coding-agent and provider combinations below.
 
 ### Claude through Anthropic (default)
 
-Leave `APPS_CODING_AGENT` unset or set it to `claude`, then provide an Anthropic API key.
+Configure Claude with an Anthropic API key:
 
-| Variable | Example | Purpose |
-| --- | --- | --- |
-| `APPS_CODING_AGENT` | `claude` | Optional. Claude is used when this variable is unset. |
-| `ANTHROPIC_API_KEY` | `<your-anthropic-api-key>` | Your [Anthropic](https://console.anthropic.com/) API key. Used for Data apps when `AI_DEFAULT_PROVIDER` is not `bedrock`. |
-| `ANTHROPIC_BASE_URL` | `https://llm-gateway.example.com/anthropic` | Optional. Routes Claude and Anthropic-backed AI Analyst traffic through an Anthropic-compatible gateway. Configure the base before `/v1`. |
+```bash
+APPS_CODING_AGENT=claude
+ANTHROPIC_API_KEY=<your-anthropic-api-key>
+```
 
-Users can choose Sonnet, Opus, or Haiku for each generation. Sonnet is the default.
+This uses Anthropic directly when `AI_DEFAULT_PROVIDER` is not `bedrock`. For gateway routing, set `ANTHROPIC_BASE_URL` to the base before `/v1`.
 
 With `ANTHROPIC_BASE_URL`, Lightdash uses `ANTHROPIC_API_KEY` as a bearer token and allows the gateway hostname through the sandbox firewall. The gateway must implement Anthropic Messages. See [Corporate LLM gateways](/self-host/enterprise-features/ai-agents#corporate-llm-gateways) for authentication and API-path requirements, including [separate gateway routes for Data apps](/self-host/enterprise-features/ai-agents#separate-gateway-routes-for-data-apps).
 
 ### Codex through OpenAI
 
-Set `APPS_CODING_AGENT=codex` and provide an OpenAI API key. Codex uses OpenAI directly whenever `AI_DEFAULT_PROVIDER` is not `bedrock`. You do not need an Anthropic API key for Data app generation in this mode.
+Configure Codex with an OpenAI API key:
 
-| Variable | Example | Purpose |
-| --- | --- | --- |
-| `APPS_CODING_AGENT` | `codex` | Runs Data app generation with OpenAI Codex. |
-| `OPENAI_API_KEY` | `<your-openai-api-key>` | Your [OpenAI API key](https://platform.openai.com/api-keys). |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Optional. Override this for an OpenAI-compatible gateway that supports the Responses API and the configured Codex model IDs. |
+```bash
+APPS_CODING_AGENT=codex
+OPENAI_API_KEY=<your-openai-api-key>
+```
 
-Users can choose GPT-5.6 Sol, Terra, or Luna for each generation. Terra is the default.
+Codex uses OpenAI directly when `AI_DEFAULT_PROVIDER` is not `bedrock`; app generation does not require an Anthropic key in this mode. For gateway routing, set `OPENAI_BASE_URL` to a gateway that supports the Responses API and the configured Codex model IDs.
 
 ### Claude or Codex through Bedrock
 
-Set `AI_DEFAULT_PROVIDER=bedrock` to route the selected coding agent through AWS Bedrock or a Bedrock-compatible gateway. Set `APPS_CODING_AGENT` to `claude` or `codex`, then configure the region and credentials used by the selected route.
+Set `AI_DEFAULT_PROVIDER=bedrock` and choose `APPS_CODING_AGENT=claude` or `APPS_CODING_AGENT=codex`. Configure the region, credentials, and model access for that agent using the [AWS Bedrock variables](/self-host/customize-deployment/environment-variables#aws-bedrock-configuration). The sandbox firewall allows the provider endpoints required for the selected agent and region.
 
-| Variable | Example | Purpose |
-| --- | --- | --- |
-| `APPS_CODING_AGENT` | `claude` | Selects `claude` or `codex`. Defaults to `claude`. |
-| `AI_DEFAULT_PROVIDER` | `bedrock` | Switches both AI Analyst and Data apps to Bedrock. |
-| `BEDROCK_REGION` | `us-east-2` | **(Required)** AWS region where the selected model is available. |
-| `BEDROCK_API_KEY` | `<your-bedrock-api-key>` | Bedrock API key (bearer token). Simplest option - use this *or* the IAM keys below, not both. |
-| `BEDROCK_ACCESS_KEY_ID` | `<aws-access-key-id>` | AWS access key ID. Use with `BEDROCK_SECRET_ACCESS_KEY` as an alternative to `BEDROCK_API_KEY`. |
-| `BEDROCK_SECRET_ACCESS_KEY` | `<aws-secret-access-key>` | AWS secret access key paired with `BEDROCK_ACCESS_KEY_ID`. |
-| `BEDROCK_SESSION_TOKEN` | `<aws-session-token>` | Optional. AWS session token for temporary IAM credentials. |
-| `BEDROCK_BASE_URL` | `https://llm-gateway.example.com/bedrock` | Optional. Routes backend Bedrock calls and the selected Data app coding agent through a corporate gateway. |
-| `CLAUDE_CODE_SKIP_BEDROCK_AUTH` | `true` | Optional. For Claude only, omit AWS authentication when the configured gateway performs upstream authentication. Requires `BEDROCK_BASE_URL`. |
+When `BEDROCK_BASE_URL` is set, the gateway must support the protocol used by each selected consumer. Claude uses Bedrock's streaming Invoke API, while Codex uses the OpenAI Responses API through a custom gateway provider. Codex requires `BEDROCK_API_KEY` in gateway mode and sends model IDs with the `openai.` prefix; the gateway must register or translate those names. See the [required gateway APIs](/self-host/enterprise-features/ai-agents#required-gateway-apis) matrix.
 
-For Claude, enable the Claude models you want to use in the selected region. For Codex, enable the corresponding OpenAI model IDs, such as `openai.gpt-5.6-terra`, through the Amazon Bedrock Mantle path. See [OpenAI's Amazon Bedrock guide](https://learn.chatgpt.com/docs/amazon-bedrock) for supported models and authentication requirements.
-
-The Bedrock credentials are the same ones used by AI Analyst - see [AWS Bedrock configuration](/self-host/customize-deployment/environment-variables#aws-bedrock-configuration) for the full reference. The sandbox firewall automatically allows only the provider endpoints required for the selected agent and region.
-
-When `BEDROCK_BASE_URL` is set, the gateway must support the protocol used by each selected consumer. Claude uses Bedrock's streaming Invoke API, while Codex uses the OpenAI Responses API through a custom gateway provider. Codex requires `BEDROCK_API_KEY` in gateway mode and sends model IDs with the `openai.` prefix, such as `openai.gpt-5.6-terra`; the gateway must register or translate those names. See the [required gateway APIs](/self-host/enterprise-features/ai-agents#required-gateway-apis) matrix.
-
-`AI_DEFAULT_PROVIDER` is an instance-wide setting. Setting it to `bedrock` also routes AI Analyst through Bedrock. `APPS_CODING_AGENT` changes only the coding agent used by Data apps.
+`AI_DEFAULT_PROVIDER` is an instance-wide setting. Setting it to `bedrock` also routes AI agents through Bedrock. `APPS_CODING_AGENT` changes only the coding agent used by data apps and Chart Studio.
 
 ### Gateway networking
 
 The Lightdash backend and the Data app sandbox make separate connections to the gateway. E2B and Azure Sandboxes receive the configured gateway hostname in their dynamic egress allowlist. AWS Lambda MicroVMs use a pre-provisioned egress connector instead, so `LAMBDA_MICROVM_EGRESS_CONNECTOR_ARN` must permit the gateway hostname. Docker and Cloud Run follow their existing runtime network policy. See [LLM gateway egress](/self-host/customize-deployment/sandboxes#llm-gateway-egress).
 
-Restart the backend. The "Data apps" entry will appear in the **New** menu for users with the appropriate permission scope.
-
-### Optional configuration
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `APP_RUNTIME_EXTERNAL_CONNECTION_ALLOWED_PRIVATE_HOST_CIDRS` | Empty | Allows [external connections to trusted private destinations](#private-network-external-connections) using comma-separated `hostname@CIDR` entries. |
+Restart the backend after configuring the runtime and provider. Follow [Creating a new app](/data-apps#creating-a-new-app) to verify generation.
 
 ### Private-network external connections
 
@@ -124,18 +103,78 @@ If a test returns `blocked_ip`, check the exact hostname and every address it re
 
 [Chart Studio](/visualizations/chart-studio) builds custom chart types on the same runtime, with its own switch. It turns on for every organization once the instance has an Enterprise license and a [configured sandbox provider](/self-host/customize-deployment/sandboxes). It doesn't need `APPS_RUNTIME_ENABLED`, so you can offer Chart Studio while leaving data apps off. Builds use the same coding-agent provider and bucket as data apps.
 
-## Costs
+## Chart library
 
-Self-hosting data apps means you pay your sandbox provider and your selected model provider directly:
+Enable the chart library on your self-hosted Lightdash instance, or configure a private mirror for a restricted network. For browsing, installing, and using chart types, see [Chart library](/visualizations/chart-library).
 
-- **Your sandbox provider** bills for sandbox runtime. A typical build runs for 1–15 minutes; sandboxes are paused between iterations and resumed on follow-up prompts.
-- **Anthropic, OpenAI, or AWS Bedrock** bills per token. Each generation sends the project's dbt catalog and the user's prompt to the selected coding agent, plus any attached charts, dashboards, or images.
+Lightdash reads the library from a static website. The public library lives at `https://lightdash.github.io/lightdash-library`. Instances that cannot reach it can read a mirror of the same files from inside their own network instead.
 
-Both your sandbox provider and your model provider expose usage dashboards. We recommend setting spend limits on both before rolling the feature out to your users.
+### Chart library prerequisites
 
-## Permissions
+- **Enterprise license** - `LIGHTDASH_LICENSE_KEY` must be set on your instance.
+- **Outbound access to the library** - the backend fetches the library over `https`. The browser never talks to the library directly; images and other assets are proxied through the backend.
 
-Data apps follow the same space-based permission model as charts and dashboards. The relevant scopes (`view:DataApp`, `create:DataApp`, `manage:DataApp`) are bundled into the default system roles - but on enterprise instances using custom roles, you'll need to grant them explicitly. See [Custom roles](/workspace-admin/custom-roles) for details.
+The library does not need data apps or Chart Studio configured. To also let people edit chart types, configure the [Chart Studio runtime](#chart-studio).
+
+### Enable the chart library
+
+Add the flag to your deployment and restart the backend:
+
+```bash
+LIGHTDASH_ENABLE_FEATURE_FLAGS=chart-type-registry
+```
+
+If `LIGHTDASH_ENABLE_FEATURE_FLAGS` already contains flags, append `chart-type-registry` to the comma-separated list. See [feature flags](/self-host/customize-deployment/environment-variables#feature-flags).
+
+Open the [chart library](/visualizations/chart-library#finding-the-library) to verify that the backend can fetch the index. If the library cannot be reached, the tab is hidden and already-installed chart types keep working.
+
+### Chart library configuration
+
+<ChartLibraryEnv />
+
+### Mirror the chart library
+
+A deployment with no route to the public internet can serve the library from inside its network. The library is a static tree of files, so any artifact proxy or object store that can mirror a website works, for example a remote repository in your artifact manager that caches `https://lightdash.github.io/lightdash-library`, or a bucket you sync the tree into.
+
+Mirror the tree as published. Lightdash reads `index.json` at the base URL and the chart files beneath it (`charts/<slug>/<version>/...`), and it verifies every downloaded artifact against the checksums in the index, so a mirror cannot alter chart code without the install failing.
+
+Then point the instance at the mirror:
+
+```bash
+LIGHTDASH_CHART_REGISTRY_URL=https://artifacts.internal.example/lightdash-library
+LIGHTDASH_CHART_REGISTRY_ALLOW_PRIVATE_HOSTS=true
+# Only if the mirror requires authentication
+LIGHTDASH_CHART_REGISTRY_AUTHORIZATION_HEADER="Bearer <token>"
+```
+
+- `LIGHTDASH_CHART_REGISTRY_ALLOW_PRIVATE_HOSTS` is needed whenever the mirror's hostname resolves to a private address. It lifts only that check. The mirror must still be served over `https` with a certificate the backend trusts, redirects are refused, and the connection stays pinned to the resolved address. Do not use `LIGHTDASH_CHART_REGISTRY_ALLOW_INSECURE` for a mirror.
+- `LIGHTDASH_CHART_REGISTRY_AUTHORIZATION_HEADER` holds the complete header value. Treat it as a secret: deliver it from your secret store rather than writing it into plain configuration. On Kubernetes, add the key to the Secret your deployment already injects, or use an `extraEnv` entry with a `secretKeyRef`.
+- If the mirror uses a certificate from an internal certificate authority, give the backend the CA bundle with `NODE_EXTRA_CA_CERTS`. Lightdash does not offer a way to skip certificate validation for the library.
+- Artifact proxies often rewrite the content type of binary files to `application/octet-stream`. Lightdash detects PNG, JPEG, WebP and GIF screenshots from their contents, so the library still renders previews behind such a proxy.
+
+Restart the backend after changing any of these variables.
+
+### Turn off the chart library
+
+Set `LIGHTDASH_CHART_REGISTRY_URL` to an empty string. The **Chart library** tab disappears and no library requests are made. Chart types already installed keep working, and Chart Studio is unaffected.
+
+### Troubleshoot the chart library
+
+**The Chart library tab doesn't appear.**
+Check that `LIGHTDASH_LICENSE_KEY` is set, `chart-type-registry` is in `LIGHTDASH_ENABLE_FEATURE_FLAGS`, and the signed-in user can install chart types in the project. If all of that is in place, the backend could not fetch the library index: check the backend logs for the request to `LIGHTDASH_CHART_REGISTRY_URL`.
+
+**The logs say the library host resolves to a private address.**
+The mirror is on an internal address and `LIGHTDASH_CHART_REGISTRY_ALLOW_PRIVATE_HOSTS` is not set.
+
+**The logs show a certificate error against the mirror.**
+The backend does not trust the mirror's certificate. Add the issuing CA bundle with `NODE_EXTRA_CA_CERTS`.
+
+**Installs fail with a checksum mismatch.**
+The mirror served a file that differs from the published one. Check that the mirror serves the tree unchanged and is not injecting or rewriting content.
+
+## Provider usage
+
+Your sandbox and model providers bill your accounts directly. Monitor usage and configure limits with those providers before rolling out data apps.
 
 ## Troubleshooting
 
@@ -158,4 +197,4 @@ Confirm `APPS_CODING_AGENT=codex`. For OpenAI, verify `OPENAI_API_KEY`; if `OPEN
 A data app's queries run through the Lightdash backend like any chart query, not from the sandbox or the viewer's browser. The blocked IP is the outbound address of your Lightdash backend, or of your [warehouse worker](/self-host/nats-workers/warehouse-workers) pods if you run them. Allowlist that address, or the NAT gateway the traffic leaves through, in the warehouse's network policy.
 
 **Builds fail mid-generation with a Bedrock error.**
-Confirm `BEDROCK_REGION` is set to a region where the selected agent's model is available, and that either `BEDROCK_API_KEY` or the `BEDROCK_ACCESS_KEY_ID` / `BEDROCK_SECRET_ACCESS_KEY` pair is valid. If you use IAM credentials, the principal must have permission to invoke the selected model. With `BEDROCK_BASE_URL`, also confirm the gateway and sandbox allowlist support the selected agent's API wire. Codex requires an exact OpenAI Bedrock model ID such as `openai.gpt-5.6-terra`.
+Confirm `BEDROCK_REGION` is set to a region where the selected agent's model is available, and that either `BEDROCK_API_KEY` or the `BEDROCK_ACCESS_KEY_ID` / `BEDROCK_SECRET_ACCESS_KEY` pair is valid. If you use IAM credentials, the principal must have permission to invoke the selected model. With `BEDROCK_BASE_URL`, confirm the gateway supports the selected agent's API and is allowed by the sandbox network policy. Codex requires an exact OpenAI Bedrock model ID with the `openai.` prefix.
