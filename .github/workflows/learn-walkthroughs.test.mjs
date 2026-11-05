@@ -14,6 +14,15 @@ import { test } from 'node:test';
 import { compareFindings, normalizeFindings } from './learn-findings.mjs';
 import { runCheck } from './learn-citations.mjs';
 
+test('docs Learn job allows failed citation reports without failing the workflow', () => {
+    const workflow = readFileSync(
+        new URL('./learn-walkthroughs.yml', import.meta.url),
+        'utf8',
+    );
+    const job = workflow.split('  citations:\n')[1].split('    steps:')[0];
+    assert.match(job, /^    continue-on-error: true$/m);
+});
+
 for (const [kind, baseErrors, headErrors, guidance, status] of [
     ['clean success', [], [], false, 0],
     ['fully repaired citations', ['content'], [], false, 0],
@@ -63,6 +72,27 @@ for (const [kind, baseErrors, headErrors, guidance, status] of [
             );
             assert.equal(result.status, status, result.stdout + result.stderr);
             const rendered = readFileSync(summary, 'utf8');
+            assert.equal(
+                rendered.includes(
+                    'Advisory: Learn findings do not block documentation merges.',
+                ),
+                status !== 0,
+                rendered,
+            );
+            const comparison = JSON.parse(
+                readFileSync(path.join(cwd, 'comparison.json'), 'utf8'),
+            );
+            assert.equal(comparison.blocked, status !== 0);
+            if (status !== 0) {
+                assert.match(
+                    result.stdout,
+                    /::error title=Learn walkthrough validation::/,
+                );
+                assert.ok(
+                    comparison.introduced.length ||
+                        comparison.toolFailures.length,
+                );
+            }
             for (const text of [
                 'reference-only lightdash/lightdash PR',
                 'Merge that PR, then rerun this docs check.',

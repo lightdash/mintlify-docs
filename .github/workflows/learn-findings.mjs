@@ -93,6 +93,10 @@ if (
         summary.push(
             'No broken documentation references introduced by this pull request.',
         );
+    else
+        summary.push(
+            'Advisory: Learn findings do not block documentation merges.',
+        );
     for (const [label, findings] of [
         ['Introduced', comparison.introduced],
         ['Repaired', comparison.repaired],
