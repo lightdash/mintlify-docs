@@ -266,7 +266,12 @@ npm run audit:external-links
 - **`mint broken-links --check-anchors`** - Checks page links and heading anchors.
 - **`npm run audit:external-links`** - Records unavailable third-party links as advisory findings without blocking content changes.
 
-**Automated checks:** Pull requests block only on findings in changed files. The validation workflow adds inline annotations, updates one PR comment, and publishes the complete JSON report as an artifact. Full-site and external-link audits run on a schedule.
+#### Automated checks
+
+- **[Validate documentation](.github/workflows/validate-docs.yml)** — Type-checks and tests the utilities, validates changed-file documentation rules, checks site-wide links and anchors, and checks for component-rule regressions.
+- **[Check sidebar navigation index](.github/workflows/sidebar-navigation.yml)** — Checks that `sidebar-navigation.js` matches navigation, page titles, and the API schema. The bot can commit the generated update on same-repository PRs; forks need to run `npm run build:sidebar-navigation` and commit the result.
+- **[Learn walkthrough citations](.github/workflows/learn-walkthroughs.yml)** — Checks references to docs text used by Lightdash's in-app guided tours, plus tour generation and ordering. It checks fresh product code against both base and head docs; introduced content failures and incomplete comparisons fail the check.
+- **[Audit external links](.github/workflows/validate-docs.yml)** — Runs weekly or manually. Unavailable URLs are advisory; checker execution failures fail the audit.
 
 #### Auto-fixing Image Location Issues
 
