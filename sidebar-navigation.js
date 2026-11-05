@@ -995,6 +995,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Get metrics tree","href":"/api-reference/catalog/get-metrics-tree-1","parents":["Reference","Catalog"]},
 {"title":"Delete metrics tree edge","href":"/api-reference/catalog/delete-metrics-tree-edge","parents":["Reference","Catalog"]},
 {"title":"Check if metrics exist in catalog","href":"/api-reference/catalog/check-if-metrics-exist-in-catalog","parents":["Reference","Catalog"]},
+{"title":"List metrics catalog tables","href":"/api-reference/catalog/list-metrics-catalog-tables","parents":["Reference","Catalog"]},
 {"title":"List metric owners","href":"/api-reference/catalog/list-metric-owners","parents":["Reference","Catalog"]},
 {"title":"Get BigQuery workload identity","href":"/api-reference/bigquery-workload-identity/get-bigquery-workload-identity","parents":["Reference","BigQuery Workload Identity"]},
 {"title":"Get BigQuery datasets","href":"/api-reference/projects/get-bigquery-datasets","parents":["Reference","Projects"]},
