@@ -210,10 +210,11 @@ if (
                 ),
             );
     }
-    summary.push(
-        '',
-        'Repair citations in lightdash/lightdash or coordinate with the Customer Success team. Guide: https://github.com/lightdash/lightdash/blob/main/docs/learn/maintaining-walkthroughs.md',
-    );
+    if (comparison.blocked)
+        summary.push(
+            '',
+            'Repair citations in lightdash/lightdash or coordinate with the Customer Success team. Guide: https://github.com/lightdash/lightdash/blob/main/docs/learn/maintaining-walkthroughs.md',
+        );
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary.join('\n') + '\n');
     for (const finding of [
         ...comparison.introduced,

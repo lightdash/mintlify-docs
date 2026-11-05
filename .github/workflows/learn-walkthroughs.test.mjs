@@ -14,6 +14,71 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { compareFindings, normalizeFindings } from './learn-findings.mjs';
 
+for (const [kind, baseErrors, headErrors, guidance, status] of [
+    ['clean success', [], [], false, 0],
+    ['fully repaired citations', ['content'], [], false, 0],
+    ['introduced citation failure', [], ['content'], true, 1],
+    ['existing citation failure', ['content'], ['content'], false, 0],
+    ['head tool failure', [], ['tool'], true, 1],
+    ['base tool failure', ['tool'], [], true, 1],
+]) {
+    test(`rendered summary includes repair guidance only when blocked: ${kind}`, () => {
+        const cwd = mkdtempSync(path.join(tmpdir(), 'docs-learn-summary-'));
+        try {
+            writeFileSync(
+                path.join(cwd, 'revisions.json'),
+                JSON.stringify({
+                    productSha: 'product',
+                    docsBaseSha: 'base',
+                    docsHeadSha: 'head',
+                }),
+            );
+            for (const [revision, errors] of [
+                ['base', baseErrors],
+                ['head', headErrors],
+            ])
+                writeFileSync(
+                    path.join(cwd, `${revision}.json`),
+                    JSON.stringify(
+                        errors.map((category) => ({
+                            level: 'error',
+                            category,
+                            file: 'checker',
+                            message:
+                                category === 'content'
+                                    ? 'Docs anchor not found: spaces.mdx#missing:1'
+                                    : 'TypeError: parser crashed',
+                        })),
+                    ),
+                );
+            const summary = path.join(cwd, 'summary');
+            const result = spawnSync(
+                'node',
+                [new URL('./learn-findings.mjs', import.meta.url).pathname],
+                {
+                    cwd,
+                    encoding: 'utf8',
+                    env: { ...process.env, GITHUB_STEP_SUMMARY: summary },
+                },
+            );
+            assert.equal(result.status, status, result.stdout + result.stderr);
+            const rendered = readFileSync(summary, 'utf8');
+            for (const text of [
+                'Repair citations in lightdash/lightdash',
+                'https://github.com/lightdash/lightdash/blob/main/docs/learn/maintaining-walkthroughs.md',
+            ])
+                assert.equal(rendered.includes(text), guidance, rendered);
+            if (status === 0)
+                assert.match(
+                    rendered,
+                    /No walkthrough validation error introduced by this pull request\./,
+                );
+        } finally {
+            rmSync(cwd, { recursive: true, force: true });
+        }
+    });
+}
+
 test('equal and introduced tool crashes block comparison without claiming repairs', () => {
     const content = normalizeFindings([
         {
