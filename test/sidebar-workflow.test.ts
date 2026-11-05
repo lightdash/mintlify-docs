@@ -34,6 +34,25 @@ test('checking a missing index tells the author how to generate it', (t) => {
   assert.match(result.stderr, /Run aube run build:sidebar-navigation/);
 });
 
+test('the index puts each entry on its own line and loads as the same data', (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sidebar-index-'));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(directory, 'docs.json'), JSON.stringify({ navigation: { tabs: [{ tab: 'Docs', pages: ['intro', { group: 'Guides', pages: ['guide'] }] }, { tab: 'Empty', pages: [] }] } }));
+  fs.writeFileSync(path.join(directory, 'intro.mdx'), '---\ntitle: Introduction\n---\n');
+  fs.writeFileSync(path.join(directory, 'guide.mdx'), '---\ntitle: Guide\n---\n');
+  const result = spawnSync(process.execPath, [path.join(root, 'scripts/docs/build-sidebar-navigation.ts')], { cwd: directory, encoding: 'utf8' });
+  assert.equal(result.status, 0);
+  const lines = fs.readFileSync(path.join(directory, 'sidebar-navigation.js'), 'utf8').split('\n');
+  assert.ok(lines.includes('{"title":"Introduction","href":"/intro","parents":[]},'));
+  assert.ok(lines.includes('{"title":"Guide","href":"/guide","parents":["Guides"]}'));
+  const window = { dispatchEvent() {} } as { dispatchEvent(): void; lightdashSidebarNavigation?: unknown };
+  vm.runInNewContext(lines.join('\n'), { window, Event: class {} });
+  assert.deepEqual(JSON.parse(JSON.stringify(window.lightdashSidebarNavigation)), [
+    { title: 'Docs', entries: [{ title: 'Introduction', href: '/intro', parents: [] }, { title: 'Guide', href: '/guide', parents: ['Guides'] }] },
+    { title: 'Empty', entries: [] },
+  ]);
+});
+
 function updateScript(): string {
   const workflow = fs.readFileSync(path.join(root, '.github/workflows/sidebar-navigation.yml'), 'utf8');
   return workflow.split('          script: |\n')[1]!.split('\n').map((line) => line.slice(12)).join('\n');
