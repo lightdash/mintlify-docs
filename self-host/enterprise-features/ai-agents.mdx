@@ -1,22 +1,26 @@
 ---
-title: "AI agents"
-description: "Enable AI Analyst and AI agents on a self-hosted Lightdash instance"
+title: "Self-host agents"
+sidebarTitle: "Agents"
+description: "Configure model providers, gateways, and agent services on your Lightdash instance"
 ---
 
 import { FeatureBadge } from '/snippets/feature-badge.jsx';
 
+<div className="feature-badges"><FeatureBadge label="Self-hosted" /> <FeatureBadge label="Enterprise" /></div>
 
-<div className="feature-badges"><FeatureBadge label="Enterprise" /></div>
+Enable AI agents on a self-hosted Lightdash instance, then configure your model provider, network access, and optional agent services. For creating agents, connecting Slack, and managing organization-level models, follow [Set up agents](/agents/set-up-agents).
 
-[AI Analyst](/agents) powers natural-language querying, AI-generated charts, and [AI agents](/agents/set-up-agents) that answer questions in-app and in Slack. To enable it on a self-hosted instance you need a model provider and the AI Analyst feature flag. Every AI feature that runs on top — [Data apps](/self-host/enterprise-features/data-apps), [AI writeback](/self-host/enterprise-features/ai-writeback), [Autopilot](#autopilot), [MCP](/self-host/enterprise-features/mcp), and [multi-agent Slack channels](/self-host/enterprise-features#multi-agent-slack-channels) — assumes AI Analyst is enabled first.
+After configuring a [model provider](#model-providers), enable the extensions your deployment needs: [post-processing](#post-processing-with-duckdb-and-python), [verified answers](#verified-answers), [AI writeback](#ai-writeback), [Autopilot](#autopilot), or [agent identity](#agent-identity).
 
 ## Prerequisites
 
-- **Enterprise license** — `LIGHTDASH_LICENSE_KEY` must be set on your instance.
-- **A model provider** — OpenAI, Anthropic, Google Gemini, Google Vertex AI, Azure AI, OpenRouter, or AWS Bedrock. OpenAI and Anthropic are the most tested.
-- **Enough context budget on the chosen model** — AI Analyst sends the project's dbt catalog with every request.
+- Apply a valid [Enterprise license key](/self-host/enterprise-features#apply-the-license-key).
+- Configure a model provider: OpenAI, Anthropic, Google Gemini, Google Vertex AI, Azure AI, OpenRouter, or AWS Bedrock.
+- Allow the backend and any scheduler or worker running agent jobs to reach the provider or your [corporate gateway](#corporate-llm-gateways).
 
-## Enable AI Analyst
+<span id="enable-ai-analyst" />
+
+## Enable AI agents
 
 Set the main switch and provide credentials for one provider — the minimal setup uses OpenAI, the default provider:
 
@@ -25,43 +29,43 @@ AI_COPILOT_ENABLED=true
 OPENAI_API_KEY=<your-openai-api-key>
 ```
 
-AI Analyst starts using the provider as soon as the backend restarts. To use a different provider, set `AI_DEFAULT_PROVIDER` (`openai`, `anthropic`, `google`, `vertex`, `azure`, `openrouter`, or `bedrock`) and the matching credentials — see [model providers](#model-providers) below. Optionally, set `ASK_AI_BUTTON_ENABLED=true` to add an "Ask AI" entry point in the app UI; without it, users reach agents from `/ai-agents`.
+Apply the same provider configuration to the backend and any scheduler or worker running agent jobs, then restart those processes. To use a different provider, set `AI_DEFAULT_PROVIDER` and its matching credentials. Optionally, set `ASK_AI_BUTTON_ENABLED=true` to show the **Ask AI** entry point; users can also reach agents at `/ai-agents`.
 
 ## Model providers
 
-Each provider's exhaustive variable list lives in the [environment variables reference](/self-host/customize-deployment/environment-variables#ai-analyst); the notes below cover the choices and gotchas per provider.
+Find provider credentials, supported models, and defaults in the [environment variables reference](/self-host/customize-deployment/environment-variables#ai-agents). Set `AI_DEFAULT_PROVIDER` to `openai`, `anthropic`, `google`, `vertex`, `azure`, `openrouter`, or `bedrock`, then follow that provider's configuration:
 
 ### OpenAI (default)
 
-Leave `AI_DEFAULT_PROVIDER` unset or set it to `openai`, then set `OPENAI_API_KEY`. `gpt-6-sol` is the default model; override it with `OPENAI_MODEL_NAME`. All options: [OpenAI configuration](/self-host/customize-deployment/environment-variables#openai-configuration).
+Follow [OpenAI configuration](/self-host/customize-deployment/environment-variables#openai-configuration).
 
 Behind an OpenAI-compatible LLM gateway (LiteLLM, an internal proxy), also set `OPENAI_BASE_URL` to the gateway URL and `OPENAI_MODEL_NAME` to a model your gateway exposes. If the gateway doesn't support streaming (SSE), set `OPENAI_SUPPORTS_STREAMING=false`. If it enforces Zero Data Retention, set `OPENAI_ZERO_DATA_RETENTION=true`. If it only implements the Chat Completions API (`/chat/completions`) and returns 404 for `/responses`, set `OPENAI_USE_CHAT_COMPLETIONS=true`.
 
 ### Anthropic
 
-Set `AI_DEFAULT_PROVIDER=anthropic` and provide `ANTHROPIC_API_KEY`. `claude-sonnet-5-5` is the default model; override it with `ANTHROPIC_MODEL_NAME`. All options: [Anthropic configuration](/self-host/customize-deployment/environment-variables#anthropic-configuration).
+Follow [Anthropic configuration](/self-host/customize-deployment/environment-variables#anthropic-configuration).
 
 To send Anthropic traffic through a corporate gateway, add `ANTHROPIC_BASE_URL`. See [Corporate LLM gateways](#corporate-llm-gateways) for the required URL, authentication, and API paths.
 
 ### Google Gemini
 
-Set `AI_DEFAULT_PROVIDER=google` and `GEMINI_API_KEY`. The default model is `gemini-3.8-flash`; override it with `GEMINI_MODEL_NAME`. Use `GEMINI_BASE_URL` for a compatible gateway. All options: [Google Gemini configuration](/self-host/customize-deployment/environment-variables#google-gemini-configuration).
+Follow [Google Gemini configuration](/self-host/customize-deployment/environment-variables#google-gemini-configuration). Use `GEMINI_BASE_URL` for a compatible gateway.
 
 ### Google Vertex AI
 
-Set `AI_DEFAULT_PROVIDER=vertex` and either `GOOGLE_VERTEX_API_KEY` or `GOOGLE_VERTEX_PROJECT` with Application Default Credentials available to the backend and scheduler. The default location is `global` and model is `gemini-3.8-flash`; override the model with `GOOGLE_VERTEX_MODEL_NAME`. All options: [Google Vertex AI configuration](/self-host/customize-deployment/environment-variables#google-vertex-ai-configuration).
+Follow [Google Vertex AI configuration](/self-host/customize-deployment/environment-variables#google-vertex-ai-configuration). If you use Application Default Credentials, make them available to both the backend and scheduler.
 
 ### Azure AI
 
-Set `AI_DEFAULT_PROVIDER=azure` and point Lightdash at your deployment with `AZURE_AI_API_KEY`, `AZURE_AI_ENDPOINT`, `AZURE_AI_API_VERSION`, and `AZURE_AI_DEPLOYMENT_NAME`. For reasoning-capable deployments (e.g. `o3`), also set `AZURE_AI_DEPLOYMENT_SUPPORTS_REASONING=true`. If your endpoint is a gateway that copies the Azure URL layout but only implements the Chat Completions API, set `AZURE_AI_USE_CHAT_COMPLETIONS=true`. Chat Completions sends `reasoning_effort: none`, which newer models require for tool calls but older ones such as `gpt-5-mini` reject; pin a value your deployment accepts with `AZURE_AI_REASONING_EFFORT`. All options: [Azure AI configuration](/self-host/customize-deployment/environment-variables#azure-ai-configuration).
+Follow [Azure AI configuration](/self-host/customize-deployment/environment-variables#azure-ai-configuration). If your gateway only implements the Chat Completions API, set `AZURE_AI_USE_CHAT_COMPLETIONS=true`. Set `AZURE_AI_REASONING_EFFORT` to a value your deployment accepts if it rejects the default reasoning setting.
 
 ### OpenRouter
 
-Set `AI_DEFAULT_PROVIDER=openrouter` and provide `OPENROUTER_API_KEY`; override the default model with `OPENROUTER_MODEL_NAME`. All options: [OpenRouter configuration](/self-host/customize-deployment/environment-variables#openrouter-configuration).
+Follow [OpenRouter configuration](/self-host/customize-deployment/environment-variables#openrouter-configuration).
 
 ### AWS Bedrock
 
-Set `AI_DEFAULT_PROVIDER=bedrock` and `BEDROCK_REGION` (required — the AWS region where the target model is available), then authenticate with either `BEDROCK_API_KEY` or a `BEDROCK_ACCESS_KEY_ID`/`BEDROCK_SECRET_ACCESS_KEY` IAM pair — not both. Enable the corresponding models in the selected region before restarting Lightdash. Bedrock supports Anthropic Claude models only: `BEDROCK_MODEL_NAME` must be one of the supported Claude models (default `claude-sonnet-4-5`). For other models, use their own provider. All options: [AWS Bedrock configuration](/self-host/customize-deployment/environment-variables#aws-bedrock-configuration).
+Follow [AWS Bedrock configuration](/self-host/customize-deployment/environment-variables#aws-bedrock-configuration), and enable the selected models in your AWS region. The agent chat provider supports Claude models; [Data apps](/self-host/enterprise-features/data-apps) has separate coding-agent model support.
 
 To send Bedrock traffic through a corporate gateway, add `BEDROCK_BASE_URL`. The gateway must support the Bedrock APIs used by every enabled Lightdash consumer. See [Corporate LLM gateways](#corporate-llm-gateways).
 
@@ -69,7 +73,7 @@ To send Bedrock traffic through a corporate gateway, add `BEDROCK_BASE_URL`. The
 
 ## Corporate LLM gateways
 
-Lightdash can route AI Analyst, Autopilot, and Data app model traffic through an HTTP(S) corporate gateway. Use the base URL for the protocol your gateway exposes:
+Lightdash can route AI agent, Autopilot, and Data app model traffic through an HTTP(S) corporate gateway. Use the base URL for the protocol your gateway exposes:
 
 - `OPENAI_BASE_URL` for an OpenAI-compatible gateway.
 - `ANTHROPIC_BASE_URL` for an Anthropic Messages gateway.
@@ -107,7 +111,7 @@ When `ANTHROPIC_BASE_URL` is set, Lightdash sends `ANTHROPIC_API_KEY` as an `Aut
 
 Lightdash queries `/v1/models` to determine which models the credential can access. If the gateway does not expose the Models API, set `ANTHROPIC_AVAILABLE_MODELS` to the exact comma-separated model names the gateway accepts.
 
-An organization-level BYO Anthropic key cannot be combined with an instance-wide `ANTHROPIC_BASE_URL` unless the organization sets its own [custom base URL](/agents/set-up-agents#custom-base-url), which replaces the gateway for that organization's traffic. Otherwise, remove the organization key to use the gateway, or remove the gateway URL to route that organization through its own Anthropic account. The same rule applies to organization Google Gemini keys and `GEMINI_BASE_URL`.
+An organization-level BYO Anthropic key cannot be combined with an instance-wide `ANTHROPIC_BASE_URL` unless the organization sets its own [custom base URL](/workspace-admin/ai-settings#custom-base-url), which replaces the gateway for that organization's traffic. Otherwise, remove the organization key to use the gateway, or remove the gateway URL to route that organization through its own Anthropic account. The same rule applies to organization Google Gemini keys and `GEMINI_BASE_URL`.
 
 ### Bedrock-compatible gateway
 
@@ -131,24 +135,24 @@ One base URL can serve multiple consumers only if the gateway implements every w
 
 | Consumer | Required path relative to the configured base |
 | --- | --- |
-| AI Analyst and Autopilot through Anthropic | Anthropic Messages: `/v1/messages` |
+| AI agents and Autopilot through Anthropic | Anthropic Messages: `/v1/messages` |
 | Anthropic model discovery | Anthropic Models: `/v1/models` |
-| AI Analyst and Autopilot through Bedrock | Bedrock Converse: `/model/{model-id}/converse` or `/model/{model-id}/converse-stream` |
+| AI agents and Autopilot through Bedrock | Bedrock Converse: `/model/{model-id}/converse` or `/model/{model-id}/converse-stream` |
 | Bedrock verified-answer embeddings | Bedrock Invoke: `/model/{model-id}/invoke` |
 | Claude Data apps through Anthropic | Anthropic Messages: `/v1/messages` |
 | Claude Data apps through Bedrock | Bedrock Invoke: `/model/{model-id}/invoke-with-response-stream` |
 | Codex Data apps through a Bedrock gateway | OpenAI Responses: `/responses` |
 
-A gateway that supports only Bedrock Converse, for example, can serve AI Analyst chat but cannot serve Claude Data app generation. For the coding-agent configuration and model naming rules, see [Data apps](/self-host/enterprise-features/data-apps).
+A gateway that supports only Bedrock Converse can serve agent chat but cannot serve Claude Data app generation. For coding-agent configuration and model naming rules, see [Self-hosted Data apps](/self-host/enterprise-features/data-apps).
 
 <Note>
-  These gateway settings do not reroute AI writeback or the onboarding agent. Autopilot uses the same provider configuration as AI Analyst. Its scheduler must also be able to reach the gateway.
+  These gateway settings do not reroute AI writeback or the onboarding agent. Autopilot uses the same provider configuration as AI agents. Its scheduler must also be able to reach the gateway.
 </Note>
 
 ### Validate before rollout
 
 1. Confirm the Lightdash backend and any scheduler running Autopilot can resolve and connect to the gateway hostname.
-2. Open AI Analyst and send a short prompt with the configured model. If model discovery fails, verify `/v1/models` or set `ANTHROPIC_AVAILABLE_MODELS`.
+2. Open an AI agent and send a short prompt with the configured model. If model discovery fails, verify `/v1/models` or set `ANTHROPIC_AVAILABLE_MODELS`.
 3. If Data apps are enabled, generate a small app with each coding agent you plan to support. This verifies the sandbox's separate network path and API wire.
 4. If Autopilot is enabled, run it on a disposable project and check its recorded provider, model, and outcome. A successful configuration check does not prove the gateway accepts a model request.
 5. Check gateway access logs for the expected paths in the table above. Redact authorization headers and tokens from logs.
@@ -190,23 +194,67 @@ LIGHTDASH_ENABLE_FEATURE_FLAGS=compose-sql-runner
 
 Agents also need [data access](/agents/data-access) that lets them read rows. With the flag on, each agent has a **Composer queries** setting, on by default, that admins can turn off per agent.
 
-### Data boundaries
-
-- DuckDB and Python never connect to your warehouse. They only see the rows that semantic layer or SQL steps already returned, so [data access](/agents/data-access) rules and SQL approvals still apply.
-- Each DuckDB step runs in a session that can only read the result files it references.
-- The Python sandbox receives only the referenced rows. It has no credentials and no network access, and Lightdash destroys it after each run.
+For data access rules and execution boundaries, see [Post-process results with DuckDB and Python](/agents/use-ai-agents#post-process-results-with-duckdb-and-python).
 
 ## Verified answers
 
-Verified answers use vector embeddings to match new questions to previously validated ones. Enable embeddings with `AI_EMBEDDING_ENABLED=true` and pick an embedding provider with `AI_DEFAULT_EMBEDDING_PROVIDER` (`openai`, `bedrock`, or `azure`). The embedding provider can differ from the chat provider — see [verified answers](/agents/verified-answers) for how they're used at query time.
+To enable [verified answers](/agents/verified-answers) on your instance, set `AI_EMBEDDING_ENABLED=true` and configure an embedding provider with `AI_DEFAULT_EMBEDDING_PROVIDER` (`openai`, `bedrock`, or `azure`). The embedding provider can differ from the chat provider. See the [embedding configuration](/self-host/customize-deployment/environment-variables#ai-agents) for credentials and options.
+
+## AI writeback
+
+Enable AI writeback on your self-hosted instance by configuring a sandbox and Anthropic credentials. For supported repositories, permissions, and using writeback in chat, see [AI writeback](/agents/ai-writeback).
+
+### Writeback prerequisites
+
+- Configure a [sandbox provider](/self-host/customize-deployment/sandboxes) that supports writeback. Google Cloud Run does not support it.
+- Create an Anthropic API key. Writeback uses Claude even if your AI agents use another model provider.
+- Configure repository access using the [AI writeback prerequisites](/agents/ai-writeback#prerequisites).
+
+### Writeback configuration
+
+Set `ANTHROPIC_API_KEY` in your Lightdash deployment. For E2B, select Lightdash's public writeback template:
+
+```bash
+E2B_AI_WRITEBACK_TEMPLATE_NAME=lightdash/lightdash-ai-writeback
+ANTHROPIC_API_KEY=<your-anthropic-api-key>
+```
+
+Keep the `lightdash/` prefix: a bare template name resolves to your own E2B team. Other providers use their writeback-specific image configuration; see [sandbox providers](/self-host/customize-deployment/sandboxes#sandbox-providers).
+
+Restart the backend, then [ask an agent for a repository change](/agents/ai-writeback#using-it-in-chat) to verify the setup.
+
+#### Writeback image version
+
+Leave `E2B_AI_WRITEBACK_TEMPLATE_TAG` unset to use the sandbox build matching your Lightdash version. Override it only when you need to pin a build; an empty value selects the template's `default` tag. See the [runtime variables reference](/self-host/customize-deployment/environment-variables#data-apps-runtime) for all writeback image settings.
+
+### Writeback dbt versions
+
+For dbt projects, the writeback sandbox runs `lightdash compile` using the project's dbt version. It ships with dbt **1.8, 1.9, 1.10, 1.11, and 1.12** preinstalled:
+
+- Projects pinned to one of those versions compile against that version.
+- Projects set to `latest` compile against the highest version in the sandbox.
+- Projects pinned below 1.8 compile against 1.8 in the sandbox.
+
+The version is selected automatically from the project's dbt connection settings. Native Lightdash YAML uses [native validation](/semantic-layer/yaml#ai-writeback-and-issues) and needs no dbt installation.
+
+### Writeback provider usage
+
+Your sandbox provider and Anthropic bill your accounts directly. Monitor usage and configure limits with those providers before rolling out writeback.
+
+### Writeback troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| The agent never offers to open a pull request | Confirm the license is valid and the project meets the [repository and permission prerequisites](/agents/ai-writeback#prerequisites) |
+| Sandbox creation fails | Check provider credentials and the writeback image configuration. For E2B, keep the `lightdash/` template prefix and verify that any overridden tag exists |
+| Writeback fails with an Anthropic error | Check `ANTHROPIC_API_KEY`, account usage limits, and rate limits |
+| Repository authentication fails | Check the [repository prerequisites](/agents/ai-writeback#prerequisites), then retry |
 
 <span id="managed-agent" />
 
 ## Autopilot
 
-[Autopilot](/agents/autopilot) runs scheduled maintenance for each enabled project using the AI SDK runtime. No runtime selector or separate Autopilot provider credentials are needed. It needs AI Analyst enabled and a provider configured through the [instance model settings](#model-providers) or [organization AI providers and models](/agents/set-up-agents#bring-your-own-ai-providers-and-models). It uses the organization's visible, available default model, then the configured provider default if available, then another available model. Azure uses its configured deployment directly. There is no per-project model override.
-
-Every provider with credentials configured is available to AI Analyst and Autopilot, not only `AI_DEFAULT_PROVIDER`. Lightdash only calls a provider when the selected model belongs to it. To keep Autopilot on one provider, set the organization default model in **Settings → Ask AI → General** to one of that provider's models. Use a provider's `*_AVAILABLE_MODELS` variable to limit which of its models can be selected.
+[Autopilot](/agents/autopilot) needs AI agents enabled and a provider configured through the [instance model settings](#model-providers) or [organization AI providers and models](/workspace-admin/ai-settings#bring-your-own-ai-providers-and-models). It uses the shared AI provider configuration, with no separate runtime selector or provider credentials. Use a provider's `*_AVAILABLE_MODELS` variable to restrict its selectable models. For model selection and organization settings, see [AI provider and usage](/agents/autopilot#ai-provider-and-usage).
 
 Enable the Autopilot feature on every API and scheduler process:
 
@@ -216,13 +264,11 @@ LIGHTDASH_ENABLE_FEATURE_FLAGS=ai-autopilot
 
 Append `ai-autopilot` if the enable list already contains other flags, and remove it from `LIGHTDASH_DISABLE_FEATURE_FLAGS` if present. Restart the API and scheduler after changing environment variables. Keep their provider and Autopilot configuration consistent; the scheduler executes scheduled runs and needs access to the selected provider or gateway.
 
-A user with project management permissions can then enable Autopilot from the project's Home page. Runs act as the user who enabled it and require that user to retain project management permissions. The AI SDK runtime needs no separate service-account token for Autopilot.
-
-Setup and the activity page show the current provider, model, and key source. Enabling Autopilot checks that a model can be configured, without making a model request. Invalid credentials, unavailable deployments, and gateway errors can still fail the first run. Changing organization settings changes the next run's selection; previous runs retain their recorded model.
+After restarting, follow [Autopilot setup](/agents/autopilot#setup) to enable it for a project. Run it on a disposable project to verify credentials, model access, and gateway routing; enabling it does not make a model request.
 
 ### Schedule and limits
 
-Choose a schedule per project in the UI. `MANAGED_AGENT_SCHEDULE` supplies the fallback cron schedule, defaulting to `0 0 * * *`. `MANAGED_AGENT_SESSION_TIMEOUT_MS` defaults to 600000 (10 minutes), and `MANAGED_AGENT_MAX_STEPS` defaults to 120 model steps per run. The deadline requests cancellation and prevents queued actions from starting; a content write already in progress must finish its bookkeeping. These limits do not set a dollar spending cap. See [provider and usage](/agents/autopilot#ai-provider-and-usage).
+Configure the fallback schedule, run deadline, and model step limit with the [Autopilot environment variables](/self-host/customize-deployment/environment-variables#autopilot). These limits do not set a spending cap; use your provider's controls to manage cost.
 
 ### Model qualification and cleanup
 
@@ -232,13 +278,11 @@ Autopilot only flags or deletes content on models that are qualified for it. Eve
 | --- | --- |
 | Anthropic | Claude Opus 5.5, Claude Opus 5, Claude Opus 4.8, Claude Opus 4.7, Claude Sonnet 5.5, Claude Sonnet 5 |
 | Amazon Bedrock | Claude Opus 5, Claude Opus 4.7, Claude Sonnet 5 |
-| OpenAI | GPT-5.6 Sol, GPT-5.5, GPT-5.4 |
+| OpenAI | GPT-6.1 Sol, GPT-6 Sol, GPT-5.6 Sol, GPT-5.5, GPT-5.4 |
 
-The default models for OpenAI (`gpt-6-sol`) and Bedrock (`claude-sonnet-4-5`) are not qualified, so Autopilot runs in observe mode unless you choose a qualified model. Set the organization default model, or `OPENAI_MODEL_NAME`, `ANTHROPIC_MODEL_NAME` or `BEDROCK_MODEL_NAME`, to a model in the table.
+Choose a qualified model in the organization settings or the provider's model environment variable when you want Autopilot to flag or delete content. A provider's default model is not necessarily qualified.
 
-On Anthropic, Autopilot switches to the newest of Claude Opus 5.5, 4.8 and 4.7 your organization may use, unless the organization default is already one of them. On Bedrock it does the same with Claude Opus 5.5 and 4.7. Other providers follow the organization default. Claude Opus 5.5 on Bedrock is not qualified, so a Bedrock organization that can use it runs in observe mode unless you qualify it in `MANAGED_AGENT_VALIDATED_MODELS` or leave it out of `BEDROCK_AVAILABLE_MODELS`.
-
-Azure deployments, Google Gemini, Google Vertex AI, OpenRouter and any model not listed above start in observe mode. To qualify one, set `MANAGED_AGENT_VALIDATED_MODELS` to a JSON array of exact provider/model pairs with a mode of `observe`, `flag`, or `cleanup`. Setting the variable replaces the built-in list, so include the built-in models you still want; an empty value qualifies no model. Duplicate qualifications use the most restrictive mode; malformed configuration rejects startup. Qualify a model on disposable representative content before increasing its permissions; use the exact IDs shown in Autopilot, including Azure deployment names or Bedrock inference-profile prefixes.
+Azure deployments, Google Gemini, Google Vertex AI, OpenRouter and any model not listed above start in observe mode. To qualify one, set `MANAGED_AGENT_VALIDATED_MODELS` to a JSON array of exact provider/model pairs with a mode of `observe`, `flag`, or `cleanup`. Setting the variable replaces the built-in list, so include the built-in models you still want; an empty value qualifies no model. Duplicate qualifications use the most restrictive mode; malformed configuration rejects startup. Qualify a model on disposable representative content before increasing its permissions. Use the exact model IDs shown in Autopilot; Bedrock Claude inference-profile region prefixes are also accepted without the prefix.
 
 Autopilot uses the more restrictive of the project's requested cleanup mode and the model's qualification. A downgrade appears in setup and the run summary. **Observe mode does not mean read-only:** chart creation and repair still follow the project's capability toggles. Disable those capabilities as well when evaluating without content changes.
 
@@ -254,7 +298,7 @@ On releases 2.255.0 to 2.261.x both runtimes exist and the AI SDK runner is the 
 
 ## Agent identity
 
-<FeatureBadge label="Beta" /> [Agent identity](/agents/agent-identity) lets an organization admin choose who AI agents run as on Snowflake, BigQuery, Databricks, Athena, Postgres, Redshift, Trino and ClickHouse. It needs an Enterprise license: `LIGHTDASH_LICENSE_KEY` must be set on your instance.
+<FeatureBadge label="Beta" /> Enable [agent identity](/agents/agent-identity) on your self-hosted instance with the `agent-identity` feature flag.
 
 <Steps>
   <Step title="Enable the feature flag">
@@ -271,9 +315,7 @@ On releases 2.255.0 to 2.261.x both runtimes exist and the AI SDK runner is the 
   </Step>
 </Steps>
 
-The shared agent account on Snowflake, BigQuery, Databricks, Athena, Postgres, Redshift, Trino and ClickHouse needs no other instance setup. A project admin adds it on the **Agent identity** page of each project's settings. See [Snowflake](/agents/agent-identity#snowflake-the-shared-agent-account), [BigQuery](/agents/agent-identity#bigquery-the-shared-agent-account), [Databricks](/agents/agent-identity#databricks-the-shared-agent-account), [Athena](/agents/agent-identity#athena-the-shared-agent-account), [Postgres](/agents/agent-identity#postgres-the-shared-agent-account), [Redshift](/agents/agent-identity#redshift-the-shared-agent-account), [Trino](/agents/agent-identity#trino-the-shared-agent-account) and [ClickHouse](/agents/agent-identity#clickhouse-the-shared-agent-account).
-
-Agent sign-in on Snowflake also needs the Snowflake agent integration. See [Agent identity on Snowflake](#agent-identity-on-snowflake).
+After restarting, follow [Agent identity](/agents/agent-identity) for warehouse support, organization rules, and shared account setup. For Snowflake agent sign-in, also review [Agent identity on Snowflake](#agent-identity-on-snowflake).
 
 Lightdash checks that the identity that produced a saved result matches the reader. See [Who can read a saved result](/agents/agent-identity#who-can-read-a-saved-result). If this comparison causes a problem on your instance, set `AGENT_RESULT_IDENTITY_CHECK_ENABLED=false` to turn it off. The access checks stay on. See [Agent identity variables](/self-host/customize-deployment/environment-variables#agent-identity).
 
@@ -324,21 +366,9 @@ BigQuery key refusals, Snowflake session check refusals and shared agent account
 
 ### Agent identity on Snowflake
 
-Agent sign-in lets Snowflake verify that a query comes from an agent session, so Snowflake policies can treat agents differently from people. Agents sign in through a separate Snowflake OAuth integration. The normal [Sign in with Snowflake](/integrations/connect-project#sign-in-with-snowflake) integration stays separate.
+Follow [Set up the Snowflake agent integration](/agents/agent-identity#set-up-the-snowflake-agent-integration) for the in-app steps and Snowflake SQL. Lightdash encrypts the saved client secret with your instance's `LIGHTDASH_SECRET`.
 
-An organization admin sets up the integration in the app, with no instance setup. On **Organization settings → Agents**, they choose **The person's agent sign-in**, run the SQL in Snowflake, and paste the account URL, client ID and client secret. See [Set up the Snowflake agent integration](/agents/agent-identity#set-up-the-snowflake-agent-integration). Lightdash encrypts the saved secret with `LIGHTDASH_SECRET`.
-
-Each organization has one agent integration for one Snowflake account. A project on a second Snowflake account cannot complete the agent connection. Use the same account for the integration and the project connection.
-
-The setup SQL in the app has the redirect URL of your instance: `<siteHost>/api/v1/oauth/redirect/snowflake-ai`, where `<siteHost>` is the scheme and host of `SITE_URL`. It always uses the host root, also when `SITE_URL` has a path. The sign-in requests the `refresh_token` scope, so keep `OAUTH_ISSUE_REFRESH_TOKENS = TRUE` on the integration.
-
-An organization admin then selects **Verify integration**, and **Turn on** when the required checks pass. Lightdash does not save the agent sign-in rule while the organization has no saved client.
-
-Lightdash refreshes each agent sign-in while the Snowflake grant lasts. `OAUTH_REFRESH_TOKEN_VALIDITY` sets the length of the grant, in seconds. When Snowflake rejects the OAuth client, people see "The warehouse OAuth client was rejected. Ask an administrator to check the agent sign-in settings." Check that the integration is enabled and that the client saved on **Organization settings → Agents** matches it. See [How long the agent connection lasts](/agents/agent-identity#how-long-the-agent-connection-lasts).
-
-The `agent-identity-silent-refresh` feature flag controls the background refresh. It is on by default. To go back to the earlier behaviour, add it to `LIGHTDASH_DISABLE_FEATURE_FLAGS` and restart. The earlier behaviour asks people to connect again when the stored end date passes, and also after a temporary refresh failure.
-
-The `warehouse-oauth-refresh-lock` feature flag makes Lightdash refresh each stored Snowflake or Databricks sign-in one at a time. On Snowflake, this covers agent sign-ins, personal [Sign in with Snowflake](/integrations/connect-project#sign-in-with-snowflake) connections and shared Snowflake sign-ins. On Databricks, it covers [Sign in with Databricks](/integrations/connect-project#sign-in-with-databricks) and the other Databricks OAuth connections that store a refresh token. When two queries need a refresh at the same time, one refreshes and the other waits and uses the new token, so neither asks the person to sign in again. A connection test or save that refreshes a shared Snowflake sign-in also keeps the new token. The flag is on by default. To turn it off, add it to `LIGHTDASH_DISABLE_FEATURE_FLAGS` and restart.
+The setup SQL uses your instance's redirect URL: `<siteHost>/api/v1/oauth/redirect/snowflake-ai`, where `<siteHost>` is the scheme and host of `SITE_URL`. It uses the host root even when `SITE_URL` has a path. Check that this address is reachable from the browser completing sign-in.
 
 <Warning>
   To test over `http://localhost`, add `OAUTH_ALLOW_NON_TLS_REDIRECT_URI = TRUE` to the integration. This is for local development only. Do not set it in production.
@@ -346,23 +376,15 @@ The `warehouse-oauth-refresh-lock` feature flag makes Lightdash refresh each sto
 
 ## Costs
 
-Self-hosting AI Analyst means you pay the selected model provider directly. Every user question sends the project's dbt catalog plus conversation history to the provider, so long conversations against large projects use noticeably more tokens than one-shot prompts. Query results also contribute to usage when [data access](/agents/data-access#data-access-modes) is enabled. Provider dashboards expose usage — set spend limits before rolling out.
+For self-hosted AI agents, you pay the model provider directly. Set provider spending limits before rollout, and use warehouse quotas to control query costs. Review [agent activity](/agents/visibility) alongside your provider's usage dashboard.
 
-Lightdash has no built-in cap on AI usage. Queries that agents and [MCP](/self-host/enterprise-features/mcp) clients run execute against your warehouse and are billed by your warehouse provider like any other Lightdash query, so use your warehouse's own quotas to bound that compute. To see who is using AI and what it runs, review [thread activity](/agents/visibility#thread-activity) and [MCP activity](/agents/visibility#mcp-activity).
-
-To keep prompts smaller:
-
-- [Limit each agent to the explores and fields it needs](/agents/data-access#limiting-access-to-specific-explores-and-fields).
-- Start a new thread when you change subjects so unrelated conversation history is not sent again.
-- Add an [`ai_hint`](/semantic-layer/writing-descriptions#layer-ai-hints-on-top-of-descriptions) to ambiguous or canonical fields so the agent finds the right field with fewer exploratory tool calls.
-- Keep [always-included knowledge documents](/agents/effective-analytics-with-agents#always-include-in-context) short.
-- Enable compact filter expressions as described below.
+For agent scope and context guidance, see [Data access](/agents/data-access) and [Effective analytics with agents](/agents/effective-analytics-with-agents).
 
 ### Compact filter expressions
 
 Compact filter expressions replace verbose structured filter schemas for AI agent and Model Context Protocol (MCP) query tools with a smaller expression syntax. This reduces the filter-related tool definitions and inputs sent to the model. Total savings vary by model, conversation history, caching, and tool usage; the setting does not reduce the catalog, existing conversation history, or query results.
 
-Lightdash Cloud enables compact filter expressions automatically. On a self-hosted deployment, enable the feature on every backend/API replica and on any scheduler or worker process that executes AI agent jobs, then redeploy or recreate those containers:
+On a self-hosted deployment, enable compact filter expressions on every backend/API replica and on any scheduler or worker process that executes AI agent jobs, then redeploy or recreate those containers:
 
 ```bash
 LIGHTDASH_ENABLE_FEATURE_FLAGS=ai-filter-expressions
@@ -374,14 +396,14 @@ Users do not need to create new agents or threads: the next response uses compac
 
 ## Permissions
 
-AI Analyst follows the standard project role model: any user with query access to a project can use AI Analyst there. Restrict access at the project level via [roles and groups](/workspace-admin/roles). To limit AI Analyst to specific projects across the instance, set `AI_COPILOT_ALLOWED_PROJECT_UUID` to a comma-separated list of project UUIDs.
+Configure agent access through [agent permissions](/agents/agent-permissions) and [project roles](/workspace-admin/roles). Instance configuration does not replace those controls.
 
 ## Troubleshooting
 
 **The "Ask AI" button doesn't appear.**
 Confirm `AI_COPILOT_ENABLED=true`, `LIGHTDASH_LICENSE_KEY` is set, and `ASK_AI_BUTTON_ENABLED=true` if you want the top-bar entry point. Users without query access to any project also won't see it.
 
-**AI Analyst returns provider authentication errors.**
+**AI agents return provider authentication errors.**
 Check the API key for the selected `AI_DEFAULT_PROVIDER`. For Azure, verify `AZURE_AI_ENDPOINT`, `AZURE_AI_API_VERSION`, and `AZURE_AI_DEPLOYMENT_NAME` all match a deployment your key can call. For Bedrock, confirm the region has the target model enabled for your account.
 
 **Multi-step conversations fail against an OpenAI-compatible gateway.**
@@ -391,4 +413,4 @@ If the gateway enforces Zero Data Retention, set `OPENAI_ZERO_DATA_RETENTION=tru
 Lightdash uses the OpenAI Responses API by default. Gateways such as LiteLLM, Kong, or internal proxies often only implement the older Chat Completions API. Set `OPENAI_USE_CHAT_COMPLETIONS=true` (or `AZURE_AI_USE_CHAT_COMPLETIONS=true` for the Azure provider) to send `/chat/completions` requests instead. Extended reasoning summaries aren't available on Chat Completions: tool calls work, but reasoning models run with reasoning disabled.
 
 **Verified answers never match.**
-Confirm `AI_EMBEDDING_ENABLED=true` and that the embedding provider credentials are set. Tune `AI_VERIFIED_ANSWER_SIMILARITY_THRESHOLD` if legitimate matches fall below the default 0.6 similarity cutoff.
+Confirm `AI_EMBEDDING_ENABLED=true` and that the embedding provider credentials are set. See the [similarity threshold setting](/self-host/customize-deployment/environment-variables#ai-agents) if legitimate matches are rejected.

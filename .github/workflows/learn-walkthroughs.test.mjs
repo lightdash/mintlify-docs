@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
-    chmodSync,
     mkdirSync,
     mkdtempSync,
     readFileSync,
@@ -12,302 +11,278 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+import { compareFindings, normalizeFindings } from './learn-findings.mjs';
+import { runCheck } from './learn-citations.mjs';
 
-const workflow = readFileSync(
-    new URL('./learn-walkthroughs.yml', import.meta.url),
-    'utf8',
-);
-const step = workflow
-    .split('      - name: Does this pull request touch a cited page?')[1]
-    .split('\n      - name:')[0];
-const script = step.split('        run: |\n')[1].replace(/^ {10}/gm, '');
+test('docs Learn job allows failed citation reports without failing the workflow', () => {
+    const workflow = readFileSync(
+        new URL('./learn-walkthroughs.yml', import.meta.url),
+        'utf8',
+    );
+    const job = workflow.split('  citations:\n')[1].split('    steps:')[0];
+    assert.match(job, /^    continue-on-error: true$/m);
+});
 
-for (const kind of ['rename', 'navigation', 'unrelated']) {
-    test(`docs change selection handles ${kind}`, () => {
-        const cwd = mkdtempSync(path.join(tmpdir(), 'docs-walkthrough-ci-'));
+for (const [kind, baseErrors, headErrors, guidance, status] of [
+    ['clean success', [], [], false, 0],
+    ['fully repaired citations', ['content'], [], false, 0],
+    ['introduced citation failure', [], ['content'], true, 1],
+    ['existing citation failure', ['content'], ['content'], false, 0],
+    ['head tool failure', [], ['tool'], false, 1],
+    ['base tool failure', ['tool'], [], false, 1],
+]) {
+    test(`rendered summary distinguishes repair guidance from checker errors: ${kind}`, () => {
+        const cwd = mkdtempSync(path.join(tmpdir(), 'docs-learn-summary-'));
         try {
-            const docs = path.join(cwd, 'docs');
-            const frontend = path.join(cwd, 'lightdash/packages/frontend/src');
-            mkdirSync(docs);
-            mkdirSync(frontend, { recursive: true });
             writeFileSync(
-                path.join(frontend, 'Marker.tsx'),
-                'data-tour-docs="spaces.mdx#intro:1"',
+                path.join(cwd, 'revisions.json'),
+                JSON.stringify({
+                    productSha: 'product',
+                    docsBaseSha: 'base',
+                    docsHeadSha: 'head',
+                }),
             );
-            writeFileSync(
-                path.join(docs, 'spaces.mdx'),
-                'A cited docs page.\n',
-            );
-            writeFileSync(
-                path.join(docs, 'docs.json'),
-                '{"navigation":["spaces"]}',
-            );
-            const git = (...args) =>
-                execFileSync('git', args, {
-                    cwd: docs,
-                    encoding: 'utf8',
-                }).trim();
-            git('init', '-q');
-            git('add', '.');
-            git(
-                '-c',
-                'user.name=Test',
-                '-c',
-                'user.email=test@example.com',
-                'commit',
-                '-qm',
-                'base',
-            );
-            const base = git('rev-parse', 'HEAD');
-            if (kind === 'rename')
-                renameSync(
-                    path.join(docs, 'spaces.mdx'),
-                    path.join(docs, 'moved.mdx'),
-                );
-            if (kind === 'navigation')
+            for (const [revision, errors] of [
+                ['base', baseErrors],
+                ['head', headErrors],
+            ])
                 writeFileSync(
-                    path.join(docs, 'docs.json'),
-                    '{"navigation":[]}',
+                    path.join(cwd, `${revision}.json`),
+                    JSON.stringify(
+                        errors.map((category) => ({
+                            level: 'error',
+                            category,
+                            file: 'checker',
+                            message:
+                                category === 'content'
+                                    ? 'Docs anchor not found: spaces.mdx#missing:1'
+                                    : 'TypeError: parser crashed',
+                        })),
+                    ),
                 );
-            if (kind === 'unrelated')
-                writeFileSync(path.join(docs, 'other.mdx'), 'Unrelated docs.');
-            git('add', '.');
-            git(
-                '-c',
-                'user.name=Test',
-                '-c',
-                'user.email=test@example.com',
-                'commit',
-                '-qm',
-                'change',
-            );
-            const output = path.join(cwd, 'outputs');
+            const summary = path.join(cwd, 'summary');
             const result = spawnSync(
-                'bash',
-                ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', script],
+                'node',
+                [new URL('./learn-findings.mjs', import.meta.url).pathname],
                 {
                     cwd,
                     encoding: 'utf8',
-                    env: {
-                        ...process.env,
-                        EVENT_NAME: 'pull_request',
-                        BASE_SHA: base,
-                        HEAD_SHA: 'HEAD',
-                        GITHUB_OUTPUT: output,
-                    },
+                    env: { ...process.env, GITHUB_STEP_SUMMARY: summary },
                 },
             );
-            assert.equal(result.status, 0, result.stderr);
+            assert.equal(result.status, status, result.stdout + result.stderr);
+            const rendered = readFileSync(summary, 'utf8');
             assert.equal(
-                readFileSync(output, 'utf8'),
-                `run=${kind !== 'unrelated'}\n`,
+                rendered.includes(
+                    'Advisory: Learn findings do not block documentation merges.',
+                ),
+                status !== 0,
+                rendered,
             );
+            const comparison = JSON.parse(
+                readFileSync(path.join(cwd, 'comparison.json'), 'utf8'),
+            );
+            assert.equal(comparison.blocked, status !== 0);
+            if (status !== 0) {
+                assert.match(
+                    result.stdout,
+                    /::error title=Learn walkthrough validation::/,
+                );
+                assert.ok(
+                    comparison.introduced.length ||
+                        comparison.toolFailures.length,
+                );
+            }
+            for (const text of [
+                'reference-only lightdash/lightdash PR',
+                'Merge that PR, then rerun this docs check.',
+            ])
+                assert.equal(rendered.includes(text), guidance, rendered);
+            assert.equal(
+                rendered.includes(
+                    'Citation extraction or resolution could not complete.',
+                ),
+                kind.includes('tool'),
+                rendered,
+            );
+            if (status === 0)
+                assert.match(
+                    rendered,
+                    /No broken documentation references introduced by this pull request\./,
+                );
         } finally {
             rmSync(cwd, { recursive: true, force: true });
         }
     });
 }
 
-for (const kind of ['citation', 'navigation', 'unchanged']) {
-    test(
-        kind === 'unchanged'
-            ? 'existing generation errors alone do not block docs'
-            : `existing generation error cannot hide a new ${kind} error`,
-        () => {
-            const cwd = mkdtempSync(path.join(tmpdir(), 'docs-validation-'));
-            try {
-                const docs = path.join(cwd, 'docs');
-                const product = path.join(cwd, 'lightdash');
-                const bin = path.join(cwd, 'bin');
-                mkdirSync(docs);
-                mkdirSync(bin);
-                mkdirSync(path.join(product, 'scripts/scope-tours'), {
-                    recursive: true,
-                });
-                mkdirSync(
-                    path.join(product, 'packages/frontend/src/features/learn'),
-                    { recursive: true },
-                );
-                mkdirSync(
-                    path.join(
-                        product,
-                        'packages/frontend/src/features/scopeTours',
-                    ),
-                    {
-                        recursive: true,
-                    },
-                );
-                for (const artifact of ['generated.ts', 'curriculum.ts'])
-                    writeFileSync(
-                        path.join(
-                            product,
-                            'packages/frontend/src/features/scopeTours',
-                            artifact,
-                        ),
-                        'committed',
-                    );
-                writeFileSync(
-                    path.join(product, 'scripts/scope-tours/lib.ts'),
-                    `
-exports.frontendSrc = 'frontend';
-exports.LESSON_SOURCE = 'lessons';
-exports.listTsx = () => ['marker'];
-exports.findMarkers = () => [{file:'marker', docs:'old.mdx#missing:1', resultDocs:'new.mdx#intro:1'}];
-exports.docsParagraph = (ref) => {
-  if (ref.startsWith('old') || require('fs').readFileSync(process.env.LIGHTDASH_DOCS_DIR+'/new.mdx','utf8') === 'broken') throw new Error('Docs anchor not found: '+ref);
-};
-`,
-                );
-                writeFileSync(
-                    path.join(
-                        product,
-                        'packages/frontend/src/features/learn/sandboxLessons.ts',
-                    ),
-                    'exports.SANDBOX_LESSONS = [];',
-                );
-                const git = (dir, ...args) =>
-                    execFileSync('git', args, {
-                        cwd: dir,
-                        encoding: 'utf8',
-                    }).trim();
-                const commit = (dir) => {
-                    git(dir, 'add', '.');
-                    git(
-                        dir,
-                        '-c',
-                        'user.name=Test',
-                        '-c',
-                        'user.email=test@example.com',
-                        'commit',
-                        '-qm',
-                        'fixture',
-                    );
-                };
-                git(product, 'init', '-q');
-                commit(product);
-                git(docs, 'init', '-q');
-                writeFileSync(path.join(docs, 'new.mdx'), 'valid');
-                writeFileSync(path.join(docs, 'docs.json'), 'valid');
-                commit(docs);
-                const base = git(docs, 'rev-parse', 'HEAD');
-                writeFileSync(
-                    path.join(
-                        docs,
-                        kind === 'citation'
-                            ? 'new.mdx'
-                            : kind === 'navigation'
-                              ? 'docs.json'
-                              : 'unrelated.mdx',
-                    ),
-                    'broken',
-                );
-                commit(docs);
-                writeFileSync(
-                    path.join(bin, 'pnpm'),
-                    `#!/bin/bash
-set -eu
-# Corepack resolves the pinned version before pnpm processes any -C argument.
-if [ "$PWD" != "$GITHUB_WORKSPACE/lightdash" ]; then
-  echo 'Corepack must start inside the Lightdash checkout' >&2
-  exit 42
-fi
-if [ "$1" = exec ]; then
-  if [ "$3" = scripts/scope-tours/check.ts ]; then echo '[{"level":"error","file":"checker","message":"old broken citation"}]'; exit 1; fi
-  node "$3"
-elif [ "$1" = scope-tours:generate ]; then
-  echo 'Error: old broken citation'; exit 1
-elif [ "$1" = scope-tours:order ]; then
-  if [ "$(cat "$LIGHTDASH_DOCS_DIR/docs.json")" = broken ]; then echo 'Error: Not in the docs sidebar (docs.json): new'; exit 1; fi
-fi
-`,
-                );
-                chmodSync(path.join(bin, 'pnpm'), 0o755);
-                const checkStep = workflow.split(
-                    '      - name: Check walkthroughs against the base and this pull request',
-                )[1];
-                const checkScript = checkStep
-                    .split('        run: |\n')[1]
-                    .replace(/^ {10}/gm, '');
-                const result = spawnSync(
-                    'bash',
-                    ['-e', '-o', 'pipefail', '-c', checkScript],
-                    {
-                        cwd,
-                        encoding: 'utf8',
-                        env: {
-                            ...process.env,
-                            PATH: `${bin}:${process.env.PATH}`,
-                            EVENT_NAME: 'pull_request',
-                            BASE_SHA: base,
-                            GITHUB_WORKSPACE: cwd,
-                            RUNNER_TEMP: cwd,
-                            GITHUB_STEP_SUMMARY: path.join(cwd, 'summary'),
-                        },
-                    },
-                );
-                assert.equal(
-                    result.status,
-                    kind === 'unchanged' ? 0 : 1,
-                    result.stdout + result.stderr,
-                );
-                assert.match(
-                    readFileSync(path.join(cwd, 'summary'), 'utf8'),
-                    kind === 'citation'
-                        ? /new.mdx#intro/
-                        : kind === 'navigation'
-                          ? /Not in the docs sidebar/
-                          : /No walkthrough validation error introduced/,
-                );
-            } finally {
-                rmSync(cwd, { recursive: true, force: true });
-            }
-        },
+test('duplicate citations keep every product owner and selector changes remain distinct', () => {
+    const row = {
+        level: 'error',
+        category: 'content',
+        file: 'packages/Marker.tsx',
+        line: 12,
+        ref: 'spaces.mdx#intro:p2:2',
+        message:
+            'spaces.mdx#intro:p2:2: sentence range out of bounds (1 sentences)',
+    };
+    const base = normalizeFindings([row, { ...row, line: 20 }]);
+    assert.equal(base.length, 1);
+    assert.deepEqual(
+        base[0].owners.map((owner) => owner.line),
+        [12, 20],
     );
-}
+    const unchanged = normalizeFindings([
+        {
+            ...row,
+            message: row.message.replace('(1 sentences)', '(0 sentences)'),
+        },
+    ]);
+    assert.equal(compareFindings(base, unchanged).blocked, false);
+    const introduced = normalizeFindings([
+        {
+            ...row,
+            ref: 'spaces.mdx#intro:p3:2',
+            message: row.message.replaceAll('p2', 'p3'),
+        },
+    ]);
+    assert.equal(compareFindings(base, introduced).blocked, true);
+});
 
-for (const [kind, pages, status] of [
-    ['partial fix', ['explore/homepage'], 0],
-    ['reordering', ['explore/homepage', 'explore/spaces'], 0],
-    ['new missing page', ['explore/homepage', 'explore/new'], 1],
+for (const kind of [
+    'introduced',
+    'unchanged',
+    'repaired',
+    'unsupported',
+    'missing page',
+    'invalid base',
 ]) {
-    test(`navigation comparison handles ${kind}`, () => {
-        const cwd = mkdtempSync(path.join(tmpdir(), 'docs-navigation-'));
+    test(`static check compares exact base/head revisions and reports ${kind}`, () => {
+        const cwd = mkdtempSync(path.join(tmpdir(), 'learn-comparison-'));
+        const docs = path.join(cwd, 'docs'),
+            product = path.join(cwd, 'lightdash');
+        const write = (root, name, text) => {
+            const file = path.join(root, name);
+            mkdirSync(path.dirname(file), { recursive: true });
+            writeFileSync(file, text);
+        };
+        const git = (root, ...args) =>
+            execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+        const commit = (root) => {
+            git(root, 'add', '.');
+            git(
+                root,
+                '-c',
+                'user.name=Test',
+                '-c',
+                'user.email=test@example.com',
+                'commit',
+                '-qm',
+                'fixture',
+            );
+        };
+        const read = (name) =>
+            JSON.parse(readFileSync(path.join(cwd, name), 'utf8'));
         try {
-            const finding = (pages) => [
-                {
-                    level: 'error',
-                    file: 'scope-tours:order',
-                    message: `Error: Not in the docs sidebar (docs.json): ${pages.join(', ')}`,
-                },
-            ];
-            writeFileSync(
-                path.join(cwd, 'base.json'),
-                JSON.stringify(finding(['explore/spaces', 'explore/homepage'])),
+            write(
+                product,
+                'packages/frontend/src/Marker.tsx',
+                `const Component = () => <Box data-tour-docs=${kind === 'unsupported' ? '{runtimeDocs()}' : '"page.mdx#intro:2"'} />;`,
             );
-            writeFileSync(
-                path.join(cwd, 'head.json'),
-                JSON.stringify(finding(pages)),
-            );
-            const comparison = workflow
-                .split("          node - <<'NODE'\n")[1]
-                .split('\n          NODE')[0]
-                .replace(/^ {10}/gm, '');
-            const summary = path.join(cwd, 'summary');
-            const result = spawnSync('node', ['-e', comparison], {
-                cwd,
-                encoding: 'utf8',
-                env: { ...process.env, GITHUB_STEP_SUMMARY: summary },
-            });
-            assert.equal(result.status, status, result.stdout + result.stderr);
-            if (status === 0)
-                assert.match(
-                    readFileSync(summary, 'utf8'),
-                    /No walkthrough validation error introduced/,
+            for (const [name, symbol] of [
+                ['sandboxLessons', 'SANDBOX_LESSONS'],
+                ['codeLessons', 'CONTENT_AS_CODE_LESSONS'],
+            ])
+                write(
+                    product,
+                    `packages/frontend/src/features/learn/${name}.ts`,
+                    `export const ${symbol} = [];`,
                 );
-            else {
-                assert.match(result.stdout, /explore\/new/);
-                assert.doesNotMatch(result.stdout, /explore\/homepage/);
+            git(product, 'init', '-q');
+            commit(product);
+            const page = (broken) =>
+                '---\ntitle: Page\n---\nOne sentence.' +
+                (broken ? '' : ' Another sentence.') +
+                '\n';
+            write(
+                docs,
+                'page.mdx',
+                page(kind === 'unchanged' || kind === 'repaired'),
+            );
+            git(docs, 'init', '-q');
+            commit(docs);
+            const baseSha = git(docs, 'rev-parse', 'HEAD');
+            write(docs, 'page.mdx', page(kind !== 'repaired'));
+            if (kind === 'missing page')
+                renameSync(
+                    path.join(docs, 'page.mdx'),
+                    path.join(docs, 'moved.mdx'),
+                );
+            write(docs, 'other.mdx', 'changed');
+            commit(docs);
+            runCheck({
+                product,
+                docs,
+                baseSha: kind === 'invalid base' ? 'bad-ref' : baseSha,
+                output: cwd,
+            });
+            const summary = path.join(cwd, 'summary');
+            const result = spawnSync(
+                'node',
+                [new URL('./learn-findings.mjs', import.meta.url).pathname],
+                {
+                    cwd,
+                    encoding: 'utf8',
+                    env: { ...process.env, GITHUB_STEP_SUMMARY: summary },
+                },
+            );
+            const blocked = !['unchanged', 'repaired'].includes(kind);
+            assert.equal(
+                result.status,
+                blocked ? 1 : 0,
+                result.stdout + result.stderr,
+            );
+            const inventory = read('citation-inventory.json');
+            assert.equal(
+                inventory.productSha,
+                git(product, 'rev-parse', 'HEAD'),
+            );
+            assert.equal(inventory.docsHeadSha, git(docs, 'rev-parse', 'HEAD'));
+            assert.equal(
+                inventory.docsBaseSha,
+                kind === 'invalid base' ? 'bad-ref' : baseSha,
+            );
+            assert.equal(
+                inventory.count,
+                ['unsupported', 'invalid base'].includes(kind) ? 0 : 1,
+            );
+            const report = read('comparison.json');
+            assert.equal(report.blocked, blocked);
+            assert.equal(
+                report.introduced.length,
+                ['introduced', 'missing page'].includes(kind) ? 1 : 0,
+            );
+            assert.equal(report.repaired.length, kind === 'repaired' ? 1 : 0);
+            assert.equal(
+                report.toolFailures.length > 0,
+                ['unsupported', 'invalid base'].includes(kind),
+            );
+            const rendered = readFileSync(summary, 'utf8');
+            if (kind === 'introduced') {
+                assert.match(rendered, /page.mdx#intro:2/);
+                assert.ok(
+                    rendered.includes(
+                        `https://github.com/lightdash/lightdash/blob/${inventory.productSha}/packages/frontend/src/Marker.tsx#L1`,
+                    ),
+                );
+                assert.match(
+                    rendered,
+                    /reference-only lightdash\/lightdash PR/,
+                );
             }
+            assert.equal(git(docs, 'rev-parse', 'HEAD'), inventory.docsHeadSha);
+            assert.equal(git(product, 'status', '--porcelain'), '');
+            assert.equal(git(docs, 'status', '--porcelain'), '');
         } finally {
             rmSync(cwd, { recursive: true, force: true });
         }
