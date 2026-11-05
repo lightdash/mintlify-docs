@@ -1,21 +1,13 @@
 name: Learn walkthrough citations
 
-# Learn walkthroughs in lightdash/lightdash quote sentences from these docs
-# (data-tour-docs="explore/spaces.mdx#create-a-space:1"). A docs change that
-# moves or deletes a cited page, heading or sentence breaks them. This check
-# runs the walkthrough checker from lightdash main against this pull request's
-# docs. Introduced content failures and all tool failures block the check.
-# It also checks generation and curriculum ordering against that product revision.
-
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
     paths:
       - '**.mdx'
-      - 'docs.json'
-      - '.github/workflows/learn-walkthroughs.yml'
-      - '.github/workflows/learn-walkthroughs.test.mjs'
-      - '.github/workflows/learn-findings.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/learn-*'
   workflow_dispatch:
 
 permissions:
@@ -29,8 +21,7 @@ jobs:
   citations:
     name: Learn walkthrough citations
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
-
+    timeout-minutes: 10
     steps:
       - name: Checkout docs
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,10 +31,11 @@ jobs:
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Checkout lightdash
+      - name: Checkout current product main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: lightdash/lightdash
+          ref: main
           path: lightdash
           persist-credentials: false
 
@@ -53,156 +45,38 @@ jobs:
           node-version: '24'
           check-latest: true
 
-      - name: Docs change selection tests
-        working-directory: docs
-        run: node --test .github/workflows/learn-walkthroughs.test.mjs
-
-      - name: Does this pull request touch a cited page?
-        id: cited
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          grep -rhoE '[A-Za-z0-9_./-]+\.mdx' lightdash/packages/frontend/src \
-            | sed 's#^\./##' | sort -u > cited.txt
-          echo "$(wc -l < cited.txt) docs page(s) cited by walkthroughs"
-          if [[ "$EVENT_NAME" != 'pull_request' ]]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          git -C docs diff --no-renames --name-only "$BASE_SHA...$HEAD_SHA" | sort -u > changed.txt
-          if grep -Eq '^\.github/workflows/(learn-findings\.mjs|learn-walkthroughs\.(yml|test\.mjs))$' changed.txt; then
-            echo "Learn validation implementation changed; exercising the full check/report pipeline."
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          touched=$(comm -12 cited.txt changed.txt)
-          if [[ -n "$touched" ]] || grep -qx docs.json changed.txt; then
-            echo "Cited pages changed:"
-            echo "$touched"
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "No cited page changed; nothing to check."
-            echo "run=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Install lightdash dependencies
+      - name: Install docs parser dependencies
         id: install
-        if: steps.cited.outputs.run == 'true'
-        working-directory: lightdash
-        env:
-          COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
-          COREPACK_DEFAULT_TO_LATEST: '0'
-          CYPRESS_INSTALL_BINARY: '0'
-        run: |
-          corepack enable
-          # The check step runs `pnpm -C lightdash` from the workspace root, where
-          # corepack sees no packageManager field and would otherwise pick the
-          # latest pnpm, which refuses to run the pinned version. Make the
-          # pinned version the out-of-project default instead.
-          corepack install -g "$(node -p "require('./package.json').packageManager")"
-          pnpm install --frozen-lockfile --prefer-offline --network-concurrency=16
-          pnpm common-build
+        working-directory: docs
+        run: npm ci --ignore-scripts
 
-      - name: Check walkthroughs against the base and this pull request
-        if: steps.cited.outputs.run == 'true'
+      - name: Test citation validation
+        working-directory: docs
+        run: node --test .github/workflows/learn-*.test.mjs
+
+      - name: Check citation targets against base and proposed docs
         env:
-          COREPACK_DEFAULT_TO_LATEST: '0'
-          EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          PRODUCT_SHA=$(git -C lightdash rev-parse HEAD) DOCS_HEAD_SHA=$(git -C docs rev-parse HEAD) node -e 'require("fs").writeFileSync("revisions.json", JSON.stringify({productSha:process.env.PRODUCT_SHA, docsHeadSha:process.env.DOCS_HEAD_SHA, docsBaseSha:process.env.BASE_SHA || null}))'
-          # Reuse the product citation parser, checking every reference even
-          # when building the full set of tours stops at an existing error.
-          cat > "$RUNNER_TEMP/check-citations.cjs" <<'NODE'
-          const fs = require('node:fs');
-          const path = require('node:path');
-          const {docsParagraph, findMarkers, frontendSrc, listTsx, LESSON_SOURCE} = require(path.join(process.cwd(), 'scripts/scope-tours/lib.ts'));
-          const {SANDBOX_LESSONS} = require(path.join(process.cwd(), 'packages/frontend/src/features/learn/sandboxLessons.ts'));
-          const citations = listTsx(frontendSrc).flatMap((file) => findMarkers(file).flatMap((marker) =>
-            [marker.docs, marker.resultDocs].filter(Boolean).map((ref) => ({file: marker.file, line: marker.line, selector: marker.scope, ref}))));
-          for (const lesson of SANDBOX_LESSONS) {
-            for (const field of ['intro', 'fileDocs', 'snippetDocs', 'commandDocs', 'outputDocs', 'resultDocs']) {
-              for (const ref of [lesson[field]].flat().filter(Boolean)) citations.push({file: LESSON_SOURCE, ref});
-            }
-          }
-          const findings = [];
-          for (const {file, line, ref, selector} of citations) {
-            try { docsParagraph(ref); }
-            catch (error) {
-              const content = error.code === 'ENOENT' || /Docs anchor not found:|Docs page has no title:|paragraph \d+ not found|list item \d+ not found|sentence range out of bounds|No sentences found under|Docs link off the docs site/.test(error.message);
-              findings.push({level: 'error', category: content ? 'content' : 'tool', file, line, ref, selector, command: 'citations', message: `${ref}: ${error.message}`});
-            }
-          }
-          console.log(JSON.stringify(findings));
-          NODE
-
-          lightdash_pnpm() (
-            # Corepack selects the pinned pnpm version from the initial directory.
-            cd "$GITHUB_WORKSPACE/lightdash"
-            LIGHTDASH_DOCS_DIR="$GITHUB_WORKSPACE/docs" pnpm "$@"
-          )
-
-          check() {
-            git -C lightdash restore --source=HEAD -- packages/frontend/src/features/scopeTours/generated.ts packages/frontend/src/features/scopeTours/curriculum.ts
-            local status=0
-            lightdash_pnpm exec tsx scripts/scope-tours/check.ts --json > "$1.json" 2> "$1.log" || status=$?
-            if ! node -e 'const rows=JSON.parse(require("fs").readFileSync(process.argv[1])); if (!Array.isArray(rows) || rows.some(x=>!x || typeof x.message!=="string" || typeof x.file!=="string") || (Number(process.argv[2]) && !rows.some(x=>x.level==="error"))) process.exit(1)' "$1.json" "$status" 2>/dev/null; then
-              # The checker threw instead of reporting; keep its message as one error.
-              node -e 'const fs=require("fs");fs.writeFileSync(process.argv[1]+".json",JSON.stringify([{level:"error",category:"tool",file:"checker",message:"Checker failed to produce valid findings: "+fs.readFileSync(process.argv[1]+".log","utf8").trim().split("\n").slice(-3).join(" ")}]))' "$1"
-            fi
-            if ! lightdash_pnpm exec tsx "$RUNNER_TEMP/check-citations.cjs" > "$1-citations.json" 2> "$1-citations.log"; then
-              node -e 'const fs=require("fs");fs.writeFileSync(process.argv[1]+"-citations.json",JSON.stringify([{level:"error",category:"tool",file:"citations",message:fs.readFileSync(process.argv[1]+"-citations.log","utf8").trim()}]))' "$1"
-            fi
-            node - "$1.json" "$1-citations.json" <<'NODE'
-          const fs = require('node:fs');
-          const [report, citations] = process.argv.slice(2);
-          fs.writeFileSync(report, JSON.stringify([...JSON.parse(fs.readFileSync(report)), ...JSON.parse(fs.readFileSync(citations))]));
-          NODE
-            for command in scope-tours:generate scope-tours:order; do
-              local log="$1-${command//:/-}.log"
-              if ! lightdash_pnpm "$command" > "$log" 2>&1; then
-                node - "$1.json" "$log" "$command" <<'NODE'
-          const fs = require('node:fs');
-          const [report, log, command] = process.argv.slice(2);
-          const findings = JSON.parse(fs.readFileSync(report, 'utf8'));
-          const lines = fs.readFileSync(log, 'utf8').trim().split('\n');
-          const message = lines.find((line) => /^Error:/.test(line)) ?? lines.slice(-3).join(' ');
-          findings.push({level: 'error', file: command, message});
-          fs.writeFileSync(report, JSON.stringify(findings));
-          NODE
-              fi
-            done
-          }
-
-          check head
-          if [[ "$EVENT_NAME" == 'pull_request' ]]; then
-            git -C docs checkout -q "$BASE_SHA"
-            check base
-            git -C docs checkout -q -
-          else
-            echo '[]' > base.json
-          fi
-
+          node docs/.github/workflows/learn-citations.mjs
           node docs/.github/workflows/learn-findings.mjs
 
-      - name: Report dependency setup failure
-        if: always() && steps.cited.outputs.run == 'true' && steps.install.outcome == 'failure'
+      - name: Report parser setup failure
+        if: failure() && steps.install.outcome == 'failure'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          PRODUCT_SHA=$(git -C lightdash rev-parse HEAD) DOCS_HEAD_SHA=$(git -C docs rev-parse HEAD) node -e 'const fs=require("fs");fs.writeFileSync("revisions.json",JSON.stringify({productSha:process.env.PRODUCT_SHA,docsHeadSha:process.env.DOCS_HEAD_SHA,docsBaseSha:process.env.BASE_SHA || null}));fs.writeFileSync("base.json","[]");fs.writeFileSync("head.json",JSON.stringify([{level:"error",category:"tool",file:"setup",message:"Dependency setup failed; see Install lightdash dependencies logs"}]))'
+          PRODUCT_SHA=$(git -C lightdash rev-parse HEAD) DOCS_HEAD_SHA=$(git -C docs rev-parse HEAD) node -e 'const fs=require("fs");fs.writeFileSync("revisions.json",JSON.stringify({productSha:process.env.PRODUCT_SHA,docsHeadSha:process.env.DOCS_HEAD_SHA,docsBaseSha:process.env.BASE_SHA || null}));fs.writeFileSync("base.json","[]");fs.writeFileSync("head.json",JSON.stringify([{level:"error",category:"tool",file:"setup",message:"Docs parser dependency setup failed; see Install docs parser dependencies logs"}]))'
           node docs/.github/workflows/learn-findings.mjs
 
       - name: Upload Learn findings
-        if: always() && steps.cited.outputs.run == 'true'
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: learn-findings
           path: |
             revisions.json
+            citation-inventory.json
             base-findings.json
             head-findings.json
             comparison.json
-            *.log
