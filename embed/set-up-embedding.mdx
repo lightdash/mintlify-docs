@@ -1,192 +1,131 @@
 ---
 title: "Set up embedding"
 sidebarTitle: "Set up embedding"
-description: Generate expirable URLs and tokens to serve Lightdash content to users in your own application
+description: "Embed a dashboard in your application with a server-generated token and an iframe"
 doc-type: tutorial
 ---
 
-
 import EmbedAvailability from '/snippets/embedding-availability.mdx';
-import EmbedResources from '/snippets/embedding-resources.mdx';
 
 <EmbedAvailability />
 
-<EmbedResources />
+Embed a Lightdash dashboard in your application using an iframe. You'll allow the dashboard, preview it, and generate an expiring URL from your backend.
 
-## What can you embed?
+For other content types or a React integration, see [embedding methods](/embed/reference#embedding-methods).
 
-Lightdash supports embedding several types of content, each designed for different use cases:
+## Prerequisites
 
-### Dashboards
+- A saved dashboard and access to your project's **Settings** → **Embed configuration**.
+- A project that doesn't require [personal warehouse credentials](/personal-settings/personal-warehouse-connections). Embedded viewers can't provide their own warehouse credentials.
+- Node.js and a backend where you can store the embed secret and generate tokens.
+- A web page where you can add an iframe.
 
-Embed complete dashboards with multiple visualizations, filters, and tabs. Perfect for providing comprehensive analytics views in your application.
+If you're testing in a separate development project, use that project's embed secret, allowed dashboard, and project UUID throughout this tutorial.
 
-**Use cases:**
-- Executive dashboards in admin panels
-- Customer-facing analytics portals
-- Embedded reporting for SaaS applications
+## Embed your dashboard
 
-[Learn more about embedding dashboards →](/embed/embed-dashboards)
+<Steps>
+  <Step title="Create an embed secret">
+    In your project's **Settings** → **Embed configuration**, click **Generate embed secret**. If the project already has a secret, use that secret.
 
-### Charts
+    <Frame>
+      <img src="/images/embed/embed-create-secret-fbb86d6bcb70f4d004c48adb3c107922.png" alt="Embed configuration with no embed secret and a Generate embed secret button" />
+    </Frame>
 
-Embed individual saved charts for focused, single-metric displays. Charts provide a minimal UI for clean integration.
+    Store the secret in your backend's `LIGHTDASH_EMBED_SECRET` environment variable. Keep it out of browser code and source control. See [embed secret management](/embed/reference#embed-secret) before regenerating an existing secret.
+  </Step>
 
-**Use cases:**
-- Single KPI widgets in applications
-- Embedded metrics in marketing pages
-- Focused analytics in workflows
+  <Step title="Allow your dashboard">
+    Under **Allowed content**, select the dashboard in **Dashboards**, then click **Save changes**.
 
-[Learn more about embedding charts →](/embed/embed-charts)
+    <Frame>
+      <img src="/images/embed/embed-add-dashboard-cb6bef5fde69ba9d6eaeb693744d75cc.png" alt="Allowed dashboards picker listing dashboards you can select for embedding" />
+    </Frame>
+  </Step>
 
-### AI agents
+  <Step title="Preview the dashboard">
+    Under **Preview & embed code**, select your dashboard and set **Expires in**. If the dashboard uses [user attributes for data access](/embed/reference#user-attributes), enter the values for your test viewer.
 
-Embed a Lightdash AI agent so customers can chat with their data and generate charts without leaving your product. Each embed is scoped to a single agent and space.
+    <Frame>
+      <img src="/images/embed/set-up-embedding/embed-preview-6add607fe9348ed49483ae487235bd50.png" alt="Dashboard preview configuration with an expiry, user attributes, and Preview and Generate &amp; copy URL buttons" />
+    </Frame>
 
-**Use cases:**
-- "Chat with your data" experiences inside customer-facing apps
-- Self-serve analytics where customers can ask ad-hoc questions
-- Scoped AI access where each customer can only see their own content
+    Click **Preview** and confirm the dashboard loads with the data your viewer should see. Click **Generate & copy URL** to get a URL for testing in a browser tab.
+  </Step>
 
-[Learn more about embedding AI agents →](/embed/embed-ai-agents)
+  <Step title="Generate an embed URL on your backend">
+    Install `jsonwebtoken` in your Node.js backend:
 
-### Metrics catalog
+    ```bash
+    aube add jsonwebtoken
+    ```
 
-Embed the project's metrics catalog so users can browse the metrics and dimensions in your semantic layer, preview them, and — if you allow it — jump into Explore from any metric. Great for surfacing "what can I measure?" inside your product without exposing a full Lightdash workspace.
+    Alongside `LIGHTDASH_EMBED_SECRET`, set these backend environment variables:
 
-**Use cases:**
-- A self-serve metric browser inside a customer-facing app
-- A discovery surface next to your own charts so users can find related metrics
-- Guided exploration where users start from a metric and continue into Explore
+    | Variable | Value |
+    | --- | --- |
+    | `LIGHTDASH_INSTANCE_URL` | Your Lightdash origin, such as `https://app.lightdash.cloud`, without a trailing slash |
+    | `LIGHTDASH_PROJECT_UUID` | The project UUID from the generated URL: `/embed/<project-uuid>#...` |
+    | `LIGHTDASH_DASHBOARD_UUID` | The `dashboardUuid` value in **Backend: generate JWT and embed URL** |
 
-Metrics catalog embedding requires the React SDK. iframe embedding is not supported for the metrics catalog.
+    Save this as `generate-embed-url.cjs`:
 
-[Learn more about embedding the metrics catalog →](/embed/embed-metrics-catalog)
+    ```javascript generate-embed-url.cjs
+    const jwt = require('jsonwebtoken');
 
-### Data apps
+    const {
+      LIGHTDASH_EMBED_SECRET,
+      LIGHTDASH_INSTANCE_URL,
+      LIGHTDASH_PROJECT_UUID,
+      LIGHTDASH_DASHBOARD_UUID,
+    } = process.env;
 
-Embed a [data app](/data-apps) as standalone content in an iframe — the full app, no dashboard or surrounding chrome. Useful when you want to surface an entire AI-generated app as a feature in your product.
+    const token = jwt.sign(
+      {
+        content: {
+          type: 'dashboard',
+          projectUuid: LIGHTDASH_PROJECT_UUID,
+          dashboardUuid: LIGHTDASH_DASHBOARD_UUID,
+        },
+      },
+      LIGHTDASH_EMBED_SECRET,
+      { expiresIn: '1h' },
+    );
 
-**Use cases:**
-- Customer-facing interactive reports
-- Embedded narratives or slide-show apps in your product
-- Self-serve analytics views built on your semantic layer
+    const embedUrl = `${LIGHTDASH_INSTANCE_URL}/embed/${LIGHTDASH_PROJECT_UUID}#${token}`;
+    console.log(embedUrl);
+    ```
 
-[Learn more about embedding data apps →](/embed/embed-data-apps)
+    If you supplied user attributes in the preview, include the same `userAttributes` in the [token payload](/embed/reference#user-attributes) before running the script.
 
-## Choose an embedding method
+    Run it with your backend environment variables loaded:
 
-Lightdash offers two ways to embed content in your own application.
+    ```bash
+    node generate-embed-url.cjs
+    ```
 
-**[iframe embedding](/embed/iframe)** lets you embed content inside your own web page: dashboards, charts, standalone data apps, and AI agents. You generate a JWT, construct a URL, and add it to an `<iframe>` tag. There are no additional setup requirements and this works anywhere (React, Vue, plain HTML). An embed URL also opens on its own in a browser tab; see [Open an embed URL as a link](/embed/iframe#open-an-embed-url-as-a-link).
+    The script prints an embed URL that expires in one hour. For other languages or your selected interactivity options, copy the generated example under **Backend: generate JWT and embed URL**. See the [dashboard token reference](/embed/reference#dashboard-token) for the full payload.
+  </Step>
 
-**[React SDK](/embed/react-sdk)** (`@lightdash/sdk`) is the most powerful option. It supports dashboards, charts, AI agents, and the metrics catalog, lets you pass filters programmatically, hook into user interaction callbacks (like when someone navigates to Explore), and apply custom styling to match your app. It requires a React/Next.js app and your app's origin in your organization's [CORS settings](/embed/react-sdk#set-up-cors).
+  <Step title="Display the dashboard in your application">
+    Add this iframe to your web page, replacing `PASTE_GENERATED_EMBED_URL_HERE` with the URL printed by your backend script:
 
-Both methods use the same JWT-based authentication and security model.
+    ```html
+    <iframe
+      title="Analytics dashboard"
+      src="PASTE_GENERATED_EMBED_URL_HERE"
+      width="100%"
+      height="800"
+      style="border: 0;"
+    ></iframe>
+    ```
 
-### Quick comparison
+    Open the page and confirm the dashboard loads without asking for a Lightdash login. If it doesn't load, check the [iframe troubleshooting steps](/embed/iframe#troubleshooting).
 
-| Feature | iframe | React SDK |
-|---|---|---|
-| Dashboards | ✓ | ✓ |
-| Individual charts | ✓ | ✓ |
-| AI agents | ✓ | ✓ |
-| Metrics catalog | ✗ | ✓ |
-| Data apps (standalone) | ✓ | ✗ |
-| Setup complexity | Low | Low | Medium |
-| CORS needed | No | No | Yes |
-| Programmatic filters | Via JWT config | Via JWT config | Via SDK `filters` prop |
-| Custom styling | No | Limited | Full control |
-| Framework requirement | None | None | React / Next.js |
+    In your application, authenticate the viewer and check their access on your backend before generating each URL. Pass any user attributes from trusted server-side data. Return the URL to your frontend and set it as the iframe's `src`; generate another URL when the token expires. Anyone with a URL can use it until it expires.
+  </Step>
+</Steps>
 
-### Passing filters to embedded dashboards
+## Configure viewer access
 
-Both methods support filters, just differently:
-
-- **JWT config** — Set filters in the token payload at embed time. Works for both methods.
-- **React SDK `filters` prop** — Pass them dynamically at runtime. Better if filters need to change based on the logged-in user.
-
-## CORS
-
-CORS controls which browser origins can call the Lightdash API. You only need to configure it when your embedded application calls Lightdash from the browser — that is, when using the [React SDK](/embed/react-sdk). iframe embeds do not need CORS. See [Set up CORS](/embed/react-sdk#set-up-cors) for how to add your origins.
-
-## Quick start: Embed a dashboard
-
-This quick start will walk you through embedding your first dashboard using an iframe.
-
-### Step 1: Create an embed secret
-
-First, you need to generate a secret per project. This secret is like a password that will help you encrypt the URLs so we know the access is valid.
-
-<Frame>
-  <img src="/images/embed/embed-create-secret-fbb86d6bcb70f4d004c48adb3c107922.png" alt="Project settings on the Embed configuration tab, showing an empty &quot;No embed secret&quot; state with a Generate embed secret button" />
-</Frame>
-
-You can regenerate the secret by clicking on the `Generate new secret` button. If you do this, every embed URL signed with the old secret stops working.
-
-### Step 2: Add allowed dashboards
-
-Only selected dashboards can be accessed via embed URLs. Add the dashboard you want to embed to the allowed list.
-
-<Frame>
-  <img src="/images/embed/embed-add-dashboard-cb6bef5fde69ba9d6eaeb693744d75cc.png" alt="The Allowed dashboards card with its dashboard picker open, listing two selectable dashboards" />
-</Frame>
-
-### Step 3: Configure and preview
-
-Under the "Configure" section, you can:
-- Select which dashboard to embed
-- Set token expiration time
-- Configure interactivity (filters, exports, etc.)
-- Add user attributes for row-level security
-
-<Frame>
-  <img src="/images/embed/set-up-embedding/embed-preview-6add607fe9348ed49483ae487235bd50.png" alt="The Preview panel with a dashboard selected, a one-hour expiry, an empty user attributes row, and Preview and Generate &amp; copy URL buttons" />
-</Frame>
-
-Click on `Preview` to see how the embedded content will look, and click on `Generate & copy URL` to get a one-off embed URL for testing.
-
-### Step 4: Generate tokens programmatically
-
-Although you can generate URLs directly from Lightdash with a long expiration, it is recommended to generate your own JWTs in your backend with a short expiration using your `secret` to make sure people can't be using embed URLs outside your app.
-
-Lightdash provides code snippets you can copy and use in your app to generate valid embed URLs, and the [embedding reference](/embed/reference) documents the full JWT structure:
-
-<Frame>
-  <img src="/images/embed/set-up-embedding/embed-developer-dcdab9d9082069f5ade377284254319c.png" alt="The Code snippet panel showing NodeJS and Python tabs, with NodeJS code that signs a dashboard JWT and builds the embed URL" />
-</Frame>
-
-## Common questions
-
-### Do I need a Lightdash account to view embedded content?
-
-No, embedded Lightdash content is available to view by anyone (not just folks with a Lightdash login).
-
-So, for example, you could embed a dashboard in your product, and anyone who has access to your product would have access to that dashboard. No need to login to Lightdash.
-
-We make sure that the links are secure and have a set expiry time that you pick.
-
-Because embedded viewers aren't Lightdash users, they have no [personal warehouse credentials](/personal-settings/personal-warehouse-connections). Embeds can't run queries in a project whose connection has **Require users to provide their own credentials** turned on; they fail with `Embedded users cannot use personal warehouse credentials`.
-
-### How does security work?
-
-Embedded content is secured using JWT (JSON Web Tokens) that you sign with your embed secret. The token includes:
-
-- What content to display (dashboard or chart)
-- Expiration time
-- User attributes for row-level filtering
-- Permissions for interactivity (filters, exports, etc.)
-
-Tokens are short-lived and should be generated server-side to prevent exposure of your embed secret.
-
-### Can I test embedding in a separate development project?
-
-Yes. The embed secret and the allowed dashboards, charts and other content belong to one project, so nothing carries over from your production project. In the development project, generate its own embed secret and add the content you want to embed, then have your development backend sign tokens with that secret and use that project's UUID in the embed URL. CORS origins are [set for the whole organization](/embed/react-sdk#set-up-cors), so you add your development origin once.
-
-### Can I show different data to different users?
-
-Yes! You can use [user attributes](/workspace-admin/user-attributes) to implement row-level security in your embedded content. This allows you to filter data based on the viewing user's properties (e.g., tenant ID, region, etc.).
-
-### Do embedded viewers get their own Lightdash user?
-
-An embedded viewer doesn't need a Lightdash user account. Their JWT controls their access. For saving changes and attributing them to individual viewers, see [write actions and actor identity](/embed/reference#write-actions).
+Use the [dashboard embedding options](/embed/embed-dashboards#configure-what-viewers-can-do) to enable filters, exports, and Explore. For tenant-specific data, configure [user attributes](/embed/reference#user-attributes). To let viewers save or edit content, configure [write actions](/embed/reference#write-actions).

@@ -45,6 +45,17 @@ Write the way the best pages here already read (`explore/dashboards.mdx` is a go
 - **Steps are numbered and one action each.** Say where the reader is before telling them what to click, and show the result when it isn't obvious.
 - **Descriptions are one line.** The frontmatter `description` says what the page lets the reader do, in a phrase with no trailing full stop.
 - **No promises or prices.** No roadmap, timelines or "coming soon"; no prices or plan costs. Use the shared plan badges in [`components.md`](.mintlify/components.md); reserve `<Info>` for feature-specific enablement requirements.
+- **US spelling in prose; product spelling in labels.** Prose uses US English (analyze, color, labeled). UI labels, settings keys, code identifiers, and quoted prompts stay exactly as the product spells them, even when British: **Analyse this view**, `analyseOnLoad`, "stop analysing on load". Verify a label in the product source before "fixing" it.
+- **Contractions are fine.** Use don't, isn't, can't the way the best pages here do; spelling them out reads stiff.
+
+### No generated-sounding phrasing
+
+Write like a person explaining the product, and rewrite anything that reads as machine-generated:
+
+- **Literal verbs for mechanics.** Not "the agent *bakes* the setting into the app", "markers are *painted*", "the launcher *greets* the viewer", "runs *afresh*" — say builds in, stores, appear, shows, runs again.
+- **No resource-economy metaphors.** Not "*spending* a prompt", "what a run can *spend*", "a stored analysis is *free*" — say it counts, or doesn't count, toward the limit.
+- **No self-justifying asides.** Not "they are what keeps the summary honest", "so you are not left wondering why nothing appears" — state the fact or instruction and stop; the reader doesn't need the prose to argue for itself.
+- **No formula transitions.** Not "Should that fail too", "straight away", "worth a look", "It is worth noting" — plain equivalents: "If that also fails", "immediately", "worth investigating", or nothing.
 
 ## Components
 

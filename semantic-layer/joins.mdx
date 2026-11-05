@@ -741,7 +741,47 @@ joins:
 ```
 </CodeGroup>
 
-To take all but a few fields, list the fields once in a [set](/semantic-layer/tables#sets) on the joined model and exclude the ones you don't want with `-`, for example `fields: [user_fields*, -signup_source, -region]`. There's no built-in set of every field, so the set lists its fields itself.
+### Exclude fields from a join
+
+To take every field from a join except a few, list only the fields you don't want, each prefixed with `-`. When `fields` contains only exclusions, Lightdash includes every field of the joined model except those. In this example `messages` gets every `users` field except `phone` and the fields in the `users` model's `address_fields` [set](/semantic-layer/tables#sets).
+
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: messages
+    config:
+      meta:
+        joins:
+          - join: users
+            sql_on: ${messages.sent_by} = ${users.user_id}
+            fields: [-phone, -address_fields*]
+```
+
+```yaml dbt v1.9 and earlier
+models:
+  - name: messages
+    meta:
+      joins:
+        - join: users
+          sql_on: ${messages.sent_by} = ${users.user_id}
+          fields: [-phone, -address_fields*]
+```
+
+```yaml Lightdash YAML
+type: model
+name: messages
+
+joins:
+  - join: users
+    sql_on: ${messages.sent_by} = ${users.user_id}
+    fields: [-phone, -address_fields*]
+```
+</CodeGroup>
+
+- Excluding a date or timestamp dimension also excludes its time intervals, such as `created_at_day` and `created_at_month`.
+- An excluded field that the join or another remaining field needs stays in the explore as a hidden field, so everything that uses it still works. That covers fields used in `sql_on`, dimensions referenced in another field's `sql`, and dimensions used in metric filters. The same applies to fields left out of an include list.
+- Lightdash shows a warning if an excluded name doesn't match a field in the joined model.
+- If `fields` contains any field to include, it stays an include list, and exclusions only remove fields from that list. For example `fields: [user_fields*, -region]` gives the fields in `user_fields` except `region`.
 
 ## Using joined dimensions or metrics in your YAML
 

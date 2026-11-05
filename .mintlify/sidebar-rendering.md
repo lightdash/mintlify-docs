@@ -80,3 +80,34 @@ EOF
 ```
 
 Check both sidebar modes (a root-linked tab like Docs and a classic tab like API), and a page that expands a long group, before shipping spacing changes.
+
+## Sidebar filter
+
+`sidebar-filter.js` mounts a tab-scoped title filter before `#navigation-items` on desktop and below the tab picker inside the mobile drawer. It listens to `mintlify:navigate` for page changes. A body-level observer watches portal insertion without watching subtree mutations, so opening the mobile drawer can mount its filter independently of navigation.
+
+`sidebar-filter.css` uses Mintlify's `--gray-*`, `--primary`, and `--background-*` tokens. Filtering replaces the displayed tree with links and parent labels; clearing restores the native tree without changing its expansion state. Each tab retains its query until the reader clears it or selects a result.
+
+Selecting a result clears the current tab's filter and uses Mintlify's client navigation, which expands the destination's ancestors and scrolls its row into view. Selecting the current page restores the native tree and scrolls only its sidebar viewport; the article keeps its scroll position. Modified clicks keep normal browser behavior.
+
+Collapsed groups unmount their children. `sidebar-navigation.js` therefore contains generated titles and URLs from `docs.json`, MDX frontmatter, and the configured OpenAPI source. Generate it after changing navigation, sidebar titles, or the API source:
+
+```bash
+aube run build:sidebar-navigation
+aube run build:sidebar-navigation -- --check
+```
+
+The generator fetches the configured API schema; filtering makes no requests. The API adapter follows Mintlify's generated filename and fallback-title rules for the Lightdash schema. Recheck that contract when upgrading Mintlify. The committed index reflects the source at generation time.
+
+### CI and merge protection
+
+`.github/workflows/sidebar-navigation.yml` runs on every PR targeting `main`, without path filters. **Check sidebar navigation index** regenerates the index with read-only permissions and fails if the committed file differs or is missing. API fetch failures also fail the check.
+
+For same-repository PRs, a separate job with write access commits only the generated index to the checked PR head. It does not execute PR code and refuses a moved head; the branch update is a normal fast-forward. Fork authors regenerate and commit the index themselves, or download the corrected file from the workflow artifact.
+
+Automatic commits use `GITHUB_TOKEN`. GitHub pauses the follow-up PR workflows until someone with write access selects **Approve workflows to run** in the PR merge box. The corrected commit must pass the index check; the run that found stale content remains failed. The update job maintains one PR comment linking to the refresh commit and workflow run and explaining the approval step. A comment failure is reported as a warning after the successful index update.
+
+A repository admin must configure a ruleset or branch protection rule for `main` requiring **Check sidebar navigation index** and branches to be up to date before merging. This makes the index include navigation changes merged from other PRs. Adding the workflow alone does not enforce a merge gate. Mintlify continues to own preview and deployment triggers; this workflow controls the committed file before merge.
+
+Run `.mintlify/sidebar-filter.browser.js` through `agent-browser eval --stdin` on the Docs introduction page at desktop width to check filtering, keyboard access, tab isolation, and client navigation. `.mintlify/sidebar-filter-mobile.browser.js` checks the drawer at mobile width. Unit coverage for generated API routes lives in `test/sidebar-navigation.test.ts`.
+
+Mintlify documents the [script lifecycle and navigation API](https://www.mintlify.com/docs/customize/custom-scripts#run-code-after-page-navigation). `#navigation-items` and the mobile tab picker's markup remain theme internals.
