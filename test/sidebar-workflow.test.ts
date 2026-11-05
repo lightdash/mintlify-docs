@@ -39,7 +39,7 @@ function updateScript(): string {
   return workflow.split('          script: |\n')[1]!.split('\n').map((line) => line.slice(12)).join('\n');
 }
 
-async function refresh({ moved = false, fork = false, race = false, existingComment = false, commentFailure = false } = {}) {
+async function refresh({ moved = false, fork = false, race = false, existingComment = false, commentFailure = false, baseRef = 'main', baseFork = false, headRef = 'sidebar-work', closed = false } = {}) {
   const files = new Map([['intro.mdx', 'PR content'], ['sidebar-navigation.js', 'stale index']]);
   const initial = new Map(files);
   let nextFiles = new Map(files);
@@ -51,7 +51,7 @@ async function refresh({ moved = false, fork = false, race = false, existingComm
     ...(existingComment ? [{ id: 2, user: { login: 'github-actions[bot]' }, body: '<!-- sidebar-navigation-index --> Earlier refresh' }] : []),
   ];
   const warnings: string[] = [];
-  const pull = { number: 123, state: 'open', base: { ref: 'main' }, head: { sha: moved ? 'newer' : 'head', ref: 'sidebar-work', repo: { full_name: fork ? 'contributor/docs' : 'lightdash/mintlify-docs' } } };
+  const pull = { number: 123, state: closed ? 'closed' : 'open', base: { ref: baseRef, repo: { full_name: baseFork ? 'contributor/docs' : 'lightdash/mintlify-docs' } }, head: { sha: moved ? 'newer' : 'head', ref: headRef, repo: { full_name: fork ? 'contributor/docs' : 'lightdash/mintlify-docs' } } };
   const context = { serverUrl: 'https://github.com', runId: 456, repo: { owner: 'lightdash', repo: 'mintlify-docs' }, payload: { pull_request: { number: 123, head: { sha: 'head' } } } };
   const execute = vm.runInNewContext(`(async () => { ${updateScript()}\n })`, {
     Buffer,
@@ -87,7 +87,7 @@ async function refresh({ moved = false, fork = false, race = false, existingComm
         },
         createCommit: async ({ parents }: { parents: string[] }) => { parent = parents[0]; return { data: { sha: 'index-commit' } }; },
         updateRef: async ({ ref, force }: { ref: string; force: boolean }) => {
-          assert.equal(ref, 'heads/sidebar-work');
+          assert.equal(ref, `heads/${headRef}`);
           assert.equal(force, false);
           if (race) throw new Error('Update is not a fast forward');
           updated = true;
@@ -102,17 +102,19 @@ async function refresh({ moved = false, fork = false, race = false, existingComm
   return { files, initial, failures, updated, parent, error, comments, warnings };
 }
 
-test('automatic refresh changes only the index on top of the checked PR head', async () => {
-  const result = await refresh();
-  assert.equal(result.error, undefined);
-  assert.deepEqual(result.failures, []);
-  assert.equal(result.updated, true);
-  assert.equal(result.parent, 'head');
-  assert.deepEqual(result.files, new Map([['intro.mdx', 'PR content'], ['sidebar-navigation.js', 'generated index']]));
-});
+for (const baseRef of ['main', 'docs/parent']) {
+  test(`automatic refresh changes only the index on the checked PR head targeting ${baseRef}`, async () => {
+    const result = await refresh({ baseRef });
+    assert.equal(result.error, undefined);
+    assert.deepEqual(result.failures, []);
+    assert.equal(result.updated, true);
+    assert.equal(result.parent, 'head');
+    assert.deepEqual(result.files, new Map([['intro.mdx', 'PR content'], ['sidebar-navigation.js', 'generated index']]));
+  });
+}
 
-test('automatic refresh refuses an outdated PR head and a fork branch', async () => {
-  for (const options of [{ moved: true }, { fork: true }]) {
+test('automatic refresh refuses stale heads, forks, closed PRs, and main or base heads', async () => {
+  for (const options of [{ moved: true }, { fork: true }, { baseFork: true }, { closed: true }, { headRef: 'main' }, { baseRef: 'sidebar-work' }]) {
     const result = await refresh(options);
     assert.equal(result.updated, false);
     assert.deepEqual(result.files, result.initial);

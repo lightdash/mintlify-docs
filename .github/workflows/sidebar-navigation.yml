@@ -2,8 +2,7 @@ name: Maintain sidebar navigation index
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
 
 permissions:
   contents: read
@@ -31,6 +30,7 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
+          check-latest: true
 
       - name: Regenerate sidebar navigation index
         run: npm run build:sidebar-navigation
@@ -94,9 +94,10 @@ jobs:
             const { data: pull } = await github.rest.pulls.get({
               owner, repo, pull_number: context.payload.pull_request.number,
             });
-            if (pull.state !== 'open' || pull.base.ref !== 'main' ||
-                pull.head.repo?.full_name !== `${owner}/${repo}` || pull.head.ref === 'main') {
-              core.setFailed('Only open PRs from this repository targeting main can be updated.');
+            if (pull.state !== 'open' || pull.base.repo?.full_name !== `${owner}/${repo}` ||
+                pull.head.repo?.full_name !== `${owner}/${repo}` ||
+                pull.head.ref === 'main' || pull.head.ref === pull.base.ref) {
+              core.setFailed('Only open PRs between distinct branches in this repository with a head other than main can be updated.');
               return;
             }
             const expectedHead = context.payload.pull_request.head.sha;
