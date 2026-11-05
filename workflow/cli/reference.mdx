@@ -1,6 +1,6 @@
 ---
 title: "Lightdash CLI reference"
-sidebarTitle: "Lightdash CLI"
+sidebarTitle: "Reference"
 description: "Every Lightdash CLI command, its flags, and what it does"
 keywords:
   - lightdash generate
@@ -17,6 +17,8 @@ doc-type: reference
 ---
 
 For installation instructions, see [How to install the Lightdash CLI](/workflow/cli/install).
+
+Look up [global options](#global-options), [shared command options](#shared-command-options), [dbt options](#dbt-options), [commands](#commands), or [environment variables](#environment-variables).
 
 ## Dependencies
 
@@ -39,7 +41,7 @@ When using this command to create a new project that is not a preview, the wareh
 
 ## Global options
 
-There are three global options that can be used with any Lightdash CLI command: [version](#version), [help](#help), and [verbose](#verbose).
+Use the shared CLI options for [version](#version), [help](#help), and [verbose output](#verbose).
 
 ### Version
 
@@ -69,7 +71,7 @@ That returns the Lightdash CLI help menu:
   ![The lightdash CLI help output listing global options, every command from login to generate-exposures, and usage examples](/images/workflow/cli/cli-lightdash-help-86d9d11f57ca516a722c0dfcf8f2919a.png)
 </Frame>
 
-When you use the `--help` or `-h` option with a speific command:
+When you use the `--help` or `-h` option with a specific command:
 
 ```console
 lightdash validate -h
@@ -85,11 +87,222 @@ That returns details and examples for the command itself:
 
 `--verbose`
 
-Defaults to OFF. When included, each step will print logs as it progresses through the command. For example, here's a `--verbose` version of `lightdash generate-exposures`:
+Defaults to `false`. Print detailed progress and diagnostic output, including API requests and validated files where applicable. Command-specific behavior is listed with the command. For example, here's a `--verbose` version of `lightdash generate-exposures`:
 
 <Frame>
   ![lightdash generate-exposures verbose example](/images/workflow/cli/reference/cli-verbose-example-d1324d705fe2d242bc4171d2261bed65.png)
 </Frame>
+
+## Shared command options
+
+These flags are shared by the commands named in each section. They are not global options; other commands support them only where documented. Command-specific defaults and overrides appear with the command.
+
+### Compilation options
+
+These options apply to `lightdash compile`, `lightdash preview`, `lightdash start-preview`, `lightdash deploy`, and `lightdash validate`.
+
+- `--skip-dbt-compile`
+  - (default: false)
+  - Skip `dbt compile` and read from the existing `./target/manifest.json`. Also supported by `lightdash pre-aggregate-check-external`.
+- `--skip-warehouse-catalog`
+  - (default: false)
+  - Skip fetch warehouse catalog and use types defined in the YAML
+- `--use-dbt-list [true|false]`
+  - (default: true)
+  - Use `dbt list` instead of `dbt compile` to generate dbt manifest.json
+- `--validate-warehouse-columns`
+  - (default: false)
+  - Validate supported physical `${TABLE}.column` references against the warehouse
+  - With `lightdash validate --only`, include `tables` to validate these references.
+- `--no-partial-compilation`
+  - Report failures normally handled by partial compilation as errors
+
+For `lightdash compile` and `lightdash deploy`, you can also use:
+
+- `--no-warehouse-credentials`
+  - (default: false)
+  - Compile without warehouse credentials and skip dbt compilation and the warehouse catalog. For preview commands, see [preview options](#preview-options).
+
+### Deployment options
+
+These options apply to `lightdash deploy`, `lightdash preview`, and `lightdash start-preview`.
+
+- `--ignore-errors`
+  - (default: false)
+  - Allows deploy with errors on compile
+- `--start-of-week [number]`
+  - Specifies the first day of the week (used by week-related date functions)
+  - 0 (Monday) to 6 (Sunday)
+- `--source <name>` (deprecated)
+  - The dbt source to deploy, by name. Its explores use that source's warehouse connection. Lightdash infers the source from your dbt project; use this flag only if the deploy is rejected because the source cannot be inferred. Overrides [`lightdash config set-source`](#lightdash-config-set-source). See [multiple warehouse connections](/workspace-admin/multiple-warehouse-connections#deploy-from-the-cli).
+- `--use-batched-deploy`
+  - (default: false)
+  - Deploy explores in batches instead of a single request. Useful for large projects that exceed payload size limits
+- `--batch-size [number]`
+  - (default: 50)
+  - Number of explores to include in each batch when using batched deploy
+- `--parallel-batches [number]`
+  - (default: 1)
+  - Number of batches to upload in parallel when using batched deploy. Use with caution as higher values may overwhelm the server
+
+### Preview options
+
+These options apply to `lightdash preview` and `lightdash start-preview`.
+
+- `--no-warehouse-credentials`
+  - (default: false)
+  - Create the preview without reading warehouse credentials from `profiles.yml`. The preview copies its warehouse connection from the upstream project (your [selected project](#lightdash-config-set-project)). Also skips dbt compile and the warehouse catalog. When updating an existing preview, keeps the credentials it already has.
+- `--table-configuration [prod/all]`
+  - (default: all)
+  - If set to 'prod' it will copy the table configuration from the source project
+- `--skip-copy-content`
+  - (default: false)
+  - Skip copying content from the source project
+- `--combine-manifest <path-or-url>`
+  - Path or http(s) URL to an additional dbt `manifest.json`. Models present in this file but missing from the preview-generated manifest are merged in so the preview reflects the full project even when dbt was only run on a subset of models. The preview-generated manifest always wins on conflicts. URLs (for example, a presigned S3 URL) are fetched at runtime so the manifest does not need to be downloaded first. Passing this overrides the manifest the CLI would otherwise fetch from Lightdash.
+- `--no-combine`
+  - (default: false)
+  - Skip fetching the upstream project's manifest from Lightdash. By default the CLI fetches it and merges it into the preview, which is what makes models from a project's other [dbt sources](/integrations/dbt/projects#connecting-multiple-dbt-sources) appear in the preview. Use this to preview only your local repo's models. Ignored when `--combine-manifest` is set.
+- `--expires-in <hours>`
+  - (default: the upstream project's configured default, or 720 if there is no upstream project)
+  - Number of hours until the preview project auto-expires. Values above the upstream project's [maximum preview expiration](/workflow/preview-projects#preview-expiration) are silently capped to the maximum.
+- `--disable-timestamp-conversion [true|false]`
+  - (default: false)
+  - Snowflake only. Disable converting timestamps to UTC. Applied and persisted when creating the preview project. When updating an existing preview, the flag is ignored with a warning and the saved project setting is used instead.
+
+### Schema generation options
+
+These options apply to `lightdash generate` and `lightdash dbt run`.
+
+- `-y` or `--assume-yes`
+  - (default: false)
+  - assume yes to prompts
+- `--exclude-meta`
+  - (default: false)
+  - exclude Lightdash metadata from the generated .yml
+- `--preserve-column-case`
+  - (default: false)
+  - preserve original casing of column names in generated schema files
+
+### Content transfer options
+
+These options apply to `lightdash download` and `lightdash upload`. Download and upload behavior is listed separately where it differs.
+
+- `--charts` or `-c`
+  - **Download:** select specific charts as code to download from your project. Use the chart SLUG, UUID or URL to specify the chart
+  - **Upload:** select specific charts as code to upload back to your project. Use the chart SLUG to specify the chart
+- `--dashboards` or `-d`
+  - **Download:** select specific dashboards as code to download from your project. This will also download all charts in the dashboard as code. Use the dashboard SLUG, UUID or URL to specify the dashboard
+  - **Upload:** select specific dashboards as code to upload back to your project. Use the dashboard SLUG to specify the dashboard
+- `--path` or `-p`
+  - **Download:** specify a custom path to a directory where you want the downloaded files to be written to. You can use the full path, or a relative path to a directory
+  - **Upload:** specify a custom path to a directory where the files you want to upload are. You can use the full path, or a relative path to a directory
+- `--project <project uuid>`
+  - **Download:** download all charts and dashboards from a specific project. You can find the project UUID for a project from a Lightdash URL. E.g. here, the project UUID is `123-project-uuid` `https://app.lightdash.cloud/projects/123-project-uuid/`
+  - **Upload:** upload all charts and dashboards from a specific project. You can find the project UUID for a project from a Lightdash URL. E.g. here, the project UUID is `123-project-uuid` `https://app.lightdash.cloud/projects/123-project-uuid/`
+- `--nested`
+  - (default: false)
+  - **Download:** split downloaded content into sub-folders matching the spaces in your project
+  - **Upload:** expect content to be organized in sub-folders matching the spaces in your project (use this if content was downloaded with `--nested`)
+- `--skip-spaces`
+  - (default: false)
+  - **Download:** skip downloading [`.space.yml` files](/workflow/content-as-code#space-management) (space metadata and access policies). Use this when you only want to reconcile charts and dashboards.
+  - **Upload:** skip uploading [`.space.yml` files](/workflow/content-as-code#space-management). Charts and dashboards still upload as normal, and existing space permissions are left untouched.
+- `--spaces-only`
+  - (default: false)
+  - **Download:** download only [`.space.yml` files](/workflow/content-as-code#space-management) — no charts or dashboards. Useful for permission-only PRs and cross-instance access promotions. Strict: has no chart/dashboard fallback if the access-aware space endpoint is unavailable.
+  - **Upload:** upload only [`.space.yml` files](/workflow/content-as-code#space-management) — no charts or dashboards. Spaces are always uploaded before dependent content, so this is the right flag for a permissions-only promotion between environments. Replacing a space's `access` policy requires actual `manage:Space` on the resolved space; broad `manage:ContentAsCode` alone doesn't bypass restricted-space authorization.
+- `--virtual-views <slugs...>`
+  - **Download:** opt-in flag to download specific [virtual views](/semantic-layer/virtual-views) as code. Pass one or more virtual-view slugs. Each view is written to `lightdash/virtual-views/<slug>.yml`. Virtual views are not included in a bare `lightdash download` — use this flag or `--include-virtual-views` to opt in.
+  - **Upload:** specify [virtual view](/semantic-layer/virtual-views) slugs to upload from `lightdash/virtual-views/`. Combine with `--force` to apply destructive column changes.
+- `--documents <slugs...>`
+  - **Download:** opt-in flag to download specific [documents](/explore/documents#download-and-upload-with-the-cli) as code. Pass one or more document slugs. Each document is written to `lightdash/documents/<slug>.yml`. Documents are not included in a bare `lightdash download` — use this flag or `--include-documents` to opt in.
+  - **Upload:** specify [document](/explore/documents#download-and-upload-with-the-cli) slugs to upload from `lightdash/documents/`. Without filters, `lightdash upload` uploads every file in that folder.
+- `--homepages <names...>`
+  - **Download:** opt-in flag to download specific published [homepages](/workflow/content-as-code#homepages-as-code) as code (enterprise only). Pass one or more exact homepage names, quoted when they contain spaces. Each homepage is written to `lightdash/homepages/<name>.yml`. A name that does not exist or is not published fails the download. Homepages are not included in a bare `lightdash download`.
+  - **Upload:** upload only the [homepage](/workflow/content-as-code#homepages-as-code) files matching these exact names from `lightdash/homepages/`. Without filters, `lightdash upload` uploads every file in that folder, after the charts, dashboards, spaces, and data apps the homepages reference. A filtered upload does not bring referenced content along, so it must already exist in the destination. Uploads save a draft unless you also pass `--publish`.
+- `--apps <refs...>`
+  - Download requires one or more references. Upload accepts `--apps [refs...]`, with an optional list of references.
+  - **Download:** opt-in flag to also download specific [data apps](/workflow/local-data-app-development) as code (enterprise only). Pass one or more app references — a slug, UUID, or app URL. Works for apps that haven't been added to a space, and is never capped. Each app is written to `lightdash/apps/<slug>/` as a locally buildable project: `lightdash-app.yml` manifest (with the app's `slug`, `name`, `description`, and linked external connections), the app's `src/` tree, `package.json` / `pnpm-lock.yaml`, local build scaffolding (`vite.config.js`, `tsconfig.json`, `index.html`), a read-only `.lightdash/context/` snapshot of the project's semantic layer, and agent skill files (`AGENTS.md`, `.claude/skills/`). The built output is not included — the server rebuilds it on upload. Dashboards you download bring their referenced data apps along automatically. [Custom chart types](/visualizations/chart-studio) are a separate resource: an `--apps` ref that points at a chart type is skipped with a warning — download it with `--chart-types` instead.
+  - **Upload:** opt-in flag to also upload [data apps](/workflow/local-data-app-development) as code (enterprise only). Pass one or more refs (slugs, or legacy UUIDs) to upload just those app folders, or use `--include-apps` to upload every folder under `lightdash/apps/`. The CLI posts each app's `src/` tree and manifest and returns immediately — the destination rebuilds the app in its sandbox and publishes a new version. The app shows a `building` status in the UI until the build finishes. Identity is the manifest's `slug`, upserted in the target project: an existing slug appends a new version (and applies edits to `name` / `description`); a new slug creates a new app. If the source, dependencies, and viz schema are byte-for-byte identical to the latest version, the upload is skipped with `matches v<n>` (name/description edits still apply); pass `--force` to rebuild anyway. Each project runs at most 5 app builds concurrently — if the cap is hit, the CLI waits automatically (up to 10 minutes of consecutive waiting) instead of failing. A folder under `lightdash/apps/` that is actually a [custom chart type](/visualizations/chart-studio) is skipped with a warning — move it to `lightdash/chart-types/` and upload it with `--chart-types`. Uploading requires the [`create:DataApp` scope](/workspace-admin/roles), which is granted to Editor, Developer, and Admin roles. Users with only [`create:DataApp@preview`](/workspace-admin/custom-roles#data-app-scopes) can upload apps to preview projects they created themselves, but not to production or to previews created by teammates. Dashboards you upload push their referenced app folders first, even without `--apps`.
+- `--include-apps`
+  - (default: false)
+  - **Download:** opt-in flag to download every [data app](/workflow/local-data-app-development) in the project as code (enterprise only), capped at `--apps-limit`. Use `--apps <refs...>` to fetch a specific set instead.
+  - **Upload:** upload every app folder under `lightdash/apps/`.
+- `--apps-only`
+  - (default: false)
+  - **Download:** download only data apps, skipping charts, dashboards, and space files (implies `--skip-charts --skip-dashboards --skip-spaces`). Requires `--apps <refs...>` or `--include-apps`. Recommended for app-focused checkouts. Cannot be combined with `--chart-types-only`.
+  - **Upload:** upload only data apps, skipping charts, dashboards, and space reconciliation. Bare `--apps-only` uploads every app folder in `lightdash/apps/`; pass `--apps <refs...>` to select a subset. Recommended for app-focused CI runs.
+- `--chart-types <refs...>`
+  - **Download:** opt-in flag to also download specific [custom chart types](/visualizations/chart-studio) as code (enterprise only). Pass one or more references — a slug, UUID, or chart type URL. Each chart type is written to `lightdash/chart-types/<slug>/` with the same locally buildable layout as a data app folder, and its `lightdash-app.yml` manifest carries a `vizSchema` field with the chart type's declared inputs so it round-trips to the destination on upload. A ref that points at a data app is skipped with a warning — download it with `--apps` instead. Charts you download bring the chart types they render with along automatically, since a chart file without its chart type can't be uploaded elsewhere.
+  - **Upload:** opt-in flag to also upload [custom chart types](/visualizations/chart-studio) as code (enterprise only). Pass one or more refs — a slug (the folder name), UUID, or chart type URL — to upload just those folders from `lightdash/chart-types/`, or use `--include-chart-types` to upload every folder there. Uploads work like data app uploads: identity is the manifest's `slug`, upserted in the target project, the server rebuilds from source, unchanged uploads are skipped, and the same `create:DataApp` scope is required. The manifest's `vizSchema` is sent alongside the source and persisted on the new version. Chart types are project-global and spaceless, so `--app-space` doesn't apply to them. Unlike dashboard-referenced apps, chart types are never auto-pushed: uploading a chart whose chart type is missing in the target project fails with a message to upload the chart type first.
+- `--include-chart-types`
+  - (default: false)
+  - **Download:** opt-in flag to download every [custom chart type](/visualizations/chart-studio) in the project as code (enterprise only), capped at `--chart-types-limit`. Use `--chart-types <refs...>` to fetch a specific set instead.
+  - **Upload:** upload every chart type folder under `lightdash/chart-types/`.
+- `--chart-types-only`
+  - (default: false)
+  - **Download:** download only custom chart types, skipping charts, dashboards, and space files (implies `--skip-charts --skip-dashboards --skip-spaces`). Bare `--chart-types-only` downloads every chart type in the project; pass `--chart-types <refs...>` to select a subset. Cannot be combined with `--apps-only`.
+  - **Upload:** upload only custom chart types, skipping charts, dashboards, and space reconciliation. Bare `--chart-types-only` uploads every folder in `lightdash/chart-types/`; pass `--chart-types <refs...>` to select a subset. Cannot be combined with `--apps-only`.
+- `--agents <slugs...>`
+  - **Download:** opt-in flag to also download specific AI agents as code. Pass one or more agent slugs or UUIDs. Files are written to `lightdash/ai-agents/<slug>.yml` and include evaluation suite definitions and prompts, but never evaluation run history. See [AI agents as code](/agents/agents-as-code) for the YAML schema and lifecycle rules.
+  - **Upload:** upload only the AI agent files matching these slugs from `lightdash/ai-agents/`. Omit to upload every agent file in that folder. Upload is idempotent — the server creates missing agents, updates existing agents by slug, and leaves unchanged agents alone. Evaluation suites declared in a file are upserted by title, while undeclared suites remain unchanged. See [AI agents as code](/agents/agents-as-code).
+- `--organization`
+  - (default: false)
+  - **Download:** switch to organization mode and download [organization-scoped content](/workflow/content-as-code#organization-content-as-code) — [custom roles](/workflow/content-as-code#custom-roles-as-code), [users](/workflow/content-as-code#users-as-code), [groups](/workflow/content-as-code#groups-as-code), and [data app themes](/data-apps/customize-themes#themes-as-code) — instead of project content. Files are written to `lightdash/custom-roles/<role-slug>.yml`, `lightdash/users/<email-slug>.yml`, `lightdash/groups/<group-slug>.yml`, and `lightdash/themes/<theme-slug>/`. Theme packages are staged and validated before the local `themes/` directory is replaced, so a failed theme download preserves the previous local theme set. A successful download removes local theme directories that no longer exist remotely. Requires organization admin permissions. If the groups feature is disabled on the instance, the groups folder is skipped (run with `--verbose` for the explanation). Cannot be combined with project-content flags such as `--charts`, `--dashboards`, `--project`, or `--nested`.
+  - **Upload:** switch to organization mode and upload [organization-scoped content](/workflow/content-as-code#organization-content-as-code) — [custom roles](/workflow/content-as-code#custom-roles-as-code), [users](/workflow/content-as-code#users-as-code), [groups](/workflow/content-as-code#groups-as-code), and [data app themes](/data-apps/customize-themes#themes-as-code) — instead of project content. The CLI validates every local theme before making any organization change, then applies custom roles, users, groups, and themes in that order. Document resources are upserted by role name, primary email, or group name; themes are upserted by manifest slug and skipped when unchanged. A missing or empty `lightdash/themes/` directory is a no-op, and removing one theme directory never deletes the remote theme. Theme imports preserve the organization default and are atomic per theme, not per batch. Requires organization admin permissions. Cannot be combined with project-content flags such as `--charts`, `--dashboards`, `--project`, or `--force`. Uploads never delete roles, users, groups, or themes.
+
+## dbt options
+
+These are options from the dbt Core CLI that also work with some Lightdash CLI commands.
+
+### dbt node selection
+
+You can select a subset of your dbt models by using the following options on any Lightdash commands that support dbt options.
+
+**Node selection:**
+
+- `--select [models...]` or `-s [models...]`
+  - [Read the dbt docs on select](https://docs.getdbt.com/reference/node-selection/syntax#shorthand)
+- `--exclude [models...]`
+  - [Read the dbt docs on exclude](https://docs.getdbt.com/reference/node-selection/exclude)
+- `--selector [selector_name]`
+  - [Read the dbt docs on selector](https://docs.getdbt.com/reference/node-selection/yaml-selectors)
+
+These flags are the only model selection the CLI applies. The [dbt selector](/integrations/dbt/projects#dbt-selector) saved in a project's connection settings is used when Lightdash compiles the project from Git, not by `lightdash deploy`, `lightdash preview` or other CLI commands, so pass the selection again on the command line.
+
+### dbt flags
+
+These dbt flags work with Lightdash commands that support dbt options. [Read the dbt docs on global config flags](https://docs.getdbt.com/reference/global-configs/about-global-configs#available-flags) for details.
+
+- `--project-dir [path]`
+- `--profiles-dir [path]`
+- `--profile [name]`
+- `--target [name]`
+- `--no-version-check`
+- `--state [state]`
+- `--full-refresh`
+- `--defer` (works with `lightdash preview` and `lightdash compile`)
+
+#### `--defer`
+
+`--defer` is commonly paired with `--state` and `--select state:modified+` to limit a preview to changed models. The behavior below is specific to how Lightdash builds the explore list and differs from a plain `dbt build --defer`.
+
+- **`--defer` only resolves Lightdash-joined upstream models against the prod state manifest.** It does not promote arbitrary unmodified models from the state manifest into the preview as standalone explores. With `--select state:modified+`, the preview contains the modified models (compiled to the dev/CI schema), their downstream models, and any models referenced through Lightdash join configs (deferred to the prod relations). Standalone `tag:lightdash` models that are not joined to a modified model will not appear. This is the scope of the fix shipped in [lightdash/lightdash#20672](https://github.com/lightdash/lightdash/pull/20672).
+- **Do not pass `--favor-state` to preview workflows.** `--favor-state` makes selected nodes prefer the prod relation over the freshly built dev relation, which silently routes the modified model back to stale prod data — the opposite of the intent of a PR preview.
+- **The comma in dbt's `--select` is `AND`, not `OR`.** `--select 'tag:lightdash,state:modified+'` resolves to "modified models that are also tagged `lightdash`", which usually narrows to one or two explores rather than the broader set most users expect. Use space-separated arguments (`--select tag:lightdash state:modified+`) for `OR`.
+
+### dbt project variables
+
+You can set dbt project variables in Lightdash commands that support dbt options. [Read the dbt docs on project variables](https://docs.getdbt.com/docs/build/project-variables) for details.
+
+`--vars [vars]`
+
+### dbt threads
+
+You can set the number of threads for dbt in Lightdash commands that support dbt options. [Read the dbt docs on threads](https://docs.getdbt.com/docs/running-a-dbt-project/using-threads) for details.
+
+`--threads [number]`
 
 ## Commands
 
@@ -121,9 +334,9 @@ For examples and command-specific options, click through the command in the tabl
 |[`lightdash download`](/workflow/cli/reference#lightdash-download)                     | Download all charts and dashboards from your Lightdash project as code             |
 |[`lightdash upload`](/workflow/cli/reference#lightdash-upload)                         | Upload charts and dashboards as code to your Lightdash project                     |
 |[`lightdash slug-update`](/workflow/cli/reference#lightdash-slug-update)               | Rename a chart or dashboard slug and update its local content-as-code references    |
-|[`lightdash apps create`](/workflow/cli/reference#lightdash-apps-create)               | Scaffold a new [data app](/data-apps/download-data-apps-as-code) locally                          |
-|[`lightdash apps preview`](/workflow/cli/reference#lightdash-apps-preview)             | Preview a downloaded [data app](/data-apps/download-data-apps-as-code) locally against real data   |
-|[`lightdash apps validate`](/workflow/cli/reference#lightdash-apps-validate)           | Validate a [data app](/data-apps/download-data-apps-as-code) locally before uploading             |
+|[`lightdash apps create`](/workflow/cli/reference#lightdash-apps-create)               | Scaffold a new [data app](/workflow/local-data-app-development) locally                          |
+|[`lightdash apps preview`](/workflow/cli/reference#lightdash-apps-preview)             | Preview a downloaded [data app](/workflow/local-data-app-development) locally against real data   |
+|[`lightdash apps validate`](/workflow/cli/reference#lightdash-apps-validate)           | Validate a [data app](/workflow/local-data-app-development) locally before uploading             |
 |[`lightdash rename`](/workflow/cli/reference#lightdash-rename)                         | Rename model or field names across all your Lightdash content                      |
 |[`lightdash diagnostics`](/workflow/cli/reference#lightdash-diagnostics)               | Show diagnostic information about the CLI environment                              |
 |[`lightdash sql`](/workflow/cli/reference#lightdash-sql)                               | Run raw SQL query against the warehouse using project credentials                  |
@@ -223,7 +436,11 @@ lightdash connect-snowflake \
   --account ecomstore-xy12345
 ```
 
-### `lightdash agent connect`
+### `lightdash agent`
+
+The `connect` and `status` subcommands share `--project <project uuid or slug>`. It selects the project to connect to or inspect and defaults to your active project. Both subcommands also support the [global options](#global-options).
+
+#### `lightdash agent connect`
 
 Connects your agent to the warehouse with a browser sign-in, so that agents can run as you. Use it when your organization's Snowflake rule is [The person's agent sign-in](/agents/agent-identity#snowflake-agent-sign-in-for-each-person). It opens the same Snowflake sign-in as **Connect agent** in the app.
 
@@ -233,8 +450,6 @@ lightdash agent connect
 
 **Options:**
 
-- `--project <project uuid or slug>`
-  - The project to connect for. Defaults to the active project.
 - `--oauth-port <port>`
   - The port of the local callback server. Defaults to `LIGHTDASH_OAUTH_PORT`, or a random free port.
 - `--timeout <seconds>`
@@ -277,7 +492,7 @@ When the project does not need an agent connection, the command prints "Agent co
 
 The CLI checks the connection for its own Lightdash user. If the browser is signed in to Lightdash as a different user, the command says so. Sign in to the browser as the same user, then run the command again.
 
-### `lightdash agent status`
+#### `lightdash agent status`
 
 Shows your agent connection status for a project. When your agent is not connected, it shows the reason and the connect link. When agents on the project use a shared agent account, it prints "Not needed: agents on this project use the shared agent account" and exits with code 0.
 
@@ -287,9 +502,11 @@ While [agent identity](/agents/agent-identity#the-lightdash-cli) is on, the CLI 
 lightdash agent status --project <project uuid or slug>
 ```
 
-`--project` is optional and defaults to the active project.
+### `lightdash config`
 
-### `lightdash config set-project`
+Configure your active project and its dbt source. Each subcommand supports the [global options](#global-options).
+
+#### `lightdash config set-project`
 
 Choose the project you're developing in so the CLI knows which project content to look at for other commands like `lightdash validate` and `lightdash preview`. If your organization only has one project you won't need to use this!
 
@@ -322,7 +539,7 @@ Set project to the one with this UUID:
 lightdash config set-project --uuid "d75379bc-f6e9-4e52-86b2-d897cabacd0c"
 ```
 
-### `lightdash config get-project`
+#### `lightdash config get-project`
 
 Get the current active project that the CLI is configured to use.
 
@@ -332,7 +549,7 @@ lightdash config get-project
 
 This command displays the project that is currently set for CLI operations. Use this to verify which project will be affected by commands like `lightdash validate`, `lightdash preview`, and `lightdash deploy`.
 
-### `lightdash config rename-project`
+#### `lightdash config rename-project`
 
 Rename the currently selected project. This updates the project name in Lightdash and also refreshes your local CLI context so subsequent commands use the new name.
 
@@ -364,7 +581,7 @@ lightdash config rename-project --name "Analytics"
 
 On success, the CLI prints a confirmation with the new project name.
 
-### `lightdash config list-projects`
+#### `lightdash config list-projects`
 
 List all non-preview projects in your organization.
 
@@ -374,7 +591,7 @@ lightdash config list-projects
 
 This command displays all available projects (excluding preview projects) that you can select using `lightdash config set-project`.
 
-### `lightdash config set-source`
+#### `lightdash config set-source`
 
 Stores the dbt source that `lightdash deploy`, `lightdash preview` and `lightdash start-preview` use for the active project. The `--source` option on those commands overrides it. An unknown name fails and lists the project's sources. This matters on a project with [multiple warehouse connections](/workspace-admin/multiple-warehouse-connections#deploy-from-the-cli), where each dbt source can run on its own connection.
 
@@ -385,6 +602,8 @@ lightdash config set-source "Replica models"
 ### `lightdash compile`
 
 Compile Lightdash resources using your local project. For dbt projects, dbt gets compiled first, then your Lightdash explores. If you use [dbt node selection](#dbt-node-selection) to only compile a subset of models, Lightdash will also compile models joined to those models to ensure no field references are broken.
+
+Supports the shared [compilation options](#compilation-options).
 
 For native projects, see [Lightdash YAML validation](/semantic-layer/yaml#step-3-validate-your-yaml). The CLI detects native models and skips dbt compilation and the warehouse catalog. Standard [dbt options](#dbt-options) apply to dbt projects.
 
@@ -414,20 +633,6 @@ The flag is available on the same five compilation commands. `lightdash validate
 
 **Options:**
 
-- `--skip-dbt-compile`
-  - (default: false)
-  - Skip `dbt compile` and deploy from the existing ./target/manifest.json
-- `--skip-warehouse-catalog`
-  - (default: false)
-  - Skip fetch warehouse catalog and use types defined in the YAML
-- `--no-warehouse-credentials`
-  - (default: false)
-  - Compile without any warehouse credentials. Skips dbt compile + warehouse catalog
-- `--validate-warehouse-columns`
-  - (default: false)
-  - Validate supported physical `${TABLE}.column` references against the warehouse
-- `--no-partial-compilation`
-  - Report failures normally handled by partial compilation as errors
 - `--disable-timestamp-conversion [true|false]`
   - (default: false)
   - Snowflake only. Disable converting timestamps to UTC during compilation. Only use this if your timestamp values are already in UTC.
@@ -456,64 +661,14 @@ lightdash compile --no-warehouse-credentials
 
 Spin up a temporary preview project using your local project files and content (charts and dashboards) copied from your [selected project](#lightdash-config-set-project).
 
+Supports the shared [compilation](#compilation-options), [deployment](#deployment-options), and [preview options](#preview-options).
+
 All standard [dbt options](#dbt-options) work with `lightdash preview`.
 
 **Options:**
 
 - `--name [preview name]`
   - Custom name for the preview project. If a name is not provided, a unique, randomly generated name will be created
-- `--start-of-week [number]`
-  - Specifies the first day of the week (used by week-related date functions)
-  - 0 (Monday) to 6 (Sunday)
-- `--source <name>` (deprecated)
-  - --source is deprecated and will be ignored in a future release. Lightdash now works out which dbt source a deploy belongs to from your dbt project. You only need it if the deploy is rejected because the source can't be inferred.
-  - The dbt source to deploy, by name. Its explores use the warehouse connection of that source. Overrides [`lightdash config set-source`](#lightdash-config-set-source). See [multiple warehouse connections](/workspace-admin/multiple-warehouse-connections#deploy-from-the-cli)
-- `--skip-dbt-compile`
-  - (default: false)
-  - Skip `dbt compile` and deploy from the existing ./target/manifest.json
-- `--skip-warehouse-catalog`
-  - (default: false)
-  - Skip fetch warehouse catalog and use types defined in the YAML
-- `--no-warehouse-credentials`
-  - (default: false)
-  - Create the preview without reading warehouse credentials from `profiles.yml`. The preview copies its warehouse connection from the upstream project (your [selected project](#lightdash-config-set-project)). Also skips dbt compile and the warehouse catalog.
-- `--use-dbt-list [true/false]`
-  - (default: true)
-  - Use `dbt list` instead of `dbt compile` to generate dbt manifest.json
-- `--validate-warehouse-columns`
-  - (default: false)
-  - Validate supported physical `${TABLE}.column` references against the warehouse
-- `--no-partial-compilation`
-  - Report failures normally handled by partial compilation as errors
-- `--ignore-errors`
-  - (default: false)
-  - Allows deploy with errors on compile
-- `--table-configuration [prod/all]`  
-  - (default: all)
-  - If set to 'prod' it will copy the table configuration from the source project
-- `--skip-copy-content`
-  - (default: false)
-  - Skip copying content from the source project
-- `--combine-manifest <path-or-url>`
-  - Path or http(s) URL to an additional dbt `manifest.json`. Models present in this file but missing from the preview-generated manifest are merged in so the preview reflects the full project even when dbt was only run on a subset of models. The preview-generated manifest always wins on conflicts. URLs (for example, a presigned S3 URL) are fetched at runtime so the manifest does not need to be downloaded first. Passing this overrides the manifest the CLI would otherwise fetch from Lightdash.
-- `--no-combine`
-  - (default: false)
-  - Skip fetching the upstream project's manifest from Lightdash. By default the CLI fetches it and merges it into the preview, which is what makes models from a project's other [dbt sources](/integrations/dbt/projects#connecting-multiple-dbt-sources) appear in the preview. Use this to preview only your local repo's models. Ignored when `--combine-manifest` is set.
-- `--use-batched-deploy`
-  - (default: false)
-  - Deploy explores in batches instead of a single request. Useful for large projects that exceed payload size limits
-- `--batch-size [number]`
-  - (default: 50)
-  - Number of explores to include in each batch when using batched deploy
-- `--parallel-batches [number]`
-  - (default: 1)
-  - Number of batches to upload in parallel when using batched deploy. Use with caution as higher values may overwhelm the server
-- `--expires-in <hours>`
-  - (default: the upstream project's configured default, or 720 if there is no upstream project)
-  - Number of hours until the preview project auto-expires. Values above the upstream project's [maximum preview expiration](/workflow/preview-projects#preview-expiration) are silently capped to the maximum.
-- `--disable-timestamp-conversion [true|false]`
-  - (default: false)
-  - Snowflake only. Disable converting timestamps to UTC. Applied and persisted when creating the preview project. When updating an existing preview, the flag is ignored with a warning and the saved project setting is used instead.
 
 **Examples:**
 
@@ -533,67 +688,14 @@ lightdash preview --start-of-week=0 --select "tag:marketing"
 
 Create a persistent preview project using your local project files and content (charts and dashboards) copied from your [selected project](#lightdash-config-set-project).
 
+Supports the shared [compilation](#compilation-options), [deployment](#deployment-options), and [preview options](#preview-options).
+
 All standard [dbt options](#dbt-options) work with `lightdash start-preview`.
 
 **Required argument:**
 
 - `--name [preview name]`
   - Name for the preview project. If a preview project with this name already exists, it will be updated, otherwise it will create a new preview project.
-
-**Options:**
-
-- `--start-of-week [number]`
-  - Specifies the first day of the week (used by week-related date functions)
-  - 0 (Monday) to 6 (Sunday)
-- `--source <name>` (deprecated)
-  - --source is deprecated and will be ignored in a future release. Lightdash now works out which dbt source a deploy belongs to from your dbt project. You only need it if the deploy is rejected because the source can't be inferred.
-  - The dbt source to deploy, by name. Its explores use the warehouse connection of that source. Overrides [`lightdash config set-source`](#lightdash-config-set-source). See [multiple warehouse connections](/workspace-admin/multiple-warehouse-connections#deploy-from-the-cli)
-- `--skip-dbt-compile`
-  - (default: false)
-  - Skip `dbt compile` and deploy from the existing ./target/manifest.json
-- `--skip-warehouse-catalog`
-  - (default: false)
-  - Skip fetch warehouse catalog and use the types defined in YAML  
-- `--no-warehouse-credentials`
-  - (default: false)
-  - Create the preview without reading warehouse credentials from `profiles.yml`. The preview copies its warehouse connection from the upstream project (your [selected project](#lightdash-config-set-project)). Also skips dbt compile and the warehouse catalog. When updating an existing preview, keeps the credentials it already has.
-- `--use-dbt-list [true/false]`
-  - (default: true)
-  - Use `dbt list` instead of `dbt compile` to generate dbt manifest.json
-- `--validate-warehouse-columns`
-  - (default: false)
-  - Validate supported physical `${TABLE}.column` references against the warehouse
-- `--no-partial-compilation`
-  - Report failures normally handled by partial compilation as errors
-- `--ignore-errors`
-  - (default: false)
-  - Allows deploy with errors on compile
-- `--table-configuration [prod/all]`  
-  - (default: all)
-  - If set to 'prod' it will copy the table configuration from the source project
-- `--skip-copy-content`
-  - (default: false)
-  - Skip copying content from the source project
-- `--combine-manifest <path-or-url>`
-  - Path or http(s) URL to an additional dbt `manifest.json`. Models present in this file but missing from the preview-generated manifest are merged in so the preview reflects the full project even when dbt was only run on a subset of models. The preview-generated manifest always wins on conflicts. URLs (for example, a presigned S3 URL) are fetched at runtime so the manifest does not need to be downloaded first. Passing this overrides the manifest the CLI would otherwise fetch from Lightdash.
-- `--no-combine`
-  - (default: false)
-  - Skip fetching the upstream project's manifest from Lightdash. By default the CLI fetches it and merges it into the preview, which is what makes models from a project's other [dbt sources](/integrations/dbt/projects#connecting-multiple-dbt-sources) appear in the preview. Use this to preview only your local repo's models. Ignored when `--combine-manifest` is set.
-- `--use-batched-deploy`
-  - (default: false)
-  - Deploy explores in batches instead of a single request. Useful for large projects that exceed payload size limits
-- `--batch-size [number]`
-  - (default: 50)
-  - Number of explores to include in each batch when using batched deploy
-- `--parallel-batches [number]`
-  - (default: 1)
-  - Number of batches to upload in parallel when using batched deploy. Use with caution as higher values may overwhelm the server
-- `--expires-in <hours>`
-  - (default: the upstream project's configured default, or 720 if there is no upstream project)
-  - Number of hours until the preview project auto-expires. Values above the upstream project's [maximum preview expiration](/workflow/preview-projects#preview-expiration) are silently capped to the maximum.
-- `--disable-timestamp-conversion [true|false]`
-  - (default: false)
-  - Snowflake only. Disable converting timestamps to UTC. Applied and persisted when creating the preview project. When updating an existing preview, the flag is ignored with a warning and the saved project setting is used instead.
 
 **Re-running `lightdash start-preview` refreshes the expiration.** If the named preview already exists, `expires_at` is recomputed from the moment of the re-run using the same rules as a fresh preview (bounded by the upstream project's default and maximum). Omitting `--expires-in` on a re-run resets the expiration to the upstream project's default — a re-run is treated as confirmation that the preview is still in use.
 
@@ -621,6 +723,8 @@ lightdash stop-preview --name "neon unicorn"
 
 Compiles and deploys the current project to your [selected Lightdash Cloud project](#lightdash-config-set-project).
 
+Supports the shared [compilation](#compilation-options) and [deployment options](#deployment-options).
+
 <Warning>
   `lightdash deploy` pushes directly to your production project. Use [`lightdash preview`](#lightdash-preview) for local development and [CI/CD](/workflow/set-up-ci-cd#deploy-changes-to-lightdash) for production deploys. See [Deploy changes to production](/workflow/cli/deploy) for the full safe-deploy guidance.
 </Warning>
@@ -635,43 +739,8 @@ For native projects, see [Deploy Lightdash YAML](/semantic-layer/yaml#step-4-dep
 
 - `--create [project_name]`
   - Create a new project. If a project name is not provided, you'll be prompted for one on creation
-- `--ignore-errors`
-  - (default: false)
-  - Allows deploy with errors on compile
-- `--start-of-week [number]`
-  - Specifies the first day of the week (used by week-related date functions)
-  - 0 (Monday) to 6 (Sunday)
-- `--source <name>` (deprecated)
-  - --source is deprecated and will be ignored in a future release. Lightdash now works out which dbt source a deploy belongs to from your dbt project. You only need it if the deploy is rejected because the source can't be inferred.
-  - The dbt source to deploy, by name. Its explores use the warehouse connection of that source. Overrides [`lightdash config set-source`](#lightdash-config-set-source). See [multiple warehouse connections](/workspace-admin/multiple-warehouse-connections#deploy-from-the-cli)
-- `--skip-dbt-compile`
-  - (default: false)
-  - Skip `dbt compile` and deploy from the existing ./target/manifest.json
-- `--skip-warehouse-catalog`
-  - (default: false)
-  - Skip fetch warehouse catalog and use types defined in the YAML
-- `--no-warehouse-credentials`
-  - (default: false)
-  - Compile without any warehouse credentials. Skips dbt compile + warehouse catalog
-- `--use-dbt-list [true|false]`
-  - (default: true)
-  - Use `dbt list` instead of `dbt compile` to generate dbt manifest.json
 - `--combine-manifest <path-or-url>`
   - Path or http(s) URL to an additional dbt `manifest.json`. Models present in this file but missing from the deploy-generated manifest are merged in so the deploy reflects the full project even when dbt was only run on a subset of models. The deploy-generated manifest always wins on conflicts. URLs (for example, a presigned S3 URL) are fetched at runtime so the manifest does not need to be downloaded first. Unlike `preview` and `start-preview`, `deploy` never fetches a manifest from Lightdash on its own, so this flag is the only way to combine one.
-- `--validate-warehouse-columns`
-  - (default: false)
-  - Validate supported physical `${TABLE}.column` references against the warehouse
-- `--no-partial-compilation`
-  - Report failures normally handled by partial compilation as errors
-- `--use-batched-deploy`
-  - (default: false)
-  - Deploy explores in batches instead of a single request. Useful for large projects that exceed payload size limits
-- `--batch-size [number]`
-  - (default: 50)
-  - Number of explores to include in each batch when using batched deploy
-- `--parallel-batches [number]`
-  - (default: 1)
-  - Number of batches to upload in parallel when using batched deploy. Use with caution as higher values may overwhelm the server
 - `--disable-timestamp-conversion [true|false]`
   - (default: false)
   - Snowflake only. Disable converting timestamps to UTC. Only honored together with `--create`; the value is persisted to the new project. When deploying to an existing project, the flag is ignored with a warning and the saved project setting is used instead.
@@ -738,6 +807,8 @@ The two CLI commands above (`lightdash deploy` and `lightdash refresh`) are ofte
 
 Validates a project by comparing the content in your currently selected project against your local project files. Returns all charts and dashboards that have errors.
 
+Supports the shared [compilation options](#compilation-options).
+
 All standard [dbt options](#dbt-options) work with `lightdash validate`.
 
 **Options:**
@@ -747,26 +818,12 @@ All standard [dbt options](#dbt-options) work with `lightdash validate`.
 - `--preview`
   - (default: false)
   - Validate the last preview if available
-- `--skip-dbt-compile`
-  - (default: false)
-  - Skip `dbt compile` and deploy from the existing ./target/manifest.json
-- `--skip-warehouse-catalog`
-  - (default: false)
-  - Skip fetch warehouse catalog and use types defined in the YAML
-- `--use-dbt-list [true/false]`
-  - (default: true)
-  - Use `dbt list` instead of `dbt compile` to generate dbt manifest.json
 - `--only [elems...]`
   - (default: ["charts","dashboards","tables"])
   - Specify project elements to validate
 - `--severity <level>`
   - (default: "error")
   - Minimum issue level that fails the command. `error` reports validation errors only and hides chart configuration warnings. `warning` also reports chart configuration warnings and treats them as errors, so the command exits with return code 1 when any warning exists. See [Treat warnings as errors](/workflow/cli/validate#treat-warnings-as-errors)
-- `--validate-warehouse-columns`
-  - (default: false)
-  - Validate supported physical `${TABLE}.column` references. Tables are included in validation by default; when using `--only`, the list must include `tables`
-- `--no-partial-compilation`
-  - Report failures normally handled by partial compilation as errors
 - `--include-spaces <spaceSlugs...>`
   - Only report chart and dashboard validation errors from these spaces. Matching cascades recursively into sub-spaces via parent space relationships, so passing a parent space slug also includes everything under it. Use the same `spaceSlug` identifiers that appear in `lightdash download` output. Space slugs aren't unique — if the same slug exists in multiple spaces, all of them (and their sub-spaces) are matched. Mutually exclusive with `--exclude-spaces`.
 - `--exclude-spaces <spaceSlugs...>`
@@ -803,20 +860,13 @@ lightdash validate --include-spaces orders
 
 Generates a new `schema.yml` file or updates existing `schema.yml` for selected model(s). Use this command to auto-generate Lightdash-ready YAML schema files from your database columns so your dbt models appear as tables in Lightdash.
 
+Supports the shared [schema generation options](#schema-generation-options).
+
 All standard [dbt options](#dbt-options) work with `lightdash generate`.
 
 
 **Options:**
 
-- `-y` or `--assume-yes`
-  - (default: false)
-  - assume yes to prompts
-- `--exclude-meta`
-  - (default: false)
-  - exclude Lightdash metadata from the generated .yml
-- `--preserve-column-case`
-  - (default: false)
-  - preserve original casing of column names in generated schema files
 - `--skip-existing`
   - (default: false)
   - skip files that already exist
@@ -859,7 +909,11 @@ lightdash generate-exposures --output ./lightdash-exposures.yml
 ```
 
 
-### `lightdash dbt run`
+### `lightdash dbt`
+
+Run dbt commands through Lightdash. The `run` subcommand supports the [schema generation options](#schema-generation-options) and [dbt options](#dbt-options).
+
+#### `lightdash dbt run`
 
 Runs dbt and then generates or updates `schema.yml` file(s) for models that have columns missing or changed from the existing `schema.yml` files.
 
@@ -868,16 +922,8 @@ Any dbt option that works with `dbt run` will also work with `lightdash dbt run`
 
 **Options:**
 
-- `--exclude-meta`
-  - (default: false)
-  - exclude Lightdash metadata from the generated .yml
-- `--assume-yes` or `-y`
-  - assume yes to prompts (default: false)
 - `--assume-no` or `-no`
   - assume no to prompts (default: false)
-- `--preserve-column-case`
-  - (default: false)
-  - preserve original casing of column names in generated schema files
 
 
 **Example:**
@@ -893,6 +939,8 @@ lightdash dbt run --select mymodel
 
 Downloads all charts and dashboards from your Lightdash project as code. A `lightdash` directory is created in your working directory and all of the charts and dashboards are written there as .yml files.
 
+Supports the shared [content transfer options](#content-transfer-options).
+
 E.g. if you're running this command inside your dbt directory (eg: `/home/javi/dbt`) then it will create a folder (`/home/javi/dbt/lightdash`).
 
 You can make changes to the code and upload these changes back to your Lightdash project. Content that's been downloaded as code can still be managed in the Lightdash UI.
@@ -900,69 +948,30 @@ You can make changes to the code and upload these changes back to your Lightdash
 
 **Options:**
 
-- `--charts` or `-c`
-  - select specific charts as code to download from your project. Use the chart SLUG, UUID or URL to specify the chart
-- `--dashboards` or `-d`
-  - select specific dashboards as code to download from your project. This will also download all charts in the dashboard as code. Use the dashboard SLUG, UUID or URL to specify the dashboard
-- `--path` or `-p`
-  - specify a custom path to a directory where you want the downloaded files to be written to. You can use the full path, or a relative path to a directory
-- `--project <project uuid>`
-  - download all charts and dashboards from a specific project. You can find the project UUID for a project from a Lightdash URL. E.g. here, the project UUID is `123-project-uuid` `https://app.lightdash.cloud/projects/123-project-uuid/`
 - `--language-map` or `-l`
   - (default: false)
   - generate `<item name>.language.map.yml` for the downloaded charts and dashboards with all translatable text from charts and dashboards
-- `--nested`
-  - (default: false)
-  - split downloaded content into sub-folders matching the spaces in your project
-- `--skip-spaces`
-  - (default: false)
-  - skip downloading [`.space.yml` files](/workflow/content-as-code#space-management) (space metadata and access policies). Use this when you only want to reconcile charts and dashboards.
-- `--spaces-only`
-  - (default: false)
-  - download only [`.space.yml` files](/workflow/content-as-code#space-management) — no charts or dashboards. Useful for permission-only PRs and cross-instance access promotions. Strict: has no chart/dashboard fallback if the access-aware space endpoint is unavailable.
 - `--root-spaces`
   - (default: false)
   - write new flat `.space.yml` downloads at the `lightdash/` root instead of `lightdash/spaces/` (legacy layout). Existing files are always updated in place regardless of this flag. Cannot be combined with `--nested`.
 - `--strip-pivot-series`
   - (default: false)
   - strip per-value pivot series config from chart YAML so it's portable across projects. Cartesian chart series that are tied to specific pivot field values are rewritten to reference only the underlying x/y fields, and duplicates collapsed into a single entry. Use this when the source project's pivot values don't exist in the target project (for example, when reusing chart YAML as a template), so the upload doesn't fail or render with the original project's hardcoded series. Only applies to regular charts; SQL charts and dashboards are unaffected.
-- `--virtual-views <slugs...>`
-  - opt-in flag to download specific [virtual views](/semantic-layer/virtual-views) as code. Pass one or more virtual-view slugs. Each view is written to `lightdash/virtual-views/<slug>.yml`. Virtual views are not included in a bare `lightdash download` — use this flag or `--include-virtual-views` to opt in.
 - `--include-virtual-views`
   - (default: false)
   - opt-in flag to download every [virtual view](/semantic-layer/virtual-views) in the project as code. Use `--virtual-views <slugs...>` instead when you only want specific views.
-- `--documents <slugs...>`
-  - opt-in flag to download specific [documents](/explore/documents#download-and-upload-with-the-cli) as code. Pass one or more document slugs. Each document is written to `lightdash/documents/<slug>.yml`. Documents are not included in a bare `lightdash download` — use this flag or `--include-documents` to opt in.
 - `--include-documents`
   - (default: false)
   - opt-in flag to download every [document](/explore/documents#download-and-upload-with-the-cli) you can view in the project as code. `--include-all` also includes documents, and skips them with a warning when documents aren't enabled.
-- `--homepages <names...>`
-  - opt-in flag to download specific published [homepages](/workflow/content-as-code#homepages-as-code) as code (enterprise only). Pass one or more exact homepage names, quoted when they contain spaces. Each homepage is written to `lightdash/homepages/<name>.yml`. A name that does not exist or is not published fails the download. Homepages are not included in a bare `lightdash download`.
 - `--include-homepages`
   - (default: false)
   - opt-in flag to download every published [homepage](/workflow/content-as-code#homepages-as-code) in the project as code (enterprise only). Requires Homepage to be enabled and the **Manage project homepage** permission. `--include-all` also includes homepages, and skips them with a warning when Homepage isn't enabled or you lack permission.
-- `--apps <refs...>`
-  - opt-in flag to also download specific [data apps](/data-apps/download-data-apps-as-code) as code (enterprise only). Pass one or more app references — a slug, UUID, or app URL. Works for apps that haven't been added to a space, and is never capped. Each app is written to `lightdash/apps/<slug>/` as a locally buildable project: `lightdash-app.yml` manifest (with the app's `slug`, `name`, `description`, and linked external connections), the app's `src/` tree, `package.json` / `pnpm-lock.yaml`, local build scaffolding (`vite.config.js`, `tsconfig.json`, `index.html`), a read-only `.lightdash/context/` snapshot of the project's semantic layer, and agent skill files (`AGENTS.md`, `.claude/skills/`). The built output is not included — the server rebuilds it on upload. Dashboards you download bring their referenced data apps along automatically. [Custom chart types](/visualizations/chart-studio) are a separate resource: an `--apps` ref that points at a chart type is skipped with a warning — download it with `--chart-types` instead.
-- `--include-apps`
-  - (default: false)
-  - opt-in flag to download every [data app](/data-apps/download-data-apps-as-code) in the project as code (enterprise only), capped at `--apps-limit`. Use `--apps <refs...>` to fetch a specific set instead.
 - `--apps-limit <n>`
   - (default: 50)
   - cap on the number of apps returned by `--include-apps`.
-- `--apps-only`
-  - (default: false)
-  - download only data apps, skipping charts, dashboards, and space files (implies `--skip-charts --skip-dashboards --skip-spaces`). Requires `--apps <refs...>` or `--include-apps`. Recommended for app-focused checkouts. Cannot be combined with `--chart-types-only`.
-- `--chart-types <refs...>`
-  - opt-in flag to also download specific [custom chart types](/visualizations/chart-studio) as code (enterprise only). Pass one or more references — a slug, UUID, or chart type URL. Each chart type is written to `lightdash/chart-types/<slug>/` with the same locally buildable layout as a data app folder, and its `lightdash-app.yml` manifest carries a `vizSchema` field with the chart type's declared inputs so it round-trips to the destination on upload. A ref that points at a data app is skipped with a warning — download it with `--apps` instead. Charts you download bring the chart types they render with along automatically, since a chart file without its chart type can't be uploaded elsewhere.
-- `--include-chart-types`
-  - (default: false)
-  - opt-in flag to download every [custom chart type](/visualizations/chart-studio) in the project as code (enterprise only), capped at `--chart-types-limit`. Use `--chart-types <refs...>` to fetch a specific set instead.
 - `--chart-types-limit <n>`
   - (default: 50)
   - cap on the number of chart types returned by `--include-chart-types`.
-- `--chart-types-only`
-  - (default: false)
-  - download only custom chart types, skipping charts, dashboards, and space files (implies `--skip-charts --skip-dashboards --skip-spaces`). Bare `--chart-types-only` downloads every chart type in the project; pass `--chart-types <refs...>` to select a subset. Cannot be combined with `--apps-only`.
 - `--external-connections <slugs...>`
   - opt-in flag to download specific [external connection](/data-apps/external-connections) definitions to `lightdash/external-connections/<slug>.yml`. Secrets are never written to disk — provide them via environment variables on upload.
 - `--include-external-connections`
@@ -974,14 +983,9 @@ You can make changes to the code and upload these changes back to your Lightdash
 - `--skip-dashboards`
   - (default: false)
   - skip downloading dashboards
-- `--agents <slugs...>`
-  - opt-in flag to also download specific AI agents as code. Pass one or more agent slugs or UUIDs. Files are written to `lightdash/ai-agents/<slug>.yml` and include evaluation suite definitions and prompts, but never evaluation run history. See [AI agents as code](/agents/agents-as-code) for the YAML schema and lifecycle rules.
 - `--include-agents`
   - (default: false)
   - opt-in flag to download every AI agent in the project as code. The endpoint is paginated, so the CLI walks all pages automatically. Agent files are written to `lightdash/ai-agents/`. Bare `lightdash download` does not include agents.
-- `--organization`
-  - (default: false)
-  - switch to organization mode and download [organization-scoped content](/workflow/content-as-code#organization-content-as-code) — [custom roles](/workflow/content-as-code#custom-roles-as-code), [users](/workflow/content-as-code#users-as-code), [groups](/workflow/content-as-code#groups-as-code), and [data app themes](/data-apps/customize-themes#themes-as-code) — instead of project content. Files are written to `lightdash/custom-roles/<role-slug>.yml`, `lightdash/users/<email-slug>.yml`, `lightdash/groups/<group-slug>.yml`, and `lightdash/themes/<theme-slug>/`. Theme packages are staged and validated before the local `themes/` directory is replaced, so a failed theme download preserves the previous local theme set. A successful download removes local theme directories that no longer exist remotely. Requires organization admin permissions. If the groups feature is disabled on the instance, the groups folder is skipped (run with `--verbose` for the explanation). Cannot be combined with project-content flags such as `--charts`, `--dashboards`, `--project`, or `--nested`.
 
 **Examples:**
 
@@ -1094,6 +1098,8 @@ lightdash download --organization
 
 Uploads charts and dashboards that you've made changes to from the `lightdash/` directory in your dbt project to your Lightdash project. To upload new content as code to your project, you need to use the option `--force` (see **Options** below).
 
+Supports the shared [content transfer options](#content-transfer-options).
+
 If there have been changes made to a chart or dashboard in the application that is being uploaded from code, `lightdash upload` will overwrite the changes.
 
 <Note>
@@ -1104,23 +1110,9 @@ If there have been changes made to a chart or dashboard in the application that 
 
 - `--force`
   - required to create new content as code that doesn't exist in your Lightdash project yet — without it, `lightdash upload` only updates existing content. Also required to apply destructive [virtual view](/semantic-layer/virtual-views) column changes (removing a column or changing its type).
-- `--charts` or `-c`
-  - select specific charts as code to upload back to your project. Use the chart SLUG to specify the chart
-- `--dashboards` or `-d`
-  - select specific dashboards as code to upload back to your project. Use the dashboard SLUG to specify the dashboard
-- `--path` or `-p`
-  - specify a custom path to a directory where the files you want to upload are. You can use the full path, or a relative path to a directory
-- `--project <project uuid>`
-  - upload all charts and dashboards from a specific project. You can find the project UUID for a project from a Lightdash URL. E.g. here, the project UUID is `123-project-uuid` `https://app.lightdash.cloud/projects/123-project-uuid/`
 - `--skip-space-create`
   - (default: false)
   - Skip space creation if it does not exist
-- `--skip-spaces`
-  - (default: false)
-  - skip uploading [`.space.yml` files](/workflow/content-as-code#space-management). Charts and dashboards still upload as normal, and existing space permissions are left untouched.
-- `--spaces-only`
-  - (default: false)
-  - upload only [`.space.yml` files](/workflow/content-as-code#space-management) — no charts or dashboards. Spaces are always uploaded before dependent content, so this is the right flag for a permissions-only promotion between environments. Replacing a space's `access` policy requires actual `manage:Space` on the resolved space; broad `manage:ContentAsCode` alone doesn't bypass restricted-space authorization.
 - `--include-charts`
   - (default: false)
   - Include charts updates when uploading dashboards
@@ -1130,62 +1122,32 @@ If there have been changes made to a chart or dashboard in the application that 
 - `--validate`
   - (default: false)
   - Validate charts and dashboards after upload and display any validation errors
-- `--nested`
-  - (default: false)
-  - expect content to be organized in sub-folders matching the spaces in your project (use this if content was downloaded with `--nested`)
-- `--virtual-views <slugs...>`
-  - specify [virtual view](/semantic-layer/virtual-views) slugs to upload from `lightdash/virtual-views/`. Combine with `--force` to apply destructive column changes.
 - `--skip-virtual-views`
   - (default: false)
   - skip uploading virtual views, even when `lightdash/virtual-views/` contains files
-- `--documents <slugs...>`
-  - specify [document](/explore/documents#download-and-upload-with-the-cli) slugs to upload from `lightdash/documents/`. Without filters, `lightdash upload` uploads every file in that folder.
 - `--skip-documents`
   - (default: false)
   - skip uploading documents, even when `lightdash/documents/` contains files
-- `--homepages <names...>`
-  - upload only the [homepage](/workflow/content-as-code#homepages-as-code) files matching these exact names from `lightdash/homepages/`. Without filters, `lightdash upload` uploads every file in that folder, after the charts, dashboards, spaces, and data apps the homepages reference. A filtered upload does not bring referenced content along, so it must already exist in the destination. Uploads save a draft unless you also pass `--publish`.
 - `--skip-homepages`
   - (default: false)
   - skip uploading homepages, even when `lightdash/homepages/` contains files
 - `--publish`
   - (default: false)
   - publish each uploaded homepage and apply the audience in its `publication` block: default status, group assignments, and role assignments. Without it, uploaded layouts are saved as drafts and viewers keep seeing the currently published version. Requires a `publication` block that is not `null`, and every listed group must exist in the destination organization.
-- `--apps [refs...]`
-  - opt-in flag to also upload [data apps](/data-apps/download-data-apps-as-code) as code (enterprise only). Pass one or more refs (slugs, or legacy UUIDs) to upload just those app folders, or use `--include-apps` to upload every folder under `lightdash/apps/`. The CLI posts each app's `src/` tree and manifest and returns immediately — the destination rebuilds the app in its sandbox and publishes a new version. The app shows a `building` status in the UI until the build finishes. Identity is the manifest's `slug`, upserted in the target project: an existing slug appends a new version (and applies edits to `name` / `description`); a new slug creates a new app. If the source, dependencies, and viz schema are byte-for-byte identical to the latest version, the upload is skipped with `matches v<n>` (name/description edits still apply); pass `--force` to rebuild anyway. Each project runs at most 5 app builds concurrently — if the cap is hit, the CLI waits automatically (up to 10 minutes of consecutive waiting) instead of failing. A folder under `lightdash/apps/` that is actually a [custom chart type](/visualizations/chart-studio) is skipped with a warning — move it to `lightdash/chart-types/` and upload it with `--chart-types`. Uploading requires the [`create:DataApp` scope](/workspace-admin/roles), which is granted to Editor, Developer, and Admin roles. Users with only [`create:DataApp@preview`](/workspace-admin/custom-roles#data-app-scopes) can upload apps to preview projects they created themselves, but not to production or to previews created by teammates. Dashboards you upload push their referenced app folders first, even without `--apps`.
-- `--include-apps`
-  - (default: false)
-  - upload every app folder under `lightdash/apps/`.
-- `--apps-only`
-  - (default: false)
-  - upload only data apps, skipping charts, dashboards, and space reconciliation. Bare `--apps-only` uploads every app folder in `lightdash/apps/`; pass `--apps <refs...>` to select a subset. Recommended for app-focused CI runs.
 - `--skip-app-access`
   - (default: false)
   - upload data apps without applying the [`access` block](/workflow/content-as-code#data-app-access-blocks) in their `lightdash-app.yml`. The CLI drops the block before uploading and prints a warning for each app whose block it drops, so the app's existing sharing is left untouched. Use this when you can edit an app but can't manage its sharing, for example as a space editor.
 - `--app-space <spaceRef>`
   - space (slug or UUID) that new data apps created by this upload land in. Existing apps keep the space they already have. Without this flag, new apps go to the target project's default location. The space must already exist in the target project — resolve slugs to a single match, or pass the space UUID directly.
-- `--chart-types <refs...>`
-  - opt-in flag to also upload [custom chart types](/visualizations/chart-studio) as code (enterprise only). Pass one or more refs — a slug (the folder name), UUID, or chart type URL — to upload just those folders from `lightdash/chart-types/`, or use `--include-chart-types` to upload every folder there. Uploads work like data app uploads: identity is the manifest's `slug`, upserted in the target project, the server rebuilds from source, unchanged uploads are skipped, and the same `create:DataApp` scope is required. The manifest's `vizSchema` is sent alongside the source and persisted on the new version. Chart types are project-global and spaceless, so `--app-space` doesn't apply to them. Unlike dashboard-referenced apps, chart types are never auto-pushed: uploading a chart whose chart type is missing in the target project fails with a message to upload the chart type first.
-- `--include-chart-types`
-  - (default: false)
-  - upload every chart type folder under `lightdash/chart-types/`.
-- `--chart-types-only`
-  - (default: false)
-  - upload only custom chart types, skipping charts, dashboards, and space reconciliation. Bare `--chart-types-only` uploads every folder in `lightdash/chart-types/`; pass `--chart-types <refs...>` to select a subset. Cannot be combined with `--apps-only`.
 - `--allow-custom-dependencies`
   - (default: false)
-  - approve uploading apps that declare [custom dependencies](/data-apps/download-data-apps-as-code#experimental-custom-dependencies) without prompting. Required for non-interactive runs (CI) of apps that add packages beyond the template's base dependencies — without it, the CLI skips those apps with a per-app warning and counts them as failures.
+  - approve uploading apps that declare [custom dependencies](/data-apps/custom-dependencies) without prompting. Required for non-interactive runs (CI) of apps that add packages beyond the template's base dependencies — without it, the CLI skips those apps with a per-app warning and counts them as failures.
 - `--create-new`
   - (default: false)
   - always create a new data app (with a freshly generated slug) from the uploaded source instead of updating the app the manifest references. Useful for forking an app inside the same project.
-- `--agents <slugs...>`
-  - upload only the AI agent files matching these slugs from `lightdash/ai-agents/`. Omit to upload every agent file in that folder. Upload is idempotent — the server creates missing agents, updates existing agents by slug, and leaves unchanged agents alone. Evaluation suites declared in a file are upserted by title, while undeclared suites remain unchanged. See [AI agents as code](/agents/agents-as-code).
 - `--skip-agents`
   - (default: false)
   - skip uploading AI agents even when `lightdash/ai-agents/` contains files. Use this to keep an agents folder in your repo without pushing changes on every `lightdash upload`.
-- `--organization`
-  - (default: false)
-  - switch to organization mode and upload [organization-scoped content](/workflow/content-as-code#organization-content-as-code) — [custom roles](/workflow/content-as-code#custom-roles-as-code), [users](/workflow/content-as-code#users-as-code), [groups](/workflow/content-as-code#groups-as-code), and [data app themes](/data-apps/customize-themes#themes-as-code) — instead of project content. The CLI validates every local theme before making any organization change, then applies custom roles, users, groups, and themes in that order. Document resources are upserted by role name, primary email, or group name; themes are upserted by manifest slug and skipped when unchanged. A missing or empty `lightdash/themes/` directory is a no-op, and removing one theme directory never deletes the remote theme. Theme imports preserve the organization default and are atomic per theme, not per batch. Requires organization admin permissions. Cannot be combined with project-content flags such as `--charts`, `--dashboards`, `--project`, or `--force`. Uploads never delete roles, users, groups, or themes.
 - `--send-invites`
   - (default: false)
   - only valid with `--organization`. When uploading users, send invitation emails to eligible staged users. Users who have already authenticated, are disabled, or already have a valid outstanding invitation are skipped. Without this flag, users authenticate through the instance's existing domain, SSO, or manually triggered invitation flows — credentials are never carried in the YAML.
@@ -1338,8 +1300,6 @@ The command supports regular charts and dashboards. It does not rename SQL chart
   - rename the chart or dashboard in a specific project instead of your currently selected project.
 - `--dry-run`
   - preview the intended slug change and list the local files that would change without renaming the content or writing files.
-- `--verbose`
-  - show detailed command output.
 
 `--dry-run` validates and previews local file changes only. Lightdash checks the source chart or dashboard, permissions, aliases, and target-slug availability when you run the command without `--dry-run`.
 
@@ -1373,9 +1333,15 @@ The command is idempotent. Re-running the same rename safely completes any missi
 
 Aliases reserve their slugs within the project. Creating or uploading another chart or dashboard with a current or historical slug uses the existing content or generates a different unique slug instead of creating an ambiguous duplicate.
 
-### `lightdash apps create`
+### `lightdash apps`
 
-Scaffold a new [data app](/data-apps/download-data-apps-as-code) folder locally. The app is created on the server on your first `lightdash upload`.
+Create, preview, and validate data apps. Each subcommand supports the [global options](#global-options).
+
+The `create` and `preview` subcommands share `--project <project uuid or slug>` to select a project. For `create`, it defaults to your selected project; for `preview`, it defaults to the manifest's `projectUuid`.
+
+#### `lightdash apps create`
+
+Scaffold a new [data app](/workflow/local-data-app-development) folder locally. The app is created on the server on your first `lightdash upload`.
 
 The command derives a slug from the name, checks it's available in the target project, then installs the template's npm packages and generates the shadcn UI components locally — Node.js 20+ (with npm) is required.
 
@@ -1389,8 +1355,6 @@ lightdash apps create <name>
   - set the app description in the manifest.
 - `--slug <slug>`
   - override the slug derived from the name. Must match `[a-z0-9-]` and start with an alphanumeric character.
-- `--project <project uuid>`
-  - the project the app will use (default: your selected project).
 - `--path <path>` or `-p`
   - Lightdash content root (default: `./lightdash`).
 - `--assume-yes` or `-y`
@@ -1411,9 +1375,9 @@ lightdash apps create "Revenue explorer" --slug revenue-v2 --description "New pr
 ```
 
 
-### `lightdash apps preview`
+#### `lightdash apps preview`
 
-Preview a downloaded (or locally created) [data app](/data-apps/download-data-apps-as-code) on your machine against a real Lightdash instance, authenticated as you. Starts the Vite dev server with a loopback proxy that forwards the app's API calls to Lightdash — your API key never reaches the app or the browser. Requires `npm install` in the app folder first.
+Preview a downloaded (or locally created) [data app](/workflow/local-data-app-development) on your machine against a real Lightdash instance, authenticated as you. Starts the Vite dev server with a loopback proxy that forwards the app's API calls to Lightdash — your API key never reaches the app or the browser. Requires `npm install` in the app folder first.
 
 ```console
 lightdash apps preview [path]
@@ -1426,8 +1390,6 @@ lightdash apps preview [path]
 
 **Options:**
 
-- `--project <project uuid>`
-  - preview against a specific project (default: the manifest's `projectUuid`).
 - `--url <url>`
   - Lightdash server URL (default: your login config).
 - `--token <token>`
@@ -1462,9 +1424,9 @@ lightdash apps preview --show-sql 2>&1 | tee preview.log
 ```
 
 
-### `lightdash apps validate`
+#### `lightdash apps validate`
 
-Validate one or more [data apps](/data-apps/download-data-apps-as-code) locally. Checks the app manifest (`lightdash-app.yml`), dependencies (`package.json` and `pnpm-lock.yaml`), source files under `src/`, external connection aliases, and semantic-layer references used in code.
+Validate one or more [data apps](/workflow/local-data-app-development) locally. Checks the app manifest (`lightdash-app.yml`), dependencies (`package.json` and `pnpm-lock.yaml`), source files under `src/`, external connection aliases, and semantic-layer references used in code.
 
 By default, semantic references are checked against the downloaded semantic-layer snapshot in each app's `.lightdash/context/` folder. Pass `--live` to check against fresh explores fetched from the app's project instead.
 
@@ -1485,8 +1447,6 @@ lightdash apps validate [paths...]
   - validate semantic-layer references against fresh explores from each app's project instead of the local snapshot. Requires a project selected via `lightdash config set-project`.
 - `--format <format>`
   - output format: `human` (default) or `json`.
-- `--verbose`
-  - print additional diagnostic output.
 
 **Examples:**
 
@@ -1644,9 +1604,6 @@ lightdash sql <query> -o <output_file>
   - Maximum number of rows to return from the query
 - `--page-size <number>`
   - Number of rows per page (default: 500, max: 5000)
-- `--verbose`
-  - (default: false)
-  - Show detailed output
 
 **Examples:**
 
@@ -1697,9 +1654,6 @@ By default, the command prints a human-readable table of every `database.schema.
 - `--json`
   - (default: false)
   - Emit deterministic JSON instead of a terminal table. Handy for piping into `jq` or feeding to a script.
-- `--verbose`
-  - (default: false)
-  - Show detailed API request output
 
 This command requires an active project. Set one with [`lightdash config set-project`](#lightdash-config-set-project) or the `LIGHTDASH_PROJECT` environment variable. It never returns warehouse credentials or secret connection metadata.
 
@@ -1768,9 +1722,6 @@ This command does not support using dbt options.
 - `-p, --path <path>`
   - Path to a file or directory to lint
   - (default: current directory)
-- `--verbose`
-  - (default: false)
-  - Show detailed validation output including all validated files
 - `-f, --format <format>`
   - Output format: `cli` (default) or `json` (SARIF format)
   - (default: "cli")
@@ -1863,15 +1814,14 @@ lightdash pre-aggregate-check-external [options]
 
 The command runs fully locally. It compiles your dbt project and reads warehouse credentials and dialect from your active `profiles.yml` target — no Lightdash server call is made, so it works before the project is ever deployed.
 
+Supports the shared [`--skip-dbt-compile` option](#compilation-options).
+
 **Options:**
 
 - `--all`
   - Check every external pre-aggregate in the project.
 - `--json`
   - Emit machine-readable JSON instead of human-friendly text. Designed for scripting the table build — wrap each generated SELECT in a `CREATE OR REPLACE TABLE`.
-- `--skip-dbt-compile`
-  - (default: false)
-  - Skip `dbt compile` and read from the existing ./target/manifest.json
 - `--clear-cache`
   - Bypass the warehouse result cache. BigQuery and Snowflake key their caches on query text and can return the pre-rebuild schema without this.
 - `--fail-on-mismatch`
@@ -1881,61 +1831,7 @@ See [External pre-aggregates](/semantic-layer/pre-aggregates/external) for the f
 
 ---
 
-## dbt options
-
-These are options from the dbt Core CLI that also work with some Lightdash CLI commands.
-
-### dbt node selection
-
-You can select a subset of your dbt models by using the following options on any Lightdash commands that support dbt options.
-
-**Node selection:**
-
-- `--select [models...]` or `-s [models...]`
-  - [Read the dbt docs on select](https://docs.getdbt.com/reference/node-selection/syntax#shorthand)
-- `--exclude [models...]`
-  - [Read the dbt docs on exclude](https://docs.getdbt.com/reference/node-selection/exclude)
-- `--selector [selector_name]`
-  - [Read the dbt docs on selector](https://docs.getdbt.com/reference/node-selection/yaml-selectors)
-
-These flags are the only model selection the CLI applies. The [dbt selector](/integrations/dbt/projects#dbt-selector) saved in a project's connection settings is used when Lightdash compiles the project from Git, not by `lightdash deploy`, `lightdash preview` or other CLI commands, so pass the selection again on the command line.
-
-### dbt flags
-
-These dbt flags work with Lightdash commands that support dbt options. [Read the dbt docs on global config flags](https://docs.getdbt.com/reference/global-configs/about-global-configs#available-flags) for details.
-
-- `--project-dir [path]`
-- `--profiles-dir [path]`
-- `--profile [name]`
-- `--target [name]`
-- `--no-version-check`
-- `--state [state]`
-- `--full-refresh`
-- `--defer` (works with `lightdash preview` and `lightdash compile`)
-
-#### `--defer`
-
-`--defer` is commonly paired with `--state` and `--select state:modified+` to limit a preview to changed models. The behavior below is specific to how Lightdash builds the explore list and differs from a plain `dbt build --defer`.
-
-- **`--defer` only resolves Lightdash-joined upstream models against the prod state manifest.** It does not promote arbitrary unmodified models from the state manifest into the preview as standalone explores. With `--select state:modified+`, the preview contains the modified models (compiled to the dev/CI schema), their downstream models, and any models referenced through Lightdash join configs (deferred to the prod relations). Standalone `tag:lightdash` models that are not joined to a modified model will not appear. This is the scope of the fix shipped in [lightdash/lightdash#20672](https://github.com/lightdash/lightdash/pull/20672).
-- **Do not pass `--favor-state` to preview workflows.** `--favor-state` makes selected nodes prefer the prod relation over the freshly built dev relation, which silently routes the modified model back to stale prod data — the opposite of the intent of a PR preview.
-- **The comma in dbt's `--select` is `AND`, not `OR`.** `--select 'tag:lightdash,state:modified+'` resolves to "modified models that are also tagged `lightdash`", which usually narrows to one or two explores rather than the broader set most users expect. Use space-separated arguments (`--select tag:lightdash state:modified+`) for `OR`.
-
-### dbt project variables
-
-You can set dbt project variables in Lightdash commands that support dbt options. [Read the dbt docs on project variables](https://docs.getdbt.com/docs/build/project-variables) for details.
-
-`--vars [vars]`
-
-### dbt threads
-
-You can set the number of threads for dbt in Lightdash commands that support dbt options. [Read the dbt docs on threads](https://docs.getdbt.com/docs/running-a-dbt-project/using-threads) for details.
-
-`--threads [number]`
-
----
-
-## Environment Variables
+## Environment variables
 
 The Lightdash CLI supports various environment variables that can be used to configure its behavior. These are especially useful in CI/CD environments where you want to avoid interactive prompts or need to set credentials programmatically.
 

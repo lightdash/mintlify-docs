@@ -1,19 +1,15 @@
 ---
-title: "Usage analytics"
-description: "Configure, monitor and troubleshoot self-hosted usage analytics"
+title: "Self-hosted usage analytics"
+sidebarTitle: "Usage analytics"
+description: "Configure storage, processing, and monitoring for self-hosted usage analytics"
 tag: "Beta"
 ---
 
 import { FeatureBadge } from '/snippets/feature-badge.jsx';
 
+<div className="feature-badges"><FeatureBadge label="Beta" /> <FeatureBadge label="Self-hosted" /> <FeatureBadge label="Enterprise" /></div>
 
-<div className="feature-badges"><FeatureBadge label="Beta" /> <FeatureBadge label="Enterprise" /></div>
-
-<Info>
-  Use a release that includes organization-wide usage analytics; contact the Lightdash team to confirm support for your release.
-</Info>
-
-The [usage analytics project](/workspace-admin/usage-analytics-project) reads captured events and inventory snapshots from your deployment's object storage. It does not require a customer warehouse or a dbt project.
+Configure object storage and scheduled processing for the [usage analytics project](/workspace-admin/usage-analytics-project) on your self-hosted instance. This page covers deployment setup, monitoring, and recovery; use the feature documentation to create the project, grant access, and use its dashboards.
 
 Use this page to understand [how it works](#how-it-works), [configure the deployment](#configure-the-deployment), [enable processing](#enable-processing), [verify setup](#verify-setup), or [troubleshoot processing](#troubleshooting-processing). For dashboard and metric definitions, see the [product guide](/workspace-admin/usage-analytics-project#build-your-own-analysis).
 
@@ -79,7 +75,7 @@ Generate activity in the enabled organization, then allow the scheduled data ref
 
 An organization administrator can then [create the analytics project](/workspace-admin/usage-analytics-project#create-your-analytics-project) and run a chart for a closed day with known activity. Check that the user, content and date match that activity. To update installed dashboards after an upgrade, follow [Update models and dashboards](/workspace-admin/usage-analytics-project#update-models-and-dashboards).
 
-On releases that support it, [historical backfill](/workspace-admin/usage-analytics-project#historical-backfill) can import supported records still retained in the Lightdash database, including records from before capture was enabled. The linked guide explains included data, exclusions and how to run it for an existing project.
+For retained database records from before capture began, use [historical backfill](/workspace-admin/usage-analytics-project#historical-backfill).
 
 Usage files can contain user identities and content metadata. Restrict bucket access and choose a retention policy that matches your organization's requirements.
 
@@ -136,10 +132,10 @@ Check that the scheduler is running, can reach the application database and stor
 
 ### Recover a failed or partial run
 
-Fix the reported cause, then allow the next serialized scheduled run to process the backlog. Nightly jobs make one whole-job attempt; a failed run does not immediately retry the entire pipeline. Individual storage operations can still retry within that attempt.
+Fix the reported cause, then check the next serialized run. Nightly jobs make one whole-job attempt; individual storage operations can retry within that attempt. Deferred work queues follow-up history-processing jobs, which have their own retries. The nightly job also reschedules exhausted history-processing jobs.
 
-Automatic catch-up covers the previous **seven closed UTC dates**, excluding today. This is a processing window, not a retention policy: older published history remains queryable, but older raw files are not automatically processed. Work limits can leave a run partial, so check the subsequent run's outcome rather than assuming one retry catches up everything.
+Nightly processing prioritizes the previous **seven closed UTC dates**, excluding today. Follow-up history jobs process older retained raw files and rebuild user activity summaries from compacted events. This is separate from the [database history backfill](/workspace-admin/usage-analytics-project#historical-backfill). Work limits can leave a run partial, so monitor subsequent outcomes until the backlog clears. Storage retention still determines which files remain available.
 
-If you need an immediate rerun or recovery outside that window, contact the Lightdash team with your deployed version, affected UTC dates, `runId` and sanitized stage errors. Coordinate the rerun through the scheduler's serialized queue; do not run competing standalone compactors or enqueue duplicate jobs while a run is active. Do not include credentials, event payloads or signed storage URLs in a support report.
+If scheduled recovery stops making progress or you need an immediate rerun, contact the Lightdash team with your deployed version, affected UTC dates, `runId`, and sanitized stage errors. Coordinate the rerun through the scheduler's serialized queue; do not run competing standalone compactors or enqueue duplicate jobs while a run is active. Do not include credentials, event payloads, or signed storage URLs in a support report.
 
-**Sync content** updates model and dashboard definitions; it does not rerun this pipeline. **Backfill available history** imports [supported retained database records](/workspace-admin/usage-analytics-project#historical-backfill); it is a separate operation and does not reconstruct historical People or User activity summaries.
+For model and dashboard changes, use [Sync content](/workspace-admin/usage-analytics-project#update-models-and-dashboards); it does not rerun this pipeline.
