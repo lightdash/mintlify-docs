@@ -1,8 +1,6 @@
 ---
-title: "Download data apps as code"
-sidebarTitle: "Download as code"
-doc-type: tutorial
-description: "Download a data app's source, edit it locally, and publish new versions with the Lightdash CLI"
+title: "Local data app development"
+description: "Create, edit, preview, and publish data apps with the Lightdash CLI"
 ---
 
 import { FeatureBadge } from '/snippets/feature-badge.jsx';
@@ -14,7 +12,7 @@ import { FeatureBadge } from '/snippets/feature-badge.jsx';
   Building data apps locally requires data apps, including the build sandbox, to be enabled on your Lightdash instance. See [Self-hosting data apps](/self-host/enterprise-features/data-apps) if you run your own instance.
 </Info>
 
-Data apps are usually built by prompting the agent in the Lightdash UI, but every app is ultimately a small React project — and you can work on that project directly. The CLI lets you:
+Work on a [data app](/data-apps) as a React project on your computer. The Lightdash CLI lets you:
 
 - **Download** an app's source, check it into git, and review changes in pull requests.
 - **Edit** the app in your own editor, or point your own AI coding agent at it.
@@ -32,9 +30,11 @@ Data apps are usually built by prompting the agent in the Lightdash UI, but ever
 - An **Editor** role or above on the project — uploading requires the `create:DataApp` scope. Non-Editors can be granted `create:DataApp@preview` instead to upload only to preview projects they created themselves; see [Restrict data app uploads to previews](/workspace-admin/custom-roles#restrict-data-app-uploads-to-previews-agentic-development-workflow).
 - **Node.js 20+** (which includes npm) for local builds, previews, and `lightdash apps create`.
 
-## Quickstart: download, edit, upload
+<span id="quickstart-download-edit-upload" />
 
-This ten-minute loop is the core workflow. It assumes you already have an app in your project (built in the UI); to start from nothing instead, skip ahead to [Creating a new app locally](#creating-a-new-app-locally).
+## Download, edit, and upload an app
+
+Start with an app built in the Lightdash UI, or [create an app locally](#creating-a-new-app-locally).
 
 ### 1. Download the app
 
@@ -54,7 +54,7 @@ Every downloaded app is a locally buildable Vite + React project:
 | --- | --- | --- |
 | `src/` | The app's source. **This is the only directory the CLI uploads — edit here.** | Yes |
 | `lightdash-app.yml` | The manifest: `slug` (the app's identity), `name`, `description`, `spaceSlug` (the app's space, if it's in one), linked external connections, an optional [`access` block](/workflow/content-as-code#data-app-access-blocks) for direct sharing, and bookkeeping fields. | Yes (as metadata) |
-| `package.json`, `pnpm-lock.yaml` | The dependency set. Template-only apps ship the standard set; see [Custom dependencies](#experimental-custom-dependencies). | Only when deps differ from the template |
+| `package.json`, `pnpm-lock.yaml` | The dependency set. Template-only apps ship the standard set; see [Custom dependencies](/data-apps/custom-dependencies). | Only when deps differ from the template |
 | `vite.config.js`, `tsconfig.json`, `index.html`, … | Local build scaffolding. Editing these has no effect on the deployed app — the server builds against its own trusted copies. | No |
 | `README.md`, `AGENTS.md`, `.claude/skills/`, `.agents/skills/`, `references/` | Docs and agent skills for humans and AI assistants working on the app. Every app gets an identical copy. | No |
 | `.lightdash/context/` | A read-only, point-in-time snapshot of the source project: `models/` (one YAML file per model in the whole project, listed in `models/_index.md`), `parameters.yml`, `prompt-history.md`, and theme assets. `semantic-layer.yml` only points to `models/`. Re-download to refresh it. | No |
@@ -277,50 +277,13 @@ You never upload compiled output — the server builds every version from source
 
 Because the server rebuild is authoritative, your local `npm run build` is only a convenience pre-check — a local failure (from a Node version mismatch, say) doesn't predict a server failure, which is why the CLI treats it as a warning.
 
-Limits: 5 concurrent builds per project (the CLI waits for a slot automatically), 60 direct custom dependencies, 2 MB lockfile.
+For package and lockfile limits, see [Custom dependencies](/data-apps/custom-dependencies).
 
 <span id="experimental-custom-dependencies" />
 
 ## Custom dependencies
 
-<FeatureBadge label="Experimental" />
-
-<Info>
-  Custom dependencies are off by default. On Lightdash Cloud, contact Lightdash support to enable them for your organization. On self-hosted instances, add `enable-data-app-custom-dependencies` to `LIGHTDASH_ENABLE_FEATURE_FLAGS` (see [feature flags](/self-host/customize-deployment/environment-variables#feature-flags)). Uploading an app that declares custom dependencies also requires the `manage:DataAppDependency` permission, granted only to admins by default.
-</Info>
-
-By default, apps build against a fixed, pre-installed library set that Lightdash vets and ships — edits to `package.json` are ignored. Turning custom dependencies on lets an app pull additional packages from the public npm registry into the build sandbox, which is why it's opt-in:
-
-* A third-party library becomes part of your app. It can shape how the app behaves and touch any data the app is allowed to query, so the main consideration is trust in the libraries you choose. That's also why the upload permission (`manage:DataAppDependency`) is restricted to admins by default.
-* Lightdash adds several layers of protection to reduce that risk: every uploaded version is screened against the OSV malicious-package feed, installs use `--frozen-lockfile --ignore-scripts` so lifecycle scripts can't run, the sandbox has no access to Lightdash credentials, and network egress is limited to the npm registry.
-
-With custom dependencies enabled, you can extend the pre-installed set from the app folder:
-
-```bash
-cd lightdash/apps/revenue-explorer
-pnpm add deck.gl          # updates package.json AND pnpm-lock.yaml
-lightdash upload --apps revenue-explorer
-```
-
-Both files matter: the dependency set is `package.json` plus a matching `pnpm-lock.yaml` (the server installs with pnpm, so an npm lockfile won't do). On upload, the CLI shows what you're adding and asks for confirmation:
-
-```text
-"revenue-explorer" declares custom dependencies that will be installed in the build sandbox:
-  + deck.gl@^9.3.5 (not in default template)
-Upload "revenue-explorer" with custom dependencies?
-```
-
-If the upload fails with `Custom app dependencies are not enabled for your organization`, you have the `manage:DataAppDependency` permission, but custom dependencies aren't turned on for your organization.
-
-**Rules the CLI and server enforce:**
-
-- Registry semver specs only (`^9.3.5`, `~1.2.0`, ranges). No `git:`/`file:`/URL specs and no dist-tags like `latest`.
-- At most 60 direct dependencies; lockfile ≤ 2 MB and consistent with `package.json`.
-- Every version is screened against the OSV malicious-package feed at upload; known-bad versions are rejected outright.
-
-**Additional hardening:** install scripts also never run on your machine — the scaffolded `.npmrc` sets `ignore-scripts=true`; keep it. Self-hosted instances can further tighten the policy by requiring a minimum package release age (`LIGHTDASH_APP_DEPENDENCY_MIN_RELEASE_AGE_DAYS`) or pointing installs at an internal mirror (`LIGHTDASH_APP_DEPENDENCY_REGISTRY_HOSTS`).
-
-**Uploads are the only way to change dependencies.** When someone iterates on the app in the UI, the AI builder can edit `src/` but the stored dependency set is restored as-is — its `package.json` edits are ignored. Dependency changes on a version are visible in the version history.
+See [Custom dependencies](/data-apps/custom-dependencies) to add packages, check the upload requirements, and troubleshoot dependency errors.
 
 ## CLI reference
 

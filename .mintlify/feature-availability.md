@@ -7,7 +7,7 @@ Use this workflow before adding or changing a plan, add-on, deployment, or enabl
 | Requirement | Evidence | Documentation |
 | --- | --- | --- |
 | Commercial access | [Lightdash pricing](https://www.lightdash.com/pricing) | Plan or Add-on badge; name the add-on beside it |
-| Deployment | Registration and runtime support in Cloud and self-hosted paths | Cloud-only or Self-hosted badge only when the other deployment is excluded |
+| Deployment | Registration and runtime support in Cloud and self-hosted paths | Cloud-only for features excluded from self-hosted deployments; Self-hosted for instructions about running your own instance |
 | Enablement | Instance configuration, organization settings, flags, defaults, and trials | Feature-specific `<Info>` and canonical setup instructions |
 | Permissions | Backend authorization and the corresponding UI control | Prerequisites or the affected step |
 
