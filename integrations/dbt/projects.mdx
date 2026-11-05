@@ -282,7 +282,7 @@ From the panel you can:
 - **Edit the primary source**: the primary source is edited via the normal dbt connection form. It cannot be removed.
 
 <Note>
-  An additional source that authenticates with the Lightdash GitHub App (the OAuth connection) only compiles if that installation has access to its repository. An installation scoped to **Only select repositories** blocks any repo it wasn't given, and a blocked additional source doesn't fail with the `Not Found` error described in [Fix a GitHub App "Not Found" error](/integrations/connect-project#fix-a-github-app-not-found-error) — it fails to load or parse that source instead, for example `could not parse, list models, or validate the manifest`. Add the repository to the installation from **Organization settings** → **Integrations** → **GitHub**, or from the installation's settings on the GitHub organization side, then retry the refresh.
+  An additional source that connects through the Lightdash GitHub App only compiles if the app's installation can access its repository. If the installation is set to **Only select repositories** and the repository isn't on the list, Lightdash skips the source with the warning `could not parse, list models, or validate the manifest`, not the error in [Fix a GitHub App "Not Found" error](/integrations/connect-project#fix-a-github-app-not-found-error). Check the repository list on the GitHub card in **Organization settings** → **Integrations**. If the repository is missing, add it in the app installation's **Repository access** settings on GitHub, or click **Reinstall** and select it, then retry the refresh.
 </Note>
 
 If a source's saved credentials can't be loaded, its row in the sources panel shows a warning icon. Other sources keep working normally. Only operations that need that specific source's connection will fail.
@@ -293,10 +293,6 @@ Each additional source has:
 - Its own **dbt connection**: GitHub only. The primary source can use any of Lightdash's supported connection types (GitHub, GitLab, Azure DevOps, Bitbucket, dbt Cloud), but additional sources are limited to GitHub, each with its own repo, branch, subfolder, credentials, and environment variables.
 - **Where this source's models live**: the database and schema the source's models are read from in the project's warehouse. Leave them blank to use the warehouse connection's values, or set them when that dbt project's profile targets a different database or schema.
 - A **precedence**: the order in which sources are merged. Collisions fail the deploy rather than being resolved by precedence (see below). Precedence determines which source is reported as holding the existing definition and which as the duplicate.
-
-<Warning>
-  **An additional source connected with the Lightdash GitHub App needs repository access on that installation.** The app authenticates at the organization level, so if its installation is set to **Only select repositories**, add the additional source's repository to that list in GitHub, under **Settings → Applications → Lightdash → Repository access**. A repository missing from the installation makes that source fail to load.
-</Warning>
 
 ### How compilation and merging works
 
@@ -452,15 +448,15 @@ Every refresh — [Git connection methods](#git-connection-methods), plus **Test
 
 The whole refresh fails with an error naming the source when the **primary source** fails, when compilation hits a dependency cycle, an ambiguous ref, or a timeout or abort, or when sources collide on a model name (collisions are only caught after every source's manifest is merged, so Lightdash can't isolate them to one source).
 
-A failure in an **additional source** doesn't fail the refresh. If an additional source can't load (its repository can't be cloned, or its dbt packages can't be installed), can't compile (its manifest can't be parsed, listed, or validated), or depends on another source that failed, Lightdash skips it and the refresh finishes. The job records a warning naming the source and the reason, for example:
+A failure in an **additional source** doesn't fail the refresh. If an additional source's stored credentials can't be decrypted, or the source can't be cloned, parsed, listed, or validated, Lightdash skips it and the refresh finishes. The job records a warning naming the source and the reason, for example:
 
 ```text
-Source "illuminate_union" failed: could not parse, list models, or validate the manifest; no explores from a previous successful refresh are available; nothing was carried.
+Source "finance" failed: could not parse, list models, or validate the manifest; no explores from a previous successful refresh are available; nothing was carried.
 ```
 
 If that source compiled successfully on an earlier refresh, its Explores from that refresh are kept, and the warning ends with `kept its N explores from the last successful refresh` instead of `nothing was carried`. Those Explores stay as they were at that last successful compile until the source compiles again.
 
-To find out why a source failed, open the job's details — from the job notification during a refresh, or from [compilation history](/workspace-admin/project-compilation-history) afterwards — and read the warning on the compiling step. If the refresh failed outright, use **Download captured logs** on the job for the full saved errors and captured dbt log lines.
+To find out why a source failed, read the warning on the compiling step in the job's details during a refresh, or under `connectionWarnings` in the entry's log in [compilation history](/workspace-admin/project-compilation-history) afterwards. If the refresh failed outright, use **Download captured logs** on the job for the full saved errors and captured dbt log lines.
 
 <Warning>
   **Do not use `lightdash deploy` against a multi-source project.** The CLI compiles the local repo and writes those Explores directly, without merging in the other sources — a CLI deploy will replace the project's Explores with only the local repo's models until the next server-side refresh. Teams using multiple dbt sources should sync via a [Git connection method](#git-connection-methods) and must not run `lightdash deploy` in CI against a multi-source project.
