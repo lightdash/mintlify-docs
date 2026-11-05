@@ -1,0 +1,129 @@
+---
+title: AI settings
+description: Enable AI features and configure organization-wide models and provider credentials
+---
+
+Organization admins control AI availability, default models, and provider credentials in **Settings** → **Ask AI** → **General**. These settings serve agent conversations and other AI features, including data apps and ambient AI. For instance-wide configuration, see [self-hosted AI agents](/self-host/enterprise-features/ai-agents).
+
+## Enable AI features
+
+Before users can see the **Ask AI** button and interact with AI agents, an organization admin must enable AI features. By default, AI features may not be visible to users until this step is completed.
+
+This step requires **Organization Admin** permissions. If you're not an admin, ask your organization admin to enable AI features.
+
+1. Go to **Settings → Ask AI → General**
+2. Find the toggle labeled **Enable AI features for users**
+3. Turn on the toggle to make AI features visible across your organization
+
+When enabled:
+- The **Ask AI** button appears on the homepage and in the navbar
+- Users can interact with AI Agents
+- Admins get [visibility into agent activity](/agents/visibility)
+
+The toggle applies to the whole organization. There is no switch to turn AI features on for some projects only. Inside a project, the **Ask AI** button in the navbar shows to people who can use at least one agent in that project, and to people who can manage the project's agents. In a project with no agents, people who can't manage agents don't see the button. To keep AI out of a project, create agents only in the projects where you want it, and restrict [who can use each agent](/agents/set-up-agents#user-and-group-access-optional).
+
+Project access granted through a [custom role](/workspace-admin/custom-roles) includes agents only if the role has `view:AiAgent` and `create:AiAgentThread`. A project role can't take these scopes away from someone whose organization role already grants them (Interactive Viewer and above), because [permissions are additive](/workspace-admin/custom-roles#how-additive-permissions-work).
+
+## Set an organization default AI model
+
+Admins can choose the default model (and reasoning behavior) used for new AI agent chats across the organization.
+
+1. Go to **Organization settings → Ask AI → General**.
+2. Under **Default AI model**, pick a model from the dropdown. Leave it empty to fall back to the system default.
+3. If the selected model supports reasoning, toggle **High reasoning by default** to start new chats with high reasoning enabled.
+
+The org default applies to every new chat unless an agent overrides it or the user changes the model in the chat. Existing threads keep the model they were started with.
+
+## Bring your own AI providers and models
+
+Instead of using the instance-wide provider keys configured by your Lightdash administrator, org admins can store their organization's own provider API keys and control which models are exposed to users. When a key is set, Ask AI routes that provider's model calls through your org's account — including agent chats, thread-title generation, the Slack agent path, agent readiness checks, doc summarization, the [AI router](/agents/enable-ai-router), ambient AI, [data-app](/data-apps) clarification and sandbox generation, and other agent utility calls.
+
+Both the API keys and the per-provider model availability controls live in one card: **AI providers & models** on the Ask AI → General settings page.
+
+<Note>
+This card is only visible when the `org-ai-custom-providers` feature flag is enabled for your organization. If you don't see it under **Ask AI → Settings → General**, contact [Lightdash support](mailto:support@lightdash.com) to have it turned on.
+</Note>
+
+### How to set a provider key
+
+1. Go to **Organization settings → Ask AI → General**.
+2. In the **AI providers & models** card, find the block for **Anthropic**, **Google Gemini**, or **OpenAI**.
+3. Paste your provider API key into the input and click **Set key**. The key is sent once and encrypted at rest — it is never returned by the API again.
+4. Once saved, the block shows an **Active** badge (with a key icon) and the input placeholder switches to a partially-redacted hint (e.g. `sk-ant-api03-R2D...igAA` for Anthropic, `sk-...j3kl` for OpenAI), similar to Anthropic's and OpenAI's own dashboards.
+5. To rotate a key, paste a new value and click **Update**. To remove a key, click **Remove** — the provider falls back to the instance-wide key (if configured).
+
+The card also confirms where AI agent traffic is being sent:
+
+- When every user-selectable provider is running on an org key, a success callout appears: **"All AI interactions use your organization's API key(s)"**.
+- When a provider is available to users but doesn't have an org key set, its block shows guidance that those models still run on Lightdash's instance default key — add a key for that provider to route it through your own account.
+
+### Custom base URL
+
+Once a provider's key is saved, its block shows an optional **Custom base URL** field. Set it to send that provider's requests to a proxy or gateway that speaks the provider's API — a corporate LLM gateway, for example — instead of the provider's public endpoint. Click **Remove** to return the provider to its default endpoint.
+
+- The value must be an HTTP(S) URL without credentials, a query string, or a fragment.
+- The expected shape mirrors the provider's instance-wide gateway variable: Anthropic takes the base URL before `/v1` (`https://ai-gateway.example.com`), while Google Gemini and OpenAI include the API version path (`https://ai-gateway.example.com/v1beta` and `https://ai-gateway.example.com/v1`).
+- Model names are passed through unchanged, and the model picker still offers only Lightdash's built-in models, so the endpoint must serve those model IDs. For example, Claude Sonnet 5.5 is requested as `claude-sonnet-5-5`; a gateway that routes it to another backend needs an alias under that ID. The access check that unlocks [key-gated models](#key-gated-models) also runs against this endpoint; listings that return models as `vendor/model` are recognized.
+- A custom base URL replaces the instance-wide [corporate gateway](/self-host/enterprise-features/ai-agents#corporate-llm-gateways) configuration for that provider. Requests authenticated with the org key only ever go to the endpoint configured here — never to the instance's gateway, and never with the instance gateway's custom headers.
+
+### Behavior
+
+- Setting a key routes that provider's model calls through the org key. Removing the key falls back to the instance-wide configuration.
+- Providers that are **not** keyed at the org level continue to use the instance configuration, so you can BYO one provider without touching the other.
+- An org-level Anthropic or Google Gemini key cannot be combined with the matching instance-wide gateway (`ANTHROPIC_BASE_URL` or `GEMINI_BASE_URL`) unless the key has its own [custom base URL](#custom-base-url), which replaces the gateway for the org's traffic. Otherwise, remove the org key to use the gateway, or remove the gateway URL to keep routing through the org's own account.
+- The **Default AI model** dropdown includes models for any provider your org has keyed, even when the instance itself has no key configured for that provider. For example, an org that stores its own OpenAI key sees OpenAI models in the dropdown even on an Anthropic-only instance.
+- Provider availability at the org level is validated against each provider's models API on save (with a short timeout). If the check fails, the provider fails closed — models that require the check remain hidden until it succeeds.
+- [Data apps](/data-apps#choosing-a-model) pick a Claude model by tier (**Opus**, **Sonnet**, or **Haiku**), and each tier always runs the newest model in that family. If your Anthropic key can't use the newest version of a tier, data app generation on that tier fails while Ask AI, which uses the exact model you selected, keeps working. Give the key access to the newest version in your Anthropic account.
+
+### Control which models users can pick
+
+Once at least one BYO provider key is set, each provider block gains two controls:
+
+- **Available to users** — toggle a provider off to hide all of its models from the model picker across your org. Existing agents that already reference a hidden model keep working; new selections are blocked.
+- **Allowed models** — a multi-select that restricts which of the provider's models users can pick when creating or editing an agent. Leaving it empty allows every model the provider exposes.
+
+Once an Anthropic key is set, its block also has **Data Apps models** switches for **Opus**, **Sonnet** and **Haiku**. They choose which tiers users can pick when building a [data app](/data-apps#choosing-a-model), separately from **Allowed models**, because each tier always runs the newest model in its family. Apps already built with a hidden tier keep working.
+
+At least one model must remain available across your org, so the settings API rejects updates that would leave zero selectable models. The same applies to the **Data Apps models** switches.
+
+<Note>
+When an org stores only an Anthropic key (no OpenAI key), OpenAI is automatically hidden — Lightdash will not silently fall back to the instance's OpenAI key. Store an OpenAI key too if you want OpenAI models available.
+</Note>
+
+### Amazon Bedrock credentials
+
+To run Ask AI on Claude models in your own AWS account and keep inference in one geography, add a credential under **Amazon Bedrock credentials** in the same card. Click **Add credential** and set:
+
+- **Name** — how projects refer to the credential, for example `Europe (Frankfurt)`.
+- **AWS region** — Tokyo, Osaka, Frankfurt, Ireland, N. Virginia or Oregon. Enable the models you want in that region of your AWS account first.
+- **Inference geography** — where Bedrock may process requests. It defaults to the narrowest choice for the region (Japan, United States or Europe); **Global** widens it.
+- **Bedrock API key** — a Bedrock API key, not an AWS access key pair.
+- **Allowed models** — the Claude models users can pick.
+
+You can add several credentials. The organization default serves everything without its own selection, including Slack routing and thread titles. Organization admins and developers can point a project at another credential in **Project settings** → **AI region**, and, when there's more than one credential, an agent under **AI provider credential** in its settings.
+
+If custom AI providers aren't enabled for your organization, **Project settings** → **AI region** shows *Custom AI providers are not enabled for this organization.* A project already pointed at another credential then has no AI features until you clear the selection or custom providers are turned on.
+
+While a default Bedrock credential is set, Bedrock is the only provider Ask AI uses and nothing falls back to other providers. Agents set to another provider's model stop working until you change their model, and verified-answer search and [AI writeback](/agents/ai-writeback) are unavailable.
+
+### Key-gated models
+
+Some models are hidden by default and only become selectable once your BYO key can access them. Currently this applies to **Claude Opus 4.8** — after you save an Anthropic key, Lightdash verifies access against Anthropic's models API and unlocks the preset automatically.
+
+### Security
+
+- Keys are encrypted at rest using the instance's `LIGHTDASH_SECRET`.
+- The settings API never returns the raw key after it's been set. Reads only expose a `providerApiKeysSet` boolean per provider and the partially-redacted `providerApiKeyHint`.
+- Sending `null` for a provider removes its key.
+- Provider keys and model visibility must be updated in separate requests — the "at least one model available" check would otherwise read a stale key.
+
+### Credential scope
+
+The org key is used for chat and agent utility calls only. The following continue to use the instance-wide keys:
+
+- Embeddings
+- The [evaluation](/agents/create-evaluation-suites) judge
+- [AI writeback](/agents/ai-writeback)
+
+Automatic [issue filing](/agents/issues) is paused while an org has any BYO provider key set, so agent turns never route through the instance provider for issue classification. Remove all BYO keys to re-enable automatic issue filing.
+
