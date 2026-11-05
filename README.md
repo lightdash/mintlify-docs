@@ -270,7 +270,7 @@ npm run audit:external-links
 
 - **[Validate documentation](.github/workflows/validate-docs.yml)** — Type-checks and tests the utilities, validates changed-file documentation rules, checks site-wide links and anchors, and checks for component-rule regressions.
 - **[Check sidebar navigation index](.github/workflows/sidebar-navigation.yml)** — Checks that `sidebar-navigation.js` matches navigation, page titles, and the API schema. The bot can commit the generated update on same-repository PRs; forks need to run `npm run build:sidebar-navigation` and commit the result.
-- **[Learn walkthrough citations](.github/workflows/learn-walkthroughs.yml)** — Checks references to docs text used by Lightdash's in-app guided tours, plus tour generation and ordering. It checks fresh product code against both base and head docs; introduced content failures and incomplete comparisons fail the check.
+- **[Learn walkthrough citations](.github/workflows/learn-walkthroughs.yml)** — Extracts documentation references from current product `main` source and checks their targets against base and head docs. Newly broken targets fail the check; reports identify the source references.
 - **[Audit external links](.github/workflows/validate-docs.yml)** — Runs weekly or manually. Unavailable URLs are advisory; checker execution failures fail the audit.
 
 #### Auto-fixing Image Location Issues
