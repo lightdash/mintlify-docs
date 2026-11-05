@@ -1,0 +1,149 @@
+name: Maintain sidebar navigation index
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sidebar-navigation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Check sidebar navigation index
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      changed: ${{ steps.changes.outputs.changed }}
+
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          check-latest: true
+
+      - name: Regenerate sidebar navigation index
+        run: npm run build:sidebar-navigation
+
+      - name: Detect index changes
+        id: changes
+        run: |
+          if ! git ls-files --error-unmatch sidebar-navigation.js >/dev/null 2>&1 || ! git diff --quiet -- sidebar-navigation.js; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload corrected index
+        if: steps.changes.outputs.changed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sidebar-navigation-index
+          path: sidebar-navigation.js
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Require a current index
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          SAME_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          echo '::error file=sidebar-navigation.js::The sidebar navigation index is stale. Run npm run build:sidebar-navigation.'
+          if [[ "$SAME_REPOSITORY" == 'true' ]]; then
+            echo 'The update job will commit the corrected index to this PR. After that commit, select **Approve workflows to run** in the PR merge box so CI checks the corrected commit.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Fork PRs cannot be updated automatically. Run `npm run build:sidebar-navigation` and commit `sidebar-navigation.js` to your branch. The corrected index is also available as a workflow artifact.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit 1
+
+  update:
+    name: Update sidebar navigation index
+    needs: check
+    if: >-
+      !cancelled() && needs.check.outputs.changed == 'true' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Download corrected index
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sidebar-navigation-index
+          path: generated-index
+
+      - name: Commit index to the checked PR head
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('node:fs');
+            const { owner, repo } = context.repo;
+            const { data: pull } = await github.rest.pulls.get({
+              owner, repo, pull_number: context.payload.pull_request.number,
+            });
+            if (pull.state !== 'open' || pull.base.repo?.full_name !== `${owner}/${repo}` ||
+                pull.head.repo?.full_name !== `${owner}/${repo}` ||
+                pull.head.ref === 'main' || pull.head.ref === pull.base.ref) {
+              core.setFailed('Only open PRs between distinct branches in this repository with a head other than main can be updated.');
+              return;
+            }
+            const expectedHead = context.payload.pull_request.head.sha;
+            if (pull.head.sha !== expectedHead) {
+              core.setFailed('The PR head changed. Let the workflow for the latest commit update the index.');
+              return;
+            }
+            const file = 'generated-index/sidebar-navigation.js';
+            const stat = fs.lstatSync(file);
+            if (!stat.isFile() || stat.size > 2_000_000) {
+              core.setFailed('The generated index must be a regular file smaller than 2 MB.');
+              return;
+            }
+            const content = fs.readFileSync(file).toString('base64');
+            const { data: base } = await github.rest.git.getCommit({ owner, repo, commit_sha: expectedHead });
+            const { data: blob } = await github.rest.git.createBlob({ owner, repo, content, encoding: 'base64' });
+            const { data: tree } = await github.rest.git.createTree({
+              owner, repo, base_tree: base.tree.sha,
+              tree: [{ path: 'sidebar-navigation.js', mode: '100644', type: 'blob', sha: blob.sha }],
+            });
+            const { data: commit } = await github.rest.git.createCommit({
+              owner, repo, message: 'chore(navigation): refresh sidebar index',
+              tree: tree.sha, parents: [expectedHead],
+            });
+            await github.rest.git.updateRef({
+              owner, repo, ref: `heads/${pull.head.ref}`, sha: commit.sha, force: false,
+            });
+            await core.summary.addRaw(
+              `Updated only sidebar-navigation.js in commit ${commit.sha}. Select **Approve workflows to run** in the PR merge box so CI validates this commit.\n`
+            ).write();
+            const marker = '<!-- sidebar-navigation-index -->';
+            const repositoryUrl = `${context.serverUrl}/${owner}/${repo}`;
+            const body = `${marker}\nI refreshed the sidebar navigation index in [${commit.sha.slice(0, 7)}](${repositoryUrl}/commit/${commit.sha}) to match the navigation, page titles, and API schema.\n\n**Next:** someone with write access needs to select **Approve workflows to run** in the PR merge box. GitHub requires this approval because the update uses GITHUB_TOKEN. The follow-up CI run must pass on the corrected commit before merging.\n\n[View the index update run](${repositoryUrl}/actions/runs/${context.runId}).`;
+            try {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: pull.number, per_page: 100,
+              });
+              const existing = comments.find((comment) =>
+                comment.user?.login === 'github-actions[bot]' && comment.body?.includes(marker));
+              if (existing) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+              } else {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: pull.number, body,
+                });
+              }
+            } catch (error) {
+              core.warning(`The index was updated, but the explanation comment could not be posted: ${error.message}`);
+            }

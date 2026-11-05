@@ -88,9 +88,23 @@ content_as_code:
 
 To publish a draft, a developer or admin opens **Project settings** → **Content review**, picks the draft, and clicks **Write back to repo**. Lightdash opens a pull request with the draft's content; merge it and run `lightdash upload`, for example from your deploy CI job, to publish the change. **Dismiss** closes a draft without writing it back. **Content review** appears only on projects connected to GitHub or GitLab.
 
-Sync applies to the whole project — there's no per-dashboard or per-chart toggle in the UI. To stop content being Git-backed, remove `content_as_code.sync: true` from `lightdash.config.yml` (or set it to `false`) and run `lightdash upload` again. This stamps sync off on the project: UI saves to that content publish normally from then on, and no further drafts are created.
+#### See and stop managing Git-backed content
 
-With sync on, a full `lightdash upload` of a directory also releases any Git-backed chart or dashboard whose file is no longer in that directory, and dismisses its open drafts. Only content with a recorded file path is released this way; a filtered upload (`-c`, `-d`) never releases content.
+If your saves on a chart or dashboard keep turning into drafts, it's Git-backed. To check, open its info popover: the **i** icon next to a dashboard's title, or next to **Last edited** on a chart. Git-backed content shows **Source: Repository** and the repository file it comes from.
+
+<Frame>
+  ![A dashboard's info popover showing Source: Repository, the note Not linked to a file in the repository, and a Stop managing from the repository link](/images/workflow/content-as-code/managed-from-repository-dashboard.png)
+</Frame>
+
+**Not linked to a file in the repository** means the content is Git-backed but no file in your repository matches it. Edits made through an AI agent or the MCP server before version 3.113.0 could leave content in this state.
+
+To edit content directly in the UI again, a developer or admin clicks **Stop managing from the repository**, then **Release**. The content stays where it is, saves publish straight away, and open drafts on it are dismissed. If a write-back pull request is open for it, close that on your Git provider.
+
+When the content still has a file in your repository, the popover warns you first. The next `lightdash upload` that includes the file makes it Git-backed again and replaces edits made in the UI. To stop managing it for good, delete the file from your repository. The next full upload then releases it.
+
+<Frame>
+  ![A chart's info popover showing its repository file, a warning that the file is still in the repository, and Release anyway and Cancel links](/images/workflow/content-as-code/managed-from-repository-release-anyway.png)
+</Frame>
 
 ## `lightdash download`
 
@@ -623,6 +637,8 @@ The yml configuration for dashboards as code is extensive. It covers both dashbo
 The examples below are not exhaustive, so if you have additional questions, you can always [reach out to our support team](/support) for more details.
 
 ### Dashboards
+
+For a dashboard with experimental parameter controls and tile assignments, see [Save the dashboard as code](/explore/dashboards/parameter-controls#save-the-dashboard-as-code).
 
 These are the simpler of the two content types.
 
@@ -1160,57 +1176,7 @@ Organization mode cannot be combined with project-content flags such as `--chart
 
 ### Custom roles as code
 
-[Custom roles](/workspace-admin/custom-roles) are managed as code, keyed by role name.
-
-#### When to use it
-
-- Version-control your organization's custom roles alongside charts and dashboards.
-- Copy a role from one Lightdash instance (for example, staging) to another (production) without recreating it by hand in the UI.
-- Review role changes in a pull request before they hit the org.
-
-#### YAML contract
-
-Each custom role serializes to a single file under `lightdash/custom-roles/<role-slug>.yml`:
-
-```yaml
-version: 1
-name: analytics-viewer
-description: Read-only access to analytics content
-level: organization
-scopes:
-  - view:Dashboard
-  - view:SavedChart
-  - view:Space
-```
-
-| Field | Description |
-| --- | --- |
-| `version` | Format version. Currently always `1`. |
-| `name` | The role's display name. This is the portable identity — a role is matched to an existing role by exact name within the organization. |
-| `description` | Optional human-readable description. Set to `null` to clear an existing description. |
-| `level` | Either `organization` or `project`. Determines which scopes are allowed. Immutable — once a role is created, its level cannot be changed via upload. |
-| `scopes` | The list of scope grants for the role. See the [scope reference](/workspace-admin/custom-roles#scope-reference) for available scopes. |
-
-The filename is derived from the role name; the CLI creates safe filenames and disambiguates collisions automatically. A missing or empty `custom-roles/` directory is a no-op.
-
-#### Download and upload
-
-Download writes every user-defined custom role in your organization to `lightdash/custom-roles/*.yml`. System roles are not included.
-
-For each file in `lightdash/custom-roles/`, the backend resolves the role by `name` and returns one of three outcomes:
-
-- **Created** — no role with that name exists yet, so a new one is created.
-- **Updated** — the role exists and either the description or the set of scopes has changed.
-- **Unchanged** — the role exists and already matches the file. No write is performed.
-
-Uploads are per-file. A malformed or invalid file is reported with its file path and the error message from the backend, and the remaining files continue to process. If any file fails validation, the CLI exits with a non-zero status.
-
-#### Permissions and validation
-
-- The backend validates the role's version, name, description, level, and scopes on every upload. It rejects unknown fields, unsupported versions, unknown scopes, and scopes that aren't allowed at the role's level.
-- The role level is immutable — you cannot change an existing organization role into a project role (or vice versa) by editing the YAML and uploading. Create a new role instead.
-
-For backwards compatibility, an existing role may retain a legacy scope that is no longer assignable at its level; downloading and re-uploading such a role is a no-op. Scope-level validation is applied only to newly added scopes.
+Include custom roles in your organization content deployment to version-control and review role changes alongside other content. See [Managing custom roles as code](/workspace-admin/custom-roles#managing-custom-roles-as-code) for the YAML contract, file naming, and upload behavior.
 
 ### Users as code
 
