@@ -270,7 +270,7 @@ npm run audit:external-links
 
 - **[Validate documentation](.github/workflows/validate-docs.yml)** — Type-checks and tests the utilities, validates changed-file documentation rules, checks site-wide links and anchors, and checks for component-rule regressions.
 - **[Check sidebar navigation index](.github/workflows/sidebar-navigation.yml)** — Checks that `sidebar-navigation.js` matches navigation, page titles, and the API schema. The bot can commit the generated update on same-repository PRs; forks need to run `npm run build:sidebar-navigation` and commit the result.
-- **[Learn walkthrough citations](.github/workflows/learn-walkthroughs.yml)** — Extracts documentation references from current product `main` source and checks their targets against base and head docs. Newly broken targets fail the check; reports identify the source references.
+- **[Learn walkthrough citations](.github/workflows/learn-walkthroughs.yml)** — Extracts documentation references from current product `main` source and checks their targets against base and head docs. Findings identify the source references, are advisory, and do not block docs merges.
 - **[Audit external links](.github/workflows/validate-docs.yml)** — Runs weekly or manually. Unavailable URLs are advisory; checker execution failures fail the audit.
 
 #### Auto-fixing Image Location Issues
