@@ -8,13 +8,19 @@ import { FeatureBadge } from '/snippets/feature-badge.jsx';
 
 import RawSqlOutsideSemanticLayer from '/snippets/raw-sql-outside-semantic-layer.mdx';
 
-Start a conversation, add context, and inspect the results your agent returns. For how agents use your semantic layer and what they can do, see [AI agents](/agents#how-agents-answer-questions).
+Start a conversation, add context, and inspect the results your agent returns. To create or configure an agent, see [Set up AI agents](/agents/set-up-agents).
 
 ## Start a conversation
 
-Open an agent from **Ask AI** to start a new thread. The agent's page shows its name and description above the message input. If the agent has instructions, the info icon beside its name shows them.
+Open **Ask AI** in your project and select an agent from the dropdown to start a new thread. If routing is enabled, select **Auto** to let the [AI Router](/agents/enable-ai-router) choose an agent for your request. The agent's page shows its name and description above the message input. If the agent has instructions, the info icon beside its name shows them.
 
 Type your question in the message input and click the send button.
+
+### Conversations and saved results
+
+The agent uses the current thread's history to answer follow-up questions. A separate conversation starts without that history.
+
+Lightdash stores conversations and the query definitions behind their charts and tables until you delete the thread or its [retention window](/agents/thread-retention) expires. When you revisit a result, Lightdash queries the warehouse again, subject to [caching](/semantic-layer/caching). The written reply stays as it was, so a chart can show different numbers from the surrounding text if the data or models have changed.
 
 ### Composer options
 
@@ -41,11 +47,185 @@ Attachments aren't available in [Deep research](/agents/deep-research#start-a-ru
 
 When more than one model is available, the model picker beside the send button shows which model answers. Click it to choose another model. For models that support reasoning, the same menu has a **Reasoning** setting with two levels, **Default** and **High**, and the picker shows **High** beside the model name when it is on.
 
-A new conversation starts on the agent's [default model](/agents/set-up-agents#default-model-optional). Admins decide which models appear in the picker; see [Control which models users can pick](/agents/set-up-agents#control-which-models-users-can-pick).
+A new conversation starts on the agent's [default model](/agents/set-up-agents#default-model-optional). Admins decide which models appear in the picker; see [Control which models users can pick](/workspace-admin/ai-settings#control-which-models-users-can-pick).
 
 One answer can take several model calls. The agent looks up fields, runs queries and builds charts in separate steps, and each step sends the context gathered so far back to the model. So a question that needs more steps, a long thread, **High** reasoning or a larger model all use more tokens per answer. To see token counts by model and feature, use the **AI usage** explore in the [usage analytics project](/workspace-admin/usage-analytics-project).
 
-When fast mode is available on your instance, the agent hands small routine choices, such as ranking the relevant fields, titling a chart or diagnosing an empty result, to a quick decision model, so simple questions come back faster. There's nothing to train or set up: each decision works from what's in your project when you ask, such as your question, the recent messages in the thread, and the names, labels, descriptions and AI hints of the fields that look relevant. Fast mode doesn't run when your organization or project uses its own [AI provider keys or Bedrock credentials](/agents/set-up-agents#bring-your-own-ai-providers-and-models), or for an agent set to its own **AI provider credential**.
+When fast mode is available on your instance, the agent hands small routine choices, such as ranking the relevant fields, titling a chart or diagnosing an empty result, to a quick decision model, so simple questions come back faster. There's nothing to train or set up: each decision works from what's in your project when you ask, such as your question, the recent messages in the thread, and the names, labels, descriptions and AI hints of the fields that look relevant. Fast mode doesn't run when your organization or project uses its own [AI provider keys or Bedrock credentials](/workspace-admin/ai-settings#bring-your-own-ai-providers-and-models), or for an agent set to its own **AI provider credential**.
+
+## Set your default agent
+
+You can assign your default agent in Ask AI by clicking the star by your agent's name.
+<Frame>
+    <img
+      src="/images/agents/set_default_agent.png"
+      alt="Set Default Agent"
+    />
+  </Frame>
+The default agent setting is per-user, per-project. There's no project-wide default at the moment.
+
+When you have a default agent set, Ask AI opens it directly — even if the [AI Router](/agents/enable-ai-router) is enabled.
+
+If you haven't set a default and the AI Router is enabled, Lightdash routes each question to the best-fit agent automatically. If the router is off and you have no default, Ask AI opens the first agent in the project's list, sorted alphabetically by agent slug (not by creation date).
+
+To steer everyone without a personal default toward one agent, enable the AI Router and add [routing instructions](/agents/enable-ai-router#routing-instructions) such as *"Use @general-agent unless the question is about billing."*
+
+## Asking about a chart or dashboard
+
+You can launch an AI conversation with a chart or dashboard pre-loaded as context. From the resource's `⋯` menu, click **Ask AI Agent**.
+
+This opens a new tab on the new-thread page for your default agent. The chart or dashboard appears as a **pinned context card** above the input, and the agent treats it as the subject of the conversation.
+
+<Frame>
+  <img
+    src="/images/agents/ask-ai-agent-from-chart.png"
+    alt="Ask AI Agent menu item on a saved chart"
+  />
+</Frame>
+
+### Pinned context
+
+- The pinned card stays visible above your message in the thread, so anyone reading later can tell what was being discussed.
+- Click the pinned card to open the chart or dashboard in a new tab.
+- The pinned context persists across follow-up messages — *"now break it down by region"* still refers to the originally pinned chart.
+
+### Linked dashboard
+
+A thread created through the API or the React SDK can be bound to a dashboard for its whole life, which you can't change afterwards. Pinned context belongs to one message; a binding belongs to the whole thread. See [Bind a thread to a dashboard](/embed/embed-ai-agents#bind-a-thread-to-a-dashboard) for how to create one.
+
+- A **Linked dashboard** card at the top of the thread opens the dashboard. The thread never pins a different dashboard from the page you're on, and `@` tile mentions come from the linked dashboard.
+- If the agent can create content, it can only change the linked dashboard and the charts saved in it. See [Threads bound to a dashboard](/agents/enable-content-tools#threads-bound-to-a-dashboard).
+- If the thread was created with background context, admins see it in a collapsed **Thread context** block. Other users don't see it, but the agent always uses it. Custom roles can grant the `view:AiAgentThreadContext` scope to show it.
+- If the dashboard is deleted, the card shows **Dashboard no longer available**. You can keep asking questions, but the agent can't change saved content in that thread.
+
+### Mentioning dashboard tiles
+
+When the pinned context is a dashboard, you can `@`-mention any of its chart tiles directly in your message to focus the agent on a single tile.
+
+Type `@` in the input and pick a tile from the **Dashboard tiles** group in the suggestion list. The selected chart is added alongside the pinned dashboard, so the agent answers about that specific tile while still keeping the dashboard as overall context.
+
+This is useful when a dashboard has many charts and you want to drill into one without leaving the thread:
+
+- *"Why did @Weekly active users drop last week?"*
+- *"Break @Revenue by region down by channel."*
+
+### What you can ask
+
+When you pin a saved chart, the agent can read its actual data (subject to your [data access setting](/agents/data-access)). It honors the chart's saved filters, sorts, custom metrics, and [parameter values](/semantic-layer/parameters), so you can ask:
+
+- *"Why is this trending up?"*
+- *"Are there outliers in this chart?"*
+- *"Compare this chart's last 30 days to the previous period."*
+
+If your agent has data access disabled, pinning still works — the agent sees the chart's structure (name, dimensions, metrics) but no row values are sent to the underlying LLM.
+
+## Mentioning charts and dashboards with `@`
+
+You can reference saved charts and dashboards directly from the chat input by typing `@`. This adds them as context for the agent's next message, similar to a pinned card, without leaving the conversation.
+
+Type `@` followed by part of a name to open the suggestion menu. Suggestions are grouped so the most relevant content appears first:
+
+- **Already mentioned** — content already referenced earlier in this thread.
+- **Current page** — the chart or dashboard you're viewing when you open the chat.
+- **Dashboard tiles** — charts on the dashboard you're currently viewing.
+- **Search results** — any chart or dashboard you have access to, ranked by your search query. [Verified content](/explore/verified-content) is marked with a green check.
+
+Use the arrow keys to highlight a suggestion and press `Enter` or `Tab` to insert it. While the menu is open, `Enter` selects the suggestion instead of sending the message.
+
+Each mention becomes a chip in the input — for example, `@Weekly revenue` — and travels with the message as prompt context. The agent uses the same access rules as a pinned card: it can read the resource's structure and (when [data access](/agents/data-access) is enabled) its underlying data.
+
+<Tip>
+  Mention multiple resources in a single message to ask comparative questions, such as *"How does @Weekly revenue compare to @Marketing dashboard's signups trend?"*
+</Tip>
+
+You can only mention content you have permission to view. Mentions are available in agent threads, in the AI Router, and in the launcher used to start new threads.
+
+## Share a thread
+
+To let a colleague continue from your conversation, click the **Share thread** icon in the thread header and copy the link. Anyone with the link who can use the agent and start threads opens the conversation as their own copy, and can continue it independently. The copy includes the conversation up to the moment you created the link; messages you send afterwards aren't included.
+
+The **Share thread** icon appears on threads started in the Lightdash app or through the API, not on threads started in Slack. Sending the thread's own URL instead only works for you and for users who can manage the agent, such as project developers and admins, who can read it but not reply (see [Read-only threads](#read-only-threads)).
+
+## Read-only threads
+
+In some cases, the chat input on an existing thread is disabled and you can't send follow-up messages. The input shows a short message explaining why. You'll see this when:
+
+- **The thread was started in Slack.** Reply in the original Slack thread to continue the conversation.
+- **The thread belongs to another user.** You can read the conversation, but only the original author can post follow-ups.
+- **The model used in the thread is no longer available.** Threads are pinned to the model that produced the first assistant response, so the conversation history stays consistent. If an admin removes that model from the agent — or the provider no longer offers it — start a new thread to continue with one of the agent's current models.
+
+To start a new thread, open the agent and click **New thread**.
+
+## Delete a thread
+
+To delete one of your threads, open its menu in the agent's thread list and click **Delete**. Deletion is permanent and also removes the thread's tool calls and the memories the agent learned from it. You need the Editor role or higher in the project.
+
+Threads started in Slack can't be deleted from the thread list, because that wouldn't remove the messages from Slack. People who manage the project's agents, such as project admins and developers, can delete any thread there, Slack ones included, from **Settings** → **Ask AI** → **Threads**. To delete threads automatically after a period of inactivity, see [Thread retention](/agents/thread-retention).
+
+## Schedule a recurring delivery from a conversation
+
+When an agent lands on an answer worth watching, you can turn that conversation into a recurring [scheduled delivery](/explore/create-scheduled-deliveries). Lightdash re-runs the agent on your chosen frequency and sends the refreshed chart, along with an AI-written summary, to Slack, email, or Microsoft Teams.
+
+Open the `⋯` **Quick actions** menu on a saved chart the agent produced and choose **Schedule delivery**.
+
+<Frame>
+  <img
+    alt="Schedule delivery quick action in an AI agent conversation"
+    className="block dark:hidden"
+    src="/images/agents/schedule-delivery-from-conversation_light.png"
+  />
+  <img
+    alt="Schedule delivery quick action in an AI agent conversation"
+    className="hidden dark:block"
+    src="/images/agents/schedule-delivery-from-conversation_dark.png"
+  />
+</Frame>
+
+This opens the scheduled delivery form pre-filled to run that conversation's agent over the chart, so you get the same style of answer, on a schedule, without rebuilding anything. See [AI agent](/explore/create-scheduled-deliveries#ai-agent) for how the generated message works.
+
+## Example use cases
+
+### Period-over-period comparisons
+
+Agents can answer time-comparison questions directly — month-over-month, year-over-year, or any custom offset — without you having to set up the comparison in the Explorer first.
+
+When you ask a comparison question, the agent picks a base metric, a time dimension, a granularity (day, week, month, quarter, or year), and an offset (how many periods back). It then runs the query and adds a comparison column next to the base metric, labelled with the offset (for example, `Revenue (Previous month)`).
+
+**Prompts that work well**
+
+- *"Compare revenue to last month"*
+- *"Month-over-month new users"*
+- *"Year-over-year orders by week"*
+- *"Show revenue this quarter vs the previous quarter, and vs the same quarter last year"*
+
+You can stack multiple comparisons on the same metric (for example, MoM and YoY together) and you can use a [custom metric](/explore/create-custom-fields) as the base.
+
+<Tip>
+  Period-over-period is for comparing whole prior periods (last month, last quarter, last year). For period-to-date questions like MTD or YTD, ask the agent for a filtered aggregation instead — for example, *"revenue so far this month vs the same point last month"*.
+</Tip>
+
+**Limitations**
+
+- The granularity must match the time dimension's interval — ask for *"monthly revenue vs last month"* (not *"daily revenue vs last month"*).
+- The agent can't yet sort or filter on the generated comparison column directly; sort or filter on the base metric or the time dimension instead.
+
+### Advanced visualizations with window functions
+
+Ask an agent to build a three-month rolling average to smooth short-term variation. This demonstration shows the request and the resulting visualization.
+
+<Frame>
+<iframe
+  width="100%"
+  height="420"
+  src="https://www.youtube.com/embed/S0jKfLjQEqM"
+  title="YouTube video player"
+  frameborder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+  allowfullscreen
+></iframe>
+</Frame>
+
+Inspect the resulting [table calculation](/explore/table-calculations) to check its time order and window before using the chart in a report.
 
 ## SQL mode
 
@@ -67,6 +247,8 @@ Prefer the default (semantic) mode for anything that *can* be answered from your
 
 The **SQL Runner** option is visible only to users who hold the **`manage:SqlRunner`** ability — the same permission required to use the [SQL Runner](/explore/sql-runner) page. If you don't see it, ask a workspace admin to grant SQL Runner access to your role.
 
+The default agent Lightdash creates with your first project (Aurora) ends its instructions with "If no explores are available yet, use your warehouse tools to discover the schema and answer with SQL." That fallback applies only in SQL mode for someone who can already use the SQL Runner. Everyone else is told there's no data to query until you set up explores.
+
 ### What SQL mode does not enforce
 
 <RawSqlOutsideSemanticLayer />
@@ -84,7 +266,7 @@ Each SQL call is approved individually. To stop the prompts for the rest of a th
 
 ### SQL mode in Slack
 
-Slack-triggered prompts can only use SQL mode when your organization has the **\"Require Slack users to authenticate with Lightdash\"** setting (`aiRequireOAuth`) turned on. Without it, Slack messages run under a shared workspace-default identity, so SQL execution is disabled fail-closed whether or not SQL mode is on. See [Slack AI bot setup](/agents/set-up-agents) for how to configure OAuth.
+Slack-triggered prompts can only use SQL mode when your organization has the **\"Require Slack users to authenticate with Lightdash\"** setting (`aiRequireOAuth`) turned on. Without it, Slack messages run under a shared workspace-default identity, so SQL execution is disabled fail-closed whether or not SQL mode is on. See [User attribution and OAuth](/integrations/slack#user-attribution-and-oauth) for how to configure OAuth.
 
 ## Post-process results with DuckDB and Python
 
@@ -173,186 +355,6 @@ Each agent reply shows how long it took, as time to first token and total time. 
 
 When they apply, the tooltip also counts queries served from the [results cache](/semantic-layer/caching) and queries that reused an earlier verified result. Times are measured on the server, and stages that run at the same time can overlap, so they don't always add up to the total.
 
-## Asking about a chart or dashboard
-
-You can launch an AI conversation with a chart or dashboard pre-loaded as context. From the resource's `⋯` menu, click **Ask AI Agent**.
-
-This opens a new tab on the new-thread page for your default agent. The chart or dashboard appears as a **pinned context card** above the input, and the agent treats it as the subject of the conversation.
-
-<Frame>
-  <img
-    src="/images/agents/ask-ai-agent-from-chart.png"
-    alt="Ask AI Agent menu item on a saved chart"
-  />
-</Frame>
-
-### Pinned context
-
-- The pinned card stays visible above your message in the thread, so anyone reading later can tell what was being discussed.
-- Click the pinned card to open the chart or dashboard in a new tab.
-- The pinned context persists across follow-up messages — *"now break it down by region"* still refers to the originally pinned chart.
-
-### Linked dashboard
-
-A thread created through the API or the React SDK can be bound to a dashboard for its whole life, which you can't change afterwards. Pinned context belongs to one message; a binding belongs to the whole thread. See [Bind a thread to a dashboard](/embed/embed-ai-agents#bind-a-thread-to-a-dashboard) for how to create one.
-
-- A **Linked dashboard** card at the top of the thread opens the dashboard. The thread never pins a different dashboard from the page you're on, and `@` tile mentions come from the linked dashboard.
-- If the agent can create content, it can only change the linked dashboard and the charts saved in it. See [Threads bound to a dashboard](/agents/enable-content-tools#threads-bound-to-a-dashboard).
-- If the thread was created with background context, admins see it in a collapsed **Thread context** block. Other users don't see it, but the agent always uses it. Custom roles can grant the `view:AiAgentThreadContext` scope to show it.
-- If the dashboard is deleted, the card shows **Dashboard no longer available**. You can keep asking questions, but the agent can't change saved content in that thread.
-
-### Mentioning dashboard tiles
-
-When the pinned context is a dashboard, you can `@`-mention any of its chart tiles directly in your message to focus the agent on a single tile.
-
-Type `@` in the input and pick a tile from the **Dashboard tiles** group in the suggestion list. The selected chart is added alongside the pinned dashboard, so the agent answers about that specific tile while still keeping the dashboard as overall context.
-
-This is useful when a dashboard has many charts and you want to drill into one without leaving the thread:
-
-- *"Why did @Weekly active users drop last week?"*
-- *"Break @Revenue by region down by channel."*
-
-### What you can ask
-
-When you pin a saved chart, the agent can read its actual data (subject to your [data access setting](/agents/data-access)). It honors the chart's saved filters, sorts, custom metrics, and [parameter values](/semantic-layer/parameters), so you can ask:
-
-- *"Why is this trending up?"*
-- *"Are there outliers in this chart?"*
-- *"Compare this chart's last 30 days to the previous period."*
-
-If your agent has data access disabled, pinning still works — the agent sees the chart's structure (name, dimensions, metrics) but no row values are sent to the underlying LLM.
-
-## Mentioning charts and dashboards with `@`
-
-You can reference saved charts and dashboards directly from the chat input by typing `@`. This adds them as context for the agent's next message, similar to a pinned card, without leaving the conversation.
-
-Type `@` followed by part of a name to open the suggestion menu. Suggestions are grouped so the most relevant content appears first:
-
-- **Already mentioned** — content already referenced earlier in this thread.
-- **Current page** — the chart or dashboard you're viewing when you open the chat.
-- **Dashboard tiles** — charts on the dashboard you're currently viewing.
-- **Search results** — any chart or dashboard you have access to, ranked by your search query. [Verified content](/explore/verified-content) is marked with a green check.
-
-Use the arrow keys to highlight a suggestion and press `Enter` or `Tab` to insert it. While the menu is open, `Enter` selects the suggestion instead of sending the message.
-
-Each mention becomes a chip in the input — for example, `@Weekly revenue` — and travels with the message as prompt context. The agent uses the same access rules as a pinned card: it can read the resource's structure and (when [data access](/agents/data-access) is enabled) its underlying data.
-
-<Tip>
-  Mention multiple resources in a single message to ask comparative questions, such as *"How does @Weekly revenue compare to @Marketing dashboard's signups trend?"*
-</Tip>
-
-You can only mention content you have permission to view. Mentions are available in agent threads, in the AI Router, and in the launcher used to start new threads.
-
-## Read-only threads
-
-In some cases, the chat input on an existing thread is disabled and you can't send follow-up messages. The input shows a short message explaining why. You'll see this when:
-
-- **The thread was started in Slack.** Reply in the original Slack thread to continue the conversation.
-- **The thread belongs to another user.** You can read the conversation, but only the original author can post follow-ups.
-- **The model used in the thread is no longer available.** Threads are pinned to the model that produced the first assistant response, so the conversation history stays consistent. If an admin removes that model from the agent — or the provider no longer offers it — start a new thread to continue with one of the agent's current models.
-
-To start a new thread, open the agent and click **New thread**.
-
-## Share a thread
-
-To let a colleague continue from your conversation, click the **Share thread** icon in the thread header and copy the link. Anyone with the link who can use the agent and start threads opens the conversation as their own copy, and can continue it independently. The copy includes the conversation up to the moment you created the link; messages you send afterwards aren't included.
-
-The **Share thread** icon appears on threads started in the Lightdash app or through the API, not on threads started in Slack. Sending the thread's own URL instead only works for you and for users who can manage the agent, such as project developers and admins, who can read it but not reply (see [Read-only threads](#read-only-threads)).
-
-## Delete a thread
-
-To delete one of your threads, open its menu in the agent's thread list and click **Delete**. Deletion is permanent and also removes the thread's tool calls and the memories the agent learned from it. You need the Editor role or higher in the project.
-
-Threads started in Slack can't be deleted from the thread list, because that wouldn't remove the messages from Slack. People who manage the project's agents, such as project admins and developers, can delete any thread there, Slack ones included, from **Settings** → **Ask AI** → **Threads**. To delete threads automatically after a period of inactivity, see [Thread retention](/agents/thread-retention).
-
-## Schedule a recurring delivery from a conversation
-
-When an agent lands on an answer worth watching, you can turn that conversation into a recurring [scheduled delivery](/explore/create-scheduled-deliveries). Lightdash re-runs the agent on your chosen frequency and sends the refreshed chart, along with an AI-written summary, to Slack, email, or Microsoft Teams.
-
-Open the `⋯` **Quick actions** menu on a saved chart the agent produced and choose **Schedule delivery**.
-
-<Frame>
-  <img
-    alt="Schedule delivery quick action in an AI agent conversation"
-    className="block dark:hidden"
-    src="/images/agents/schedule-delivery-from-conversation_light.png"
-  />
-  <img
-    alt="Schedule delivery quick action in an AI agent conversation"
-    className="hidden dark:block"
-    src="/images/agents/schedule-delivery-from-conversation_dark.png"
-  />
-</Frame>
-
-This opens the scheduled delivery form pre-filled to run that conversation's agent over the chart, so you get the same style of answer, on a schedule, without rebuilding anything. See [AI agent](/explore/create-scheduled-deliveries#ai-agent) for how the generated message works.
-
-## Example use cases
-
-### Period-over-period comparisons
-
-Agents can answer time-comparison questions directly — month-over-month, year-over-year, or any custom offset — without you having to set up the comparison in the Explorer first.
-
-When you ask a comparison question, the agent picks a base metric, a time dimension, a granularity (day, week, month, quarter, or year), and an offset (how many periods back). It then runs the query and adds a comparison column next to the base metric, labelled with the offset (for example, `Revenue (Previous month)`).
-
-**Prompts that work well**
-
-- *"Compare revenue to last month"*
-- *"Month-over-month new users"*
-- *"Year-over-year orders by week"*
-- *"Show revenue this quarter vs the previous quarter, and vs the same quarter last year"*
-
-You can stack multiple comparisons on the same metric (for example, MoM and YoY together) and you can use a [custom metric](/explore/create-custom-fields) as the base.
-
-<Tip>
-  Period-over-period is for comparing whole prior periods (last month, last quarter, last year). For period-to-date questions like MTD or YTD, ask the agent for a filtered aggregation instead — for example, *"revenue so far this month vs the same point last month"*.
-</Tip>
-
-**Limitations**
-
-- The granularity must match the time dimension's interval — ask for *"monthly revenue vs last month"* (not *"daily revenue vs last month"*).
-- The agent can't yet sort or filter on the generated comparison column directly; sort or filter on the base metric or the time dimension instead.
-
-### Advanced visualizations with window functions
-
-AI agents can handle complex analytical queries that would traditionally require writing intricate SQL or YAML configurations. In this example, we demonstrate building a 3-month rolling average visualization using nothing but natural language.
-
-<Frame>
-<iframe
-  width="560"
-  height="315"
-  src="https://www.youtube.com/embed/S0jKfLjQEqM"
-  title="YouTube video player"
-  frameborder="0"
-  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-  allowfullscreen
-></iframe>
-</Frame>
-
-This demo shows:
-- Creating complex window function calculations with plain English
-- Building a 3-month rolling average without writing SQL or YAML
-- AI agent understanding your semantic layer context automatically
-- Generating production-ready charts from a single natural language query
-- No need to manually configure partitions, ordering, or frame clauses
-- From question to visualization in seconds, not hours
-
-## Set your default agent
-
-You can assign your default agent in Ask AI by clicking the star by your agent's name. 
-<Frame>
-    <img
-      src="/images/agents/set_default_agent.png"
-      alt="Set Default Agent"
-    />
-  </Frame>
-The default agent setting is per-user, per-project. There's no project-wide default at the moment.
-
-When you have a default agent set, Ask AI opens it directly — even if the [AI Router](/agents/enable-ai-router) is enabled.
-
-If you haven't set a default and the AI Router is enabled, Lightdash routes each question to the best-fit agent automatically. If the router is off and you have no default, Ask AI opens the first agent in the project's list, sorted alphabetically by agent slug (not by creation date).
-
-To steer everyone without a personal default toward one agent, enable the AI Router and add [routing instructions](/agents/enable-ai-router#routing-instructions) such as *"Use @general-agent unless the question is about billing."*
-
 ## Known limitations
 
 
@@ -374,6 +376,6 @@ Agents can create tables, bar charts, vertical bar charts, line charts, scatter 
 
 Agent access to your data is controlled through tags in your dbt models and by the asking user's user attributes. If certain fields aren't accessible, check that they have the appropriate tags assigned to your agent, and that the user's attributes allow them. See [Who can see what](/agents/data-access#who-can-see-what) for how the controls stack, including [SQL mode](#sql-mode).
 
-For conversation history and how saved results refresh, see [Conversations and results](/agents#conversations-and-results).
+For conversation history and how saved results refresh, see [Conversations and saved results](#conversations-and-saved-results).
 
 When an agent can use 15 or fewer explores, Lightdash includes the list of them in the agent's context. With more than 15, the agent searches for the fields it needs instead.
