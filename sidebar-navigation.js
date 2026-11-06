@@ -806,6 +806,8 @@ window.lightdashSidebarNavigation = [
 {"title":"Update results cache settings","href":"/api-reference/projects/update-results-cache-settings","parents":["Reference","Projects"]},
 {"title":"Update results cache clear schedule","href":"/api-reference/projects/update-results-cache-clear-schedule","parents":["Reference","Projects"]},
 {"title":"Invalidate results cache","href":"/api-reference/projects/invalidate-results-cache","parents":["Reference","Projects"]},
+{"title":"Get results cache stats","href":"/api-reference/projects/get-results-cache-stats","parents":["Reference","Projects"]},
+{"title":"Get results cache TTL projections","href":"/api-reference/projects/get-results-cache-ttl-projections","parents":["Reference","Projects"]},
 {"title":"Invalidate explores results cache","href":"/api-reference/projects/invalidate-explores-results-cache","parents":["Reference","Projects"]},
 {"title":"Update preview expiration","href":"/api-reference/projects/update-preview-expiration","parents":["Reference","Projects"]},
 {"title":"Update scheduler settings","href":"/api-reference/projects/update-scheduler-settings","parents":["Reference","Projects"]},
