@@ -801,6 +801,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Get upstream diff","href":"/api-reference/projects/get-upstream-diff","parents":["Reference","Projects"]},
 {"title":"Get preview expiration settings","href":"/api-reference/projects/get-preview-expiration-settings","parents":["Reference","Projects"]},
 {"title":"Update preview expiration settings","href":"/api-reference/projects/update-preview-expiration-settings","parents":["Reference","Projects"]},
+{"title":"Get results cache status","href":"/api-reference/projects/get-results-cache-status","parents":["Reference","Projects"]},
 {"title":"Get results cache settings","href":"/api-reference/projects/get-results-cache-settings","parents":["Reference","Projects"]},
 {"title":"Update results cache settings","href":"/api-reference/projects/update-results-cache-settings","parents":["Reference","Projects"]},
 {"title":"Update results cache clear schedule","href":"/api-reference/projects/update-results-cache-clear-schedule","parents":["Reference","Projects"]},
