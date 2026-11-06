@@ -16,13 +16,33 @@ Three controls decide what an agent can reach on behalf of the person asking, an
 | --- | --- | --- |
 | Agent tags | Which explores and fields the agent can see at all | [Tags in your models and in the agent settings](#limiting-access-to-specific-explores-and-fields) |
 | User attributes | Which rows, columns and tables the asking user gets from those explores | [`sql_filter`, `required_attributes` and `any_attributes` in your models](#user-attributes-and-permissions) |
-| Raw SQL | Whether the asking user can run SQL outside the semantic layer | The user's `manage:SqlRunner` ability and the per-thread [SQL mode](/agents/use-ai-agents#sql-mode) toggle |
+| Raw SQL | Whether the asking user can run SQL outside the semantic layer, and which schemas it can read | The user's `manage:SqlRunner` ability, the per-thread [SQL mode](/agents/use-ai-agents#sql-mode) toggle, and [Agent data scope](#scoping-raw-sql-to-specific-schemas) |
 
 The first two apply to every answer the agent builds from the semantic layer, which is its default mode. The third sits outside the semantic layer: raw SQL is not filtered by user attributes, and only users who could already open the SQL Runner can turn it on. Agent [instructions](/agents/set-up-agents#instructions) shape how the agent reasons and answers; they can't widen what it reaches. For a worked setup over explores that some users can only partly see, read [Agent access to restricted data](/agents/agent-access-to-restricted-data).
 
 The agent and its model never connect to your warehouse themselves. The model asks for a query through a tool, and Lightdash compiles and runs it over the project's warehouse connection, the same query path Explore and the SQL Runner use. The model only sees the results Lightdash returns, and only when [data access](#data-access-modes) is enabled. On a project that requires personal warehouse credentials, that connection is the signed-in person's own saved credentials — the same ones their charts and Explore queries use. See [When are personal warehouse credentials used?](/personal-settings/personal-warehouse-connections#when-are-personal-warehouse-credentials-used).
 
 On Snowflake, BigQuery, Databricks, Athena, Postgres, Redshift, Trino and ClickHouse, [agent identity](/agents/agent-identity) also lets the warehouse decide what agent queries can read. With agent identity on, Lightdash also checks who can read each saved result. See [Who can read a saved result](/agents/agent-identity#who-can-read-a-saved-result).
+
+## Scoping raw SQL to specific schemas
+
+Raw SQL bypasses the semantic layer, so tags and user attributes don't narrow it. **Agent data scope** is the project setting that limits which warehouse schemas and catalogs raw SQL can read instead.
+
+Find it at **Settings** → **Current project** → **Agent data scope**, where the card is titled **Warehouse access**. The page only shows when AI agents are available for your organization.
+
+The setting has four lists:
+
+- **Allowed schemas** — raw SQL can only read from these. Empty means no restriction.
+- **Allowed catalogs** — optional, and only selectable once you've allowed at least one schema. Narrows the allowed schemas to specific catalogs or databases.
+- **Excluded schemas** and **Excluded catalogs** — never readable, even when the allow lists above would permit them. A denial always wins over an allow.
+
+Agent data scope restricts raw SQL run by AI agents in [SQL mode](/agents/use-ai-agents#sql-mode) and by the [MCP server's **Run SQL** tool](/agents/lightdash-mcp#query-execution). The human SQL Runner is deliberately not scoped — the setting narrows what an agent can reach, not what a person with `manage:SqlRunner` can query.
+
+<Note>
+  The lists work at schema and catalog level only, with no table-level or name-prefix rule. If your staging, intermediate and mart models share one schema, Agent data scope can't separate the marts from the rest. Build your mart models into their own schema and allow only that schema instead.
+</Note>
+
+Agent data scope is a check Lightdash runs before sending the query to your warehouse, not a warehouse permission — restricting the warehouse credential's own grants is the stronger control. Pair the setting with removing [`manage:SqlRunner`](/workspace-admin/custom-roles#sql-related-scopes) from roles that shouldn't run raw SQL at all, and treat [agent instructions](/agents/set-up-agents#instructions) and [agent context](/agents/agent-context) as guidance rather than enforcement — they shape how the agent reasons, not what it's allowed to query.
 
 ## Data access modes
 
