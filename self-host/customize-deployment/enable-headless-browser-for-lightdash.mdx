@@ -96,19 +96,13 @@ If scheduled deliveries fail for large dashboards, try the following in order:
 4. If jobs are timing out entirely, increase `SCHEDULER_JOB_TIMEOUT`. The default
    of 10 minutes should be sufficient for most dashboards.
 
-## Run Lightdash behind an identity-aware proxy
+## Run Lightdash behind an identity-aware proxy or a private hostname
 
 If `SITE_URL` sits behind an identity-aware proxy such as Google Cloud IAP, scheduled deliveries and Slack unfurls fail with an error like `Unable to get cookie for user <user-uuid>: Invalid IAP credentials: empty token`. Before each screenshot, the Lightdash backend signs the headless browser in with a server-to-server request to `INTERNAL_LIGHTDASH_HOST`, which defaults to `SITE_URL`. That request carries no proxy credentials, so the proxy rejects it.
 
-Set `INTERNAL_LIGHTDASH_HOST` on the backend and scheduler to an in-cluster URL that doesn't go through the proxy, such as the Lightdash Kubernetes service (`http://lightdash.lightdash.svc.cluster.local:8080`). The headless browser loads charts and dashboards from the same host, so it must be reachable from the headless browser container too. With `SECURE_COOKIES=true`, the internal host must use HTTPS — see the next section.
+The same request fails with `getaddrinfo ENOTFOUND <hostname>` when `SITE_URL` is a hostname that only resolves on a VPN, a Tailscale network, or a private DNS zone, so browsers can reach it but the backend pod can't. CSV and XLSX deliveries keep working either way, because they query the warehouse directly without the headless browser.
 
-## Run Lightdash with a VPN, Tailscale, or private DNS hostname
-
-If `SITE_URL` is a hostname that only resolves on a VPN, a Tailscale/tailnet, or a private DNS zone — reachable from browsers but not from inside the cluster — scheduled image and PDF deliveries fail with `getaddrinfo ENOTFOUND <hostname>`, while CSV and XLSX deliveries for the same content keep working. CSV and XLSX exports query the warehouse directly and don't use the headless browser, so they're unaffected.
-
-Before each screenshot, the Lightdash backend signs the headless browser in with a server-to-server request to `INTERNAL_LIGHTDASH_HOST`, which defaults to `SITE_URL`. If the backend pod can't resolve that hostname, the request fails DNS resolution with `ENOTFOUND`.
-
-Set `INTERNAL_LIGHTDASH_HOST` on the backend and scheduler to an address resolvable from inside the cluster, such as the Lightdash Kubernetes service (`http://lightdash.lightdash.svc.cluster.local:8080`). The headless browser loads charts and dashboards from the same host, so it must be reachable from the headless browser container too.
+Set `INTERNAL_LIGHTDASH_HOST` on the backend and scheduler to an in-cluster URL that resolves from the pod and doesn't go through the proxy, such as the Lightdash Kubernetes service (`http://lightdash.lightdash.svc.cluster.local:8080`). The headless browser loads charts and dashboards from the same host, so it must be reachable from the headless browser container too. With `SECURE_COOKIES=true`, the internal host must use HTTPS — see the next section.
 
 ## Run Lightdash on a fully internal HTTPS network
 
