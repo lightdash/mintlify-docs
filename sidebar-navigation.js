@@ -167,6 +167,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Slack","href":"/integrations/slack","parents":["Integrations"]},
 {"title":"Google Sheets","href":"/integrations/google-sheets","parents":["Integrations"]},
 {"title":"Google Sheets add-on","href":"/integrations/google-sheets/add-on","parents":["Integrations","Google Sheets"]},
+{"title":"Live data sources","href":"/integrations/live-data-sources","parents":["Integrations"]},
 {"title":"Metrics SQL API","href":"/integrations/metrics-sql-api","parents":["Integrations"]},
 {"title":"Snowflake Cortex","href":"/integrations/snowflake-cortex","parents":["Integrations"]},
 {"title":"Apache Ossie","href":"/integrations/apache-ossie","parents":["Integrations"]},
