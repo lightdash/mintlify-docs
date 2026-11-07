@@ -96,6 +96,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Compilation","href":"/workflow/cli/compile","parents":["Workflow","CLI"]},
 {"title":"Reference","href":"/workflow/cli/reference","parents":["Workflow","CLI"]},
 {"title":"Desktop","href":"/workflow/lightdash-desktop","parents":["Workflow"]},
+{"title":"Mobile","href":"/workflow/lightdash-mobile","parents":["Workflow"]},
 {"title":"Preview projects","href":"/workflow/preview-projects","parents":["Workflow"]},
 {"title":"Pull requests","href":"/workflow/pull-requests","parents":["Workflow"]},
 {"title":"Automate with CI/CD","href":"/workflow/set-up-ci-cd","parents":["Workflow"]},
