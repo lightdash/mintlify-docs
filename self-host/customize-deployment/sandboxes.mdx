@@ -254,6 +254,22 @@ Lightdash passes `BEDROCK_API_KEY` or `BEDROCK_ACCESS_KEY_ID` and
 `BEDROCK_SECRET_ACCESS_KEY` into the sandbox; with `BEDROCK_USE_DEFAULT_CREDENTIALS=true`
 it passes none.
 
+### Upgrading
+
+The sandbox runs whatever image `LAMBDA_MICROVM_DATA_APP_IMAGE_ARN` and
+`LAMBDA_MICROVM_AI_WRITEBACK_IMAGE_ARN` point to, so upgrading Lightdash alone doesn't
+change what runs inside it. Fixes to either image (Dockerfile changes, the exec agent in
+`sandboxes/microvm-agent/`) only take effect once you rebuild the image:
+
+1. From a checkout of the new Lightdash version, remove the local sandbox image
+   (`lightdash-sandbox:local` or `lightdash-ai-writeback:local`). The build script reuses
+   an existing local image instead of rebuilding it.
+2. Run `./sandboxes/microvm-agent/build-microvm-image.sh <data-app|writeback>`. It pushes
+   the image to ECR, registers a new version of the Lambda MicroVM image, and marks it active.
+3. If the script prints a different image ARN from the one you have configured, update
+   `LAMBDA_MICROVM_DATA_APP_IMAGE_ARN` or `LAMBDA_MICROVM_AI_WRITEBACK_IMAGE_ARN` and
+   restart the backend.
+
 ## Azure Container Apps Sandboxes (self-hosted production)
 
 [Azure Container Apps Sandboxes](https://learn.microsoft.com/azure/container-apps/sandboxes-overview)
