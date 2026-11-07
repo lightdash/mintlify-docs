@@ -115,21 +115,10 @@ This is the **recommended sandbox provider for customers deploying Lightdash on 
 it keeps the sandbox boundary inside your existing AWS account and avoids sending agent
 workloads or repository contents to a third-party service.
 
-
-Registering a Lambda MicroVM image uses AWS's `create-microvm-image`: a build role, a
-`codeArtifact` zip staged in S3, the AWS-managed `al2023` base image, `ARM_64`, 4 GB
-memory, and the agent's `/ready` hook on port 8080. That call returns an **image ARN**,
-and the ARN is the only thing Lightdash itself needs — the backend passes it to
-`RunMicrovm` and never builds, pulls, or otherwise touches ECR or S3 at runtime. Any
-pipeline that produces a `codeArtifact` zip AWS can build into a MicroVM image works,
-with or without ECR.
-
-<Tip>
-Lightdash's own build script (`./sandboxes/microvm-agent/build-microvm-image.sh`, see
-[Prerequisites](#prerequisites)) pushes a prebuilt image to ECR and builds the registered
-image `FROM` it, to avoid rebuilding the npm/dbt toolchain on every update. That's the
-script's own shortcut, not something Lightdash requires.
-</Tip>
+Lightdash only needs the **image ARN** that AWS's `create-microvm-image` returns. The
+backend passes it to `RunMicrovm` and never builds, pulls, or otherwise touches ECR or S3
+at runtime, so any pipeline that produces a `codeArtifact` zip AWS can build into a
+MicroVM image works, with or without ECR.
 
 ```mermaid
 sequenceDiagram
@@ -178,9 +167,9 @@ for example an IRSA role there that trusts your cluster's OIDC provider:
   image already exists), polls the build to an active version, and prints the image ARN
   to set as `LAMBDA_MICROVM_DATA_APP_IMAGE_ARN` or `LAMBDA_MICROVM_AI_WRITEBACK_IMAGE_ARN`.
   Run it with `./sandboxes/microvm-agent/build-microvm-image.sh data-app` and
-  `./sandboxes/microvm-agent/build-microvm-image.sh writeback`. None of this runs at
-  deploy time: the Lightdash backend never builds images or touches ECR or S3 — it only
-  calls the Lambda MicroVMs control plane with the image ARN you already registered.
+  `./sandboxes/microvm-agent/build-microvm-image.sh writeback`. Pushing to ECR is the
+  script's shortcut to avoid rebuilding the toolchain on every update, not something
+  Lightdash requires.
 
   The data app Dockerfile copies `lightdash-query-sdk.tgz`, a generated artifact that a
   fresh checkout does not contain. `build-microvm-image.sh` packs it for you; building
