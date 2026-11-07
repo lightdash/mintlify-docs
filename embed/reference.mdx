@@ -876,6 +876,14 @@ Configure embed scopes in the **Embedding** section of a [custom role](/workspac
 
 Permissions from the actor's organization and project roles are additive. Removing a scope from one role does not revoke a grant from another role. When testing a restrictive custom role, make sure the actor has no other role that still grants the capability.
 
+### Supporting many embedded end users
+
+The actor doesn't have to be one Lightdash user per embedded end user. When your app has a handful of permission profiles shared by many end users, create one service account per profile — for example `viewer`, `analyst`, `admin` — give each a custom role with the embed scopes for that profile, and have your backend pick the matching `serviceAccountUserUuid` when it signs each end user's token. A new end user reuses an existing profile's service account: there's no Lightdash user to create and no code change.
+
+If your embedded end users are themselves Lightdash users, look up the signed-in user's Lightdash user UUID instead and set it as `writeActions.userUuid` when you sign their token.
+
+Either pattern depends on signing the JWT per session or request, with a short `expiresIn`, rather than generating one token once and reusing it — that's what lets your backend resolve each request to the matching actor as end users and profiles change. The viewer's [`user.externalId`](#user-metadata) can still carry your own user identifier for tracking; it isn't the role-bearing actor.
+
 ### Dashboard capabilities
 
 In `'roles'` mode, only the actor's embed scopes grant capabilities. JWT interactivity flags are ignored whether they are `true`, `false`, or omitted. For example, CSV export requires `view:EmbedCsvExport` even when the token contains `canExportCsv: true`. In `'default'` mode, the scope is ignored and the JWT flag decides.

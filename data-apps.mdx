@@ -154,7 +154,7 @@ To duplicate, you need **view** access on the source app and **create** permissi
 
 The inspector is a tabbed network panel that captures everything the running app talks to. Open it from **View network** in the preview header.
 
-- **Queries** - every metric query the app runs against your semantic layer, including the underlying query definition, the fields it's pulling, and the rows it gets back. Live-linked charts show up here too. Use it to verify the app is asking for the right data, debug unexpected numbers, or sanity-check performance.
+- **Queries** - every metric query the app runs against your semantic layer, including the underlying query definition, the fields it's pulling, and the rows it gets back. Live-linked charts show up here too. Use it to verify the app is asking for the right data, debug unexpected numbers, sanity-check performance, or spot a query returning far more rows than the app needs (see [App is slow to load](#app-is-slow-to-load)).
 - **Requests** - every external fetch the app makes at runtime through a linked external connection, with the method, path, status, response, and round-trip duration. Use it to confirm the app is calling the right endpoint and that the response shape matches what the UI expects. The inspector only ever sees the connection alias and path - credentials are injected server-side, so they're never displayed here.
 
 Both tabs are always visible so you can see at a glance whether the app has run any queries or external requests yet. Entries are held in-memory and cleared when you refresh the preview or load a new version unless you turn on the **Persist** toggle in the panel.
@@ -331,6 +331,7 @@ On self-hosted instances, `LIGHTDASH_APP_CAPTURES_ENABLED=false` turns this off 
 - **Describe drill-downs in full.** Say what a click opens, what it shows, and what data it needs - for example, "clicking a month opens a dialog with that month's daily order count".
 - **Use the network inspector early.** If something looks off, check the queries and external requests the app is running before tweaking the prompt.
 - **Build what-if inputs on existing metrics.** The app gets each query's rows in its own code, so a slider or input that scales a result (for example, a growth rate applied to revenue) can work on any metric you already have, with no dbt changes. You only need [parameters](/semantic-layer/parameters) when the input should change the query's SQL itself; the app then passes the value with the query.
+- **Keep query results small.** An app loads a query's results from the backend 500 rows at a time, so a query returning tens of thousands of rows makes hundreds of sequential requests before the app can render - even when the warehouse query itself runs in seconds. Aggregate, filter, or lower the query's row limit so it returns hundreds of rows rather than tens of thousands. If you need full row-level detail, show a summary first and load the detailed rows on demand, for example filtered to whatever the user clicks.
 
 ## Troubleshooting
 
@@ -346,6 +347,19 @@ To fix it, allowlist Lightdash in Malwarebytes Browser Guard:
 2. Open **Settings → Allow List**.
 3. Add the Lightdash domain you're using (for example, your Lightdash Cloud subdomain or your self-hosted Lightdash URL).
 4. Reload the page.
+
+### App is slow to load
+
+A data app loads every row a query returns before it renders anything. Results come back in pages of 500 rows, fetched one after another, so load time grows with how many rows the query returns - not with how long the warehouse takes to run it. A query that returns 50,000 rows takes 100 sequential page requests to finish loading, which can take minutes even when the warehouse answers the query itself in seconds.
+
+Open the [network inspector](#network-inspector)'s Queries tab and check each query's row count to find the one that's slowing the app down.
+
+To fix it, return fewer rows from the query itself:
+
+- Ask the agent to aggregate or filter the data in the query, rather than fetching everything and filtering in the app.
+- Lower the query's `.limit()` so it returns hundreds of rows, not tens of thousands.
+
+If the app needs row-level detail, ask the agent to show a summary first and load the detailed rows separately - for example, only the rows for whatever the user clicks on.
 
 ## Self-hosting
 
