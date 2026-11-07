@@ -125,7 +125,7 @@ sequenceDiagram
     participant Build as Your build pipeline
     participant ECR as ECR (optional)
     participant S3 as S3 (build-time staging)
-    participant Reg as create-microvm-image
+    participant Reg as AWS MicroVM image build
     participant Backend as Lightdash backend / worker
     participant Lambda as Lambda MicroVMs control plane
 
@@ -134,10 +134,15 @@ sequenceDiagram
     Build->>S3: upload codeArtifact zip
     Build->>Reg: create-microvm-image (al2023 base, ARM_64, 4 GB, /ready on 8080)
     Reg-->>Build: image ARN
+    Reg->>S3: read codeArtifact zip
+    Reg->>ECR: pull FROM image (only if the zip's Dockerfile uses one)
+    Build->>Reg: poll until the image version is ACTIVE
 
     Note over Backend,Lambda: Runtime — every sandbox launch
     Backend->>Lambda: RunMicrovm(imageArn)
-    Lambda-->>Backend: microVM endpoint + token
+    Lambda-->>Backend: microVM ID + endpoint
+    Backend->>Lambda: CreateMicrovmAuthToken(microVM ID)
+    Lambda-->>Backend: proxy auth token (60 minutes)
 ```
 
 ### Prerequisites
