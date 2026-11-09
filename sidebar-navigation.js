@@ -193,7 +193,6 @@ window.lightdashSidebarNavigation = [
 {"title":"AI settings","href":"/workspace-admin/ai-settings","parents":["Workspace admin","Organization settings"]},
 {"title":"Color palettes","href":"/workspace-admin/appearance","parents":["Workspace admin","Organization settings"]},
 {"title":"Custom email domain","href":"/workspace-admin/set-up-custom-email-domain","parents":["Workspace admin","Organization settings"]},
-{"title":"Organization credentials","href":"/workspace-admin/organization-credentials","parents":["Workspace admin","Organization settings"]},
 {"title":"Warehouse connections","href":"/workspace-admin/multiple-warehouse-connections","parents":["Workspace admin","Organization settings"]},
 {"title":"Timezones","href":"/workspace-admin/set-project-timezone","parents":["Workspace admin","Organization settings"]},
 {"title":"Usage analytics","href":"/workspace-admin/usage-analytics","parents":["Workspace admin","Monitoring and limits"]},
