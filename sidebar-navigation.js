@@ -184,6 +184,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Groups","href":"/workspace-admin/manage-groups","parents":["Workspace admin","Access and permissions"]},
 {"title":"User attributes","href":"/workspace-admin/user-attributes","parents":["Workspace admin","Access and permissions"]},
 {"title":"Service accounts","href":"/workspace-admin/service-accounts","parents":["Workspace admin","Access and permissions"]},
+{"title":"Warehouse credential setups","href":"/workspace-admin/warehouse-credential-setups","parents":["Workspace admin","Access and permissions"]},
 {"title":"SSO","href":"/workspace-admin/sso","parents":["Workspace admin"]},
 {"title":"SSO setup","href":"/workspace-admin/sso/setup","parents":["Workspace admin","SSO"]},
 {"title":"Verified domains","href":"/workspace-admin/sso/verified-domains","parents":["Workspace admin","SSO"]},
