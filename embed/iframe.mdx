@@ -418,15 +418,27 @@ To make iframes maintain aspect ratio and scale responsively:
 ></iframe>
 ```
 
-### Dynamic height
+### Fit the iframe to the dashboard height
 
-iframes have fixed height by default. For dynamic height based on content:
+An embedded dashboard sends a `lightdash:contentHeightChanged` event with its rendered height in CSS pixels. Set the iframe's height from it, and the iframe grows and shrinks with the dashboard, with no blank space or inner scrollbar.
 
-<Warning>
-Lightdash embeds do not currently support automatic height adjustment via postMessage. Use a fixed height or viewport-based height (e.g., `80vh`).
-</Warning>
+1. Set up [embed events](#listen-for-embed-events) for your page's origin, and add `targetOrigin` to the embed URL.
+2. Listen for the event and set the iframe height from `payload.height`:
 
-Recommended approach for dashboards with unknown content:
+```javascript
+const iframe = document.getElementById('dashboard-iframe');
+
+window.addEventListener('message', (event) => {
+  if (event.origin !== 'https://app.lightdash.cloud') return;
+  if (event.data?.type === 'lightdash:contentHeightChanged') {
+    iframe.style.height = `${event.data.payload.height}px`;
+  }
+});
+```
+
+The dashboard sends the event once when it renders, then again whenever its height changes, at most once every 150 ms. The height changes as tiles load, and when the iframe width moves the dashboard to a different grid layout. Only dashboard embeds send this event.
+
+Without embed events, give the iframe a fixed or viewport-based height:
 
 ```html
 <iframe
@@ -600,7 +612,7 @@ The link has the same limits as the embed:
 
 ## Listen for embed events
 
-An iframe embed can send events to your page with `window.postMessage`. Each message has a `type`, such as `lightdash:filterChanged`, `lightdash:tabChanged`, `lightdash:allTilesLoaded`, `lightdash:chartSaved` or `lightdash:locationChanged`, plus a `payload` and a `timestamp`. Payloads are the same as for the [React SDK events](/embed/react-sdk#listen-to-events); `locationChanged`, which only iframe embeds send, carries `{ pathname, search, href }`.
+An iframe embed can send events to your page with `window.postMessage`. Each message has a `type`, such as `lightdash:filterChanged`, `lightdash:tabChanged`, `lightdash:allTilesLoaded`, `lightdash:chartSaved`, `lightdash:contentHeightChanged` or `lightdash:locationChanged`, plus a `payload` and a `timestamp`. Payloads are the same as for the [React SDK events](/embed/react-sdk#listen-to-events); `locationChanged`, which only iframe embeds send, carries `{ pathname, search, href }`. To size the iframe from `contentHeightChanged`, see [Fit the iframe to the dashboard height](#fit-the-iframe-to-the-dashboard-height).
 
 Messages are only sent when both of these are true:
 
