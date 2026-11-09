@@ -30,6 +30,10 @@ Lightdash generates the server URL and configuration for your instance and your 
   </Step>
 </Steps>
 
+<Note>
+  The OAuth access token issued for the connection lasts 1 hour and refreshes itself in the background. The refresh token lasts 2 weeks; once it expires, the client has to repeat this sign-in flow. These are Lightdash's own tokens, so the connection doesn't follow your identity provider's session (for example Google) — signing out of or extending that session has no effect on it. Self-hosted instances can change both defaults, see [environment variables](/self-host/customize-deployment/environment-variables#mcp).
+</Note>
+
 ## Manual setup
 
 Every client needs the MCP server URL for your instance and a way to authenticate. Interactive clients use OAuth; headless integrations can use a personal access token. Use this section when you want a client-specific walkthrough, when you're configuring a client without opening Lightdash, or when you're building your own integration.
@@ -269,7 +273,7 @@ When the header is set:
 - The `list_projects` tool is hidden from `tools/list`, so the AI assistant isn't steered toward another project.
 - Access to the project is still enforced by your user, API key, or service account's permissions — the header can't be used to access projects the caller can't already see.
 
-This is useful when you want each integration, workspace, or environment to be locked to one project (for example, a separate connector per project) without relying on the AI assistant to pick the right project.
+This is useful when you want each integration, workspace, or environment to be locked to one project (for example, a separate connector per project) without relying on the AI assistant to pick the right project. A user chooses this for their own integration; it isn't an admin-enforced restriction. To restrict which projects MCP clients can reach for everyone in your organization, see [Restrict MCP to specific projects](#restrict-mcp-to-specific-projects).
 
 The header value must be a valid project UUID. You can find the project UUID in the Lightdash URL when viewing a project (`/projects/<projectUuid>/...`).
 
@@ -354,6 +358,8 @@ The header value must be a JSON object where each value is either a string or an
 
 If the agent user already has a value set for an attribute, the header can only **narrow** that value (set a subset of the pre-configured values), not expand access. If no value is pre-configured for the attribute on the agent user, any value can be set via the header.
 
+For a [service account](/workspace-admin/service-accounts#user-attributes), the attribute's default value counts as a pre-configured value, so the header can only narrow it (for example, to an org default of `region: none`). To let the header set any value per request, [assign the service account](/workspace-admin/user-attributes#assigning-user-attributes-to-users-and-groups) the value `*` for that attribute.
+
 <CodeGroup>
 ```bash curl
 curl https://<your_instance_name>.lightdash.cloud/api/v1/mcp \
@@ -400,6 +406,15 @@ Organization admins can turn MCP on or off for the whole organization with **All
 
 **Settings → MCP → Connect** always shows. **General** and **Analytics** show only when [AI features are enabled](/workspace-admin/ai-settings#enable-ai-features) for your organization (on a self-hosted instance, [enable AI agents](/self-host/enterprise-features/ai-agents#enable-ai-agents)). **General** needs an organization admin or developer role. **Analytics** also shows to people who can manage agents in at least one project.
 
+### Restrict MCP to specific projects
+
+The **Project access** card in **Settings → MCP → General** lets organization admins and developers choose which projects MCP clients can reach, separately from each user's project access in the Lightdash app. It's disabled while **Allow MCP access** is off.
+
+- **All projects** (the default): MCP clients can reach any project the connecting user, API key, or service account already has access to in Lightdash.
+- **Only selected projects**: MCP clients can only reach the projects you add to **Allowed projects**. Picking this mode requires selecting at least one project before it applies. A new project stays unavailable to MCP clients until an admin adds it here, even if users already have access to it in the app. If you remove every project from the list, MCP clients can't access any project — the card shows a "No projects allowed" warning until you add one back.
+
+This setting only limits what MCP clients can reach; it doesn't change a user's access in the Lightdash app, and it doesn't grant access either — a caller still needs its own permissions on a project to use it over MCP. It's the admin-enforced counterpart to a user [pinning a project with the `X-Lightdash-Project` header](#pin-a-project-with-the-x-lightdash-project-header) on their own integration.
+
 ## What it can do
 
 ### Core capabilities
@@ -426,12 +441,12 @@ An active project must be set before MCP can retrieve any data. Your AI assistan
 
 #### Query execution
 
-- **Run metric query** - Execute queries using your semantic layer's metrics and dimensions. Completed results include a best-effort `exploreUrl` so you can open the query in Lightdash to keep exploring.
+- **Run metric query** - Execute queries using your semantic layer's metrics and dimensions. Returns up to 5,000 rows by default; a requested limit above that is clamped to the cap without the response saying so. Completed results include a best-effort `exploreUrl` so you can open the query in Lightdash to keep exploring. MCP has no export or download tool — for a larger or complete extract, open the `exploreUrl` and [download the results](/explore/share-charts#download-results-or-a-chart-image) with **All results** (bounded by the instance's [export limits](/workspace-admin/export-limits)), or set up a [scheduled delivery](/explore/create-scheduled-deliveries) as CSV or Excel.
 - **Render chart** - Render a visualization (tables, bar charts, line charts, pie charts, and more) for a completed metric query result in MCP App-capable clients (e.g., Claude). Call this after a metric query finishes when you want a visual chart; the query is not re-executed. It can also render with one of the project's [custom chart types](#chart-types). SQL Runner results are not supported by `render_chart`.
 - **Run SQL** - Execute arbitrary SQL queries directly against the project's data warehouse. Useful for ad-hoc analysis or queries that don't fit the explore-based model. Returns up to 500 rows by default (configurable up to 5,000). Completed results include a best-effort `sqlRunnerUrl` so you can open the compiled SQL in [SQL Runner](/explore/sql-runner).
 - **Get query result** - Poll for the result of a long-running query. `run_metric_query` and `run_sql` each wait about 50 seconds for the query to finish; if it hasn't, the response has no `exploreUrl` (or `sqlRunnerUrl`) yet — just a `queryUuid` to poll. Call `get_query_result` with that `queryUuid` until the warehouse completes the query — so long queries don't time out the session. The completed (`done`) response includes the same best-effort `exploreUrl` (or `sqlRunnerUrl` for `run_sql` queries) as a synchronously-completed call.
 
-**Run SQL** requires the `manage SqlRunner` permission, which Developers and Admins have by default and [custom roles](/workspace-admin/custom-roles) can add. Without it, `run_sql` doesn't appear in your client's tools list at all, rather than returning a permission error when called. The SQL is executed directly against your warehouse, so use the appropriate SQL dialect for your connection (e.g., PostgreSQL, BigQuery, Snowflake). Lightdash runs the query as soon as the tool is called; any confirmation step comes from your MCP client's own tool-approval setting.
+**Run SQL** requires the `manage SqlRunner` permission, which Developers and Admins have by default and [custom roles](/workspace-admin/custom-roles) can add. Without it, `run_sql` doesn't appear in your client's tools list at all, rather than returning a permission error when called. The SQL is executed directly against your warehouse, so use the appropriate SQL dialect for your connection (e.g., PostgreSQL, BigQuery, Snowflake). Lightdash runs the query as soon as the tool is called; any confirmation step comes from your MCP client's own tool-approval setting. To limit which schemas and catalogs `run_sql` can read, set the project's [Agent data scope](/agents/data-access#scoping-raw-sql-to-specific-schemas).
 
 <Accordion title="Query response shapes (for developers)">
   When you call `run_sql` from a custom MCP client or live artifact, the tool returns both a CSV text payload and a `structuredContent` object. Prefer `structuredContent.result.rows` over parsing the CSV — values arrive as JSON-serializable primitives (numbers, strings, booleans, ISO date strings, or `null`), so you don't need `parseFloat` or `parseInt` on numeric columns.
@@ -582,7 +597,7 @@ while (true) {
 
 **Who can write content over MCP.** Organization admins control the feature for everyone with **Allow content changes via MCP** in **Settings → MCP → General**, which is **on by default**. When it's off, `create_content` and `edit_content` are not registered for any MCP client in the organization. Reading content over MCP is unaffected.
 
-When content changes are allowed, the two tools are also registered only for callers who can save content in the project. This is the same check as the **Save** button in the Lightdash app: the caller's role must let them create charts or dashboards, and they must either be able to create spaces or have editor access to at least one space in the project. The check runs at tool registration, so users who can't save content don't see these tools in the tools list. For example, an Interactive Viewer with editor access to a space gets `create_content` and `edit_content`.
+When content changes are allowed, the two tools are also registered only for callers who can save content in the project. This is the same check as the **Save** button in the Lightdash app: the caller's role must let them create charts or dashboards, and they must either be able to create spaces or have editor access to at least one space in the project. The check runs at tool registration, so users who can't save content don't see these tools in the tools list. For example, an Interactive Viewer with editor access to a space gets `create_content` and `edit_content`. An Interactive Viewer who hasn't been given access to any shared space still gets the tools if [default user spaces](/explore/default-user-spaces) are enabled for the project, since every user is an admin of their own default space.
 
 Project, space, and content-level checks still run at invocation time on top of the registration gate.
 

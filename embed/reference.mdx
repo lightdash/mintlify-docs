@@ -55,7 +55,7 @@ Use an [iframe](/embed/iframe) in any web framework, or the [React SDK](/embed/r
 ## Known limitations
 
 - Embedding works for dashboards, charts, [AI agents](/embed/embed-ai-agents), the [metrics catalog](/embed/embed-metrics-catalog), and [data apps](/data-apps). To embed explores, use the `canExplore` flag in a dashboard, AI agent, or metrics catalog token.
-- The **Filter dashboard to** option when clicking on individual chart segments will not work on embedded dashboards.
+- The **Filter dashboard on … to** option when clicking on individual chart segments is available on embedded dashboards only under the same `canAddFilters` condition as the **Add filter** button: filter interactivity enabled and `dashboardFiltersInteractivity.canAddFilters` set to `true`. JWTs without `canAddFilters: true`, or with filter interactivity disabled, don't get this option.
 - iframe embedding has no built-in font or style override — the [`fontFamily` style](/embed/react-sdk#font-family) is a React SDK prop. For font or other visual customization on an iframe-embedded dashboard, build the chart as a [custom chart type](/visualizations/custom-charts) in Chart Studio or install one from the chart library: it carries its own fonts and layout and renders like any other saved chart on a dashboard tile, including in an iframe embed.
 
 If you're interested in embedding and one or more of these items are blockers, please reach out.
@@ -875,6 +875,14 @@ Role checks use the Lightdash user identified by `writeActions.userUuid`, or the
 Configure embed scopes in the **Embedding** section of a [custom role](/workspace-admin/custom-roles), then assign that role to the actor. Built-in roles also provide embed scopes; duplicate a system role if you want a starting point you can edit. The external viewer's `user.externalId` is not the role-bearing actor.
 
 Permissions from the actor's organization and project roles are additive. Removing a scope from one role does not revoke a grant from another role. When testing a restrictive custom role, make sure the actor has no other role that still grants the capability.
+
+### Supporting many embedded end users
+
+The actor doesn't have to be one Lightdash user per embedded end user. When your app has a handful of permission profiles shared by many end users, create one service account per profile — for example `viewer`, `analyst`, `admin` — give each a custom role with the embed scopes for that profile, and have your backend pick the matching `serviceAccountUserUuid` when it signs each end user's token. A new end user reuses an existing profile's service account: there's no Lightdash user to create and no code change.
+
+If your embedded end users are themselves Lightdash users, look up the signed-in user's Lightdash user UUID instead and set it as `writeActions.userUuid` when you sign their token.
+
+Either pattern depends on signing the JWT per session or request, with a short `expiresIn`, rather than generating one token once and reusing it — that's what lets your backend resolve each request to the matching actor as end users and profiles change. The viewer's [`user.externalId`](#user-metadata) can still carry your own user identifier for tracking; it isn't the role-bearing actor.
 
 ### Dashboard capabilities
 

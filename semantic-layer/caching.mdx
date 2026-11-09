@@ -5,13 +5,12 @@ description: "Cut the number of queries Lightdash runs against your warehouse wi
 
 import { FeatureBadge } from '/snippets/feature-badge.jsx';
 
-
 Caching is available on Lightdash Cloud and on self-hosted instances with a valid Enterprise license. Filter value caching is available on all Cloud plans; results caching requires Enterprise.
 
 Lightdash supports two types of caching:
 
 1. **[Cached Filter values](#filter-value-caching)** - enabled for every cloud user without requiring any configuration.
-2. **[Cached results for Charts and Dashboards](#chart-and-dashboard-results-caching)** - available on Enterprise and must be enabled by the Lightdash team.
+2. **[Cached results for Charts and Dashboards](#chart-and-dashboard-results-caching)** - available on Enterprise; project admins enable and configure it themselves.
 
 ## Filter value caching
 
@@ -30,7 +29,9 @@ The **Results loaded at** message doesn't appear for dimensions with [`fetch_fro
 <FeatureBadge label="Enterprise" />
 
 <Info>
-  Results caching is off by default. Contact the Lightdash team to enable it. A cache timestamp in the dashboard header confirms it is active; if no timestamp appears, it is not enabled.
+  Results caching is off by default. Project admins turn it on and set its [cache duration](#cache-duration-per-project) themselves under **Project settings → Results caching** — there's no need to contact the Lightdash team. A cache timestamp in the dashboard header confirms it is active; if no timestamp appears, it is not enabled.
+
+  The one exception is a self-hosted instance that still sets the deprecated `RESULTS_CACHE_ENABLED` environment variable: it forces caching on or off for every project, the toggle in project settings is locked, and the page tells the admin to contact their instance admin to change it.
 </Info>
 
 Popular charts and dashboards will load faster when caching is enabled. The first user to visit a chart or dashboard each day will load fresh results from the warehouse, which get cached. After that, all following visits to the same chart or dashboard will load from the cached results.
@@ -41,20 +42,19 @@ Caching popular charts and dashboards will reduce warehouse costs to the organiz
 
 ### Scope of the cache
 
-Caching is turned on per instance, but each project can set its own **cache duration** under **Project settings → Results caching** — see [Cache duration per project](#cache-duration-per-project). There is no way to enable or disable caching for an individual dashboard.
+Each project turns caching on or off, and sets its own **cache duration**, under **Project settings → Results caching** — see [Cache duration per project](#cache-duration-per-project). There is no way to enable or disable caching for an individual dashboard.
 
-These Lightdash features use caching (if it's enabled on your instance):
+These Lightdash features use caching when it's turned on for the project:
 
 - **Saved Charts** are cached based on the last refresh in any context (edit mode, view mode, dashboard refresh, etc.), but queries made while editing are NOT cached or pulled from cache.
 - **Dashboard tiles** (internal and embedded) will use the cache from saved charts they reference. If charts only exist on a single dashboard, they will refresh whenever you click the Refresh button on the dashboard. Embedded dashboards have no Refresh button, so embedded viewers see cached results until they expire. To control how fresh embedded data is, set the project's [cache duration](#cache-duration-per-project); a shorter duration sends more queries to the warehouse.
-- **Scheduled Deliveries** generate and use cached results for the saved chart or dashboard they belong to.
-- **Google Sheets syncs** also use cached results. If you need syncs to always return fresh data, be aware that enabling caching will cause syncs to deliver cached results until the cache expires.
 - **SQL runner queries** including saved SQL charts and dashboard SQL chart tiles are cached through the same execution path as metric-based charts. Note that the SQL runner does not have a UI button to force-refresh or invalidate the cache — results remain cached until the cache expires.
 - **Metrics Catalog** queries go through the same async query service and are cached like any other query.
 - **[Data apps](/data-apps)** run every metric query through the same async query service and are cached like any other query, including live-linked charts. The **Refresh** button in the app header (while building or viewing) invalidates the cache for that app and re-queries the warehouse fresh for the rest of the session, the same way the dashboard refresh button does. Because the cache key is project ID plus generated SQL, apps with lots of interactive filter controls produce more distinct cache entries than an equivalent dashboard — the first hit on each filter combination still goes to the warehouse.
 
 These Lightdash features DO NOT use caching:
 
+- **Scheduled Deliveries** and **Google Sheets syncs** run a fresh warehouse query by default. To reuse unexpired cached results instead, turn on **Use cached results when available** on the delivery or sync. The option isn't offered for data app deliveries.
 - **Editing a saved chart** — actions in edit mode (such as changing columns, filters, or other query parameters) explicitly bypass the cache to ensure you always see fresh results while building a query.
 - **[External connections](/data-apps/external-connections) in data apps** — requests to third-party HTTP APIs are runtime fetches through the Lightdash proxy and are not covered by results caching.
 
@@ -94,9 +94,9 @@ Cache expiry is **rolling, not scheduled**. It's based on the age of each cached
 
 #### Cache duration per project
 
-Project admins set the cache duration for a single project under **Project settings → Results caching**. Turn off **Use the default cache duration** and enter a whole number of minutes between `1` and `43200` (30 days). Leaving the toggle on falls back to the instance default.
+Project admins turn caching on and set the cache duration for a single project under **Project settings → Results caching**. This page is available to any project whose organization has a valid Enterprise license. Turn off **Use the default cache duration** and enter a whole number of minutes between `1` and `43200` (30 days). Leaving the toggle on falls back to the instance default.
 
-The **Results caching** page appears in project settings only once results caching is enabled. On Lightdash Cloud, contact the Lightdash team to enable it; self-hosted instances set `RESULTS_CACHE_ENABLED=true` (see [environment variables](/self-host/customize-deployment/environment-variables#cache)).
+On a self-hosted instance that still sets the deprecated `RESULTS_CACHE_ENABLED` environment variable (see [environment variables](/self-host/customize-deployment/environment-variables#cache)), caching is forced on or off for every project and the toggle here is locked — contact your instance admin to change it instead.
 
 <Tip>
 If your dashboards report on "yesterday's data" and you want users to always see fresh results in the morning, set a shorter cache duration (for example, 8 hours) so that results cached during the workday expire overnight.
@@ -111,6 +111,23 @@ A cached result is served as stored until it expires, even one cached while the 
 </Frame>
 
 There's no button in the Lightdash UI to invalidate a single Saved Chart's cache outside of a dashboard. You can do this through the API: set `invalidateCache: true` on a request to the [execute saved chart](/api-reference/v2/execute-saved-chart) or [execute dashboard chart](/api-reference/v2/execute-dashboard-chart) endpoint to bypass the cache and re-run that chart's query, which repopulates its cache entry.
+
+#### Clearing cached results for a project
+
+Project admins can clear every cached result for a project from **Project settings → Results caching**:
+
+- **Clear cache now** invalidates every cached result in the project immediately. The next load of each chart, dashboard, or API query runs against the warehouse and repopulates the cache.
+- **Scheduled clearing** runs the same clear automatically — daily or weekly, at one or more hours, in the project's default time zone.
+
+To invalidate the cache from a script or a data pipeline, call one of these endpoints with a [personal access token](/personal-settings/create-personal-tokens) (`Authorization: ApiKey <token>`). All three require project admin access and results caching turned on for the project; query history and existing result files are kept, and the next run of the affected chart, dashboard, or project queries the warehouse and repopulates the cache:
+
+| Scope | Endpoint |
+| --- | --- |
+| Project | `POST /api/v1/projects/{projectUuid}/results-cache/invalidate` |
+| Dashboard | `POST /api/v2/dashboards/{dashboardUuid}/results-cache/invalidate` |
+| Saved chart | `POST /api/v2/saved/{chartUuid}/results-cache/invalidate` |
+
+Call the project-level endpoint from a data pipeline once a run finishes, so the next person to open a chart or dashboard gets fresh results instead of what was cached before the run. See the [API reference](/api-reference/v1/introduction) for full request and response details.
 
 ## Results caching vs pre-aggregates
 

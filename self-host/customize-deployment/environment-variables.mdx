@@ -79,6 +79,7 @@ Control how many rows a query can return, page sizes, exports, and chart-version
 | `LIGHTDASH_CSV_CELLS_LIMIT`                  | Max cells on CSV file exports (default=100000)                                                                                                                                                                                                                                                                                                   |
 | `LIGHTDASH_DASHBOARD_MAX_TILES_PER_TAB`      | Maximum number of tiles allowed per tab on a dashboard (default=50)                                                                                                                                                                                                                                                                              |
 | `LIGHTDASH_DASHBOARD_MAX_TABS_PER_DASHBOARD` | Maximum number of tabs allowed per dashboard (default=20)                                                                                                                                                                                                                                                                                        |
+| `LIGHTDASH_DASHBOARD_MAX_CONCURRENT_TILE_QUERIES` | Caps how many tile queries an open dashboard runs concurrently in each viewer's browser, instead of every tile firing its query to the warehouse as soon as the dashboard loads. Tiles currently visible on screen are started first; others wait for a free slot. A query started by a data refetch (for example, after a filter change) also waits for a free slot like any other tile query. Unset by default (no cap)                                                       |
 | `MAX_DOWNLOADS_AS_CODE`                      | Maximum number of downloads as code (default=100)                                                                                                                                                                                                                                                                                                |
 
 ## Scheduler
@@ -189,7 +190,6 @@ Enable or disable individual product features across the instance.
 
 | Variable                                     | Description                                                                                                                                                                                                                          |
 | :------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GROUPS_ENABLED`                             | Enables/Disables groups functionality (default=false)                                                                                                                                                                                |
 | `CUSTOM_VISUALIZATIONS_ENABLED`              | Enables/Disables custom chart functionality (default=false)                                                                                                                                                                          |
 | `EXTENDED_USAGE_ANALYTICS`                   | When `true`, adds "Dashboard views (top 20)" and "Chart views (top 20)" tables to the [User Activity dashboard](/workspace-admin/usage-analytics#user-activity-dashboard) in Project Settings > Usage Analytics. (default=false) |
 | `DISABLE_DASHBOARD_COMMENTS`                 | Disables dashboard comments (default=false)                                                                                                                                                                                          |
@@ -328,7 +328,7 @@ Scheduled-delivery links longer than 7 days automatically switch to a persistent
 
 | Variable                     | Description                                                                                     |
 | :--------------------------- | :---------------------------------------------------------------------------------------------- |
-| `RESULTS_CACHE_ENABLED`      | Enables caching for chart results (default=false)                                               |
+| `RESULTS_CACHE_ENABLED`      | Deprecated - forces results caching on or off for every project and locks each project's own setting. Unset it and turn on results caching per project under **Project settings → Results caching** instead |
 | `AUTOCOMPLETE_CACHE_ENABLED` | Enables caching for filter autocomplete results (default=false)                                 |
 | `CACHE_STALE_TIME_SECONDS`   | Defines how long cached results remain valid before being considered stale (default=86400, 24h) |
 
@@ -344,6 +344,33 @@ These variables are **deprecated**; use the `RESULTS_S3_*` versions instead.
 ## Logging
 
 <LoggingEnv />
+
+### Audit log events
+
+Lightdash writes audit log events to the application log, at the `audit` log level. `audit` is below `info`, so set `LIGHTDASH_LOG_LEVEL=audit` or `LIGHTDASH_LOG_LEVEL=debug` to write them — with the default level, Lightdash does not write them. Set `LIGHTDASH_LOG_FORMAT=json` to get each entry as structured JSON instead of a plain-text line.
+
+Each entry has:
+
+- `id` and `timestamp`.
+- `actor`: `type` (`session`, `pat`, `oauth`, `service-account` or `anonymous`) and, for user actors, the user `uuid`, `email`, `organizationRole`, and `impersonatedBy` when the action ran under [impersonation](/support/support-access).
+- `action` and `resource` (`type`, `organizationUuid`, `projectUuid` when relevant, and `metadata`).
+- `context`: `ip`, `userAgent` and `requestId`.
+- `status`: `allowed`, `denied` or `allowed-bypass`.
+
+If your log indexer maps the `actor` field as text, set `LIGHTDASH_LOG_AUDIT_ACTOR_AS_STRING=true` to serialize it to a JSON string instead of a nested object.
+
+These access changes write an explicit event that names the target and, where a role changed, the before and after value:
+
+| Change | `action` | `resource.metadata` |
+| --- | --- | --- |
+| Group membership change (in the app, through the API, or SCIM) | `update` on resource type `Group`, with `resource.metadata.event = group.membership_changed` | `groupUuid`, `operation` (`add`, `remove`, `replace` or `delete`), `memberUuids` |
+| Organization role set replaced | `organization_role_set.replaced` | target `userUuid`, the role set `before` and `after`, and the roles `added` and `removed` |
+| Project role set replaced | `project_role_set.replaced` | target `userUuid`, the role set `before` and `after`, and the roles `added` and `removed` |
+| Project group role set replaced | `project_group_role_set.replaced` | target `groupUuid`, the role set `before` and `after`, and the roles `added` and `removed` |
+| Direct access grant, revoke or role change on a dashboard, chart, SQL chart, document or app | `direct_access.grant`, `direct_access.revoke` or `direct_access.role_change` (plus `direct_access.reset` and `direct_access.replace` for bulk changes) | `resourceUuid`, `principalType`, `principalUuid`, `beforeRole`, `afterRole`. `reset` and `replace` carry `revokedUsers`, `revokedGroups`, `appliedUsers` and `appliedGroups` instead |
+| Login, logout, leaving an organization, impersonation start and stop | `login`, `logout`, `leave_organization`, `impersonation_start`, `impersonation_stop` | login provider and similar context |
+
+Other access changes — a user joining an organization, a single role assignment, adding, updating or removing a user's project access, and adding or removing a user's space access — only write the permission-check entry for the request that made the change (`actor`, `action`, `resource`, and `status` of `allowed` or `denied`). That entry doesn't name the user whose access changed or the role involved.
 
 ## Prometheus
 
@@ -409,7 +436,7 @@ Enterprise-only. For setup steps (which provider to pick, how to point at an LLM
 | `AI_COPILOT_TELEMETRY_ENABLED`            | Enables telemetry for AI agents (default=false)                                                                                                         |
 | `AI_COPILOT_THREAD_DUMP_ENABLED`          | Enables the [AI thread debug dump](/support/ai-thread-debug-dump) download action for organization AI admins (default=false)                             |
 | `AI_COPILOT_REQUIRES_FEATURE_FLAG`        | Requires a feature flag to use AI agents (default=false)                                                                                                |
-| `AI_COPILOT_MAX_QUERY_LIMIT`              | Maximum number of rows returned in AI-generated queries (default=5000)                                                                                    |
+| `AI_COPILOT_MAX_QUERY_LIMIT`              | Maximum number of rows returned in AI-generated queries and by the MCP `run_metric_query` tool (default=5000)                                                                                    |
 | `AI_COPILOT_RUN_SQL_MAX_LIMIT`            | Maximum number of rows the AI agent `run_sql` tool can return. Falls back to `AI_COPILOT_MAX_QUERY_LIMIT`, then to 5000.                                |
 | `AI_VERIFIED_ANSWER_SIMILARITY_THRESHOLD` | Similarity threshold (0-1) for verified answer matching (default=0.6)                                                                                    |
 | `AI_COPILOT_MCP_TIMEOUT_MS` | Timeout in milliseconds when connecting to an external MCP server (default=20000). |
@@ -615,14 +642,6 @@ Enterprise-only. For setup steps and how the allow-list of iframe origins works,
 | `EMBED_EVENT_SYSTEM_POST_MESSAGE_ENABLED` | When `true`, the embed event system also dispatches events via `window.postMessage` to the parent frame. (default=false) |
 | `EMBED_EVENT_RATE_LIMIT_MAX_EVENTS`     | Maximum number of embed events per rate-limit window. (default=10)                                  |
 | `EMBED_EVENT_RATE_LIMIT_WINDOW_MS`      | Embed event rate-limit window in milliseconds. (default=1000)                                       |
-
-## Custom roles
-
-Enterprise-only. See [custom roles](/self-host/enterprise-features#custom-roles) for setup.
-
-| Variable               | Description                                                                                                                                                      |
-| :--------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CUSTOM_ROLES_ENABLED` | Enables creation of custom organization roles with configurable permission scopes beyond the default Admin, Developer, Editor, and Viewer roles. (default=false) |
 
 ## Service account
 

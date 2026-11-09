@@ -612,7 +612,7 @@ Lightdash supports three Redshift authentication methods:
 
 - **Username & password**: store a shared Redshift database user and password on the project connection.
 - **AWS IAM (CLI credentials)**: users paste temporary AWS credentials, or admins configure an IAM role/access-key identity, and Lightdash uses those AWS credentials to mint temporary Redshift database credentials.
-- **User Account (Sign in with AWS)**: users sign in through AWS IAM Identity Center in the browser. The project stores the AWS access portal and account/role metadata; each user signs in with AWS and Lightdash stores short-lived per-user AWS credentials.
+- **User Account (Sign in with AWS)**: users sign in through AWS IAM Identity Center in the browser. The project stores the AWS access portal and a fixed account ID and role; each user signs in with AWS and Lightdash stores short-lived credentials for that role as their personal warehouse credentials.
 
 <Note>If you don't see the AWS IAM authentication options, they aren't enabled for your organization yet — contact Lightdash support.</Note>
 
@@ -670,7 +670,7 @@ Required for **User Account (Sign in with AWS)**. The AWS account users should a
 
 ##### AWS role name
 
-Required for **User Account (Sign in with AWS)**. The IAM Identity Center permission set role name users select when signing in. This is usually the permission set name shown in the AWS access portal, for example `LightdashRedshiftReadOnly`.
+Required for **User Account (Sign in with AWS)**. The IAM Identity Center permission set role name every user is given when they sign in — it's fixed on the project connection, not a choice users make in the access portal. Every user who signs in to this project needs to be assigned that permission set. This is usually the permission set name shown in the AWS access portal, for example `LightdashRedshiftReadOnly`.
 
 <AccordionGroup>
 <Accordion title="Setting up AWS IAM CLI credentials for Redshift">
@@ -728,7 +728,7 @@ Serverless workgroup:
 
 <Accordion title="Setting up AWS IAM Identity Center for Redshift">
 
-Use **User Account (Sign in with AWS)** when each Lightdash user should authenticate with their own AWS identity in the browser. This is the best fit for shared Lightdash instances because the AWS access portal, account ID, and role name are stored on the project connection, while each user's AWS session is stored as personal warehouse credentials.
+Use **User Account (Sign in with AWS)** when every user who queries this project should sign in with AWS in the browser rather than share a database password. The AWS account ID and role name are fixed on the project connection, not chosen at sign-in: every user who signs in gets credentials for that one IAM Identity Center permission set, and each must be assigned to it. This method can't give different users different Redshift access within the same project — if some users need their own permission set, they need personal credentials that don't use Identity Center sign-in, such as a database username and password or their own AWS IAM keys.
 
 <Note>
   Do not configure this with Lightdash environment variables. IAM Identity Center settings are project-specific: different Redshift projects can use different AWS accounts, access portals, regions, and permission sets.
@@ -748,7 +748,7 @@ Use **User Account (Sign in with AWS)** when each Lightdash user should authenti
 
 **2. Create a permission set.** Attach a policy that can mint Redshift credentials for your cluster or serverless workgroup. For production, keep this policy scoped to the cluster/workgroup and database your Lightdash project uses.
 
-**3. Assign users or groups to the AWS account.** Assign the permission set to the AWS account your Redshift warehouse lives in. Users should be able to open the AWS access portal and see that account and role.
+**3. Assign users or groups to the AWS account.** Assign the permission set to the AWS account your Redshift warehouse lives in. Every Lightdash user who will sign in to this project needs this permission set assigned to them — they all authenticate as the same role.
 
 **4. Grant Redshift database permissions.** IAM authentication creates or uses a Redshift database user derived from the AWS role. Grant that database user access to the schemas and tables Lightdash should query.
 
@@ -768,7 +768,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA analytics
 - **AWS access portal URL**: the IAM Identity Center start URL.
 - **IAM Identity Center region**.
 - **AWS account ID**.
-- **AWS role name**: the permission set/role users select in the AWS access portal.
+- **AWS role name**: the permission set/role every user who signs in is given. It's the same for everyone on this connection, not something users choose.
 
 After saving, users who open the project will see **Sign in with AWS**. They complete the AWS browser login and Lightdash stores their personal short-lived AWS credentials for queries.
 
@@ -901,6 +901,10 @@ Finally, contact the Lightdash Team support@lightdash.com to setup Sign in with 
 </Accordion>
 
 You can read more about this on [Snowflake official docs](https://docs.snowflake.com/en/user-guide/oauth-snowflake-overview)
+
+Lightdash doesn't request a Snowflake role when a person signs in, and the **Role** field on the connection doesn't apply to this method. Each person's queries run with the role Snowflake assigns to their sign-in, which is their default role.
+
+If your security integration sets `OAUTH_ENABLE_ROLE_SELECTION = TRUE`, Snowflake asks each person to choose their roles while they sign in, and their queries run with those roles. Signing in again adds roles and never removes one. To limit the roles people can choose, set `ALLOWED_ROLES_LIST` or `BLOCKED_ROLES_LIST` on the integration. See [Snowflake OAuth for custom clients](https://docs.snowflake.com/en/user-guide/oauth-custom) for these settings.
 
 ##### Private Key
 
@@ -1500,7 +1504,7 @@ Then scroll down to the dbt project section:
   <img src="/images/integrations/connect-project/project-connection-dbt.png" alt="The dbt connection section of Lightdash project settings, with type GitHub, OAuth authorization, and repository, dbt version, and branch fields" />
 </Frame>
 
-The **dbt version** field sets the dbt Core 1.x version Lightdash uses when it compiles your project. The default, **latest**, uses the newest version Lightdash supports. The list has no dbt Core v2 (Fusion) option: for a Fusion project, keep **latest** and keep the project compatible with dbt Core 1.10 or later, as described in [Moving to dbt Core v2 (Fusion)](/integrations/dbt/upgrading#moving-to-dbt-core-v2-fusion).
+The **dbt version** field sets the dbt Core 1.x version Lightdash uses when it compiles your project. Lightdash supports dbt Core 1.4 to 1.12. The default, **latest**, uses the newest version Lightdash supports, currently 1.12. If a refresh fails with a dbt compile error and the project is pinned to an older version, choose a newer version, or **latest**, and refresh again. `lightdash deploy` and `lightdash preview` compile with the dbt you have installed, so for those, upgrade dbt locally. The list has no dbt Core v2 (Fusion) option: for a Fusion project, keep **latest** and keep the project compatible with dbt Core 1.10 or later, as described in [Moving to dbt Core v2 (Fusion)](/integrations/dbt/upgrading#moving-to-dbt-core-v2-fusion).
 
 Pick your connection type and follow the guide below: [GitHub](#github), [GitLab](#gitlab), [Azure DevOps](#azure-devops), [Bitbucket](#bitbucket), [dbt Cloud](#dbt-cloud), or the [CLI](#cli).
 
@@ -1587,6 +1591,8 @@ If a refresh, **Test & deploy**, or an agent's **Connect GitHub** fails with an 
 - If the card shows **Install**, click it and complete the GitHub flow until it returns you to Lightdash. Lightdash then stores the new installation.
 - If the card shows **Reinstall**, click it. Lightdash deletes the stored installation, uninstalls the app on GitHub, and opens the install flow. **Delete** does the same without opening the install flow, so follow it with **Install**.
 - **Pending approval** means an admin of your GitHub organization still needs to approve the installation request in GitHub.
+
+This fixes an installation that is missing or pending approval. If the installation works but is set to **Only select repositories** and doesn't include a repository you've connected, such as an [additional dbt source](/integrations/dbt/projects#adding-and-managing-sources), the refresh doesn't show this `Not Found` message; it fails to load that repository instead. Add the repository in the app installation's **Repository access** settings on GitHub, or click **Reinstall** and select it, then retry.
 
 ***
 

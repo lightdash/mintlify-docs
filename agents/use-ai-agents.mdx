@@ -43,6 +43,8 @@ If external sources are enabled for the project and you can manage them (Editor 
 
 Attachments aren't available in [Deep research](/agents/deep-research#start-a-run) mode.
 
+This attachment picker is part of the Lightdash composer. When you mention an agent in Slack instead, it only reads the message text and, when enabled, the thread history — see [AI analyst agents](/integrations/slack#ai-analyst-agents) for what Slack mentions can and can't read.
+
 ### Model and reasoning
 
 When more than one model is available, the model picker beside the send button shows which model answers. Click it to choose another model. For models that support reasoning, the same menu has a **Reasoning** setting with two levels, **Default** and **High**, and the picker shows **High** beside the model name when it is on.
@@ -68,7 +70,12 @@ When you have a default agent set, Ask AI opens it directly — even if the [AI 
 
 If you haven't set a default and the AI Router is enabled, Lightdash routes each question to the best-fit agent automatically. If the router is off and you have no default, Ask AI opens the first agent in the project's list, sorted alphabetically by agent slug (not by creation date).
 
-To steer everyone without a personal default toward one agent, enable the AI Router and add [routing instructions](/agents/enable-ai-router#routing-instructions) such as *"Use @general-agent unless the question is about billing."*
+Ask AI only lists and chooses between the agents you have access to (see [User and group access](/agents/set-up-agents#user-and-group-access-optional)). If you can use only one agent in a project, that agent opens directly and the router isn't involved.
+
+To steer everyone without a personal default toward one agent, you have two options:
+
+- **Restrict the specialized agent's audience.** Under its [User and group access](/agents/set-up-agents#user-and-group-access-optional) settings, limit it to the people who use it. Everyone else, apart from admins, developers and anyone with the `manage:AiAgent` scope, can then reach only the general agent, which opens directly for them. Pick this when other teams shouldn't use the specialized agent at all.
+- **Enable the AI Router** and add [routing instructions](/agents/enable-ai-router#routing-instructions) such as *"Use @general-agent unless the question is about billing."* Pick this when other teams should still be able to reach the specialized agent.
 
 ## Asking about a chart or dashboard
 
@@ -282,7 +289,7 @@ Slack-triggered prompts can only use SQL mode when your organization has the **\
   />
 </Frame>
 
-<FeatureBadge label="Beta" /> Some questions need a step after the query: joining two explores, comparing results against an [attached CSV](#attach-a-file), ranking or bucketing rows, or fitting a forecast. For these, the agent runs one or more queries, then post-processes their results with DuckDB SQL or Python before it answers. It is off by default. [Reach out to us](mailto:support@lightdash.com) to turn it on for your organization.
+<FeatureBadge label="Beta" /> Some questions need a step after the query: joining two explores, comparing results against an [attached CSV](#attach-a-file), ranking or bucketing rows, or fitting a forecast. For these, the agent runs one or more queries, then post-processes their results with DuckDB SQL or Python before it answers. It is off by default. [Reach out to us](mailto:support@lightdash.com) to turn it on for your organization. Once it's on, you can turn it off for an individual agent with its [Composer queries](/agents/set-up-agents#composer-queries-optional) setting.
 
 The semantic layer runs first (or the SQL query, if approved in [SQL mode](#sql-mode)). DuckDB and Python only ever see the rows those queries returned, so metric definitions, joins, [data access](/agents/data-access) rules and SQL approvals apply exactly as they do for any other query. Neither DuckDB nor Python connects to your warehouse.
 
@@ -372,6 +379,10 @@ A join defined in your dbt models doesn't go through this path: the agent's metr
 
 Agents can create tables, bar charts, vertical bar charts, line charts, scatter plots, pie/donut charts, and funnel charts, but don't yet support [custom visualizations](/visualizations/custom-charts) or big number charts.
 
+### Images and screenshots
+
+Agents only read the text of a message. A screenshot, image, or table pasted as an image gives the agent nothing to work with, whether the message is sent in the Lightdash app or in Slack. This is separate from [attaching a file](#attach-a-file), which only reads plain-text documents.
+
 ### Data access and context
 
 Agent access to your data is controlled through tags in your dbt models and by the asking user's user attributes. If certain fields aren't accessible, check that they have the appropriate tags assigned to your agent, and that the user's attributes allow them. See [Who can see what](/agents/data-access#who-can-see-what) for how the controls stack, including [SQL mode](#sql-mode).
@@ -379,3 +390,12 @@ Agent access to your data is controlled through tags in your dbt models and by t
 For conversation history and how saved results refresh, see [Conversations and saved results](#conversations-and-saved-results).
 
 When an agent can use 15 or fewer explores, Lightdash includes the list of them in the agent's context. With more than 15, the agent searches for the fields it needs instead.
+
+### Request and context limits
+
+Two different limits can stop an agent mid-conversation:
+
+- **"The agent reached its work limit before it could write a response. Try asking for fewer things at once, or split your request into smaller parts."** An agent can take a limited number of internal steps per request, and this request needed more before it could reply. Asking an agent to edit every tile on a large dashboard in one message is a common way to hit it. Split the request into smaller parts instead.
+- **"This request exceeded the AI model's context limit, usually because the conversation or tool results became too large. Please start a new thread or break the request into smaller steps."** The model's context window holds the whole thread plus the data its tool calls returned, and this request pushed that over the model's limit. A long-running thread can reach it, but so can a single step that returns a lot of data, such as a wide query result — there's no fixed number of messages that triggers it.
+
+For either message, break the work into smaller requests, and for a long analysis, click **New thread** on the agent's page rather than continuing to add to one conversation.
