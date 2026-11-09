@@ -170,7 +170,6 @@ window.lightdashSidebarNavigation = [
 {"title":"Google Sheets add-on","href":"/integrations/google-sheets/add-on","parents":["Integrations","Google Sheets"]},
 {"title":"Live data sources","href":"/integrations/live-data-sources","parents":["Integrations"]},
 {"title":"Set up and manage","href":"/integrations/live-data-sources/set-up-and-manage","parents":["Integrations","Live data sources"]},
-{"title":"Limits and security","href":"/integrations/live-data-sources/limits-and-security","parents":["Integrations","Live data sources"]},
 {"title":"PostHog","href":"/integrations/live-data-sources/posthog","parents":["Integrations","Live data sources"]},
 {"title":"Google Analytics 4","href":"/integrations/live-data-sources/google-analytics","parents":["Integrations","Live data sources"]},
 {"title":"Google Search Console","href":"/integrations/live-data-sources/google-search-console","parents":["Integrations","Live data sources"]},
