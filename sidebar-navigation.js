@@ -173,6 +173,7 @@ window.lightdashSidebarNavigation = [
 {"title":"PostHog","href":"/integrations/live-data-sources/posthog","parents":["Integrations","Live data sources"]},
 {"title":"Google Analytics 4","href":"/integrations/live-data-sources/google-analytics","parents":["Integrations","Live data sources"]},
 {"title":"Google Search Console","href":"/integrations/live-data-sources/google-search-console","parents":["Integrations","Live data sources"]},
+{"title":"Meta Ads","href":"/integrations/live-data-sources/meta-ads","parents":["Integrations","Live data sources"]},
 {"title":"Metrics SQL API","href":"/integrations/metrics-sql-api","parents":["Integrations"]},
 {"title":"Snowflake Cortex","href":"/integrations/snowflake-cortex","parents":["Integrations"]},
 {"title":"Apache Ossie","href":"/integrations/apache-ossie","parents":["Integrations"]},
