@@ -9,7 +9,9 @@ import { FeatureBadge } from '/snippets/feature-badge.jsx';
 <FeatureBadge label="Experimental" />
 
 <Info>
-  Custom dependencies are off by default. On Lightdash Cloud, contact Lightdash support to enable them for your organization. On self-hosted instances, add `enable-data-app-custom-dependencies` to `LIGHTDASH_ENABLE_FEATURE_FLAGS` (see [feature flags](/self-host/customize-deployment/environment-variables#feature-flags)). Uploading an app that declares custom dependencies also requires the `manage:DataAppDependency` permission, granted only to admins by default.
+  Custom dependencies are off by default. An organization admin turns them on under **Settings → Data apps → General** with **Allow custom dependencies**. Uploading an app that declares custom dependencies also requires the `manage:DataAppDependency` permission, granted only to admins by default.
+
+  On self-hosted instances, the `enable-data-app-custom-dependencies` feature flag doesn't control this setting. When you upgrade to a version with the setting, a migration copies each organization's flag value into it once; after that, adding the flag to `LIGHTDASH_ENABLE_FEATURE_FLAGS` has no effect.
 </Info>
 
 By default, apps build against a fixed, pre-installed library set that Lightdash vets and ships — edits to `package.json` are ignored. Turning custom dependencies on lets an app pull additional packages from the public npm registry into the build sandbox, which is why it's opt-in:
@@ -33,14 +35,17 @@ Both files matter: the dependency set is `package.json` plus a matching `pnpm-lo
 Upload "revenue-explorer" with custom dependencies?
 ```
 
-If the upload fails with `Custom app dependencies are not enabled for your organization`, you have the `manage:DataAppDependency` permission, but custom dependencies aren't turned on for your organization.
+If the upload fails with `Custom app dependencies are not enabled for your organization`, you have the `manage:DataAppDependency` permission, but custom dependencies aren't turned on for your organization. Ask an organization admin to turn on **Allow custom dependencies**. Turning it off blocks new uploads with custom dependencies; apps that already use them keep building.
 
 **Rules the CLI and server enforce:**
 
 - Registry semver specs only (`^9.3.5`, `~1.2.0`, ranges). No `git:`/`file:`/URL specs and no dist-tags like `latest`.
 - At most 60 direct dependencies; lockfile ≤ 2 MB and consistent with `package.json`.
-- Every version is screened against the OSV malicious-package feed at upload; known-bad versions are rejected outright.
+- Every resolved package, including the packages your dependencies pull in, is screened against the OSV malicious-package feed at upload; known-bad versions are rejected.
+- Every resolved package, including the packages your dependencies pull in, must have been published at least 3 days before the upload. If a recent release is rejected, pin an older version or wait. Self-hosted instances change or turn off this check with [`LIGHTDASH_APP_DEPENDENCY_MIN_RELEASE_AGE_DAYS`](/self-host/customize-deployment/environment-variables#data-apps-runtime).
 
-**Additional hardening:** install scripts also never run on your machine — the scaffolded `.npmrc` sets `ignore-scripts=true`; keep it. Self-hosted instances can further tighten the policy by requiring a minimum package release age (`LIGHTDASH_APP_DEPENDENCY_MIN_RELEASE_AGE_DAYS`) or pointing installs at an internal mirror (`LIGHTDASH_APP_DEPENDENCY_REGISTRY_HOSTS`).
+**Settings → Data apps → General** shows which of these checks your instance runs, its minimum release age, and the registry hosts packages install from.
+
+**Additional hardening:** install scripts also never run on your machine — the scaffolded `.npmrc` sets `ignore-scripts=true`; keep it. Self-hosted instances can point installs at an internal mirror with [`LIGHTDASH_APP_DEPENDENCY_REGISTRY_HOSTS`](/self-host/customize-deployment/environment-variables#data-apps-runtime); the mirror must return package publish dates for the release age check.
 
 **Uploads are the only way to change dependencies.** When someone iterates on the app in the UI, the AI builder can edit `src/` but the stored dependency set is restored as-is — its `package.json` edits are ignored. Dependency changes on a version are visible in the version history.
