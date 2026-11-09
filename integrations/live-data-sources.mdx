@@ -9,10 +9,10 @@ import { FeatureBadge } from '/snippets/feature-badge.jsx';
 <div className="feature-badges"><FeatureBadge label="Beta" /></div>
 
 <Info>
-  Live data sources are behind the `api-query-sources` feature flag. On Lightdash Cloud, contact [Lightdash support](mailto:support@lightdash.com) to turn them on for your organization. On a self-hosted Enterprise instance, add `api-query-sources` to `LIGHTDASH_ENABLE_FEATURE_FLAGS`; see [Self-hosted setup](#self-hosted-setup).
+  Live data sources are behind the `api-query-sources` feature flag. Contact [Lightdash support](mailto:support@lightdash.com) to enable it for your organization. Self-hosted instances need an [Enterprise license](/self-host/enterprise-features) and `api-query-sources` in [`LIGHTDASH_ENABLE_FEATURE_FLAGS`](/self-host/enterprise-features#live-data-sources).
 </Info>
 
-A live data source is a connection to a third-party analytics tool that Lightdash queries at the moment you ask. Its data shows up as a table you can explore and that [AI agents](/agents/use-ai-agents) can answer questions from. Lightdash doesn't sync or store the tool's data; each query is one request to the tool's API.
+A live data source is a connection to a third-party analytics tool that Lightdash calls each time you run a query. Its data appears as a table you can explore and [AI agents](/agents/use-ai-agents) can query. Lightdash doesn't sync or store the tool's data; each query is one request to the tool's API.
 
 <CardGroup cols={3}>
   <Card title="PostHog" href="/integrations/live-data-sources/posthog">
@@ -31,8 +31,8 @@ A live data source is a connection to a third-party analytics tool that Lightdas
 Lightdash usually queries your warehouse, where data arrives through your own pipelines or an ingestion tool that copies a SaaS tool's data on a schedule. A live data source skips the copy:
 
 - **No pipeline.** You sign in from Lightdash, and the source is ready to query. There's no sync to schedule, no destination schema and no dbt model to write.
-- **Fresh by default.** Every query reads the tool's API, so results are as current as the tool itself.
-- **Bounded by the API.** You can ask what the tool's reporting API answers: metrics broken down by dimensions over a period. You can't join a live source to warehouse tables, and each query counts toward the tool's rate limits.
+- **Read at query time.** Every query reads the tool's API, so there's no sync delay.
+- **Bounded by the API.** You can ask what the tool's reporting API answers: metrics broken down by dimensions over a period. You can't join a live data source to warehouse tables, and each query counts toward the tool's rate limits.
 
 Use a live data source for questions about a tool's own data. Load data into your warehouse when you need to join it with other data, model it, or keep history the tool doesn't.
 
@@ -42,7 +42,7 @@ Project admins can add live data sources. You also need access to the tool itsel
 
 1. On the nav bar, click **Browse** → **Semantic Layer**.
 2. In the sidebar, select **Live data sources**, then click **Add**.
-3. In the **Add a live data source** dialog, pick an integration and follow its sign-in.
+3. In the **Add a live data source** dialog, select an integration, then follow the steps on its integration page.
 
 <Frame>
   <img src="/images/integrations/live-data-sources/add-live-data-source.png" alt="The Add a live data source dialog with PostHog, Google Analytics 4 and Google Search Console available, and Google Ads, Meta Ads, LinkedIn Ads and other integrations each with a Request button" />
@@ -83,7 +83,7 @@ Live data sources work in two places:
   <img src="/images/integrations/live-data-sources/live-source-agent-answer.png" alt="An AI agent thread answering which channels brought the most sessions in the last 28 days from Google Analytics, with a summary, a results table and a horizontal bar chart of sessions by channel" />
 </Frame>
 
-Live data sources answer metrics by dimensions. Funnels, retention and user paths aren't available, and agents say so instead of approximating them.
+Live data sources return metrics broken down by dimensions. Funnels, retention and user paths aren't available, and agents say so instead of approximating them.
 
 ## Limits
 
@@ -101,18 +101,18 @@ These features aren't available on any live data source:
 
 - Pivots and date zoom
 - View underlying data, because integrations only return aggregated rows
-- SQL runner and compiled SQL, because queries run on the integration's API, not as SQL
+- SQL runner and compiled SQL, because queries run on the tool's API, not as SQL
 - Embedded dashboards and charts
 
-Lightdash refuses a query that uses a feature its integration doesn't support, with a message saying what to remove.
+A query that uses a feature its integration doesn't support fails with a message saying what to remove.
 
 ### Rate limits
 
-Each source has a cap on queries at once, calls per minute and calls per hour, set to stay inside its integration's API limits. The caps are per source and shared by Explore and every agent. When every slot is busy, a query waits up to 15 seconds, then fails with a message to retry. When a minute or hour cap is reached, queries fail with the number of seconds to wait. Each integration page lists its caps.
+Each source has a cap on queries at once, calls per minute and calls per hour. The caps are per source and shared by Explore and every agent. When the queries-at-once cap is reached, a query waits up to 15 seconds, then fails with a message to retry. When a minute or hour cap is reached, queries fail with the number of seconds to wait. Each integration page lists its caps.
 
 ### Freshness and result reuse
 
-A query reads the integration's API at run time. Running the same query again within 60 seconds reuses the first result instead of calling the integration again. Integrations also have their own processing delays, listed on each integration page.
+A query reads the tool's API at run time. Running the same query again within 60 seconds reuses the first result instead of calling the integration again. Integrations also have their own processing delays, listed on each integration page.
 
 ### Date ranges and rows
 
@@ -141,11 +141,3 @@ Open a source's menu from the **Live data sources** list or its page. **Edit** r
 ## Request an integration
 
 The **Add a live data source** dialog lists more integrations than PostHog, Google Analytics 4 and Search Console, including Google Ads, Meta Ads, LinkedIn Ads, YouTube Analytics, Shopify, Stripe, Salesforce, Mixpanel and Jira. Click **Request** on any of them to register your interest. For a tool that isn't listed, contact [Lightdash support](mailto:support@lightdash.com).
-
-## Self-hosted setup
-
-Live data sources need an [Enterprise license](/self-host/enterprise-features).
-
-1. Add `api-query-sources` to the [`LIGHTDASH_ENABLE_FEATURE_FLAGS`](/self-host/customize-deployment/environment-variables#feature-flags) environment variable, then restart Lightdash.
-2. For Google Analytics 4 and Search Console sign-in, set `AUTH_GOOGLE_OAUTH2_CLIENT_ID` and `AUTH_GOOGLE_OAUTH2_CLIENT_SECRET` to the Google OAuth client used for [Google sign-in](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash). Enable the Google Analytics Data API and Search Console API in its Google Cloud project.
-3. For PostHog sign-in, set `POSTHOG_OAUTH_CLIENT_ID` and `POSTHOG_OAUTH_CLIENT_SECRET`. Without them, people connect PostHog with a personal API key.
