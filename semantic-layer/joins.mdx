@@ -56,7 +56,7 @@ joins:
 ```
 </CodeGroup>
 
-When you open Lightdash, the dimensions and metrics from your joined model will appear below the ones in your selected model.
+By default, the dimensions and metrics from your joined model appear in a separate table section below the ones in your selected model. To display them together, [combine joined fields](#combine-joined-fields).
 
 <Frame>
   ![screenshot-joined-table](/images/semantic-layer/joins/screenshot-joined-table-1eaca01a7819ce13488b565e04c90cd8.png)
@@ -66,6 +66,71 @@ When you open Lightdash, the dimensions and metrics from your joined model will 
 - When joined fields reference other fields, those other fields must be included.
 - The `sql_on` statement can include references to [user attributes](/workspace-admin/user-attributes) for row-level filtering.
 - Filters on a joined table's fields, including dashboard filters, go in the query's `WHERE` clause, after the join. To limit the rows read from the joined table, for example to a recent range of a partitioned table, put the condition in `sql_on`, with a [parameter](/semantic-layer/parameters#in-table-joins) if users should pick the value. On a `left` join, base rows with no match inside that range still return, with nulls for the joined fields.
+
+## Combine joined fields
+
+Set `combine_joined_fields: true` on the base model to display its fields and fields from visible joined tables in shared **Dimensions** and **Metrics** sections. This is useful when the tables represent one business concept and people do not need to browse them separately.
+
+The setting applies to the whole explore. Put it alongside `joins`, rather than inside an individual join. It defaults to `false`.
+
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: orders
+    config:
+      meta:
+        combine_joined_fields: true
+        joins:
+          - join: customers
+            sql_on: ${orders.customer_id} = ${customers.customer_id}
+            relationship: many-to-one
+        explores:
+          orders_separate_fields:
+            label: Orders with separate fields
+            combine_joined_fields: false
+```
+
+```yaml dbt v1.9 and earlier
+models:
+  - name: orders
+    meta:
+      combine_joined_fields: true
+      joins:
+        - join: customers
+          sql_on: ${orders.customer_id} = ${customers.customer_id}
+          relationship: many-to-one
+      explores:
+        orders_separate_fields:
+          label: Orders with separate fields
+          combine_joined_fields: false
+```
+
+```yaml Lightdash YAML
+type: model
+name: orders
+
+combine_joined_fields: true
+joins:
+  - join: customers
+    sql_on: ${orders.customer_id} = ${customers.customer_id}
+    relationship: many-to-one
+explores:
+  orders_separate_fields:
+    label: Orders with separate fields
+    combine_joined_fields: false
+```
+</CodeGroup>
+
+[Named explores](/semantic-layer/explores) inherit the model's setting. In this example, the default Orders explore combines fields, while Orders with separate fields inherits the same join and explicitly restores the per-table layout. You can also enable the setting on an individual named explore.
+
+When fields are combined:
+
+- Fields with matching `groups` paths share a group within Dimensions or Metrics. Group keys must match; matching display labels alone do not merge groups. If tables define different `group_details` for the same key, the base model's definition takes precedence, followed by joined tables in join order.
+- The base model's [`order_fields_by`](/semantic-layer/tables#order-fields-by) controls ordering. `label` sorts alphabetically within each level. `index` preserves each table's field order, with base fields before joined fields in join order.
+- Date interval groups remain separate for each source table and date dimension, even when their labels match.
+- Duplicate field labels show their source to help you distinguish them. Field details retain the source, and search also matches displayed group labels and source tables.
+
+This setting changes the field picker layout only. Field references, joins, generated SQL and saved charts keep their existing meaning. Hidden fields stay hidden. To return to separate table sections, set `combine_joined_fields: false` and deploy or refresh your project.
 
 ## Rename a joined model
 
