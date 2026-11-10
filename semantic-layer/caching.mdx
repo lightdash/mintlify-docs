@@ -96,7 +96,17 @@ Cache expiry is **rolling, not scheduled**. It's based on the age of each cached
 
 #### Cache duration per project
 
-Project admins turn caching on and set the cache duration for a single project under **Project settings → Results caching**. This page is available to any project whose organization has a valid Enterprise license. Turn off **Use the default cache duration** and enter a whole number of minutes between `1` and `43200` (30 days). Leaving the toggle on falls back to the instance default.
+Project admins turn caching on and set the cache duration for a single project under **Project settings → Results caching**. This page is available to any project whose organization has a valid Enterprise license.
+
+1. Turn on **Enable results caching**.
+2. Under **Cache duration**, enter a whole number of minutes between `1` and `43200` (30 days) in **Cache duration (minutes)**.
+3. Click **Save changes**.
+
+<Frame>
+![Results caching settings with caching on, a Usage card showing hit rate, hits, time saved and cost saved, a 1440-minute cache duration with estimated benefits for 3 and 7 days, scheduled clearing, and a Clear cache now button](/images/semantic-layer/caching/results-caching-settings.png)
+</Frame>
+
+Below the field, **Estimated benefit of a longer duration** shows what a longer cache duration would save. Lightdash calculates it by replaying the project's queries from the selected period with each longer duration and counting the extra cache hits. Click a duration to use it.
 
 On a self-hosted instance that still sets the deprecated `RESULTS_CACHE_ENABLED` environment variable (see [environment variables](/self-host/customize-deployment/environment-variables#cache)), caching is forced on or off for every project and the toggle here is locked — contact your instance admin to change it instead.
 
@@ -112,24 +122,66 @@ A cached result is served as stored until it expires, even one cached while the 
 ![Dashboard header reading "Dashboard uses cached data from Jan 20, 2025 11:07 AM" beside a refresh button](/images/semantic-layer/caching/dashboard-cache-time.png)
 </Frame>
 
-There's no button in the Lightdash UI to invalidate a single Saved Chart's cache outside of a dashboard. You can do this through the API: set `invalidateCache: true` on a request to the [execute saved chart](/api-reference/v2/execute-saved-chart) or [execute dashboard chart](/api-reference/v2/execute-dashboard-chart) endpoint to bypass the cache and re-run that chart's query, which repopulates its cache entry.
+#### Clear cached results
 
-#### Clearing cached results for a project
+Project admins can clear cached results for everyone, at the scope that changed. Clearing needs results caching turned on for the project.
 
-Project admins can clear every cached result for a project from **Project settings → Results caching**:
+| Scope | In Lightdash | Through the API |
+| --- | --- | --- |
+| Project | **Project settings → Results caching → Clear cache now** | `POST /api/v1/projects/{projectUuid}/results-cache/invalidate` |
+| Explore | Explore's **⋯** menu → **Clear cache for everyone** | `POST /api/v1/projects/{projectUuid}/results-cache/invalidate/explores` |
+| Dashboard | Dashboard's **⋯** menu → **Clear cache for everyone** | `POST /api/v2/dashboards/{dashboardUuid}/results-cache/invalidate` |
+| Saved chart | Chart's **⋯** menu → **Clear cache for everyone** | `POST /api/v2/saved/{chartUuid}/results-cache/invalidate` |
 
-- **Clear cache now** invalidates every cached result in the project immediately. The next load of each chart, dashboard, or API query runs against the warehouse and repopulates the cache.
-- **Scheduled clearing** runs the same clear automatically — daily or weekly, at one or more hours, in the project's default time zone.
+Clearing applies everywhere those results are used, including dashboards and embeds. When clearing an explore, select **Also clear explores that use this table** to also clear every explore that joins this explore's base table or is built on it.
 
-To invalidate the cache from a script or a data pipeline, call one of these endpoints with a [personal access token](/personal-settings/create-personal-tokens) (`Authorization: ApiKey <token>`). All three require project admin access and results caching turned on for the project; query history and existing result files are kept, and the next run of the affected chart, dashboard, or project queries the warehouse and repopulates the cache:
+Clearing doesn't rebuild [pre-aggregates](/semantic-layer/pre-aggregates). If queries on a cleared explore are served from a pre-aggregate, refresh the pre-aggregate too, or those queries keep returning the same data.
 
-| Scope | Endpoint |
-| --- | --- |
-| Project | `POST /api/v1/projects/{projectUuid}/results-cache/invalidate` |
-| Dashboard | `POST /api/v2/dashboards/{dashboardUuid}/results-cache/invalidate` |
-| Saved chart | `POST /api/v2/saved/{chartUuid}/results-cache/invalidate` |
+#### Clear cached results from a data pipeline
 
-Call the project-level endpoint from a data pipeline once a run finishes, so the next person to open a chart or dashboard gets fresh results instead of what was cached before the run. See the [API reference](/api-reference/v1/introduction) for full request and response details.
+Call an invalidation endpoint once a dbt run or load finishes, so the next person to open a chart or dashboard gets fresh results instead of what was cached before the run. Authenticate with a [personal access token](/personal-settings/create-personal-tokens) that belongs to a project admin.
+
+If a load only touches some tables, clear only the explores that read them, and keep everything else cached. List up to 100 explore names in `exploreNames`; set `includeJoinedExplores` to `true` to also clear the explores that join their base tables:
+
+```bash
+curl -X POST \
+  -H "Authorization: ApiKey $LIGHTDASH_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"exploreNames": ["orders", "payments"], "includeJoinedExplores": true}' \
+  "$LIGHTDASH_URL/api/v1/projects/$PROJECT_UUID/results-cache/invalidate/explores"
+```
+
+The response lists every explore that was cleared. An unknown explore name returns a `404` that names it, and nothing is cleared. See the [API reference](/api-reference/v1/introduction) for full request and response details.
+
+#### Clear cached results on a schedule
+
+To clear the whole project at fixed times, for example after a nightly load, use **Scheduled clearing** under **Project settings → Results caching**:
+
+1. Turn on **Scheduled clearing**.
+2. Choose a **Frequency**: **Every day** or **Every week**. For a weekly schedule, choose the **Day**.
+3. In **Times**, choose one or more hours. Times use the project time zone shown under the fields.
+4. Click **Save changes**. The card shows when the **Next clear** runs.
+
+### Monitor cache usage
+
+Project admins see how much the cache saves, and what to change to save more, at the top of **Project settings → Results caching**. Choose **Last 7 days** or **Last 30 days** to set the period; the [cache duration estimates](#cache-duration-per-project) use the same period.
+
+With caching on, the **Usage** card shows:
+
+- **Hit rate** — the share of the period's queries served from the cache.
+- **Hits** — the number of queries served from the cache.
+- **Time saved** — the warehouse time those queries would have taken.
+- **Cost saved** — an estimate of what that warehouse time would have cost, based on list prices for your warehouse type. Hover it to see the assumption.
+
+Queries that skip the cache on purpose, such as queries made while editing a chart, aren't counted.
+
+Some cache misses are avoidable. The **Usage** card totals them, for example "719 avoidable misses · 10.0h of warehouse time". Click **View recommendations** to list the charts and explores whose avoidable misses used the most warehouse time, up to 10, each with the reason and a suggested fix:
+
+| Reason | What happened | Suggested fix |
+| --- | --- | --- |
+| **Expired** | The cached result was older than the cache duration | Raise the [cache duration](#cache-duration-per-project) |
+| **Cleared** | The cached result had been cleared | [Clear](#clear-cached-results) only what changed, such as specific explores |
+| **Scheduled refresh** | A scheduled delivery or Google Sheets sync ran a fresh query | Turn on **Use cached results when available** on the delivery or sync |
 
 ## Results caching vs pre-aggregates
 
@@ -151,7 +203,7 @@ A single pre-aggregate can serve many different queries. A daily pre-aggregate w
 
 |                              | Results caching                                    | Pre-aggregates                                                         |
 | ---------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------- |
-| **Configuration**            | Automatic once enabled for your instance           | Defined in dbt YAML                                                    |
+| **Configuration**            | Turned on per project in project settings          | Defined in dbt YAML                                                    |
 | **Trigger**                  | First query runs against warehouse, then cached    | Materialized on compile, cron, or manual refresh                       |
 | **Storage**                  | Query result (row set)                             | Pre-computed summary table                                             |
 | **Query execution**          | Exact cached result is returned                    | DuckDB workers re-aggregate at query time                              |
