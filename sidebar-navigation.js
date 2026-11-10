@@ -884,6 +884,8 @@ window.lightdashSidebarNavigation = [
 {"title":"Get organization brand logo","href":"/api-reference/organizations/get-organization-brand-logo","parents":["Reference","Organizations"]},
 {"title":"Get notifications","href":"/api-reference/notifications/get-notifications","parents":["Reference","Notifications"]},
 {"title":"Update notification","href":"/api-reference/notifications/update-notification","parents":["Reference","Notifications"]},
+{"title":"Create mobile app link","href":"/api-reference/my-account/create-mobile-app-link","parents":["Reference","My Account"]},
+{"title":"Get mobile app link status","href":"/api-reference/my-account/get-mobile-app-link-status","parents":["Reference","My Account"]},
 {"title":"Run metric total query","href":"/api-reference/metrics-explorer/run-metric-total-query","parents":["Reference","Metrics Explorer"]},
 {"title":"Run metric series query","href":"/api-reference/metrics-explorer/run-metric-series-query","parents":["Reference","Metrics Explorer"]},
 {"title":"Compile metric total query","href":"/api-reference/metrics-explorer/compile-metric-total-query","parents":["Reference","Metrics Explorer"]},
