@@ -9,6 +9,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Build your semantic layer","href":"/get-started/build-your-semantic-layer","parents":["Get started"]},
 {"title":"Migrate from another BI tool","href":"/get-started/migrate-from-another-bi-tool","parents":["Get started"]},
 {"title":"The Lightdash Way","href":"/get-started/lightdash-way","parents":["Get started"]},
+{"title":"Business user training","href":"/get-started/business-user-training","parents":["Get started"]},
 {"title":"Explore","href":"/explore","parents":[]},
 {"title":"Configure your charts","href":"/explore/configure-charts","parents":["Explore","Build charts"]},
 {"title":"Custom tooltips","href":"/explore/configure-custom-tooltip","parents":["Explore","Build charts"]},
