@@ -145,7 +145,7 @@ Viewers can change **Primary currency** for the first order tile and the payment
 
 ## Save the dashboard as code
 
-The YAML below saves the same dashboard, including its filter, section, and control assignments. Save it as `lightdash/dashboards/revenue-comparison.yml`, adapting the chart and space slugs, parameter keys, and filter field references to your project. Use the standard [download](/workflow/content-as-code#lightdash-download) and [upload](/workflow/content-as-code#lightdash-upload) commands.
+Parameter controls, their tile assignments and sections are saved in the dashboard file. Use the standard [download](/workflow/content-as-code#lightdash-download) and [upload](/workflow/content-as-code#lightdash-upload) commands.
 
 With `dashboard-controls` enabled, downloads use these references:
 
@@ -153,6 +153,74 @@ With `dashboard-controls` enabled, downloads use these references:
 - Each `tileSlug` identifies one tile, so copies of the same chart can receive different values.
 
 For how slugs are written and how to set the order of controls on the bar, see [Control order in dashboards-as-code](/explore/dashboards/filter#control-order-in-dashboards-as-code).
+
+Controls live under `config.parameterControls`. Each one has a `slug`, a `label`, a `value`, a `valueType`, and a `parameters` map from each parameter key to the tiles it sets.
+
+### Set a parameter on every tile
+
+Use `all` to set the parameter on every tile that uses it, including tiles added later.
+
+```yaml
+config:
+  parameterControls:
+    - slug: primary-currency
+      label: Primary currency
+      value: USD
+      valueType:
+        type: string
+        multiple: false
+      parameters:
+        orders.reporting_currency: all
+```
+
+### Exclude tiles or pick exact tiles
+
+Use `except` to leave out named tiles, or `only` to set an exact list. Tiles are named by their `tileSlug`. `only: []` assigns no tiles.
+
+```yaml
+      parameters:
+        orders.reporting_currency:
+          except: [order-revenue-comparison]
+```
+
+```yaml
+      parameters:
+        orders.reporting_currency:
+          only: [order-revenue-comparison]
+```
+
+A parameter key can have one `all` or `except` rule across all controls. Other controls for the same key use `only`, and their tiles can't overlap.
+
+### Set parameters from different models
+
+List each parameter key under the same control. Their type, single or multiple selection, and allowed values must match.
+
+```yaml
+      parameters:
+        orders.reporting_currency: all
+        payments.settlement_currency: all
+```
+
+### Hide a control or put it in a section
+
+Set `hidden: true` to hide the control from viewers. Its value still applies. Set `sectionSlug` to a section in `config.controlSections`.
+
+```yaml
+config:
+  controlSections:
+    - slug: currency-comparison
+      name: Currency comparison
+  parameterControls:
+    - slug: comparison-currency
+      label: Comparison currency
+      sectionSlug: currency-comparison
+      hidden: true
+      # value, valueType, parameters ...
+```
+
+### Full example
+
+This file saves the **Revenue comparison** dashboard from the steps above, including its filter, section, and control assignments. Save it as `lightdash/dashboards/revenue-comparison.yml`, adapting the chart and space slugs, parameter keys, and filter field references to your project.
 
 ```yaml Revenue comparison [expandable]
 contentType: dashboard
@@ -234,5 +302,3 @@ config:
         orders.reporting_currency:
           only: [order-revenue-comparison]
 ```
-
-Use `all` for every matching tile, `except` to exclude named tiles, or `only` for an exact list. `only: []` assigns no tiles.
