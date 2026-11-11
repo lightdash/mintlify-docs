@@ -16,6 +16,8 @@ import { FeatureBadge } from '/snippets/feature-badge.jsx';
 
 Every data app can save values through Lightdash so they come back the next time someone opens it, on any device. Each app has two kinds of storage: user storage and shared storage.
 
+Apps also keep view state in the page address so the current view can be shared as a link — that works without this feature and is covered in [Sharing a link to the current view](/data-apps#sharing-a-link-to-the-current-view). In app code all three are one hook with a scope: `useAppState(key, default, { scope: 'url' | 'user' | 'shared' })`. See [Link state and saved state](#link-state-and-saved-state) for why link state and storage are separate, and how one control can use both.
+
 Apps run in a sandboxed frame with no access to browser storage such as `localStorage`, so values an app keeps only in memory reset when the page reloads. Saved app state is how an app remembers them.
 
 <Tip>
@@ -37,6 +39,18 @@ The agent doesn't use shared storage by default. Ask for it in your prompt and s
 Shared storage also powers saved [AI commentary](/data-apps/ai-analysis#for-app-code): ask for "AI commentary that is saved and shared between viewers" and the app generates a takeaway once per selection, saves it for every later viewer, and lets anyone edit the text. This needs [AI analysis](/data-apps/ai-analysis) turned on as well.
 
 Shared values don't update live. Other people's edits appear when the app loads, when you come back to its browser tab, or when you click a refresh control the app provides.
+
+## Link state and saved state
+
+Link state (the `url` scope) says which view you're looking at. User and shared storage hold data. Storage can't replace link state, because a link to an app has to reproduce the view of the person who shared it, and storage can't do that:
+
+- **User storage follows the person, not the link.** If you save a period of Q3 and send a teammate your link, the app loads their saved period, or the default. The one thing the link has to carry, your current view, is exactly what per-user storage can't carry.
+- **Shared storage would change the view for everyone.** If view controls were shared, every viewer switching a tab would change what the whole team sees on their next open. Two people looking around at the same time would get version conflicts, and [embedded viewers](#embedded-apps) can't write shared values at all.
+- **Storage holds one value per key.** Link state belongs to a browser tab, so two tabs can show Q3 and year to date side by side, and you can bookmark several views of one app. Two tabs reading the same saved key would overwrite each other.
+- **Some views have no person behind them.** Hand-built [deep links](/data-apps#sharing-a-link-to-the-current-view), [scheduled deliveries](/data-apps/deliveries-and-syncs#send-current-app-state), and other headless renders set a specific view when the app renders, with no viewer whose storage could hold it. A delivery has to capture the view that was configured for it.
+- **Link state works without saved app state.** It needs no feature flag, no backend writes, and has no storage limits. It's the only scope available in organizations without saved app state and in view-only embedded sessions.
+
+Some controls need both: a value you want remembered and shareable, like a period picker. For those, the app uses user storage with a copy in the link (`useAppState(key, default, { url: true })` in app code). Opening the app from the menu brings back your last choice. Opening a link shows the value in the link, and the link's value wins until you change the control.
 
 ## See what an app has saved
 
