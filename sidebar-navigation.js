@@ -147,6 +147,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Saved app state","href":"/data-apps/saved-app-state","parents":["Data apps"]},
 {"title":"Add AI analysis","href":"/data-apps/add-ai-analysis-to-an-app","parents":["Data apps","Recipes"]},
 {"title":"Remember my filters","href":"/data-apps/remember-filters-in-an-app","parents":["Data apps","Recipes"]},
+{"title":"Add shared team comments","href":"/data-apps/add-shared-comments-to-an-app","parents":["Data apps","Recipes"]},
 {"title":"Embed","href":"/embed","parents":[]},
 {"title":"Set up embedding","href":"/embed/set-up-embedding","parents":["Embed"]},
 {"title":"Dashboards","href":"/embed/embed-dashboards","parents":["Embed"]},
