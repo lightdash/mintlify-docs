@@ -153,10 +153,12 @@ To duplicate, you need **view** access on the source app and **create** permissi
 
 ### Network inspector
 
-The inspector is a tabbed network panel that captures everything the running app talks to. Open it from **View network** in the preview header.
+The inspector is a tabbed network panel that captures everything the running app talks to. To open it, open the app actions menu (**⋯**) in the header and choose **View network**.
 
 - **Queries** - every metric query the app runs against your semantic layer, including the underlying query definition, the fields it's pulling, and the rows it gets back. Live-linked charts show up here too. Use it to verify the app is asking for the right data, debug unexpected numbers, sanity-check performance, or spot a query returning far more rows than the app needs (see [App is slow to load](#app-is-slow-to-load)).
-- **Requests** - every external fetch the app makes at runtime through a linked external connection, with the method, path, status, response, and round-trip duration. Use it to confirm the app is calling the right endpoint and that the response shape matches what the UI expects. The inspector only ever sees the connection alias and path - credentials are injected server-side, so they're never displayed here.
+- **Requests** - every external fetch and [saved app state](/data-apps/saved-app-state) call the app makes at runtime. External fetches go through a linked external connection and show the method, path, status, response, and round-trip duration. Use it to confirm the app is calling the right endpoint and that the response shape matches what the UI expects. The inspector only ever sees the connection alias and path - credentials are injected server-side, so they're never displayed here.
+
+  Saved app state calls are marked with an **app state** badge and listed in the order they started. A `get` row appears when the app loads its saved values, and a `set-user` or `set-shared` row appears each time it saves one. Each row shows the operation and key (for example `set-user filters` or `set-shared comments`), the result, the size of the value written, and the duration. Expand a row to see the operation, key, scope, and value size. The result is **ok** when the call succeeds. Otherwise it's an error code, such as `conflict` when someone else changed a shared value first, `forbidden` when the viewer can't write, or `invalid` when the value is too large. A `conflict` row followed by an **ok** row for the same key means the app merged the change and saved it on the retry.
 
 Both tabs are always visible so you can see at a glance whether the app has run any queries or external requests yet. Entries are held in-memory and cleared when you refresh the preview or load a new version unless you turn on the **Persist** toggle in the panel.
 
@@ -258,7 +260,7 @@ Personal apps stay tied to whoever created them until they're moved into a space
 
 As you use an app, Lightdash keeps its view state, such as the selected filters and the active tab, in the `state` parameter of the page address. To share that view, copy the address bar: anyone who opens the link sees the app with the same selections. The app decides which controls are kept in the link, so if one you need isn't, ask the agent to include it in the shareable URL.
 
-You can also build a link by hand to open an app with a value already set. The `state` parameter is a URL-encoded JSON object of the keys the app reads, for example `?state=%7B%22region%22%3A%22EMEA%22%7D` for `{"region":"EMEA"}`, and is ignored if it is longer than 4,096 characters or isn't a JSON object. In app code, read a key with `useUrlState('region', '')` from `@lightdash/query-sdk`, and validate the value before using it, since anyone can edit the link. Apps shown as dashboard tiles don't read or write the `state` parameter.
+You can also build a link by hand to open an app with a value already set. The `state` parameter is a URL-encoded JSON object of the keys the app reads, for example `?state=%7B%22region%22%3A%22EMEA%22%7D` for `{"region":"EMEA"}`, and is ignored if it is longer than 4,096 characters or isn't a JSON object. In app code, read a key with `useAppState('region', '', { scope: 'url' })` from `@lightdash/query-sdk` (`useUrlState('region', '')` is the older alias), and validate the value before using it, since anyone can edit the link. Apps shown as dashboard tiles don't read or write the `state` parameter.
 
 ## Iterating on a live app safely
 

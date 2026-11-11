@@ -16,7 +16,13 @@ import { FeatureBadge } from '/snippets/feature-badge.jsx';
 
 Every data app can save values through Lightdash so they come back the next time someone opens it, on any device. Each app has two kinds of storage: user storage and shared storage.
 
+Apps also keep view state in the page address so the current view can be shared as a link — that works without this feature and is covered in [Sharing a link to the current view](/data-apps#sharing-a-link-to-the-current-view). In app code all three are one hook with a scope: `useAppState(key, default, { scope: 'url' | 'user' | 'shared' })`. See [Link state and saved state](#link-state-and-saved-state) for why link state and storage are separate, and how one control can use both.
+
 Apps run in a sandboxed frame with no access to browser storage such as `localStorage`, so values an app keeps only in memory reset when the page reloads. Saved app state is how an app remembers them.
+
+<Tip>
+  **Try it:** [Remember my filters](/data-apps/remember-filters-in-an-app), [add shared team comments](/data-apps/add-shared-comments-to-an-app), or [save and edit AI commentary](/data-apps/save-and-edit-ai-commentary), each with one copy-and-paste prompt.
+</Tip>
 
 ## User storage
 
@@ -31,6 +37,44 @@ Shared storage holds values that everyone using the app can see and edit. It sui
 The agent doesn't use shared storage by default. Ask for it in your prompt and say what should be shared, for example "let the team leave comments on each region, visible to everyone".
 
 Shared storage also powers saved [AI commentary](/data-apps/ai-analysis#for-app-code): ask for "AI commentary that is saved and shared between viewers" and the app generates a takeaway once per selection, saves it for every later viewer, and lets anyone edit the text. This needs [AI analysis](/data-apps/ai-analysis) turned on as well.
+
+Shared values don't update live. Other people's edits appear when the app loads, when you come back to its browser tab, or when you click a refresh control the app provides.
+
+## Link state and saved state
+
+Link state (the `url` scope) says which view you're looking at. User and shared storage hold data. Storage can't replace link state, because a link to an app has to reproduce the view of the person who shared it, and storage can't do that:
+
+- **User storage follows the person, not the link.** If you save a period of Q3 and send a teammate your link, the app loads their saved period, or the default. The one thing the link has to carry, your current view, is exactly what per-user storage can't carry.
+- **Shared storage would change the view for everyone.** If view controls were shared, every viewer switching a tab would change what the whole team sees on their next open. Two people looking around at the same time would get version conflicts, and [embedded viewers](#embedded-apps) can't write shared values at all.
+- **Storage holds one value per key.** Link state belongs to a browser tab, so two tabs can show Q3 and year to date side by side, and you can bookmark several views of one app. Two tabs reading the same saved key would overwrite each other.
+- **Some views have no person behind them.** Hand-built [deep links](/data-apps#sharing-a-link-to-the-current-view), [scheduled deliveries](/data-apps/deliveries-and-syncs#send-current-app-state), and other headless renders set a specific view when the app renders, with no viewer whose storage could hold it. A delivery has to capture the view that was configured for it.
+- **Link state works without saved app state.** It needs no feature flag, no backend writes, and has no storage limits. It's the only scope available in organizations without saved app state and in view-only embedded sessions.
+
+Some controls need both: a value you want remembered and shareable, like a period picker. For those, the app uses user storage with a copy in the link (`useAppState(key, default, { url: true })` in app code). Opening the app from the menu brings back your last choice. Opening a link shows the value in the link, and the link's value wins until you change the control.
+
+## See what an app has saved
+
+People who can manage an app can open its **⋯** menu and select **App state**. The panel lists every shared key with its size, version, and who last changed it, and when. Select a key to see its version history, with the author, time, and value of each version.
+
+<Frame>
+  <img src="/images/data-apps/saved-app-state/app-state-panel.png" alt="The App state panel listing shared keys, the version history of one key, its current value as a table, and shared and per-user storage usage" />
+</Frame>
+
+To remove a shared value, select its key and click **Clear**, then confirm. Every viewer loses the value. Its history is kept, so the version number keeps counting if the app saves the key again.
+
+User values stay private. The panel only shows how many per-user values exist and across how many people, never the values themselves.
+
+To watch an app read and write state while you use it, open the [network inspector](/data-apps#network-inspector). Each call appears on the **Requests** tab.
+
+<Frame>
+  <img src="/images/data-apps/saved-app-state/app-state-requests.png" alt="The network inspector's Requests tab listing app state calls: a get, two set-user status writes, and an expanded set-shared row showing its operation, key, scope, and value size" />
+</Frame>
+
+## Limits
+
+- Values are JSON, up to 64 KB per key.
+- Each app holds up to 200 shared keys, and up to 200 user keys for each person.
+- Lightdash keeps the last 1,000 versions of each shared key.
 
 ## Embedded apps
 
