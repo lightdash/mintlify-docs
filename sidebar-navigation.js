@@ -145,6 +145,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Build maps and globes","href":"/data-apps/build-maps-and-globes","parents":["Data apps"]},
 {"title":"AI analysis","href":"/data-apps/ai-analysis","parents":["Data apps"]},
 {"title":"Saved app state","href":"/data-apps/saved-app-state","parents":["Data apps"]},
+{"title":"Add AI analysis","href":"/data-apps/add-ai-analysis-to-an-app","parents":["Data apps","Recipes"]},
 {"title":"Embed","href":"/embed","parents":[]},
 {"title":"Set up embedding","href":"/embed/set-up-embedding","parents":["Embed"]},
 {"title":"Dashboards","href":"/embed/embed-dashboards","parents":["Embed"]},
