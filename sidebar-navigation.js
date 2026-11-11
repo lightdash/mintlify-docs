@@ -187,6 +187,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Workspace admin","href":"/workspace-admin","parents":[]},
 {"title":"Invite your team","href":"/workspace-admin/invite-new-users","parents":["Workspace admin","Access and permissions"]},
 {"title":"Roles and permissions","href":"/workspace-admin/roles","parents":["Workspace admin","Access and permissions"]},
+{"title":"Warehouse credentials","href":"/workspace-admin/warehouse-credentials","parents":["Workspace admin","Access and permissions"]},
 {"title":"Direct access","href":"/workspace-admin/direct-access","parents":["Workspace admin","Access and permissions"]},
 {"title":"Custom Roles","href":"/workspace-admin/custom-roles","parents":["Workspace admin","Access and permissions"]},
 {"title":"Groups","href":"/workspace-admin/manage-groups","parents":["Workspace admin","Access and permissions"]},
