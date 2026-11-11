@@ -150,6 +150,7 @@ type DashboardProps = {
     isEditMode: boolean,
   ) => void;                        // Callback when the embed enters or leaves edit mode
   chartSaveDestinations?: ('dashboard' | 'space')[]; // Where "New chart" and "Save as new chart" save (default: ['dashboard'])
+  refreshKey?: number;              // Change it to reload the saved dashboard in place, keeping the viewer's filters, parameters and tab
   onExplore?: (options: {
     chart: SavedChart
   }) => void;                       // Handle "Explore from here" in your app instead of the embed
@@ -1208,19 +1209,19 @@ Without these, the agent works but `onEvent` never fires. Native mode calls `onE
 
 ### Refresh a dashboard after the agent saves it
 
-An embedded `Lightdash.Dashboard` doesn't reload when the agent next to it edits the dashboard. Listen for `dashboardSaved` on the agent and remount the dashboard with a new `key`:
+An embedded `Lightdash.Dashboard` doesn't reload when the agent next to it edits the dashboard. Listen for `dashboardSaved` on the agent and change the dashboard's `refreshKey`:
 
 ```tsx
 import Lightdash, { type LightdashEvent } from '@lightdash/sdk';
 import { useState } from 'react';
 
 function DashboardWithAgent({ dashboardUuid, dashboardToken, agentToken }) {
-  const [revision, setRevision] = useState(0);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   return (
     <>
       <Lightdash.Dashboard
-        key={revision}
+        refreshKey={refreshKey}
         instanceUrl="https://app.lightdash.cloud"
         token={dashboardToken}
       />
@@ -1234,7 +1235,7 @@ function DashboardWithAgent({ dashboardUuid, dashboardToken, agentToken }) {
             event.type === 'dashboardSaved' &&
             event.payload.dashboardUuid === dashboardUuid
           ) {
-            setRevision((current) => current + 1);
+            setRefreshKey((current) => current + 1);
           }
         }}
       />
@@ -1243,7 +1244,15 @@ function DashboardWithAgent({ dashboardUuid, dashboardToken, agentToken }) {
 }
 ```
 
-Remounting resets the dashboard's filters and selected tab. If the agent saves a new dashboard instead, `action` is `'created'` and `dashboardUuid` is the new dashboard; mint a dashboard token for it to show it.
+When `refreshKey` changes, the dashboard refetches the saved dashboard, saved charts, and SQL charts in place. The viewer keeps their filters, parameters, and active tab:
+
+- Filters the agent newly saved on the dashboard are merged under the viewer's own filter changes.
+- Parameters the viewer hasn't set follow the new saved values.
+- If the viewer is in edit mode, the reload waits until they leave it.
+
+Remounting the dashboard with a new React `key` instead resets its filters, parameters, and selected tab, so use it only when you want that reset. `Lightdash.DashboardBuilder` doesn't accept `refreshKey`.
+
+If the agent saves a new dashboard instead, `action` is `'created'` and `dashboardUuid` is the new dashboard; mint a dashboard token for it to show it.
 
 ## Handle errors
 
