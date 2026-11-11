@@ -288,7 +288,7 @@ These dbt flags work with Lightdash commands that support dbt options. [Read the
 
 `--defer` is commonly paired with `--state` and `--select state:modified+` to limit a preview to changed models. The behavior below is specific to how Lightdash builds the explore list and differs from a plain `dbt build --defer`.
 
-- **`--defer` only resolves Lightdash-joined upstream models against the prod state manifest.** It does not promote arbitrary unmodified models from the state manifest into the preview as standalone explores. With `--select state:modified+`, the preview contains the modified models (compiled to the dev/CI schema), their downstream models, and any models referenced through Lightdash join configs (deferred to the prod relations). Standalone `tag:lightdash` models that are not joined to a modified model will not appear. This is the scope of the fix shipped in [lightdash/lightdash#20672](https://github.com/lightdash/lightdash/pull/20672).
+- `--defer` only resolves Lightdash-joined upstream models against the prod state manifest. It does not promote arbitrary unmodified models from the state manifest into the preview as standalone explores. With `--select state:modified+`, the preview contains the modified models (compiled to the dev/CI schema), their downstream models, and any models referenced through Lightdash join configs (deferred to the prod relations). Standalone `tag:lightdash` models that are not joined to a modified model will not appear. This is the scope of the fix shipped in [lightdash/lightdash#20672](https://github.com/lightdash/lightdash/pull/20672).
 - **Do not pass `--favor-state` to preview workflows.** `--favor-state` makes selected nodes prefer the prod relation over the freshly built dev relation, which silently routes the modified model back to stale prod data — the opposite of the intent of a PR preview.
 - **The comma in dbt's `--select` is `AND`, not `OR`.** `--select 'tag:lightdash,state:modified+'` resolves to "modified models that are also tagged `lightdash`", which usually narrows to one or two explores rather than the broader set most users expect. Use space-separated arguments (`--select tag:lightdash state:modified+`) for `OR`.
 
@@ -333,7 +333,7 @@ For examples and command-specific options, click through the command in the tabl
 |[`lightdash generate-exposures`](/workflow/cli/reference#lightdash-generate-exposures) | Generates a YAML file for Lightdash exposures                                      |
 |[`lightdash download`](/workflow/cli/reference#lightdash-download)                     | Download all charts and dashboards from your Lightdash project as code             |
 |[`lightdash upload`](/workflow/cli/reference#lightdash-upload)                         | Upload charts and dashboards as code to your Lightdash project                     |
-|[`lightdash slug-update`](/workflow/cli/reference#lightdash-slug-update)               | Rename a chart or dashboard slug and update its local content-as-code references    |
+|[`lightdash slug-update`](/workflow/cli/reference#lightdash-slug-update)               | Rename a chart, dashboard, or data app slug and update its local content-as-code references |
 |[`lightdash apps create`](/workflow/cli/reference#lightdash-apps-create)               | Scaffold a new [data app](/workflow/local-data-app-development) locally                          |
 |[`lightdash apps preview`](/workflow/cli/reference#lightdash-apps-preview)             | Preview a downloaded [data app](/workflow/local-data-app-development) locally against real data   |
 |[`lightdash apps validate`](/workflow/cli/reference#lightdash-apps-validate)           | Validate a [data app](/workflow/local-data-app-development) locally before uploading             |
@@ -1267,7 +1267,7 @@ lightdash upload --organization --send-invites
 
 ### `lightdash slug-update`
 
-Renames a chart or dashboard slug in Lightdash and updates the corresponding files in your local content-as-code directory.
+Renames a chart, dashboard, or data app slug in Lightdash and updates the corresponding files in your local content-as-code directory.
 
 ```bash
 lightdash slug-update --from old-chart-slug --to new-chart-slug
@@ -1284,12 +1284,12 @@ A successful rename:
 
 You do not need to run `lightdash upload` afterward. The command updates Lightdash first and then updates the local files. If you keep content in Git, review and commit the resulting file changes.
 
-The command supports regular charts and dashboards. It does not rename SQL chart, space, or data app slugs. Dashboard tile slugs are also left unchanged because they identify the tile, not the chart.
+The command supports regular charts, dashboards, and data apps. It does not rename SQL chart or space slugs. Dashboard tile slugs are also left unchanged because they identify the tile, not the chart.
 
 **Options:**
 
-- `--type <chart|dashboard>`
-  - the content type to rename; defaults to `chart`.
+- `--type <chart|dashboard|app>`
+  - the content type to rename; defaults to `chart`. Use `app` for a data app.
 - `--from <slug>`
   - required; the content's current canonical slug, or its previous slug when safely retrying the same rename.
 - `--to <slug>`
@@ -1297,7 +1297,7 @@ The command supports regular charts and dashboards. It does not rename SQL chart
 - `--path <path>`
   - use a custom content-as-code directory instead of the default `lightdash/` directory in your current working directory.
 - `--project <project uuid or slug>`
-  - rename the chart or dashboard in a specific project instead of your currently selected project.
+  - rename the content in a specific project instead of your currently selected project.
 - `--dry-run`
   - preview the intended slug change and list the local files that would change without renaming the content or writing files.
 
@@ -1328,6 +1328,17 @@ lightdash slug-update \
   --from copy-of-weekly-kpis \
   --to weekly-kpis
 ```
+
+Rename a data app slug:
+
+```bash
+lightdash slug-update \
+  --type app \
+  --from copy-of-sales-overview \
+  --to sales-overview
+```
+
+Renaming a data app keeps its UUID, version history, and links, and the previous slug stays as an alias. Locally, the command updates `slug` in the app's `lightdash-app.yml`, renames the app's folder when the folder name matches the old slug, and updates `appSlug` in dashboard data app tiles. You need permission to manage the app. Official chart types installed from the [chart library](/visualizations/chart-library) can't be renamed. Renaming data apps needs Lightdash and the CLI v3.165.0 or later.
 
 The command is idempotent. Re-running the same rename safely completes any missing local updates. You can also rename content back to one of its previous slugs; the slug you replace becomes the new alias.
 

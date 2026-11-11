@@ -119,11 +119,11 @@ A version stores the app's code, not its data. Previewing or restoring an earlie
 
 ### Thumbnails
 
-Every ready version gets a thumbnail automatically. Lightdash renders the version as the user who created it and uses the latest ready version's thumbnail on app cards, previews and the homepage. Older versions keep theirs, so the version timeline shows a small preview of each ready version - click one to view that version.
+To give an app a thumbnail, open the app's **⋯** menu and select **Capture thumbnail**. It saves the version you're viewing. App cards, previews and the homepage show the thumbnail of the app's latest ready version, so an app whose latest ready version has no thumbnail shows none. **Remove thumbnail** clears it.
 
-To set a thumbnail by hand, open the app's **⋯** menu and select **Capture thumbnail**. It saves the version you're viewing and is never replaced by an automatic capture. **Remove thumbnail** clears it. Restored and duplicated versions keep the thumbnail of the version they were copied from.
+Each version keeps its own thumbnail, so the version timeline shows a small preview of each version that has one - click it to view that version. Restored and duplicated versions keep the thumbnail of the version they were copied from.
 
-Organization admins can turn automatic capture off under **Settings → Data apps → General**. Existing thumbnails stay, and you can still capture them by hand. To turn off all thumbnails, screenshots, and attachments, see [Turning off screenshots and attachments](#turning-off-screenshots-and-attachments). On self-hosted instances automatic capture needs a [headless browser](/self-host/customize-deployment/enable-headless-browser-for-lightdash).
+To turn off thumbnails, screenshots, and attachments, see [Turning off screenshots and attachments](#turning-off-screenshots-and-attachments).
 
 ### Duplicating an app
 
@@ -153,10 +153,12 @@ To duplicate, you need **view** access on the source app and **create** permissi
 
 ### Network inspector
 
-The inspector is a tabbed network panel that captures everything the running app talks to. Open it from **View network** in the preview header.
+The inspector is a tabbed network panel that captures everything the running app talks to. To open it, open the app actions menu (**⋯**) in the header and choose **View network**.
 
 - **Queries** - every metric query the app runs against your semantic layer, including the underlying query definition, the fields it's pulling, and the rows it gets back. Live-linked charts show up here too. Use it to verify the app is asking for the right data, debug unexpected numbers, sanity-check performance, or spot a query returning far more rows than the app needs (see [App is slow to load](#app-is-slow-to-load)).
-- **Requests** - every external fetch the app makes at runtime through a linked external connection, with the method, path, status, response, and round-trip duration. Use it to confirm the app is calling the right endpoint and that the response shape matches what the UI expects. The inspector only ever sees the connection alias and path - credentials are injected server-side, so they're never displayed here.
+- **Requests** - every external fetch and [saved app state](/data-apps/saved-app-state) call the app makes at runtime. External fetches go through a linked external connection and show the method, path, status, response, and round-trip duration. Use it to confirm the app is calling the right endpoint and that the response shape matches what the UI expects. The inspector only ever sees the connection alias and path - credentials are injected server-side, so they're never displayed here.
+
+  Saved app state calls are marked with an **app state** badge and listed in the order they started. A `get` row appears when the app loads its saved values, and a `set-user` or `set-shared` row appears each time it saves one. Each row shows the operation and key (for example `set-user filters` or `set-shared comments`), the result, the size of the value written, and the duration. Expand a row to see the operation, key, scope, and value size. The result is **ok** when the call succeeds. Otherwise it's an error code, such as `conflict` when someone else changed a shared value first, `forbidden` when the viewer can't write, or `invalid` when the value is too large. A `conflict` row followed by an **ok** row for the same key means the app merged the change and saved it on the retry.
 
 Both tabs are always visible so you can see at a glance whether the app has run any queries or external requests yet. Entries are held in-memory and cleared when you refresh the preview or load a new version unless you turn on the **Persist** toggle in the panel.
 
@@ -258,7 +260,15 @@ Personal apps stay tied to whoever created them until they're moved into a space
 
 As you use an app, Lightdash keeps its view state, such as the selected filters and the active tab, in the `state` parameter of the page address. To share that view, copy the address bar: anyone who opens the link sees the app with the same selections. The app decides which controls are kept in the link, so if one you need isn't, ask the agent to include it in the shareable URL.
 
-You can also build a link by hand to open an app with a value already set. The `state` parameter is a URL-encoded JSON object of the keys the app reads, for example `?state=%7B%22region%22%3A%22EMEA%22%7D` for `{"region":"EMEA"}`, and is ignored if it is longer than 4,096 characters or isn't a JSON object. In app code, read a key with `useUrlState('region', '')` from `@lightdash/query-sdk`, and validate the value before using it, since anyone can edit the link. Apps shown as dashboard tiles don't read or write the `state` parameter.
+You can also build a link by hand to open an app with a value already set. The `state` parameter is a URL-encoded JSON object of the keys the app reads, for example `?state=%7B%22region%22%3A%22EMEA%22%7D` for `{"region":"EMEA"}`, and is ignored if it is longer than 4,096 characters or isn't a JSON object. In app code, read a key with `useAppState('region', '', { scope: 'url' })` from `@lightdash/query-sdk` (`useUrlState('region', '')` is the older alias), and validate the value before using it, since anyone can edit the link. Apps shown as dashboard tiles don't read or write the `state` parameter.
+
+## Iterating on a live app safely
+
+A shared app's `/view` address always shows the latest ready version, so every version you finish building becomes visible to everyone with access to the app at once - there's no draft or publish state to hold a change back from viewers. To try changes without shipping them straight to viewers:
+
+- **Create a preview project.** From the Projects list, click **+ Create Preview**. Every data app in production is duplicated into the preview, and the preview copies the production project's warehouse connection settings, so you don't need to rebuild your models or explores to see the app's data. Iterate on the duplicated app inside the preview, then use [Promote](#promoting-an-app) to push it to production once it's ready.
+- **Duplicate the app** instead if you just want a personal copy to experiment with. A duplicate has no link back to the source app, so nothing you do there reaches the live app - you'd need to recreate the changes by hand.
+- You can also [develop the app locally with the CLI](/workflow/local-data-app-development) if you prefer to edit in your own editor.
 
 ## Promoting an app
 
@@ -299,6 +309,7 @@ This means:
 - **Permissions are enforced by Lightdash, not the app.** Whoever opens the app sees data based on their own role, group memberships, and user attributes - exactly as if they had run the query themselves in an explore.
 - **Apps run in the browser only.** An app is a React app with no Python runtime or server-side code, and it can't call outside services directly. To call a third-party API, link an [external connection](/data-apps/external-connections). To send results on a schedule, use [scheduled deliveries and syncs](/data-apps/deliveries-and-syncs); for custom scripts, use the [Lightdash API](/api-reference/v1/introduction).
 - **The agent generates code, not data.** When the app is being built, the configured coding agent sees your dbt model catalog (tables, dimensions, metrics) and any context you attach to the prompt. It writes queries against your semantic layer; it does not get a dump of your warehouse. Clarifying questions before a build use only your prompt, a summary of your tables, and the names of the charts and dashboards you attached.
+  - The catalog only includes tables your project's [Tables configuration](/semantic-layer/tables#choosing-which-tables-appear-in-lightdash) makes visible, so a model excluded by tag or name isn't offered to the agent when building or iterating on an app. This only controls what the agent discovers when generating code - it doesn't stop a query against an excluded model if the app already references it by name, so set [`hidden: true`](/semantic-layer/tables#hiding-the-base-explore) on the model to make it fully unavailable to data apps, agents, and the API alike.
 - **The sandbox only runs during builds.** The coding agent works in an isolated sandbox while it builds or edits the app. When someone opens the app, it runs in their browser and its queries go from the browser to Lightdash to your warehouse, so query results never pass through the sandbox or reach the agent.
 - **The agent can see anything you attach.** Charts, dashboards, images, files, screenshots, and sample data you include in the prompt are passed to the agent as context. These are the only ways rows from your warehouse reach the agent. Don't include data you wouldn't be comfortable sending to the model.
 - **Build errors go back to the agent.** If the generated code fails to build or fails Lightdash's app checks, Lightdash sends the compiler output or the check's message to the agent so it can fix the code, up to two times. These messages describe the code, not your query results.
@@ -319,7 +330,7 @@ Ask the agent for the behavior you want, for example "make each card open its UR
 Organization admins can stop images of your data from being captured or sent to the agent. Go to **Settings → Data apps → General** and turn off **Allow screenshots and attachments**. While it's off:
 
 - The **Screenshot** button and image and file attachments are hidden in the prompt bar. Files staged before the switch was turned off aren't sent.
-- **Capture thumbnail** and automatic thumbnails are disabled. Existing thumbnails are kept but hidden until you turn the setting back on. **Remove thumbnail** stays available.
+- **Capture thumbnail** is disabled. Existing thumbnails are kept but hidden until you turn the setting back on. **Remove thumbnail** stays available.
 - Images attached to earlier prompts are hidden in the build history. The files are kept and reappear when you turn the setting back on.
 - Slack build notifications and Slack link previews of an app don't include a rendered image of the app.
 

@@ -2059,6 +2059,8 @@ All [dimension configurations](#dimension-configuration) are available for addit
 
 Additional dimensions names need to be unique in the model.
 
+A dimension that isn't tied to one column can be declared on the model instead. See [model-level additional dimensions](#model-level-additional-dimensions).
+
 ### Adding different formatting
 
 <CodeGroup>
@@ -2422,3 +2424,72 @@ dimensions:
 
 
 In this example, the additional dimension `extra_session_start_tier` references `${session_start_month}`, which is the `MONTH` time interval of the `session_start` dimension.
+
+### Model-level additional dimensions
+
+Declare `additional_dimensions` in the model's `meta`, next to [model-level metrics](/semantic-layer/metrics#2-using-the-model-meta-tag), when a dimension is built from several columns and doesn't belong under any one of them.
+
+<CodeGroup>
+```yaml dbt v1.10+
+models:
+  - name: payments
+    config:
+      meta:
+        joins:
+          - join: orders
+            sql_on: ${orders.order_id} = ${payments.order_id}
+        additional_dimensions:
+          is_large_card_payment:
+            type: boolean
+            description: 'Credit card payments of 20 or more.'
+            sql: ${payment_method} = 'credit_card' AND ${amount} >= 20
+          is_full_order_payment:
+            type: boolean
+            description: 'The payment covers the whole order amount.'
+            sql: ${amount} >= ${orders.amount}
+```
+
+```yaml dbt v1.9 and earlier
+models:
+  - name: payments
+    meta:
+      joins:
+        - join: orders
+          sql_on: ${orders.order_id} = ${payments.order_id}
+      additional_dimensions:
+        is_large_card_payment:
+          type: boolean
+          description: 'Credit card payments of 20 or more.'
+          sql: ${payment_method} = 'credit_card' AND ${amount} >= 20
+        is_full_order_payment:
+          type: boolean
+          description: 'The payment covers the whole order amount.'
+          sql: ${amount} >= ${orders.amount}
+```
+
+```yaml Lightdash YAML
+type: model
+name: payments
+
+joins:
+  - join: orders
+    sql_on: ${orders.order_id} = ${payments.order_id}
+
+dimensions:
+  - name: is_large_card_payment
+    type: boolean
+    description: 'Credit card payments of 20 or more.'
+    sql: ${payment_method} = 'credit_card' AND ${amount} >= 20
+  - name: is_full_order_payment
+    type: boolean
+    description: 'The payment covers the whole order amount.'
+    sql: ${amount} >= ${orders.amount}
+```
+</CodeGroup>
+
+Model-level additional dimensions accept the same [dimension configurations](#dimension-configuration) as column-level ones, including [time intervals](#time-intervals), and behave the same way in queries, filters, and metrics. They differ in a few places:
+
+- `type` and `sql` are required, because there is no column to take them from. An entry missing either one is skipped with a compilation warning.
+- They belong to the Table, so they appear in every explore that includes it, including explores where the Table is joined.
+- `sql` can reference a field from another Table with `${table.field}`, like `${orders.amount}` above. The dimension works in every explore where that Table is also joined. In an explore without it, the dimension is left out with a compilation warning. For a dimension that only makes sense in one explore, use [explore-scoped dimensions](/semantic-layer/explores#adding-custom-dimensions-to-an-explore).
+- If the name matches an existing dimension or metric in the model, the existing field is kept and the model-level dimension is skipped with a compilation warning.
