@@ -906,6 +906,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Compile metric total query","href":"/api-reference/metrics-explorer/compile-metric-total-query","parents":["Reference","Metrics Explorer"]},
 {"title":"Get map tile","href":"/api-reference/map/get-map-tile","parents":["Reference","Map"]},
 {"title":"Connect Linear","href":"/api-reference/integrations/connect-linear","parents":["Reference","Integrations"]},
+{"title":"Reconnect Linear","href":"/api-reference/integrations/reconnect-linear","parents":["Reference","Integrations"]},
 {"title":"Linear OAuth callback","href":"/api-reference/integrations/linear-oauth-callback","parents":["Reference","Integrations"]},
 {"title":"Get Linear installation","href":"/api-reference/integrations/get-linear-installation","parents":["Reference","Integrations"]},
 {"title":"Uninstall Linear integration","href":"/api-reference/integrations/uninstall-linear-integration","parents":["Reference","Integrations"]},
