@@ -295,7 +295,7 @@ export const SetupPathPicker = () => {
       add("project", "sync", whTitle ? `Connect ${whTitle} with a service account` : "Connect your warehouse with a service account", "Enter the warehouse credentials Lightdash uses to run queries.", `${CONNECT}#1-connect-to-a-warehouse`, "Warehouse connection settings");
     }
     if (git && (a.sync === "git" || a.sync === "cli-then-git")) {
-      add("project", "git", cliFirst ? `Switch to a ${git.title} connection` : `Connect ${git.title}`, "Point Lightdash at your repository, branch, and project directory.", isYaml ? "/semantic-layer/yaml#connect-through-github" : `${CONNECT}#${git.anchor}`, `${git.title} connection settings`);
+      add("project", "git", cliFirst ? `Switch to a ${git.title} connection` : `Connect ${git.title}`, "Point Lightdash at your repository, branch, and project directory.", isYaml ? "/semantic-layer/yaml#connect-through-github-or-bitbucket-cloud" : `${CONNECT}#${git.anchor}`, `${git.title} connection settings`);
       add("project", "git", "Set up CI/CD", "Preview and validate on pull requests, and refresh Lightdash after each merge.", CICD, "Set up CI/CD");
     }
     if (a.sync === "cli") {
