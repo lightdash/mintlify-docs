@@ -127,6 +127,17 @@ test('marks misplaced images as auto-fixable without changing files', async (t) 
   assert.equal(fs.existsSync(path.join(root, 'images/other/chart.png')), true);
 });
 
+test('accepts shared icons without requiring multiple pages to use them', async (t) => {
+  const root = fixture({
+    'docs.json': JSON.stringify({ navigation: { pages: ['guide/page'] } }),
+    'guide/page.mdx': page('<Frame>\n![Snowflake](/images/icons/snowflake.svg)\n</Frame>'),
+    'images/icons/snowflake.svg': '<svg xmlns="http://www.w3.org/2000/svg" />',
+  });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  assert.deepEqual((await validateDocs({ root })).findings, []);
+});
+
 test('reports external failures as advisory structured findings', async (t) => {
   const root = fixture({
     'docs.json': JSON.stringify({ navigation: { pages: ['index'] } }),
