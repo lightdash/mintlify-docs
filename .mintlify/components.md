@@ -96,7 +96,7 @@ description: "Rolling windows calculate metrics like rolling averages using the 
 
 ## Media
 
-**Every image, video, diagram, and iframe is wrapped in `<Frame>`.** Frames constrain content to the column, so an unwrapped iframe overflows the layout, and an unwrapped image sits flush against the prose with no separation. There is no exception for small images.
+**Every content image, video, diagram, and iframe is wrapped in `<Frame>`.** Frames constrain content to the column, so an unwrapped iframe overflows the layout, and an unwrapped image sits flush against the prose with no separation. Decorative icons inside controls use the shared SVG assets described under Icons.
 
 ```mdx
 <Frame caption="The chart config panel, with the Y-axis section open">
@@ -178,6 +178,8 @@ That leaves one job for `<Card>`: a small set of deliberate cross-area jumps, wh
 ## Icons
 
 The library is Tabler, set once in `docs.json` (`icons.library`). Use [Tabler's names](https://tabler.io/icons) exactly — an unrecognised name renders nothing, silently. `iconType` is Font Awesome-only and does nothing here; leave it off.
+
+Reusable SVG assets live in `images/icons/`, named for the product or glyph they depict. Use `/images/icons/<name>.svg` in a native component's `icon` prop or an image for a colored brand mark. In custom controls, monochrome marks use the `.svg-icon` CSS mask with `--svg-icon: url("/images/icons/<name>.svg")` and optional `--svg-icon-size`, so they inherit `currentColor`. Decorative icons have `aria-hidden="true"` and images also have `alt=""`; the control supplies its accessible label. Athena, ClickHouse, and DuckDB assets include a dark backing for contrast across themes.
 
 Tabler is the library because its chart set is the one that covers this product: `chart-treemap`, `chart-sankey`, `chart-funnel`, and `chart-area-line` all exist, and the chart-type gallery is the most icon-dense surface on the site.
 
