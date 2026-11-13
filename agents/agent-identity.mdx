@@ -9,19 +9,36 @@ import { FeatureBadge } from '/snippets/feature-badge.jsx';
 
 <div className="feature-badges"><FeatureBadge label="Beta" /> <FeatureBadge label="Enterprise" /></div>
 
-AI agents run SQL through your Lightdash project's warehouse connections. Agent identity lets you choose a separate identity for agent queries, with its own policies:
-
-- **The person** is the default behavior: agents use the same credentials as the person asking, either the project's shared credentials or that person's [personal warehouse credentials](/personal-settings/personal-warehouse-connections) when the project uses them.
-- **A shared agent account** gives all agents on a project the access granted to one dedicated warehouse account. Use it when every agent user may see the same data.
-- **The person's agent sign-in** gives each person a separate connection for their agent. The warehouse recognizes it as an agent session, so policies can restrict the agent while preserving the person's own access. For example, an agent can see redacted personally identifiable information (PII) while the person can query the unredacted values.
-
-Lightdash's [data access controls](/agents/data-access) and [agent permissions](/agents/agent-permissions) still apply on top of agent identity configurations.
-
 <Info>
   Agent identity requires the `agent-identity` feature flag. On Lightdash Cloud, ask Lightdash support to enable it for your organization. On a self-hosted instance, [enable the flag](/self-host/enterprise-features/ai-agents#agent-identity).
 </Info>
 
-<div className="sticky-first-col">
+AI agents run SQL through your Lightdash project's warehouse connections. Agent identity lets you choose a separate identity for agent queries, with its own policies:
+
+- **The person**. The default: agents use the same credentials as the person asking, either the project's shared credentials or that person's [personal warehouse credentials](/personal-settings/personal-warehouse-connections) when the project uses them.
+- **The person's agent sign-in**. Each person connects their agent separately. The warehouse recognizes it as an agent session, so policies can restrict the agent while preserving the person's own access. For example, an agent can see redacted personally identifiable information (PII) while the person can query the unredacted values.
+- **A shared agent account**. All agents on a project use the access granted to one dedicated warehouse account. Use it when every agent user may see the same data.
+
+<Frame>
+  <img
+    src="/images/agents/agent-identity/query-identities-light.svg"
+    alt="Users query with personal credentials or the project connection. Agents query as the person, with the person's agent sign-in, or with a shared agent account."
+    className="block dark:hidden w-full h-auto"
+    width="1240"
+    height="652"
+  />
+  <img
+    src="/images/agents/agent-identity/query-identities-dark.svg"
+    alt="Users query with personal credentials or the project connection. Agents query as the person, with the person's agent sign-in, or with a shared agent account."
+    className="hidden dark:block w-full h-auto"
+    width="1240"
+    height="652"
+  />
+</Frame>
+
+Lightdash's [data access controls](/agents/data-access) and [agent permissions](/agents/agent-permissions) still apply on top of agent identity configurations.
+
+<div className="agent-identity-support">
 
 | Warehouse | Person | Person's agent sign-in | Shared agent account |
 | --- | --- | --- | --- |
@@ -195,17 +212,22 @@ Choose your warehouse for credentials, grants, and policy examples.
   <a href="#clickhouse" className="not-prose"><Card title="ClickHouse" icon="/images/icons/clickhouse.svg" horizontal /></a>
 </Columns>
 
-<AccordionGroup>
+## Snowflake
 
-<Accordion title="Snowflake" id="snowflake">
+Snowflake supports verified agent sessions for each person and a dedicated shared user. Both can use warehouse policies to restrict agent access.
+
+- **One Snowflake account**. The organization has one agent integration; every project using per-person agent sign-in must use that Snowflake account.
+- **Allowed default role**. Each person needs a default role outside `ACCOUNTADMIN`, `SECURITYADMIN`, `ORGADMIN`, and `GLOBALORGADMIN`, which Snowflake blocks in OAuth sessions.
+
+### The person
+
+Agents use the project's normal Snowflake credentials or the person's [personal warehouse credentials](/personal-settings/personal-warehouse-connections) when the project uses them.
 
 <a id="snowflake-agent-sign-in-for-each-person" />
 
-### Person's agent sign-in
+### The person's agent sign-in
 
 Snowflake OAuth creates a verified agent session for each person. Policies can distinguish that session using `SYS_CONTEXT('SNOWFLAKE$CURRENT', 'IS_AGENT_ACTIVATED')`. Without policies, the agent retains the access of the person's role.
-
-The organization has one agent integration for one Snowflake account; projects must use that account. Each person needs a default role allowed in OAuth sessions. Snowflake blocks `ACCOUNTADMIN`, `SECURITYADMIN`, `ORGADMIN`, and `GLOBALORGADMIN`.
 
 #### Set up the Snowflake agent integration
 
@@ -222,7 +244,7 @@ An organization admin configures the integration once:
 
 Verification requires a saved OAuth client and a reachable Snowflake sign-in page. The agent-session check passes after the first person connects; it is not required to enable the rule. A reachable sign-in page does not prove the integration settings are correct.
 
-Use **View setup** in the Snowflake chip to review the integration. Lightdash encrypts the client secret. Replacing the client invalidates existing agent sign-ins; each person must reconnect. Switching the rule to **The person** does not revoke tokens already issued by Snowflake.
+Use **View setup** in the Snowflake chip to review the integration. Lightdash encrypts the client secret.
 
 #### Connect your agent
 
@@ -232,17 +254,70 @@ In **Settings → My agent identity**, select **Connect agent** on the Snowflake
   <img src="/images/agents/agent-identity/my-agent-connections-connected.png" alt="My agent identity showing a connected Snowflake agent sign-in and its expiry date" />
 </Frame>
 
-Lightdash refreshes the connection in the background until the grant expires. Its duration comes from `OAUTH_REFRESH_TOKEN_VALIDITY` on the Snowflake security integration; the card shows the expiry date. Reconnecting uses your Snowflake default role, so change that role first if your agent gets the wrong access.
+#### Verify the agent session
 
-#### Troubleshoot Snowflake agent sign-in
+Ask an agent to run the check through [SQL mode](/agents/use-ai-agents#sql-mode) or MCP's `run_sql`, then run it in a Snowflake worksheet as the same person:
 
-| Problem | Resolution |
-| --- | --- |
-| Sign-in window is blocked | Allow pop-ups for Lightdash, then connect again. |
-| **Not available** on your sign-in card | Ask an organization admin to finish the Snowflake integration setup. |
-| Authorization endpoint check returns HTTP 404 or 405 | Check the Snowflake account URL in the integration setup. |
-| Snowflake returns `invalid_grant` | The grant expired or was revoked. Connect your agent again. |
-| Temporary network error, timeout, rate limit, or server error | Retry the query. The saved connection stays in place. |
+```sql
+SELECT SYS_CONTEXT('SNOWFLAKE$CURRENT', 'IS_AGENT_ACTIVATED') AS agent_activated,
+       SYS_CONTEXT('SNOWFLAKE$SESSION', 'ACTIVE_RESTRICTED_SESSION_SCOPES') AS active_scopes;
+```
+
+`agent_activated` should be true only in the agent session. In `SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY`, `agent_type = 'EXTERNAL_AGENT'` confirms a verified agent session; a query tag alone does not. Account usage has an ingestion delay. See [QUERY_HISTORY](https://docs.snowflake.com/en/sql-reference/account-usage/query_history).
+
+Query a protected table both ways to confirm the row, masking, and session policies produce the access you intended.
+
+### Shared agent account
+
+Use a dedicated Snowflake user with key-pair authentication. Set its user, private key, role, and warehouse in Lightdash.
+
+#### Create the user and grants
+
+Create an [RSA key pair](https://docs.snowflake.com/en/user-guide/key-pair-auth), a role, and a warehouse for agents, then create the user and grant access:
+
+```sql
+CREATE USER AI_AGENT
+      TYPE = SERVICE_AGENT
+      RSA_PUBLIC_KEY = '<public key without PEM headers>'
+      DEFAULT_ROLE = AI_AGENT_ROLE
+      DEFAULT_WAREHOUSE = AI_AGENT_WH;
+    GRANT ROLE AI_AGENT_ROLE TO USER AI_AGENT;
+```
+
+```sql
+GRANT USAGE ON WAREHOUSE AI_AGENT_WH TO ROLE AI_AGENT_ROLE;
+    GRANT USAGE ON DATABASE <database> TO ROLE AI_AGENT_ROLE;
+    GRANT USAGE ON SCHEMA <database>.<schema> TO ROLE AI_AGENT_ROLE;
+    GRANT SELECT ON TABLE <database>.<schema>.<table> TO ROLE AI_AGENT_ROLE;
+```
+
+`TYPE = SERVICE_AGENT` marks every session as an agent session, allowing agent-session policies to apply. With another user type, only the role's grants restrict agents. See [SERVICE_AGENT users](https://docs.snowflake.com/en/sql-reference/sql/create-user).
+
+#### Add and verify the account
+
+In **Project settings → Agent identity → Add shared agent account**, enter **User**, **Private key**, **Role**, and **Warehouse**, plus **Passphrase** if needed. Paste the complete PEM key, including matching `BEGIN` and `END` lines for `PRIVATE KEY`, `RSA PRIVATE KEY`, or `ENCRYPTED PRIVATE KEY`. Testing stays disabled until the required fields and key format are valid. Select **Test and save** to check the key pair, role, and warehouse.
+
+<Frame>
+  <img src="/images/agents/agent-identity/snowflake-ai-service-account-form.png" alt="Snowflake shared account fields for user, private key, passphrase, role, and warehouse" />
+</Frame>
+
+Ask an agent to run:
+
+```sql
+SELECT CURRENT_USER() AS principal,
+       CURRENT_ROLE() AS role,
+       SYS_CONTEXT('SNOWFLAKE$CURRENT', 'IS_AGENT_ACTIVATED') AS agent_activated;
+```
+
+Check the user and role; `agent_activated` is true for `SERVICE_AGENT` users.
+
+### Snowflake details
+
+- **Connection settings**. The shared user supplies the user, key, role, and warehouse. The account, database, and schema come from the project connection; its custom query tag does not carry over.
+- **Integration changes**. Replacing the OAuth client invalidates existing agent sign-ins, so each person must reconnect. Switching to **The person** does not revoke tokens Snowflake already issued.
+- **Connection lifetime**. Lightdash refreshes agent sign-ins until the grant expires, as set by `OAUTH_REFRESH_TOKEN_VALIDITY`. **My agent identity** shows the expiry date.
+- **Role on reconnect**. Reconnecting uses the person's Snowflake default role. Change that role first if the agent has the wrong access.
+- **Query cache**. Agent queries skip the Snowflake result cache.
 
 #### Write Snowflake policies for agent sessions
 
@@ -304,72 +379,29 @@ The restricted scope limits the privileges the role already has. It does not gra
 
 For the full Snowflake reference, see [agent identity](https://docs.snowflake.com/en/user-guide/agent-identity) and [restricted session scopes](https://docs.snowflake.com/en/user-guide/restricted-session-scope).
 
-#### Verify the agent session
+#### Troubleshoot Snowflake agent sign-in
 
-Ask an agent to run the check through [SQL mode](/agents/use-ai-agents#sql-mode) or MCP's `run_sql`, then run it in a Snowflake worksheet as the same person:
+| Problem | Resolution |
+| --- | --- |
+| Sign-in window is blocked | Allow pop-ups for Lightdash, then connect again. |
+| **Not available** on your sign-in card | Ask an organization admin to finish the Snowflake integration setup. |
+| Authorization endpoint check returns HTTP 404 or 405 | Check the Snowflake account URL in the integration setup. |
+| Snowflake returns `invalid_grant` | The grant expired or was revoked. Connect your agent again. |
+| Temporary network error, timeout, rate limit, or server error | Retry the query. The saved connection stays in place. |
 
-```sql
-SELECT SYS_CONTEXT('SNOWFLAKE$CURRENT', 'IS_AGENT_ACTIVATED') AS agent_activated,
-       SYS_CONTEXT('SNOWFLAKE$SESSION', 'ACTIVE_RESTRICTED_SESSION_SCOPES') AS active_scopes;
-```
+## BigQuery
 
-`agent_activated` should be true only in the agent session. In `SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY`, `agent_type = 'EXTERNAL_AGENT'` confirms a verified agent session; a query tag alone does not. Account usage has an ingestion delay. See [QUERY_HISTORY](https://docs.snowflake.com/en/sql-reference/account-usage/query_history).
+BigQuery enforces access through IAM grants, row access policies, and column masks. For shared agent queries, target the service account rather than each person's Google identity.
 
-Query a protected table both ways to confirm the row, masking, and session policies produce the access you intended.
+### The person
 
-### Shared agent account
-
-Use a dedicated Snowflake user with key-pair authentication. Set its user, private key, role, and warehouse in Lightdash; the account, database, and schema come from the project connection. The connection's custom query tag does not carry over.
-
-#### Create the user and grants
-
-Create an [RSA key pair](https://docs.snowflake.com/en/user-guide/key-pair-auth), a role, and a warehouse for agents, then create the user and grant access:
-
-```sql
-CREATE USER AI_AGENT
-      TYPE = SERVICE_AGENT
-      RSA_PUBLIC_KEY = '<public key without PEM headers>'
-      DEFAULT_ROLE = AI_AGENT_ROLE
-      DEFAULT_WAREHOUSE = AI_AGENT_WH;
-    GRANT ROLE AI_AGENT_ROLE TO USER AI_AGENT;
-```
-
-```sql
-GRANT USAGE ON WAREHOUSE AI_AGENT_WH TO ROLE AI_AGENT_ROLE;
-    GRANT USAGE ON DATABASE <database> TO ROLE AI_AGENT_ROLE;
-    GRANT USAGE ON SCHEMA <database>.<schema> TO ROLE AI_AGENT_ROLE;
-    GRANT SELECT ON TABLE <database>.<schema>.<table> TO ROLE AI_AGENT_ROLE;
-```
-
-`TYPE = SERVICE_AGENT` marks every session as an agent session, allowing the policies above to apply. With another user type, only the role's grants restrict agents. See [SERVICE_AGENT users](https://docs.snowflake.com/en/sql-reference/sql/create-user).
-
-#### Add and verify the account
-
-In **Project settings → Agent identity → Add shared agent account**, enter **User**, **Private key**, **Role**, and **Warehouse**, plus **Passphrase** if needed. Paste the complete PEM key, including matching `BEGIN` and `END` lines for `PRIVATE KEY`, `RSA PRIVATE KEY`, or `ENCRYPTED PRIVATE KEY`. Testing stays disabled until the required fields and key format are valid. Select **Test and save** to check the key pair, role, and warehouse.
-
-<Frame>
-  <img src="/images/agents/agent-identity/snowflake-ai-service-account-form.png" alt="Snowflake shared account fields for user, private key, passphrase, role, and warehouse" />
-</Frame>
-
-Ask an agent to run:
-
-```sql
-SELECT CURRENT_USER() AS principal,
-       CURRENT_ROLE() AS role,
-       SYS_CONTEXT('SNOWFLAKE$CURRENT', 'IS_AGENT_ACTIVATED') AS agent_activated;
-```
-
-Check the user and role; `agent_activated` is true for `SERVICE_AGENT` users. Agent queries skip the Snowflake result cache.
-
-</Accordion>
-
-<Accordion title="BigQuery" id="bigquery">
+Agents use the project's normal BigQuery credentials or the person's [personal warehouse credentials](/personal-settings/personal-warehouse-connections) when the project uses them.
 
 <a id="bigquery-the-shared-agent-account" />
 
 ### Shared agent account
 
-Use a dedicated Google Cloud service account with a JSON key. The project, dataset, and location come from the project connection. Row access policies and column masks must target the shared account, since agents do not use each person's Google identity.
+Use a dedicated Google Cloud service account with a JSON key.
 
 #### Create and add the account
 
@@ -378,7 +410,7 @@ Use a dedicated Google Cloud service account with a JSON key. The project, datas
 3. [Create a JSON key](https://cloud.google.com/iam/docs/keys-create-delete) and upload it under **Project settings → Agent identity → Add shared agent account → Service account key file**.
 4. Select **Test**, check that **Signs in as** identifies the dedicated service account, then **Save**.
 
-The setup card provides `gcloud` and `bq` commands based on your connection. The **AI agent maximum bytes billed** limit applies regardless of the agent identity; configure it in the [project connection](/integrations/connect-project#ai-agent-maximum-bytes-billed).
+The setup card provides `gcloud` and `bq` commands based on your connection.
 
 #### Decide what agents can read
 
@@ -412,8 +444,8 @@ See [table-level access control](https://cloud.google.com/bigquery/docs/table-ac
 
 Policy tags protect individual columns. You create a taxonomy with a policy tag, for example `pii`, and attach it to the sensitive columns. Then you choose what the shared agent account sees in those columns:
 
-- **Masked values.** Add a data policy with a masking rule to the policy tag. Grant the shared agent account the Masked Reader role, `roles/bigquerydatapolicy.maskedReader`, on the data policy. The account then reads masked values: for example `NULL` with the Nullify rule, or an empty string for a `STRING` column with the Default masking value rule.
-- **No access.** Do not grant the shared agent account the Fine-Grained Reader role, `roles/datacatalog.categoryFineGrainedReader`, or the Masked Reader role. A query that selects the column fails with an error. Agent questions that do not use the column still work.
+- **Masked values**. Add a data policy with a masking rule to the policy tag. Grant the shared agent account the Masked Reader role, `roles/bigquerydatapolicy.maskedReader`, on the data policy. The account then reads masked values: for example `NULL` with the Nullify rule, or an empty string for a `STRING` column with the Default masking value rule.
+- **No access**. Do not grant the shared agent account the Fine-Grained Reader role, `roles/datacatalog.categoryFineGrainedReader`, or the Masked Reader role. A query that selects the column fails with an error. Agent questions that do not use the column still work.
 
 For example, with the Nullify rule on the `email` column of `protected_records`:
 
@@ -461,17 +493,26 @@ Ask an agent to run:
 SELECT SESSION_USER() AS principal;
 ```
 
-Check that the result is the shared service account's email address. Then query an explore whose table the account cannot read and confirm that BigQuery denies access. Agent jobs skip the BigQuery query cache.
+Check that the result is the shared service account's email address. Then query an explore whose table the account cannot read and confirm that BigQuery denies access.
 
-If you switch away from **A shared agent account** and back without replacing the key, results previously produced by that key become available again. Replace the key if those results must stay inaccessible.
+### BigQuery details
 
-</Accordion>
+- **Connection settings**. The shared account replaces credentials; project, dataset, and location come from the project connection.
+- **Query cost limit**. **AI agent maximum bytes billed** applies regardless of identity. Configure it in the [project connection](/integrations/connect-project#ai-agent-maximum-bytes-billed).
+- **Key reuse**. If you switch away from **A shared agent account** and back without replacing the key, results previously produced by that key become available again. Replace the key if those results must stay inaccessible.
+- **Query cache**. Agent jobs skip the BigQuery query cache.
 
-<Accordion title="Databricks" id="databricks">
+## Databricks
+
+The project connection must use a Databricks SQL warehouse. Unity Catalog applies grants, row filters, and column masks to the identity running each query.
+
+### The person
+
+Agents use the project's normal Databricks credentials or the person's [personal warehouse credentials](/personal-settings/personal-warehouse-connections) when the project uses them.
 
 ### Shared agent account
 
-Use a service principal with OAuth machine-to-machine authentication on a Databricks SQL warehouse. Unity Catalog applies the principal's grants, row filters, and column masks. The host, HTTP path, catalog, schema, and compute come from the project connection.
+Use a service principal with OAuth machine-to-machine authentication.
 
 #### Create the principal and grants
 
@@ -485,7 +526,7 @@ GRANT USE CATALOG ON CATALOG `analytics` TO `<service-principal-application-id>`
 
 #### Add and verify the account
 
-In **Project settings → Agent identity → Add shared agent account**, enter the principal's application ID as **Client ID**, enter **Client secret**, then **Test and save**. Rotate the secret with **Replace** before it expires.
+In **Project settings → Agent identity → Add shared agent account**, enter the principal's application ID as **Client ID**, enter **Client secret**, then **Test and save**.
 
 Ask an agent to run:
 
@@ -493,19 +534,27 @@ Ask an agent to run:
 SELECT current_user() AS principal;
 ```
 
-The result should be the principal's application ID. Confirm that a query against a table outside its grants is denied. Agent queries skip the Databricks result cache.
+The result should be the principal's application ID. Confirm that a query against a table outside its grants is denied.
 
-</Accordion>
+### Databricks details
 
-<Accordion title="Athena" id="athena">
+- **Connection settings**. Host, HTTP path, catalog, schema, and compute come from the project connection.
+- **Secret expiry**. Databricks OAuth secrets expire. Use **Replace** to rotate the shared principal's secret before it expires.
+- **Query cache**. Agent queries skip the Databricks result cache.
+
+## Athena
+
+Lake Formation grants and data filters on the query's AWS identity control which data agents can read.
+
+### The person
+
+Agents use the project's normal Athena credentials or the person's [personal warehouse credentials](/personal-settings/personal-warehouse-connections) when the project uses them.
 
 ### Shared agent account
 
-Use a dedicated AWS identity, Athena workgroup, and S3 results location. Lake Formation grants and data filters on the identity control agent access. Region, catalog, database, and query settings come from the project connection; its role, keys, workgroup, and S3 locations do not carry over.
+Use a dedicated AWS identity, Athena workgroup, and S3 results location.
 
 #### Create the identity and grants
-
-Lightdash uses access keys and cannot renew them. A dedicated IAM user provides long-lived keys you can rotate on your normal schedule. Assumed-role keys expire within hours and must be replaced manually.
 
 1. Create the IAM user or role, agent workgroup, and S3 results location. Apply the **Permission policy** from the project's agent setup card. For a role, also apply the **Role trust policy** and allow the caller to assume it. KMS keys and cross-account catalogs need additional permissions. See [Athena workgroups](https://docs.aws.amazon.com/athena/latest/ug/workgroups-manage-queries-control-costs.html).
 2. As a Lake Formation administrator, apply the **Lake Formation grant** for each allowed table. Target the user or role ARN, not a session ARN. Use a **Filtered table grant** to limit rows or columns, and check for broader grants that would override the restriction. See [Lake Formation data filters](https://docs.aws.amazon.com/lake-formation/latest/dg/data-filters-about.html).
@@ -520,13 +569,22 @@ In **Project settings → Agent identity → Add shared agent account**, enter *
 
 Testing calls `GetCallerIdentity` and runs a simple query through the agent workgroup. Check that **Signs in as** shows the intended ARN, then test allowed and denied table access. A successful connection test does not check Lake Formation table grants.
 
-</Accordion>
+### Athena details
 
-<Accordion title="Postgres" id="postgres">
+- **Connection settings**. Region, catalog, database, and query settings come from the project connection. The shared agent account supplies its own keys, workgroup, and S3 locations; the connection's role and credentials do not carry over.
+- **Key lifetime**. Lightdash cannot renew access keys. A dedicated IAM user provides long-lived keys you can rotate; assumed-role keys expire within hours and need manual replacement.
+
+## Postgres
+
+Postgres applies grants and row-level security policies to the login role running the query.
+
+### The person
+
+Agents use the project's normal Postgres credentials or the person's [personal warehouse credentials](/personal-settings/personal-warehouse-connections) when the project uses them.
 
 ### Shared agent account
 
-Use a dedicated login role with a user and password. The host, port, database, schema, SSL mode, root certificate, and SSH tunnel come from the project connection. Its client certificates and `role` setting do not apply to agent queries.
+Use a dedicated login role with a user and password.
 
 #### Create the role and grants
 
@@ -545,8 +603,6 @@ GRANT USAGE ON SCHEMA "<schema>" TO "ai_agents";
     ALTER DEFAULT PRIVILEGES IN SCHEMA "<schema>" GRANT SELECT ON TABLES TO "ai_agents";
 ```
 
-Run `ALTER DEFAULT PRIVILEGES` as each role that creates tables; it affects only that role's future tables.
-
 #### Limit rows and columns
 
 To limit the rows that agents read, add a row-level security policy for the role. Replace the table and condition placeholders:
@@ -557,25 +613,32 @@ CREATE POLICY "ai_agents_rows" ON "<schema>"."<table>"
   FOR SELECT TO "ai_agents" USING (<condition>);
 ```
 
-Row-level security does not apply to superusers, to roles with `BYPASSRLS`, or to the table owner unless the table has `FORCE ROW LEVEL SECURITY`. See [Row security policies](https://www.postgresql.org/docs/current/ddl-rowsecurity.html).
-
 To hide sensitive columns, replace the table-wide `SELECT` grant with a column grant, for example `GRANT SELECT (col_a, col_b) ON "<schema>"."<table>" TO "ai_agents";`. A table-wide grant still allows every column.
 
 #### Add and verify the account
 
 In **Project settings → Agent identity → Add shared agent account**, enter **User** and **Password**, then **Test and save**. Testing checks that `current_user` and `session_user` both match the saved user.
 
-If sign-in fails, check the role has `LOGIN`, the database exists, `pg_hba.conf` permits the connection, and the role has `CONNECT` on the database. Then test allowed and denied table access.
+Test allowed and denied table access after confirming the connection works.
 
-</Accordion>
+### Postgres details
 
-<Accordion title="Redshift" id="redshift">
+- **Connection settings**. Host, port, database, schema, SSL mode, root certificate, and SSH tunnel come from the project connection. Its client certificates and `role` setting do not apply to shared agent queries.
+- **Future tables**. Run `ALTER DEFAULT PRIVILEGES` as each role that creates tables; it affects only that role's future tables.
+- **Row security bypass**. Row-level security does not apply to superusers, to roles with `BYPASSRLS`, or to the table owner unless the table has `FORCE ROW LEVEL SECURITY`. See [Row security policies](https://www.postgresql.org/docs/current/ddl-rowsecurity.html).
+- **Sign-in failures**. Check that the role has `LOGIN`, the database exists, `pg_hba.conf` permits the connection, and the role has `CONNECT` on the database.
+
+## Redshift
+
+Redshift supports grants, row-level security, and masking policies on the database user running the query.
+
+### The person
+
+Agents use the project's normal Redshift credentials or the person's [personal warehouse credentials](/personal-settings/personal-warehouse-connections) when the project uses them.
 
 ### Shared agent account
 
-Use a dedicated database user with password authentication, including when the project's normal connection uses IAM. Host, port, database, schema, SSL settings, and SSH tunnel come from the project connection.
-
-Do not grant the agent user superuser, `IGNORE RLS`, or `sys:secadmin` rights. Check inherited and `PUBLIC` grants as well as direct grants.
+Use a dedicated database user with password authentication.
 
 #### Create the user and grants
 
@@ -595,8 +658,6 @@ GRANT USAGE ON SCHEMA "<schema>" TO ai_agents;
       IN SCHEMA "<schema>"
       GRANT SELECT ON TABLES TO ai_agents;
 ```
-
-Repeat `ALTER DEFAULT PRIVILEGES` for each table owner whose future tables agents should read.
 
 #### Limit rows and columns
 
@@ -621,17 +682,27 @@ Check the policy settings and limits for external and shared tables. See [Row-le
 
 In **Project settings → Agent identity → Add shared agent account**, enter **User** and **Password**, then **Test and save**. Testing checks that `current_user` and `session_user` agree and match the saved user, allowing Redshift's lowercase form for unquoted names.
 
-Test allowed and denied table access. Agent queries skip the Redshift result cache.
+Test allowed and denied table access.
 
-</Accordion>
+### Redshift details
 
-<Accordion title="Trino" id="trino">
+- **Shared account authentication**. Shared agent accounts use a user and password even when the project connection uses IAM.
+- **Connection settings**. Host, port, database, schema, SSL settings, and SSH tunnel come from the project connection.
+- **Inherited privileges**. Do not grant the agent user superuser, `IGNORE RLS`, or `sys:secadmin` rights. Check inherited and `PUBLIC` grants as well as direct grants.
+- **Future tables**. Repeat `ALTER DEFAULT PRIVILEGES` for each table owner whose future tables agents should read.
+- **Query cache**. Agent queries skip the Redshift result cache.
+
+## Trino
+
+Trino uses its configured system or connector access control to restrict what the query's user can read.
+
+### The person
+
+Agents use the project's normal Trino credentials or the person's [personal warehouse credentials](/personal-settings/personal-warehouse-connections) when the project uses them.
 
 ### Shared agent account
 
-Use a dedicated user with password authentication over HTTPS. Trino does not check the password without password authentication enabled. Starburst Galaxy service accounts work with their generated user name and password; JWT, OAuth, Kerberos, and certificate authentication are not supported for shared agent accounts.
-
-Host, port, scheme, catalog, schema, and source come from the project connection.
+Use a dedicated user with password authentication over HTTPS. Enable password authentication so Trino checks the password.
 
 #### Create the login and restrict access
 
@@ -680,15 +751,26 @@ Connector roles, such as Hive roles, need `IN "<catalog>"` on `CREATE ROLE` and 
 
 In **Project settings → Agent identity → Add shared agent account**, enter **User** and **Password**, then **Test and save**. Testing runs `SELECT current_user`; check the returned user, since Trino user mapping may change the login name.
 
-Test allowed and denied table access. Agent queries skip Lightdash's results cache and pre-aggregates; Trino has no result cache setting.
+Test allowed and denied table access.
 
-</Accordion>
+### Trino details
 
-<Accordion title="ClickHouse" id="clickhouse">
+- **Shared account authentication**. Starburst Galaxy service accounts work with their generated user name and password. Shared accounts do not support JWT, OAuth, Kerberos, or certificate authentication.
+- **Connection settings**. Host, port, scheme, catalog, schema, and source come from the project connection.
+- **User mapping**. Trino can map the login to another user. Base access rules on the user returned by **Test**.
+- **Cached results**. Agent queries skip Lightdash's results cache and pre-aggregates. Trino has no result cache setting.
+
+## ClickHouse
+
+ClickHouse applies grants and row policies to the user running the query. Shared agent users must be read-only while allowing query tags and session timezone settings.
+
+### The person
+
+Agents use the project's normal ClickHouse credentials or the person's [personal warehouse credentials](/personal-settings/personal-warehouse-connections) when the project uses them.
 
 ### Shared agent account
 
-Use a dedicated read-only user with password authentication. Host, port, database, the `secure` setting, and timezone come from the project connection.
+Use a dedicated read-only user with password authentication.
 
 #### Create the user and grants
 
@@ -704,8 +786,6 @@ CREATE USER ai_agents
 ```sql
 GRANT SELECT ON `<database>`.* TO ai_agents;
 ```
-
-`readonly = 2` permits the query tags and session timezone that agent queries set. A `readonly = 1` user needs a profile that explicitly allows these settings.
 
 #### Limit rows
 
@@ -726,6 +806,7 @@ In **Project settings → Agent identity → Add shared agent account**, enter *
 
 Testing checks that `currentUser()` exactly matches the saved user, `readonly` is not `0`, the query cache is off, and the required query settings are allowed. If settings are blocked, check the user's read-only profile. Test allowed and denied table access separately.
 
-</Accordion>
+### ClickHouse details
 
-</AccordionGroup>
+- **Connection settings**. Host, port, database, the `secure` setting, and timezone come from the project connection.
+- **Read-only settings**. `readonly = 2` permits the query tags and session timezone that agent queries set. A `readonly = 1` user needs a profile that explicitly allows these settings.
