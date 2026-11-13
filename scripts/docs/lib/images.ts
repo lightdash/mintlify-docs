@@ -48,7 +48,7 @@ export function imageFile(
 }
 
 export function isSpecialImage(image: string): boolean {
-  return image.includes('/logo/') || image.includes('favicon') || image.includes('/snippets/');
+  return image.startsWith('images/icons/') || image.includes('/logo/') || image.includes('favicon') || image.includes('/snippets/');
 }
 
 export function isCorrectImageLocation(source: string, image: string): boolean {

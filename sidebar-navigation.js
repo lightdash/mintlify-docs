@@ -506,6 +506,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Post apiv1projects aiagents evaluations append","href":"/api-reference/post-apiv1projects-aiagents-evaluations-append","parents":["Reference","API Reference"]},
 {"title":"Post apiv1projects aiagents append instruction","href":"/api-reference/post-apiv1projects-aiagents-append-instruction","parents":["Reference","API Reference"]},
 {"title":"Get Semantic Studio status","href":"/api-reference/semantic-studio/get-semantic-studio-status","parents":["Reference","Semantic Studio"]},
+{"title":"List stored semantic layer models","href":"/api-reference/semantic-studio/list-stored-semantic-layer-models","parents":["Reference","Semantic Studio"]},
 {"title":"Get a semantic layer model","href":"/api-reference/semantic-studio/get-a-semantic-layer-model","parents":["Reference","Semantic Studio"]},
 {"title":"Get the state of my semantic layer draft","href":"/api-reference/semantic-studio/get-the-state-of-my-semantic-layer-draft","parents":["Reference","Semantic Studio"]},
 {"title":"List the models in my semantic layer draft","href":"/api-reference/semantic-studio/list-the-models-in-my-semantic-layer-draft","parents":["Reference","Semantic Studio"]},
