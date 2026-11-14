@@ -140,6 +140,9 @@ All configuration options (`dashboardFiltersInteractivity`, `canExportCsv`, `can
     // Parameter interactivity
     parameterInteractivity?: {
       enabled: boolean,
+      allowedParameters?: string[],  // Optional: parameters viewers can change (default: all)
+      hidden?: boolean,              // Optional: hide parameter UI
+      values?: Record<string, string | number | string[] | number[]>, // Optional: values applied over saved values
     },
 
     // Export capabilities
@@ -625,10 +628,34 @@ Controls whether users can modify dashboard parameters.
 ```typescript
 parameterInteractivity?: {
   enabled: boolean,
+  allowedParameters?: string[],  // Parameter names viewers can change
+  hidden?: boolean,              // Hide parameter UI but keep parameters active
+  values?: Record<string, string | number | string[] | number[]>, // Values by parameter name
 }
 ```
 
-When enabled, users can change parameter values in the dashboard UI.
+**Options:**
+
+- `enabled: true` - Viewers can change parameter values in the dashboard UI
+- `allowedParameters` - Only the parameters listed here are interactive. Omit it, or set it to `null`, to let viewers change every parameter
+- `hidden: true` - Parameters apply, but the parameter UI is hidden
+- `values` - Values the dashboard runs with, applied over its saved parameter values. They apply even when `enabled` is `false`
+
+A viewer's own pick replaces a token value only for a parameter they're allowed to change. Lightdash enforces this on the server for dashboard queries, filter autocomplete, exports, **Explore from here** and underlying data, so a viewer can't override a fixed value by calling the API directly. In [`'roles'` mode](#permission-modes), the `view:EmbedDashboardParameters` scope replaces `enabled`, and `allowedParameters`, `hidden` and `values` still apply. Chart tokens don't take parameter rules.
+
+For example, this token runs every tile with `region` set to `EMEA` and lets viewers change only `currency`:
+
+```javascript
+parameterInteractivity: {
+  enabled: true,
+  allowedParameters: ['currency'],
+  values: { region: 'EMEA' },
+}
+```
+
+To list the parameters a dashboard uses, with their names, options and current values, call `GET /api/v2/projects/{projectUuid}/dashboards/{dashboardUuidOrSlug}/parameters` with an API key. For a saved chart, use `GET /api/v2/projects/{projectUuid}/saved/{chartUuidOrSlug}/parameters`.
+
+To follow the values a viewer picks, listen for the `parameterChanged` [event](/embed/react-sdk#listen-to-events).
 
 ### Export options
 
