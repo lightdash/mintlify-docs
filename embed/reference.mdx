@@ -300,7 +300,7 @@ For embedding a Lightdash [AI agent](/agents) so users can chat with their data 
 
   // Required: AI agent embeds must include writeActions
   writeActions: {
-    writeSpaceUuids: string[],          // Spaces the agent reads from and creates or updates content in; the first scopes threads
+    writeSpaceUuids: string[],          // Spaces the agent reads from and creates or updates content in
     sourceSpaceUuids?: string[],        // Extra spaces the agent can read from and bind to; see Add charts from other spaces
     serviceAccountUserUuid?: string,    // Use a service account as the actor
     userUuid?: string,                  // Or use an existing Lightdash user as the actor
@@ -312,7 +312,7 @@ For embedding a Lightdash [AI agent](/agents) so users can chat with their data 
     [attributeName: string]: string,
   },
 
-  // Optional: viewer identity. Not a query tag for agent queries, see User metadata
+  // Optional: viewer identity. externalId keeps threads private to the viewer
   user?: {
     externalId?: string,
     email?: string,
@@ -320,7 +320,7 @@ For embedding a Lightdash [AI agent](/agents) so users can chat with their data 
 }
 ```
 
-AI agent tokens are scoped to a single agent. A token issued for one `agentUuid` cannot be used to access another agent, and dashboard or chart tokens are rejected on AI agent routes. The agent can read dashboards and saved charts from the token's write spaces and `sourceSpaceUuids`, and creates or updates content only in the write spaces. Embedded viewers can open saved charts from those spaces in the chat side panel and saved dashboards as a read-only view, with the token's `userAttributes` applied. Threads are scoped to the first write space; see [Embedding AI agents](/embed/embed-ai-agents#access-control).
+AI agent tokens are scoped to a single agent. A token issued for one `agentUuid` cannot be used to access another agent, and dashboard or chart tokens are rejected on AI agent routes. The agent can read dashboards and saved charts from the token's write spaces and `sourceSpaceUuids`, and creates or updates content only in the write spaces. Embedded viewers can open saved charts from those spaces in the chat side panel and saved dashboards as a read-only view, with the token's `userAttributes` applied. Threads are [private to the viewer who started them](/embed/embed-ai-agents#thread-access).
 
 **Example:**
 
@@ -362,8 +362,9 @@ For embedding the project [metrics catalog](/semantic-layer/metrics) so embedded
     canExplore?: boolean,
   },
 
-  // Optional: enable saving charts from the embedded Explore. Required only
-  // when canExplore is true and you want embedded users to save results.
+  // Optional: enable saving charts and downloads in the embedded Explore.
+  // Needed only when canExplore is true and you want embedded users to save
+  // or download results.
   writeActions?: {
     writeSpaceUuids: string[],
     serviceAccountUserUuid?: string,
@@ -683,7 +684,7 @@ Control what users can export from embedded content.
 - Exports charts as PNG files
 - Captures current chart state
 
-In an Explore opened with **Explore from here**, the same two options enable downloads from the chart and results panels. Google Sheets export is not offered in embeds.
+In an Explore opened with **Explore from here**, the same two options enable downloads from the chart and results panels. A [metrics catalog token](#metrics-catalog-token) has no export flags: in the Explore it opens, the results export needs the write actor's `view:EmbedCsvExport` scope and the chart image download needs `view:EmbedImageExport`. Built-in roles include both from viewer up, and a metrics catalog token without `writeActions` gets neither download. Google Sheets export is not offered in embeds.
 
 **PDF Export (dashboards only):**
 
@@ -694,7 +695,7 @@ PDF export is on unless the token sets `canExportPagePdf: false`; in [`'roles'` 
 | React SDK | **Export as PDF** | A PDF rendered by Lightdash with only the dashboard: every visible tab stacked in order, using the viewer's current filters, parameters, and date zoom |
 | iframe | **Print this page** | The browser's print dialog for the embedded page |
 
-The SDK export doesn't apply the component's `paletteUuid` or `contentOverrides`. Self-hosted instances need [object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage) and the [headless browser](/self-host/customize-deployment/enable-headless-browser-for-lightdash) for it.
+The exported PDF's document title is the dashboard name, and the browser's print dialog suggests the dashboard name as the file name. The SDK export doesn't apply the component's `paletteUuid` or `contentOverrides`. Self-hosted instances need [object storage](/self-host/customize-deployment/configure-lightdash-to-use-external-object-storage) and the [headless browser](/self-host/customize-deployment/enable-headless-browser-for-lightdash) for it.
 
 <Frame>
   ![A printer icon in the top right of an embedded dashboard, with a "Print this page" tooltip](/images/embed/reference/embedding-print-61cb9f9107c6e4ae00fa3cde99dd572d.png)
@@ -792,7 +793,7 @@ writeActions?: {
 **Rules:**
 
 - `writeSpaceUuids` takes 1 to 100 space UUIDs with no duplicates. Every space must belong to the embed's project. If any one of them doesn't exist or belongs to another project, the token gets no write actions at all. A write space the actor can't create charts in is left out of the save options.
-- The first write space is the default: new content is saved there unless the user picks another write space. In AI agent embeds, it also scopes threads.
+- The first write space is the default: new content is saved there unless the user picks another write space.
 - `spaceUuid` is still accepted and behaves like a one-entry `writeSpaceUuids`. A token that sets both is rejected.
 - You must provide exactly one of `serviceAccountUserUuid` or `userUuid`.
 - `serviceAccountUserUuid` is the service account's user UUID, not the UUID of the service account itself. To copy it, go to **General Settings** → **Service Accounts**, open the account's **⋯** menu and click **Copy user UUID**.
@@ -1096,7 +1097,7 @@ user?: {
 How `externalId` reaches your warehouse depends on who runs the query:
 
 - **Dashboard and chart embeds** run queries as the embed viewer. Each query carries the `embed` and `external_id` [query tags](/workspace-admin/usage-analytics#query-tags), where `external_id` is your `externalId`. If you don't provide an `externalId`, Lightdash automatically generates one based on the embed token.
-- **AI agent embeds** run queries as the [write actions](#write-actions) actor. Those queries carry the actor's `user_uuid` and no `external_id`, so `externalId` does not identify the viewer in your warehouse. To attribute agent queries to a viewer, add an identifier to [`userAttributes`](#user-attributes). Every attribute on the token is emitted as a `user_attribute_<name>` [tag](/workspace-admin/usage-analytics#user-attribute-tags), whether or not it is defined in Lightdash.
+- **AI agent embeds** run queries as the [write actions](#write-actions) actor. Those queries carry the actor's `user_uuid` and no `external_id`, so `externalId` does not identify the viewer in your warehouse. To attribute agent queries to a viewer, add an identifier to [`userAttributes`](#user-attributes). Every attribute on the token is emitted as a `user_attribute_<name>` [tag](/workspace-admin/usage-analytics#user-attribute-tags), whether or not it is defined in Lightdash. `externalId` still decides which viewer can [open a thread](/embed/embed-ai-agents#thread-access).
 
 `email` is not sent as a query tag.
 
