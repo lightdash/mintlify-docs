@@ -135,7 +135,7 @@ Query tags identify agent activity for audits. They do not set a warehouse ident
 | `user_uuid` | The Lightdash user the agent ran for. |
 | `agent_surface` | Where the agent ran. |
 | `agent_client` | The client that ran the agent. |
-| `agent_uuid` | The UUID of the Lightdash AI agent that ran the query. |
+| `agent_uuid` | The UUID of the Lightdash AI agent that ran the query. Absent for MCP, CLI, and data app queries. |
 
 | Surface | `agent_surface` | `agent_client` |
 | --- | --- | --- |
@@ -151,7 +151,7 @@ Client IDs are lowercase. IDs containing unsupported label characters or longer 
 
 BigQuery records these tags as job labels. Snowflake records them in the JSON `query_tag`. When a warehouse limit means some tags must be dropped, Lightdash keeps the agent tags first. For cost reporting, see [Attribute BigQuery cost with job labels](/workspace-admin/usage-analytics#attribute-bigquery-cost-with-job-labels).
 
-These examples find MCP queries from the last day. Change `agent_surface` to audit another surface, or filter by `agent_client` for a particular client. On BigQuery, replace `region-us` with your dataset region and use an account that can list the project's jobs.
+These examples find agent queries from the last day. To audit one surface, filter by `agent_surface`. To audit one client, filter by `agent_client`. On BigQuery, replace `region-us` with your dataset region and use an account that can list the project's jobs.
 
 <CodeGroup>
 
@@ -165,7 +165,7 @@ FROM `region-us`.INFORMATION_SCHEMA.JOBS
 WHERE creation_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 DAY)
   AND EXISTS (
     SELECT 1 FROM UNNEST(labels) AS label
-    WHERE label.key = 'agent_surface' AND label.value = 'mcp'
+    WHERE label.key = 'agent' AND label.value = 'true'
   )
 ORDER BY creation_time DESC;
 ```
@@ -177,7 +177,7 @@ SELECT start_time, user_name, agent_type,
        TRY_PARSE_JSON(query_tag):agent_client::STRING AS agent_client
 FROM SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY
 WHERE start_time >= DATEADD('day', -1, CURRENT_TIMESTAMP())
-  AND TRY_PARSE_JSON(query_tag):agent_surface::STRING = 'mcp'
+  AND TRY_PARSE_JSON(query_tag):agent::STRING = 'true'
 ORDER BY start_time DESC;
 ```
 
