@@ -920,6 +920,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Cancel mobile sign-in code","href":"/api-reference/my-account/cancel-mobile-sign-in-code","parents":["Reference","My Account"]},
 {"title":"Approve mobile sign-in code","href":"/api-reference/my-account/approve-mobile-sign-in-code","parents":["Reference","My Account"]},
 {"title":"Decline mobile sign-in code","href":"/api-reference/my-account/decline-mobile-sign-in-code","parents":["Reference","My Account"]},
+{"title":"Get apiv1mobilesign in capabilities","href":"/api-reference/mobile/get-apiv1mobilesign-in-capabilities","parents":["Reference","Mobile"]},
 {"title":"Create mobile app link","href":"/api-reference/my-account/create-mobile-app-link","parents":["Reference","My Account"]},
 {"title":"Get mobile app link status","href":"/api-reference/my-account/get-mobile-app-link-status","parents":["Reference","My Account"]},
 {"title":"Run metric total query","href":"/api-reference/metrics-explorer/run-metric-total-query","parents":["Reference","Metrics Explorer"]},
