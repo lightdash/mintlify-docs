@@ -43,7 +43,7 @@ The `tag` slot therefore carries lifecycle badges only (`Experimental`, `Beta` �
 
 Never force a root onto a section: an orientation page written to satisfy the rule rather than a reader is filler. If a would-be area cannot sustain a meaningful landing page, it is too thin — merge it up. Name a root page's `sidebarTitle` for what the page covers, or omit it; "Overview" is not a sidebar item anywhere. A node over ~12 children triggers a sectional review.
 13. **Section large groups; sectioning is free.** Mintlify derives a page's URL from its file path, so regrouping the nav ships no redirects and breaks no links. Group by what a reader is trying to do. A list stays flat when its items are genuine peers — a chart-type gallery is flat because sectioning it would invent a taxonomy readers don't have.
-14. **Long pages carry their own anchor index.** A page with sections a reader arrives wanting to jump to — a connection page covering ten warehouses, a reference covering four subsystems — names those sections as inline anchor links near the top. This is the one thing `directory: "card"` cannot do for you: it renders *child pages*, never same-page anchors. Write the index as prose with inline links, not as a grid or a bare bullet list.
+14. **Long pages help readers choose their path.** Group alternatives by the choice readers arrive with, such as their warehouse. Use tabs or accordions for mutually exclusive setup details and labeled visual links when readers need to jump to them. Let the page's table of contents index its headings; never repeat it as a paragraph or list of anchor links.
 
 ## Placement
 
