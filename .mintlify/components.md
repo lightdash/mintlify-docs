@@ -261,7 +261,7 @@ Site-wide colour — brand primary, dark mode, backgrounds — lives in `docs.js
 Two gates sit behind it, and the split is what keeps enforcement honest while the corpus still carries debt:
 
 - **Blocking rules** run inside `validate:docs` and fail the build. A rule is promoted once the corpus is clean of it, so a change is never blocked by debt it did not create. Every rule on this page blocks today.
-- **The baseline ratchet** is the holding pen for anything not yet clean. `scripts/docs/component-baseline.json` records how many findings each rule carries, and `aube run audit:components -- --baseline` fails if any rule gained one. It is empty, and a new rule lands there before it graduates.
+- **The baseline ratchet** is the holding pen for anything not yet clean. `scripts/docs/component-baseline.json` records how many findings each rule carries, and `aube run audit:components -- --baseline` fails if any rule gained one. A new rule lands there before it graduates. When a rule gains a finding, the audit lists that rule's findings in the files the change touched.
 
 Findings are annotated inline on the pull request diff, on the line that caused them, scoped to the files the change touched.
 
@@ -269,7 +269,17 @@ Lowering a count is free — fix pages and the ratchet follows. Raising one is d
 
 `aube run fix:components` applies the two fixes that need no judgment: rewriting image paths against the page's own directory, and wrapping block-level media in `<Frame>`. It reports anything whose context makes wrapping a judgment call rather than guessing.
 
-Judgment calls — which callout variant fits, whether an accordion is hiding the path — no gate can make for you.
+The ratchet also holds the mechanical writing rules from [`AGENTS.md`](AGENTS.md), which the corpus does not yet meet:
+
+| Rule | Finds |
+| --- | --- |
+| `prose.filler-word` | "simply", "easily", "seamless", "powerful" |
+| `prose.interface-narration` | A notification, toast, or confirmation described after the action |
+| `prose.anchor-index` | More than three same-page links in one paragraph |
+| `heading.overview` | A heading that reads "Overview" or "Introduction" |
+| `heading.question` | A heading phrased as a question |
+
+Judgment calls — which callout variant fits, whether an accordion is hiding the path, whether a sentence belongs on the page at all — no gate can make for you.
 
 ## Components this site doesn't use
 

@@ -8,6 +8,8 @@ These rules govern every change. The full system — doc-type contracts and the 
 
 - **Search first.** Look for an existing home for the content (site search, or `rg` locally). Default to extending the canonical page over adding one.
 - **One home per fact.** Every fact, schema, table, command, and number has exactly one canonical page. If you're about to restate something from another page, link to it or transclude a `snippets/` snippet instead — copies drift, and this corpus has shipped contradictory versions because of it.
+- **Document intended behavior.** A bug, a workaround for one, or behavior someone is changing stays out of the docs; report it to the team that owns the feature instead. A limit the product is designed to have is a fact and belongs on the feature's page.
+- **Size the addition to its container.** A missing detail joins the sentence, paragraph, or bullet that already covers the topic, and gets no heading, paragraph, or callout of its own. A bullet or a table cell stays one line: when the detail needs more, write it on the canonical page and link to it.
 
 ## Placement and naming
 
@@ -37,11 +39,11 @@ Doc-type pills are suppressed in the sidebar for now, so `tag` carries lifecycle
 Write the way the best pages here already read (`explore/dashboards.mdx` is a good model): a knowledgeable colleague explaining the product, not marketing and not a spec.
 
 - **Talk to the reader.** Second person, present tense, active voice: "Set `dbt_selector` in the project settings", not "The selector can be set" or "Users should set".
-- **Lead with the job.** Open a page or section with what the reader is trying to do and what they get, then the steps or facts, then the caveats. One or two sentences of orientation, never a preamble.
+- **Lead with the job.** Open a page or section with what the reader is trying to do and what they get, then the steps or facts, then the caveats. One or two sentences of orientation, never a preamble. When a neighboring page serves the other audience or the other half of the job, point to it there: "For using the integration, see [Slack integration](/integrations/slack)".
 - **Headings say the task.** Sentence case, and imperative for a task ("Create a dashboard", "Add filters"); a noun phrase for a concept or reference ("Dashboard filters"). No questions, no "Overview".
 - **Plain and short.** Everyday words, short sentences, one idea per paragraph. Define a term the first time you use it, or link to where it is defined. No "simply", "just", "easily", "powerful" or "seamless".
 - **UI as the reader sees it.** Bold the exact label for buttons, menu items and fields (**New**, **Save**); give a path as **Settings** → **Project** → **dbt selector**. Code, file names, settings keys and commands go in backticks.
-- **Exact over vague.** Name the setting, the default, the limit and who can do it (the role or permission). "Admins and editors" beats "users with access".
+- **Exact over vague.** Name the setting, the default, the limit and who can do it (the role or permission). "Admins and editors" beats "users with access". For an action gated by role, name the scopes that gate it, then the system roles that carry them; see [`feature-availability.md`](.mintlify/feature-availability.md#publish-the-claim-once).
 - **Steps are numbered and one action each.** Say where the reader is before telling them what to click, and show the result when it isn't obvious.
 - **Document tasks, not interface narration.** Give the settings path and the actions needed to finish the task. Omit routine menus opening, confirmation buttons, success notifications, and empty states. Explain a status only when it changes the reader's next action; keep troubleshooting in a dedicated subsection.
 - **Choose one form per fact.** Use a table for comparable options, a list for parallel points, and steps for an ordered task. Do not repeat the same information in prose, a list, and a table. Link to a section where context calls for it; never dump a page's headings into a paragraph of anchor links.
@@ -58,6 +60,16 @@ Write like a person explaining the product, and rewrite anything that reads as m
 - **No resource-economy metaphors.** Not "*spending* a prompt", "what a run can *spend*", "a stored analysis is *free*" — say it counts, or doesn't count, toward the limit.
 - **No self-justifying asides.** Not "they are what keeps the summary honest", "so you are not left wondering why nothing appears" — state the fact or instruction and stop; the reader doesn't need the prose to argue for itself.
 - **No formula transitions.** Not "Should that fail too", "straight away", "worth a look", "It is worth noting" — plain equivalents: "If that also fails", "immediately", "worth investigating", or nothing.
+
+### Patterns reviewers cut
+
+Each of these has been removed from these docs in review. Leave them out of the first draft:
+
+- **Narrating the interface.** Not "Select **Save**. An "Shared agent account saved." notification confirms it." — "Select **Test**, check that **Signs in as** identifies the dedicated service account, then **Save**."
+- **Restating a fact away from its home.** Not "`MANAGED_AGENT_MAX_STEPS` defaults to 120 model steps per run" on a setup page — "Configure the fallback schedule, run deadline, and model step limit with the [Autopilot environment variables](/self-host/customize-deployment/environment-variables#autopilot)."
+- **Pitching where a description goes.** Not "Train your AI agent with high-quality examples for better, more consistent responses" — "Curate reference answers for agents and manage their connection to verified saved content".
+- **Describing a state when the reader needs an action.** Not the table row "An orange warning | The Snowflake agent integration needs attention." — "Orange warning | Open the chip to check the agent integration setup."
+- **Repeating a reassurance.** Not "It never falls back to the connection's own credentials" under every warehouse — state once, where the rule is set, what Lightdash does when the identity is unavailable. A "Lightdash never…" sentence is a claim about the product: make it only when the product source backs it.
 
 ## Components
 
@@ -83,7 +95,7 @@ Start `mint dev --port 3333` **once** in the background and reuse it for the who
 Use the named tasks in `package.json` instead of invoking their scripts directly. Run from the repository root:
 
 - `aube run validate:docs -- --changed-files <file-list>` checks frontmatter, nav reachability, redirects, internal links, media placement, IA annotations, and blocking component rules. The file list contains one changed path per line, including deleted paths; omit `--changed-files <file-list>` for a full-site audit.
-- `aube run audit:components -- --baseline` checks for component regressions across the site.
+- `aube run audit:components -- --baseline` checks for component and prose regressions across the site, and lists the lines behind any rule that gained a finding.
 - `mint validate` checks the Mintlify build and needs to run outside the sandbox because it writes under `~/.mintlify/previews`; `mint broken-links --check-anchors` checks page links and heading anchors. Both need a mint CLI at least as new as the version CI pins in `.github/workflows/validate-docs.yml`. An outdated CLI is missing `mint validate`, ignores `.mintignore`, and reports phantom broken links in `.mintlify/` files and OpenAPI-generated `api-reference` pages — if you see those findings, update with `npm install --global mint@<pinned-version>` instead of editing anything.
 - `aube run check` type-checks and tests the utilities when tooling changes.
 - `aube run audit:external-links` reports unavailable third-party links when auditing external URLs; findings are advisory.
