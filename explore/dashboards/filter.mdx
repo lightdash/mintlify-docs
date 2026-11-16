@@ -4,6 +4,7 @@ description: "Filter every tile on a dashboard at once with temporary, saved, re
 ---
 
 import { FeatureBadge } from '/snippets/feature-badge.jsx';
+import DashboardControlsFlag from '/snippets/dashboard-controls-flag.mdx';
 
 
 A dashboard filter sits at the top of the dashboard and changes the data in the tiles below it. One filter can drive every chart on the dashboard, or just the tiles you choose, and viewers can adjust it without editing anything.
@@ -314,9 +315,7 @@ To replace it with a filter on the new field:
 
 <div className="feature-badges"><FeatureBadge label="Experimental" /></div>
 
-<Info>
-  Sections are off by default. They need the `dashboard-controls` feature flag, which Lightdash support turns on for Cloud organizations on request. [Self-hosted instances](/self-host/customize-deployment/environment-variables#feature-flags) add it to `LIGHTDASH_ENABLE_FEATURE_FLAGS`.
-</Info>
+<DashboardControlsFlag />
 
 Group related dashboard controls under named sections, such as **Orders** and **Customers**, so viewers can find the controls they need and collapse the rest.
 
@@ -325,7 +324,7 @@ Group related dashboard controls under named sections, such as **Orders** and **
   <img className="hidden dark:block" src="/images/explore/dashboards/filter/sections-view-bar-dark.png" alt="Dashboard filter bar with an open Orders section, a collapsed Customers section showing 2 filters, and two filters outside any section" />
 </Frame>
 
-Each section belongs to one dashboard and can hold [saved filters](#saved-filters) and [parameter controls](/explore/dashboards/parameter-controls#group-controls-and-hide-a-control-from-viewers).
+Each section belongs to one dashboard and can hold [saved filters](#saved-filters), [parameter controls](/explore/dashboards/parameter-controls#group-controls-and-hide-a-control-from-viewers) and [named date zooms](/explore/dashboards/date-zoom#add-a-named-date-zoom).
 
 ### Create a section
 
@@ -344,12 +343,12 @@ To rename a section, click its name in edit mode.
 
 ### Arrange the filter bar
 
-In edit mode you can put filters, [parameter controls](/explore/dashboards/parameter-controls) and sections in any order, and start a new line anywhere:
+In edit mode you can put filters, [parameter controls](/explore/dashboards/parameter-controls), named [date zooms](/explore/dashboards/date-zoom) and sections in any order, and start a new line anywhere. **Default zoom** isn't part of the order: it stays on the right of the bar.
 
-- **Drag** a filter or parameter control, or a section by its name. A blue line shows where it will land. Drop it between two lines to start a new line.
+- **Drag** a control, or a section by its name. A blue line shows where it will land. Drop it between two lines to start a new line.
 - **Use the keyboard:** Tab to a control and press Alt+Left or Alt+Right (Option on Mac) to move it one place. Alt+Up and Alt+Down move it to the line above or below.
 
-Click **Save changes** to keep the order. Viewers and [embedded dashboards](/embed) see the same bar.
+Click **Save changes** to keep the order. Viewers and [embedded dashboards](/embed) see the same bar. A named date zoom with no saved place goes at the end, outside sections.
 
 ### Put filters in a section
 
@@ -358,6 +357,8 @@ In edit mode, use whichever fits:
 - **Add a filter straight into a section:** click the section's **+**.
 - **Drag a filter:** drag its chip onto a section. A blue line shows where it lands. To take a filter out of its section, drop it on **Add** or on an empty part of the bar.
 - **From the filter editor:** click the filter, then pick a section in **Section**. Pick **None** to take it out. The filter you're editing shows a pencil badge on its chip.
+
+Parameter controls and named date zooms move the same ways, or from **Settings** → **Section** in their editor.
 
 <Frame>
   <img className="block dark:hidden" src="/images/explore/dashboards/filter/sections-rail-light.png" alt="Filter editor panel with a Section dropdown set to Orders" />
@@ -381,7 +382,7 @@ Press Escape or click the **X** to clear the selection. Dragging one selected fi
 
 In edit mode, a section's chevron sets how it opens for viewers: collapsed or expanded. The choice is saved with the dashboard. Until you set it, a section with more than 6 filters starts collapsed.
 
-To remove a section, open its **...** menu and click **Remove, keep filters**. The section's filters stay on the dashboard, outside any section. An empty section shows **Remove section** instead. Click **Cancel** on the dashboard to undo a removal you haven't saved.
+To remove a section, open its **...** menu and click **Ungroup**. The section's controls stay on the dashboard, outside any section. An empty section shows **Remove section** instead. Click **Cancel** on the dashboard to undo a removal you haven't saved.
 
 <Frame>
   <img className="block dark:hidden" src="/images/explore/dashboards/filter/sections-section-menu-light.png" alt="Orders section menu open with the option Remove, keep filters" />
@@ -396,7 +397,7 @@ Viewers see the sections and can collapse or expand them with the chevron. Their
 
 ### Sections in dashboards-as-code
 
-Define sections in `config.controlSections`, each with a unique `slug`. Set a filter's `sectionSlug` to place it in that section, or omit it to keep the filter outside sections. Set `collapsed: true` to save a section collapsed.
+Define sections in `config.controlSections`, each with a unique `slug`. Set the `sectionSlug` of a filter, a parameter control or a named date zoom (in `config.dateZoomConfig.controls`) to place it in that section, or omit it to keep the control outside sections. Set `collapsed: true` to save a section collapsed.
 
 ```yaml
 config:
@@ -420,7 +421,7 @@ filters:
 
 ### Control order in dashboards-as-code
 
-Once you've rearranged the bar and saved, the dashboard file has a `controlOrder` list under `config`. It lists the bar from left to right: each filter, parameter control and section, by its `kind` and `slug`. To move something, move its entry in the list.
+Once you've rearranged the bar and saved, the dashboard file has a `controlOrder` list under `config`. It lists the bar from left to right: each filter, parameter control, named date zoom and section, by its `kind` (`filter`, `parameter`, `dateZoom` or `section`) and `slug`. To move something, move its entry in the list.
 
 If you remove `controlOrder`, the bar goes back to its default order.
 
@@ -435,6 +436,29 @@ config:
       slug: orders-order-date
     - kind: parameter
       slug: primary-currency
+    - kind: filter
+      slug: orders-status
+```
+
+#### Place a date zoom in the order
+
+A named date zoom keeps its required `uuid`; `controlOrder` refers to its optional `slug`. Here **Revenue zoom** sits between two filters:
+
+```yaml
+config:
+  dateZoomConfig:
+    controls:
+      - uuid: 1f0a8c2e-7b3d-4a9f-bf21-2c6e9d4a1b00
+        slug: revenue-zoom
+        name: Revenue zoom
+        granularity: Week
+    tileTargets:
+      # ...
+  controlOrder:
+    - kind: filter
+      slug: orders-order-date
+    - kind: dateZoom
+      slug: revenue-zoom
     - kind: filter
       slug: orders-status
 ```
