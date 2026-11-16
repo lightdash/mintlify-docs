@@ -753,7 +753,7 @@ This is useful when you want to let your customers explore data, change charts a
 
 ```typescript
 writeActions?: {
-  writeSpaceUuids: string[],          // Required: spaces users can write to; the first is the default
+  writeSpaceUuids?: string[],         // Spaces users can write to; the first is the default
   sourceSpaceUuids?: string[],        // Dashboard and AI agent tokens: extra spaces to read existing content from
   serviceAccountUserUuid?: string,    // Use a service account as the actor
   userUuid?: string,                  // Or use an existing Lightdash user as the actor
@@ -762,8 +762,11 @@ writeActions?: {
 }
 ```
 
+You can name this claim `actor` instead of `writeActions`. `actor` takes the same fields and behaves the same way, but rejects fields it doesn't recognize. A token that sets both `actor` and `writeActions` is rejected.
+
 **Rules:**
 
+- Embedded users can only save content when the token lists write spaces. Without them, the actor still supplies [embed scopes](#permission-modes), but all writes are disabled. AI agent tokens without write spaces must set `sourceSpaceUuids` and `user.externalId`.
 - `writeSpaceUuids` takes 1 to 100 space UUIDs with no duplicates. Every space must belong to the embed's project. If any one of them doesn't exist or belongs to another project, the token gets no write actions at all. A write space the actor can't create charts in is left out of the save options.
 - The first write space is the default: new content is saved there unless the user picks another write space. In AI agent embeds, it also scopes threads.
 - `spaceUuid` is still accepted and behaves like a one-entry `writeSpaceUuids`. A token that sets both is rejected.
@@ -874,7 +877,7 @@ The mode only switches dashboard capabilities and AI access. Chart, metrics cata
 
 ### Choose the actor and its role
 
-Role checks use the Lightdash user identified by `writeActions.userUuid`, or the service account identified by `writeActions.serviceAccountUserUuid`. Include `writeActions.writeSpaceUuids` and meet the [write-action requirements](#write-actions), even when you are configuring read-only capabilities such as export. Dashboard `'roles'` mode rejects requests if the actor cannot be resolved; it does not fall back to JWT-only permissions.
+Role checks use the Lightdash user identified by `writeActions.userUuid`, or the service account identified by `writeActions.serviceAccountUserUuid`. The actor must meet the [write-action requirements](#write-actions). On dashboard, chart, and metrics catalog tokens, you can omit `writeSpaceUuids` when you only need read-only capabilities such as export; embedded users then can't save content. Dashboard `'roles'` mode rejects requests if the actor cannot be resolved; it does not fall back to JWT-only permissions.
 
 Configure embed scopes in the **Embedding** section of a [custom role](/workspace-admin/custom-roles), then assign that role to the actor. Built-in roles also provide embed scopes; duplicate a system role if you want a starting point you can edit. The external viewer's `user.externalId` is not the role-bearing actor.
 
