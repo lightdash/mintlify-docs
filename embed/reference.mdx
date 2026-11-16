@@ -139,7 +139,10 @@ All configuration options (`dashboardFiltersInteractivity`, `canExportCsv`, `can
 
     // Parameter interactivity
     parameterInteractivity?: {
-      enabled: boolean,
+      enabled: boolean,               // Required
+      allowedParameters?: string[],   // Optional: parameters viewers can change
+      hidden?: boolean,               // Optional: hide parameter UI
+      values?: Record<string, string | number | string[] | number[]>, // Optional: values to run with
     },
 
     // Export capabilities
@@ -620,15 +623,48 @@ The Add filter button only renders when filter interactivity is enabled (`enable
 
 ### Parameter interactivity
 
-Controls whether users can modify dashboard parameters.
+Controls which dashboard [parameters](/semantic-layer/parameters) viewers can change, and which values the embedded dashboard runs with.
 
 ```typescript
 parameterInteractivity?: {
   enabled: boolean,
+  allowedParameters?: string[],
+  hidden?: boolean,
+  values?: Record<string, string | number | string[] | number[]>,
 }
 ```
 
-When enabled, users can change parameter values in the dashboard UI.
+**Options:**
+
+- `enabled: true` - Viewers can change parameter values in the dashboard UI
+- `allowedParameters` - Names of the parameters viewers can change. Omit it to allow every parameter. Controls for the other parameters are hidden, and the server ignores values the viewer sends for them
+- `hidden: true` - Parameter values apply, but the parameter controls are hidden
+- `values` - Parameter values to run the dashboard with, by parameter name. They replace the dashboard's saved values and apply even when `enabled` is `false`. A viewer can change a value only for a parameter they're allowed to change
+
+The server applies these rules to every embedded query, filter autocomplete, and CSV, PDF, and image export.
+
+#### Set parameter values from your app
+
+To show the parameters in your own app's UI, list the ones a dashboard uses with an API key, then sign a token with the values your user picked:
+
+```text
+GET /api/v2/projects/{projectUuid}/dashboards/{dashboardUuidOrSlug}/parameters
+GET /api/v2/projects/{projectUuid}/saved/{chartUuidOrSlug}/parameters
+```
+
+Each result has the parameter's `name`, its `config` (label, options, default), its `currentValue` (the value saved on the content, else the default), its `source` (`project` or `model`) and, for dashboards, the `tileUuids` that use it. The caller needs view access to the content.
+
+```javascript
+parameterInteractivity: {
+  enabled: true,
+  allowedParameters: ['region'],     // Viewers can change region only
+  values: { currency: 'EUR', region: 'EMEA' },
+}
+```
+
+To keep your app in sync when a viewer changes a parameter, listen for the `parameterChanged` event in the [React SDK](/embed/react-sdk#listen-to-events) or an [iframe embed](/embed/iframe#listen-for-embed-events).
+
+Chart embed tokens don't take parameter settings. To run a single chart with parameter values, use the query API or embed it in a dashboard.
 
 ### Export options
 
@@ -908,7 +944,7 @@ The dashboard scopes replace these `content` options when using `'roles'` mode:
 | `canViewUnderlyingData` | `view:EmbedUnderlyingData` |
 | `canViewDataApps` | `view:EmbedDataApps` |
 
-The filter-interactivity scope enables all dashboard filters rather than only those in `allowedFilters`. Adding temporary filters and changing parameters have separate scopes. Hidden-filter presentation and user-attribute data restrictions still apply.
+The filter-interactivity scope enables all dashboard filters rather than only those in `allowedFilters`. Adding temporary filters and changing parameters have separate scopes. The token's `parameterInteractivity.allowedParameters`, `hidden`, and `values` still apply in `'roles'` mode. Hidden-filter presentation and user-attribute data restrictions still apply.
 
 To manage dashboard capabilities through roles, set the mode and omit the JWT interactivity flags:
 
