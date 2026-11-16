@@ -26,7 +26,7 @@ AI agent embeds use the same JWT-based security model as dashboard and chart emb
 - Add a "Chat with your data" experience to your customer-facing app
 - Let customers ask ad-hoc questions about their own data without giving them a Lightdash login
 - Scope each customer's AI session to their own spaces, so the agent only sees and writes content the customer is allowed to see
-- Keep one shared conversation per customer dashboard, with the agent's changes limited to that dashboard
+- Keep one conversation per customer dashboard, with the agent's changes limited to that dashboard
 
 To build your own chat interface instead, connect it to the [Lightdash MCP server](/agents/lightdash-mcp). MCP clients sign in as a Lightdash user, through OAuth or a personal access token, or with a service account token. There's no embed token: to scope each request to one of your customers, pass their attributes in the [`X-Lightdash-User-Attributes` header](/agents/lightdash-mcp#override-user-attributes-with-the-x-lightdash-user-attributes-header). Charts from `render_chart` only display in MCP App-capable clients, so your interface draws charts itself from the query results.
 
@@ -73,7 +73,7 @@ function MyAiAgent() {
 
 You can pass a `threadUuid` to deep-link the embed straight into an existing thread, or omit it to land on the new-thread screen. Pair it with the `onThreadChange` callback to persist the active thread in your app (for example in `localStorage`) so users pick up where they left off next time they visit.
 
-To render a list of the embed user's previous conversations, use the [`Lightdash.useLightdashAiAgentThreads`](/embed/react-sdk#lightdashuselightdashaiagentthreads) hook — it calls the AI agent threads endpoint with the same embed JWT and returns only threads scoped to the JWT user and their embed space.
+To render a list of the embed user's previous conversations, use the [`Lightdash.useLightdashAiAgentThreads`](/embed/react-sdk#lightdashuselightdashaiagentthreads) hook. It calls the AI agent threads endpoint with the same embed JWT and returns only the threads that [the token can open](#thread-access).
 
 See [`Lightdash.AiAgent`](/embed/react-sdk#lightdashaiagent) for the full prop list and styling options.
 
@@ -85,11 +85,11 @@ If you construct the embed URL yourself (Node, Python, Go, or any other backend)
 {siteUrl}/embed/{projectUuid}/ai-agents/{agentUuid}/threads/{threadUuid}#{embedJwt}
 ```
 
-Omit the `/{threadUuid}` segment to land on the new-thread screen. The thread must have been created with an embed token for the same agent, write actor, and first write space — thread access is enforced server-side. Threads aren't separated by `user.externalId`, so every viewer whose token shares that actor and first write space can open them.
+Omit the `/{threadUuid}` segment to land on the new-thread screen. The token must be able to [open the thread](#thread-access).
 
 ## Bind a thread to a dashboard
 
-A thread can be bound to one dashboard for its whole life, and can carry background context for the agent. Use this when each customer has a dashboard with one shared conversation, for example to keep a dashboard's conversation going after you copy it into another customer's space.
+A thread can be bound to one dashboard for its whole life, and can carry background context for the agent. Use this when a dashboard has its own conversation, for example to keep a dashboard's conversation going after you copy it into another customer's space.
 
 In a bound thread:
 
@@ -123,7 +123,7 @@ curl -X POST "https://app.lightdash.cloud/api/v1/projects/$PROJECT_UUID/aiAgents
 The response's `results.uuid` is the thread UUID; pass it to `Lightdash.AiAgent` as `threadUuid`, or add it to the [iframe URL](#resuming-a-thread-from-an-iframe-embed).
 
 <Warning>
-Create the thread with the same embed token setup your viewers use. A thread created with a personal access token or a Lightdash session isn't attached to an embed space, so embedded viewers can't open it.
+Create the thread with a token that has the same agent, actor, write spaces and `user.externalId` as the viewer's token, so the viewer can [open it](#thread-access). A thread created with a personal access token or a Lightdash session isn't attached to an embed space, so embedded viewers can't open it.
 </Warning>
 
 | Response | Cause |
@@ -164,7 +164,7 @@ const token = jwt.sign({
 
 - `content.type` — must be `"aiAgent"`.
 - `content.agentUuid` — the agent the embed is allowed to use. Tokens cannot switch to a different agent at runtime.
-- `writeActions.writeSpaceUuids` — the spaces the agent can create and update charts and dashboards in, and read them from. The first space is the default save target and scopes the embed's threads.
+- `writeActions.writeSpaceUuids` — the spaces the agent can create and update charts and dashboards in, and read them from. The first space is the default save target.
 - One of `writeActions.serviceAccountUserUuid` or `writeActions.userUuid` — the actor whose permissions are used when the agent runs queries and saves charts, and whose name appears next to messages in the chat. See [Write actions](/embed/reference#write-actions).
 
 Every space on the token — each write space, and each space in `writeActions.sourceSpaceUuids` — is gated twice: the write actor needs its own view access to it, and if the agent itself is restricted to certain spaces, the space must be on the agent's own list. A space that fails either check is silently dropped from what the agent can read or bind to; the token as a whole is only rejected once the agent has access to none of the write spaces. See [Add charts from other spaces](/embed/reference#add-charts-from-other-spaces) for the full rules, including `sourceSpaceUuids`.
@@ -175,7 +175,7 @@ Every space on the token — each write space, and each space in `writeActions.s
 - `content.canViewDebugInfo` — shows the Debug panel on agent answers. See [Debug information](/embed/reference#debug-information).
 - `writeActions.sourceSpaceUuids` — extra spaces the agent can read, search, and bind threads to dashboards in, without being able to create or update content in them. See [Add charts from other spaces](/embed/reference#add-charts-from-other-spaces).
 - `userAttributes` — applies row-level filters to the agent's queries, identical to other embed types.
-- `user.externalId` / `user.email` — identifies the embedded viewer. Agent queries run as the write actor, so neither value is sent as a warehouse query tag; see [User metadata](/embed/reference#user-metadata) for per-viewer attribution.
+- `user.externalId` / `user.email` — identifies the embedded viewer. `externalId` decides who can [open a thread](#thread-access), so give each viewer a unique value. Agent queries run as the write actor, so neither value is sent as a warehouse query tag; see [User metadata](/embed/reference#user-metadata) for per-viewer attribution.
 
 ## Access control
 
@@ -187,7 +187,16 @@ AI agent embeds enforce a tight scope:
 - The agent can read dashboards and saved charts that live in the token's write spaces or `sourceSpaceUuids`, and only the spaces the write actor can view and the agent itself has access to. Other content returns a not-found error.
 - Embedded viewers can open those saved charts in the chat side panel and those dashboards as a read-only view. Both run with the write actor's permissions and the token's `userAttributes`; content outside that scope is rejected.
 - Charts are saved into the first write space by default. When the actor can create charts in more than one write space, the save dialog lets embedded users choose among them.
-- Threads belong to the write actor and the first write space. Changing which space comes first changes which past threads viewers see.
 - In a [bound thread](#bind-a-thread-to-a-dashboard), the agent can only change the bound dashboard and the charts saved in it.
 - Query results respect the write actor's permissions and any `userAttributes` claims on the JWT, so embedded viewers only see the rows they're entitled to.
 - Dashboard and chart embed tokens are rejected by AI agent routes, and AI agent tokens are rejected by dashboard or chart routes.
+
+### Thread access
+
+A thread is private to the viewer who started it. A token can open or list a thread only when all of these match the token that started it:
+
+- The agent and the write actor.
+- The write spaces: the token includes every write space the thread was started with. Removing a write space from a viewer's tokens hides the threads they started with it.
+- `user.externalId`, where a token without one only opens threads started without one.
+
+Viewers whose tokens share the agent, actor and write spaces share threads only when the tokens also carry the same `user.externalId`, or none. Give each viewer their own `externalId` to keep their conversations, and the answers in them, to themselves.
