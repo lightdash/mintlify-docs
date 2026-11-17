@@ -8,7 +8,7 @@ These rules govern every change. The full system — doc-type contracts and the 
 
 - **Search first.** Look for an existing home for the content (site search, or `rg` locally). Default to extending the canonical page over adding one.
 - **One home per fact.** Every fact, schema, table, command, and number has exactly one canonical page. If you're about to restate something from another page, link to it or transclude a `snippets/` snippet instead — copies drift, and this corpus has shipped contradictory versions because of it.
-- **Document intended behavior.** A bug, a workaround for one, or behavior someone is changing stays out of the docs; report it to the team that owns the feature instead. A limit the product is designed to have is a fact and belongs on the feature's page.
+- **Document intended behavior.** A bug, a workaround for one, or behavior someone is changing stays out of the docs; report it to the team that owns the feature instead. A limit the product is designed to have is a fact and belongs on the feature's page, with the supported way to get the same result when there is one.
 - **Size the addition to its container.** A missing detail joins the sentence, paragraph, or bullet that already covers the topic, and gets no heading, paragraph, or callout of its own. A bullet or a table cell stays one line: when the detail needs more, write it on the canonical page and link to it.
 
 ## Placement and naming
