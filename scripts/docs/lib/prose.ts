@@ -84,7 +84,7 @@ function headings(content: string): ProseMatch[] {
 }
 
 export function overviewHeadings(content: string): ProseMatch[] {
-  return headings(content).filter(({ text }) => /^(overview|introduction)$/i.test(text));
+  return headings(content).filter(({ text }) => /^overview$/i.test(text));
 }
 
 export function questionHeadings(content: string): ProseMatch[] {
