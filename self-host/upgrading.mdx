@@ -137,7 +137,7 @@ These examples assume a release named `lightdash`. Find yours with `kubectl get 
 
 ### Upgrade with Argo CD or another GitOps controller
 
-Enable the pre-migration shutdown when your controller renders the chart with `helm template`, which doesn't mark the release as an upgrade. With chart `2.16.1545` or later, set:
+Enable the pre-migration shutdown when your controller renders the chart with `helm template`, which doesn't mark the release as an upgrade. With a chart version that lists `migrationJob.scaleDownWorkloads.force` in its values, set:
 
 ```yaml
 upgrade:
@@ -156,7 +156,7 @@ Configure Argo CD so the shutdown lasts until migrations finish and the applicat
 
 - Run a full application sync with the chart's [Helm hooks](https://argo-cd.readthedocs.io/en/stable/user-guide/helm/#helm-hooks) enabled. Don't mix in Argo CD hooks that disable Helm hook handling. Other controllers must provide equivalent hook ordering.
 - Disable selective sync and `ApplyOutOfSyncOnly=true`. The sync must reapply all application Deployments and the backend HPA after the migration Job succeeds, including resources that were unchanged before the hook ran.
-- With autoscaling, use Argo CD's `ignoreDifferences` to ignore the backend's `/spec/replicas` during comparison, so HPA changes don't trigger repeated full syncs. Leave `RespectIgnoreDifferences` off for this rule: the main sync must still restore Deployment replicas, or workloads can remain at zero.
+- With autoscaling, use Argo CD's `ignoreDifferences` to ignore the backend's `/spec/replicas` during comparison, so Argo CD self-heal doesn't keep resetting the backend to `minReplicas` after the HPA scales it. Leave `RespectIgnoreDifferences` off for this rule: the main sync must still restore Deployment replicas, or workloads can remain at zero.
 - Preserve the chart's `app.kubernetes.io/instance` labels. If Argo CD uses this label for tracking, keep the Application name and Helm `releaseName` equal, or [configure a separate tracking label](https://argo-cd.readthedocs.io/en/stable/user-guide/helm/#helm-release-name).
 - Make the database and any referenced Secrets available before the `PreSync` migration Job, including on the first install. Resources created only in the main sync are too late. If you manage migration RBAC yourself, grant the Job's service account the [chart's scale-down permissions](https://github.com/lightdash/helm-charts/tree/main/charts/lightdash).
 - Pause other controllers or autoscalers that could recreate the HPA or restore replicas during migration. The chart removes its own backend HPA; it can't prevent an external controller from starting old pods again.
