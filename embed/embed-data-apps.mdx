@@ -104,7 +104,7 @@ Data app tiles on an embedded dashboard don't read or write `state`.
 
 ## Send events to your page
 
-An embedded data app can tell the page that embeds it that something happened, such as a viewer confirming an import, so your page can react right away instead of polling. Ask the agent for it while you build the app, for example "when I click Confirm import, tell the host page with an `import-confirmed` event that includes the plan ID".
+An embedded data app can tell the page that embeds it that something happened, such as a viewer confirming an import, so your page can react right away instead of polling. Ask the agent for it while you build the app, for example "when I click Confirm import, tell the host page with an `import-confirmed` event that includes the plan ID". Apps built before app events were available don't have `emitEvent`. [Upgrade the app](/data-apps#upgrading-an-app) first, then ask the agent to add the event.
 
 In app code, call `emitEvent(name, payload)` from `@lightdash/query-sdk`:
 
@@ -128,8 +128,10 @@ window.addEventListener('message', (event) => {
 Events are relayed from a standalone data app embed and from data app tiles on an [embedded dashboard](/embed/embed-dashboards#view-data-apps). With the React SDK, they arrive in the dashboard's [`onEvent`](/embed/react-sdk#listen-to-events) handler with the type `appEvent`.
 
 - **Names** are up to 100 characters and can't be empty.
-- **Payloads** are JSON, up to 64 KB serialized, or `null` when the app sends none. Send larger data through an [external connection](/data-apps/external-connections) and emit a reference to it.
-- **`emitEvent` throws** on an invalid name, a payload that isn't JSON-serializable, or a payload over the limit, so the app can show the error instead of losing the event silently.
+- **Payloads** are up to 64 KB of JSON, or `null` when the app sends none. Send larger data through an [external connection](/data-apps/external-connections) and emit a reference to it.
+- **Your page receives the JSON form of the payload.** Dates arrive as strings, `undefined` values and functions are dropped, and binary data doesn't survive.
+- **`emitEvent` throws** on an invalid name, a payload that isn't JSON-serializable, or a payload over the limit, so the app can show the error. A call that doesn't throw can still be dropped by the rate limit.
+- **App events are rate limited.** All app events from an embed share one limit, 10 events per second by default. Events over the limit are dropped without an error, so emit on viewer actions, not in loops. Self-hosted instances can change the limit with `EMBED_EVENT_RATE_LIMIT_MAX_EVENTS` and `EMBED_EVENT_RATE_LIMIT_WINDOW_MS` (see [embedding variables](/self-host/customize-deployment/environment-variables#embedding)).
 - **Outside an embed**, such as when the app is open in Lightdash, nothing is relayed.
 
 The app picks only the event's `name` and `payload`. The outer type is always `lightdash:appEvent`, so an app can't send one of Lightdash's own events. Both values come from the app's author, so validate them before your page acts on them.
