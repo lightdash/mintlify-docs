@@ -180,7 +180,7 @@ DuckDB runs inside the pre-aggregate worker process. There are two types of Duck
 | Instance type | Used for | Memory limit | Concurrency |
 | --- | --- | --- | --- |
 | **Shared query instance** | Serving pre-aggregate queries | Configurable (see below) | Shared across all concurrent queries |
-| **Isolated materialization instances** | Converting and uploading results | 256MB per instance, 1 thread | One per active materialization |
+| **Isolated materialization instances** | Converting materialization results to Parquet | Configurable per conversion (see below) | One instance per active conversion, one thread per instance |
 
 By default, the shared query instance has **no memory cap**. Under concurrent load, this can cause OOM kills. Set a limit:
 
@@ -190,6 +190,10 @@ configMap:
 ```
 
 **Sizing guideline:** Start with 2–3GB and adjust based on observed memory usage. The limit should leave enough headroom for the Node.js process, active materializations, and OS overhead within the pod's total memory.
+
+Set [`PRE_AGGREGATE_DUCKDB_WRITE_MEMORY_LIMIT`](/self-host/customize-deployment/environment-variables#pre-aggregates) if DuckDB runs out of memory during Parquet conversion. With Helm, set it under `configMap` or `extraEnv`. Restart the pre-aggregate worker after changing the setting.
+
+Size each worker pod for its concurrency multiplied by the per-conversion memory limit. Leave additional headroom for the shared query instance, Node.js, the operating system, and allocations outside DuckDB's memory limit. If the pod can't fit that budget, increase its memory or reduce concurrency.
 
 ### Optional environment variables
 
