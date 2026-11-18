@@ -186,14 +186,14 @@ By default, the shared query instance has **no memory cap**. Under concurrent lo
 
 ```yaml
 configMap:
-  PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT: "3GB"
+  PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT: "1GB"
 ```
-
-**Sizing guideline:** Start with 2–3GB and adjust based on observed memory usage. The limit should leave enough headroom for the Node.js process, active materializations, and OS overhead within the pod's total memory.
 
 Set [`PRE_AGGREGATE_DUCKDB_WRITE_MEMORY_LIMIT`](/self-host/customize-deployment/environment-variables#pre-aggregates) if DuckDB runs out of memory during Parquet conversion. With Helm, set it under `configMap` or `extraEnv`. Restart the pre-aggregate worker after changing the setting.
 
-Size each worker pod for its concurrency multiplied by the per-conversion memory limit. Leave additional headroom for the shared query instance, Node.js, the operating system, and allocations outside DuckDB's memory limit. If the pod can't fit that budget, increase its memory or reduce concurrency.
+Size each worker pod for its concurrency multiplied by the per-conversion memory limit. Leave additional headroom for the shared query instance, Node.js, the operating system, and allocations outside DuckDB's memory limit.
+
+For the example deployment above, eight concurrent conversions at the default `256MB` each budget about 2GB for writes. With the `1GB` query limit, the `4Gi` pod has about 1.2GiB of headroom. Adjust the limits based on observed usage. If the pod can't fit the memory budget, increase its memory or reduce concurrency.
 
 ### Optional environment variables
 
@@ -202,7 +202,7 @@ These can be set via `extraEnv` or `configMap` if you need to override the defau
 | Variable | Default | Description |
 | --- | --- | --- |
 | `NATS_QUEUE_TIMEOUT_MS` | `180000` (3 min) | How long a message can wait in the queue before being discarded. |
-| `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` | Unlimited | Memory cap for the shared DuckDB query instance (e.g., `2GB`, `3GB`). When unset, DuckDB will use all available pod memory and is likely to cause OOM kills under concurrent load. We strongly recommend setting this. |
+| `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` | Unlimited | Memory cap for the shared DuckDB query instance (e.g. `1GB`). When unset, DuckDB will use all available pod memory and is likely to cause OOM kills under concurrent load. We strongly recommend setting this. |
 | `PRE_AGGREGATES_MAX_ROWS` | Unlimited | Maximum rows per materialization. Results are truncated to this limit with a warning. Can also be set per pre-aggregate in dbt YAML via `max_rows`. |
 
 ## Troubleshooting
@@ -223,9 +223,9 @@ No worker consumes the `pre-aggregate` stream. See [troubleshooting pre-aggregat
 
 Pre-aggregate workers run DuckDB which can consume significant memory:
 
-1. Set `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` (e.g., `3GB`) to cap DuckDB memory
+1. Set `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` to cap the shared query instance
 2. Increase the worker's memory request and limit
-3. Reduce `concurrency` to limit parallel DuckDB queries
+3. Reduce `concurrency` to limit parallel materializations
 
 ### Materialization failures
 
