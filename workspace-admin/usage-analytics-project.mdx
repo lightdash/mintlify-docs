@@ -107,6 +107,7 @@ Choose the Explore that matches what you want to count. An event, an app load, a
 | **Query events** | Captured query outcomes, error messages (up to 1,000 characters), timing, context and cache use, plus supported retained query history. It does not include compiled SQL. |
 | **Semantic usage** | Direct metric and dimension references captured from queries. |
 | **Export events** | Captured result-download events and formats. |
+| **Embed view events** | Successful authorized embedded dashboard loads by external viewer and customer tenant. |
 | **Tool activity** | MCP calls by tool, client, source and actor, including known outcomes and latency. |
 | **Historical activity** | Retained database records recovered by [historical backfill](#historical-backfill), with their own activity types and counting rules. |
 
@@ -134,6 +135,35 @@ To build the trend yourself, open **Agent requests**:
 Total requests includes captured follow-up prompts and requests that are pending or failed. Use request status to narrow the analysis. Other surfaces, such as Slack, are outside the `web_app` filter.
 
 Use **AI usage** for model calls and token consumption. Its `ai.usage` event represents a model call, not a question: one question can make several calls, and other AI features also make calls. Filter by **Feature** when comparing consumption. Tokens are not monetary cost or a complete measure of spending in external assistants.
+
+### Attribute embedded usage to viewers and tenants
+
+**Query events** and **Export events** can separate [embedded](/embed/reference) activity by viewer and by tenant, even when everyone loads the same dashboard or chart. To report a tenant, add `usageAnalytics.tenantAttribute` to the embed JWT and name one of the token's existing `userAttributes`:
+
+```json
+{
+  "user": { "externalId": "viewer-42" },
+  "userAttributes": { "brand_id": "brand-a" },
+  "usageAnalytics": { "tenantAttribute": "brand_id" }
+}
+```
+
+| Field | What it contains |
+| --- | --- |
+| **External viewer ID** | The JWT's `user.externalId`. It doesn't populate **User UUID**, which is empty for embedded activity. |
+| **Embed token fingerprint** | Identifies the token when the JWT has no usable `externalId`. A refreshed token gets a different value, so don't count fingerprints as people. |
+| **Embed tenant attribute** | The attribute named in `usageAnalytics.tenantAttribute`, such as `brand_id`. |
+| **Embed tenant ID** | That attribute's value, such as `brand-a`. Empty when the token doesn't opt in. |
+
+Identifiers must be non-blank strings of at most 254 characters. A tenant attribute can also be an array with exactly one value; Lightdash leaves the tenant fields empty for multi-value attributes. The setting only selects what is reported and doesn't change row-level security. Use an opaque identifier, since everyone with access to the analytics project can see it.
+
+Preview tokens aren't attributed, and rows recorded before the fields existed stay empty. [Historical backfill](#historical-backfill) can't reconstruct them. If the fields are missing, use [**Sync content**](#update-models-and-dashboards). **Total queries** counts query outcomes, including cache hits and errors, and one dashboard load can run several queries, so don't treat it as a visit count. **Querying users** counts registered actors only and excludes embedded viewers; group by **External viewer ID** to count them instead.
+
+For embedded dashboard loads, open **Embed view events**. It uses the same claims and has the metrics **Loads**, **Distinct external viewers** and **Distinct tenants**. Its dimensions include **External viewer ID**, **Embed tenant attribute**, **Embed tenant ID**, **Tenant coverage** (`Identified tenant` or `Unknown tenant`) and **Viewer coverage** (`Identified external viewer`, `Anonymous (token only)` or `Unknown viewer`). **Embed token fingerprint** isn't available in this Explore.
+
+**Loads** counts successful dashboard fetches, not tiles, query results, cache hits, filter changes, browser renders or billable usage. A reload that fetches the dashboard again counts again; a duplicate delivery of the same event doesn't. Standalone chart and data app embeds, preview embeds and SDK renders from preloaded dashboard data aren't covered. Distinct counts are scoped to the project and tenant attribute, so the same external viewer ID in two tenants counts twice. Capture starts when your instance runs a version with this Explore, with no backfill. It overlaps with existing embed reach data, so don't add the two counts together.
+
+For example, to see a dashboard's readership by tenant, filter **Content id** to the dashboard and **Event ts → Day** to the last seven complete UTC days. Group by **Event ts → Day**, **Embed tenant attribute** and **Embed tenant ID**, select **Loads**, **Distinct external viewers** and **Distinct tenants**, and add **Tenant coverage** to show unattributed loads.
 
 ## Data freshness and history
 
