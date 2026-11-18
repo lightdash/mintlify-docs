@@ -261,7 +261,7 @@ Site-wide colour — brand primary, dark mode, backgrounds — lives in `docs.js
 Two gates sit behind it, and the split is what keeps enforcement honest while the corpus still carries debt:
 
 - **Blocking rules** run inside `validate:docs` and fail the build. A rule is promoted once the corpus is clean of it, so a change is never blocked by debt it did not create. Every rule on this page blocks today.
-- **The baseline ratchet** is the holding pen for anything not yet clean. `scripts/docs/component-baseline.json` records how many findings each rule carries, and `aube run audit:components -- --baseline` fails if any rule gained one. It is empty, and a new rule lands there before it graduates.
+- **The baseline ratchet** is the holding pen for anything not yet clean. `scripts/docs/component-baseline.json` records how many findings each rule carries, and `aube run audit:components -- --baseline` fails if any rule gained one. A new rule lands there before it graduates; today it holds the `prose.*` and `heading.*` writing rules from [`AGENTS.md`](AGENTS.md). When a rule gains a finding, the audit lists that rule's findings in the files the change touched.
 
 Findings are annotated inline on the pull request diff, on the line that caused them, scoped to the files the change touched.
 

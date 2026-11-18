@@ -97,7 +97,7 @@ migrationJob:
   enabled: true
 ```
 
-With chart `2.16.284` or later, this combination makes the chart remove the backend HorizontalPodAutoscaler (HPA), scale the backend and worker Deployments to zero, and wait for their pods to stop before running migrations. The chart stops the upgrade if shutdown or migration fails.
+During `helm upgrade`, chart `2.16.284` or later uses this combination to remove the backend HorizontalPodAutoscaler (HPA), scale the backend and worker Deployments to zero, and wait for their pods to stop before running migrations. The chart stops the upgrade if shutdown or migration fails. If you deploy with Argo CD, use the [GitOps configuration](#upgrade-with-argo-cd-or-another-gitops-controller) below.
 </Step>
 
 <Step title="Optional: scale workloads down by hand" id="scale-application-workloads-manually-when-required">
@@ -134,6 +134,40 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://lightdash.example.com/api/v1/r
 These examples assume a release named `lightdash`. Find yours with `kubectl get deploy,job -l app.kubernetes.io/instance=<release>`.
 </Step>
 </Steps>
+
+### Upgrade with Argo CD or another GitOps controller
+
+Argo CD renders the chart with `helm template`, so the chart never sees an upgrade and skips the shutdown above. With chart `2.16.1777` or later, add `force: true`:
+
+```yaml
+upgrade:
+  mode: Recreate
+migrationJob:
+  enabled: true
+  scaleDownWorkloads:
+    force: true
+```
+
+The shutdown then runs on every full sync, even when the image hasn't changed, so plan for downtime on each sync. It still only runs with `Recreate`; `RollingUpdate` skips it.
+
+For the shutdown to hold, Argo CD must:
+
+- Run full syncs with the chart's Helm hooks. Don't use selective sync or `ApplyOutOfSyncOnly`: the sync has to restart every workload after migrations.
+- If Argo CD tracks resources by label (the default before Argo CD 3.0), name the Application after the Helm release or use a [separate tracking label](https://argo-cd.readthedocs.io/en/stable/user-guide/helm/#helm-release-name), so the chart can still find its pods.
+
+With autoscaling, tell Argo CD to ignore the backend's replica count so self-heal doesn't fight the HPA. Leave `RespectIgnoreDifferences` off, or the backend can stay at zero after a sync. For a release named `lightdash`:
+
+```yaml
+spec:
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: lightdash-backend
+      jsonPointers:
+        - /spec/replicas
+```
+
+If shutdown or migration fails, the application stays stopped. [Fix the Job](#the-migration-job-failed), then run a full sync again.
 
 ## Upgrade with Docker Compose
 
