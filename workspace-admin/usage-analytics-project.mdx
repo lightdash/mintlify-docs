@@ -135,6 +135,29 @@ Total requests includes captured follow-up prompts and requests that are pending
 
 Use **AI usage** for model calls and token consumption. Its `ai.usage` event represents a model call, not a question: one question can make several calls, and other AI features also make calls. Filter by **Feature** when comparing consumption. Tokens are not monetary cost or a complete measure of spending in external assistants.
 
+### Attribute embedded usage to viewers and tenants
+
+**Query events** and **Export events** can separate [embedded](/embed/reference) activity by viewer and by tenant, even when everyone loads the same dashboard or chart. To report a tenant, add `usageAnalytics.tenantAttribute` to the embed JWT and name one of the token's existing `userAttributes`:
+
+```json
+{
+  "user": { "externalId": "viewer-42" },
+  "userAttributes": { "brand_id": "brand-a" },
+  "usageAnalytics": { "tenantAttribute": "brand_id" }
+}
+```
+
+| Field | What it contains |
+| --- | --- |
+| **External viewer ID** | The JWT's `user.externalId`. It doesn't populate **User UUID**, which is empty for embedded activity. |
+| **Embed token fingerprint** | Identifies the token when the JWT has no usable `externalId`. A refreshed token gets a different value, so don't count fingerprints as people. |
+| **Embed tenant attribute** | The attribute named in `usageAnalytics.tenantAttribute`, such as `brand_id`. |
+| **Embed tenant ID** | That attribute's value, such as `brand-a`. Empty when the token doesn't opt in. |
+
+Identifiers must be non-blank strings of at most 254 characters. A tenant attribute can also be an array with exactly one value; Lightdash leaves the tenant fields empty for multi-value attributes. The setting only selects what is reported and doesn't change row-level security. Use an opaque identifier, since everyone with access to the analytics project can see it.
+
+Preview tokens aren't attributed, and rows recorded before the fields existed stay empty. [Historical backfill](#historical-backfill) can't reconstruct them. If the fields are missing, use [**Sync content**](#update-models-and-dashboards). **Total queries** counts query outcomes, including cache hits and errors, and one dashboard load can run several queries, so don't treat it as a visit count. **Querying users** counts registered actors only and excludes embedded viewers; group by **External viewer ID** to count them instead.
+
 ## Data freshness and history
 
 The scheduled refresh processes closed UTC days at **00:30 UTC** and updates the snapshots used for names and content inventory. Allow that job to finish before expecting the previous day's data; these dashboards are not real-time monitors.
