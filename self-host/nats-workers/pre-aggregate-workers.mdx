@@ -175,25 +175,15 @@ Pre-aggregate workers need significantly more resources than warehouse workers b
 
 ### DuckDB memory tuning
 
-DuckDB runs inside the pre-aggregate worker process. There are two types of DuckDB instances:
-
-| Instance type | Used for | Memory limit | Concurrency |
-| --- | --- | --- | --- |
-| **Project query instances** | Serving pre-aggregate queries | Configurable per instance (see below) | One warm instance per project on each worker, shared across that project's queries |
-| **Isolated materialization instances** | Converting materialization results to Parquet | Configurable per conversion (see below) | One instance per active conversion, one thread per instance |
-
-Each project query instance uses DuckDB's default memory limit when the setting is unset. Set `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` to control the limit per instance:
+Each Parquet conversion uses one DuckDB thread and has its own memory limit. If a conversion runs out of memory, raise `PRE_AGGREGATE_DUCKDB_WRITE_MEMORY_LIMIT` and restart the worker.
 
 ```yaml
 configMap:
   PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT: "1GB"
+  PRE_AGGREGATE_DUCKDB_WRITE_MEMORY_LIMIT: "256MB"
 ```
 
-Set [`PRE_AGGREGATE_DUCKDB_WRITE_MEMORY_LIMIT`](/self-host/customize-deployment/environment-variables#pre-aggregates) if DuckDB runs out of memory during Parquet conversion. With Helm, set it under `configMap` or `extraEnv`. Restart the pre-aggregate worker after changing the setting.
-
-For each worker pod, multiply its concurrency by the per-conversion memory limit. Add the query memory limit for every project instance the worker keeps in memory. Leave additional headroom for Node.js, the operating system, and allocations outside DuckDB's memory limits.
-
-For the example deployment above, eight concurrent conversions at the default `256MB` each budget about 2GB for writes. With one project query instance capped at `1GB`, the `4Gi` pod has about 1.2GiB of headroom. Adjust the limits based on observed usage. If the pod can't fit the memory budget, increase its memory or reduce concurrency.
+Size each pod for concurrent writes and one read limit per warm project. For example, eight writes at `256MB` each and one project at `1GB` leave about 1.2GiB of a `4Gi` pod for Node.js, the OS, and other allocations.
 
 ### Optional environment variables
 
@@ -202,7 +192,8 @@ These can be set via `extraEnv` or `configMap` if you need to override the defau
 | Variable | Default | Description |
 | --- | --- | --- |
 | `NATS_QUEUE_TIMEOUT_MS` | `180000` (3 min) | How long a message can wait in the queue before being discarded. |
-| `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` | DuckDB default | [Memory limit per project query instance](#duckdb-memory-tuning). |
+| `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` | DuckDB default | Memory per project query instance. |
+| `PRE_AGGREGATE_DUCKDB_WRITE_MEMORY_LIMIT` | `256MB` | [Memory per Parquet conversion](/self-host/customize-deployment/environment-variables#pre-aggregates). |
 | `PRE_AGGREGATES_MAX_ROWS` | Unlimited | Maximum rows per materialization. Results are truncated to this limit with a warning. Can also be set per pre-aggregate in dbt YAML via `max_rows`. |
 
 ## Troubleshooting
