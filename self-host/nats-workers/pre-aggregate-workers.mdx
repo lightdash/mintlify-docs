@@ -75,13 +75,13 @@ preAggregateNatsWorker:
       ephemeral-storage: 9Gi
 ```
 
-The Helm chart auto-configures these environment variables:
+The Helm chart sets these environment variables for the example configuration:
 
 | Variable | Set from | Value |
 | --- | --- | --- |
 | `NATS_ENABLED` | `nats.enabled: true` | `"true"` |
 | `NATS_URL` | `nats.enabled: true` | `nats://<release>-nats:4222` |
-| `NATS_WORKER_CONCURRENCY` | `preAggregateNatsWorker.concurrency` | `100` |
+| `NATS_WORKER_CONCURRENCY` | `preAggregateNatsWorker.concurrency` | `8` |
 | `PRE_AGGREGATES_ENABLED` | `preAggregateNatsWorker.enabled: true` | `"true"` |
 | `PRE_AGGREGATES_PARQUET_ENABLED` | `preAggregateNatsWorker.enabled: true` | `"true"` |
 
@@ -157,7 +157,7 @@ All configuration is set through your Helm `values.yaml` under `preAggregateNats
 | Helm value | Default | Description |
 | --- | --- | --- |
 | `preAggregateNatsWorker.replicas` | `1` | Number of worker pods. Scale horizontally for more parallel capacity. |
-| `preAggregateNatsWorker.concurrency` | `100` | Maximum concurrent jobs per pod. Maps to `NATS_WORKER_CONCURRENCY` env var. Each materialization stages its full result on local disk, so keep this well below the chart default: 8 fits the 9Gi ephemeral storage above. |
+| `preAggregateNatsWorker.concurrency` | `100` | Maximum concurrent jobs per pod. Maps to `NATS_WORKER_CONCURRENCY` env var. The example above uses 8. Size concurrency for the memory and temporary disk space your materializations need. |
 
 ### Resources
 
@@ -175,21 +175,14 @@ Pre-aggregate workers need significantly more resources than warehouse workers b
 
 ### DuckDB memory tuning
 
-DuckDB runs inside the pre-aggregate worker process. There are two types of DuckDB instances:
-
-| Instance type | Used for | Memory limit | Concurrency |
-| --- | --- | --- | --- |
-| **Shared query instance** | Serving pre-aggregate queries | Configurable (see below) | Shared across all concurrent queries |
-| **Isolated materialization instances** | Converting and uploading results | 256MB per instance, 1 thread | One per active materialization |
-
-By default, the shared query instance has **no memory cap**. Under concurrent load, this can cause OOM kills. Set a limit:
+If a materialization fails because DuckDB ran out of memory while writing Parquet, raise the write limit from its `256MB` default and restart the worker. For example:
 
 ```yaml
 configMap:
-  PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT: "3GB"
+  PRE_AGGREGATE_DUCKDB_WRITE_MEMORY_LIMIT: "512MB"
 ```
 
-**Sizing guideline:** Start with 2–3GB and adjust based on observed memory usage. The limit should leave enough headroom for the Node.js process, active materializations, and OS overhead within the pod's total memory.
+Each conversion gets its own limit and uses one thread. Two simultaneous conversions at `512MB` can use about `1GB` together. The pod also needs memory for Node.js and a DuckDB query instance for each project it serves.
 
 ### Optional environment variables
 
@@ -198,7 +191,8 @@ These can be set via `extraEnv` or `configMap` if you need to override the defau
 | Variable | Default | Description |
 | --- | --- | --- |
 | `NATS_QUEUE_TIMEOUT_MS` | `180000` (3 min) | How long a message can wait in the queue before being discarded. |
-| `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` | Unlimited | Memory cap for the shared DuckDB query instance (e.g., `2GB`, `3GB`). When unset, DuckDB will use all available pod memory and is likely to cause OOM kills under concurrent load. We strongly recommend setting this. |
+| `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` | DuckDB default | Memory per project query instance. |
+| `PRE_AGGREGATE_DUCKDB_WRITE_MEMORY_LIMIT` | `256MB` | [Memory per Parquet conversion](/self-host/customize-deployment/environment-variables#pre-aggregates). |
 | `PRE_AGGREGATES_MAX_ROWS` | Unlimited | Maximum rows per materialization. Results are truncated to this limit with a warning. Can also be set per pre-aggregate in dbt YAML via `max_rows`. |
 
 ## Troubleshooting
@@ -217,11 +211,7 @@ No worker consumes the `pre-aggregate` stream. See [troubleshooting pre-aggregat
 
 ### Worker OOM kills
 
-Pre-aggregate workers run DuckDB which can consume significant memory:
-
-1. Set `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` (e.g., `3GB`) to cap DuckDB memory
-2. Increase the worker's memory request and limit
-3. Reduce `concurrency` to limit parallel DuckDB queries
+If Kubernetes reports `OOMKilled`, the whole worker pod ran out of memory. Lower `preAggregateNatsWorker.concurrency` to run fewer jobs at once, or increase the pod's memory limit. If queries account for most of the memory, set `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` to cap each project's query instance.
 
 ### Materialization failures
 
