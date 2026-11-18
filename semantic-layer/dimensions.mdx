@@ -24,6 +24,10 @@ models:
 
 Write these entries by hand, or generate one for every column in a model with [`lightdash generate`](/workflow/cli/generate).
 
+The column `name` is the dimension's name, exactly as you write it. References to that dimension in another dimension's `sql` or in a join's `sql_on` use the `${table.field}` syntax and are matched case-sensitively on every warehouse, so `${accounts.ID}` and `${accounts.id}` are different fields. This is separate from how your warehouse treats the casing of the column itself; see [Using special characters or capital letters in your column names](#using-special-characters-or-capital-letters-in-your-column-names).
+
+A reference that matches nothing does not stop the explore from compiling, because [partial compilation](/workflow/cli/reference#partial-compilation) is on by default. In a dimension's `sql`, the error is attached to that dimension, its SQL compiles to `NULL`, and the explore gets the warning `Dimension "account_name" failed to compile: Model "deals" in dimension "account_name" has a dimension reference: ${accounts.ID} which matches no dimension`. In a join's `sql_on`, the join is skipped with a warning and the joined table's fields are absent from the explore; see [Adding joins in your models](/semantic-layer/joins#adding-joins-in-your-models) for the message. Project validation does not report these warnings. An explore with warnings shows a yellow warning triangle next to its name in the **Tables** list; hover over it to read them. If a joined table is missing after a refresh, check there first.
+
 <Warning>
   Dimensions cannot use window functions in their `sql`. A dimension's SQL is inserted into the same `SELECT` as the main `GROUP BY` in the generated query, and SQL does not allow window functions in that position. If you need window-function logic, either model it directly in your dbt model (so the value is precomputed before Lightdash queries it), or add a [table calculation](/explore/table-calculations) on the query results. Lightdash also supports a small set of built-in window operations through [post calculation metrics](/semantic-layer/metrics#post-calculation-metrics) (`percent_of_previous`, `percent_of_total`, `running_total`).
 </Warning>
@@ -392,6 +396,10 @@ dimensions:
     time_intervals: ['DAY', 'DAY_OF_MONTH_NUM', 'MONTH', 'QUARTER_NAME', 'YEAR']
 ```
 </CodeGroup>
+
+<Note>
+  Interval names are case-insensitive: `DAY` and `day` select the same interval. The dimension Lightdash generates keeps the column name and adds a lowercase interval suffix, so `created` with `DAY` or `day` becomes `created_day` either way, and the uppercase lists on this page produce the same field IDs as a lowercase list in your YAML. Custom granularity names are matched exactly as you wrote them in `lightdash.config.yml`.
+</Note>
 
 You can see all of the standard interval options for date and timestamp fields below. You can also add custom intervals using _additional dimensions_, there's an example below the following tables.
 
@@ -2047,6 +2055,8 @@ SELECT
   "orders"."Status" AS "orders_status"
 FROM "postgres"."jaffle"."orders" AS "orders"
 ```
+
+Declare the dimension's `type` as well, as the example does. When Lightdash compiles your project, it looks up each model's table and column names from your YAML in the warehouse catalog to read column types. On every warehouse except Snowflake that lookup is case-sensitive, so `status` in your YAML does not match a `Status` column in the warehouse, and a dimension with no declared `type` falls back to `string`. On Snowflake, where the catalog reports unquoted identifiers in uppercase, the lookup is case-insensitive, so lowercase names in your YAML match the uppercase columns in the warehouse.
 
 
 ## Additional dimensions

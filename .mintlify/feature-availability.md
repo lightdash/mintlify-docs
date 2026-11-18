@@ -39,4 +39,6 @@ Keep eligibility on the feature's canonical page and self-host setup in `self-ho
 
 Use the shared `FeatureBadge` component. Put a page-wide requirement at the opening and a requirement for one capability under that capability's heading. A standalone page should state its own verified requirements even when its parent describes them. Within a page, repeat a gate only when the section adds a distinct requirement. Do not turn ordinary role prerequisites into more badges or boxes.
 
+State a role requirement as the scopes that gate the action, then the system roles that carry those scopes: "Requires the `manage:AiAgent` scope, which the Admin and Developer roles include." Custom roles are built from scopes, so a role name alone does not tell their admins what to grant.
+
 In the PR, cite the enforcing source paths and researched revision, the commercial source when applicable, and any unresolved disagreement. Run the checks in `AGENTS.md`; component validation checks markup and consistency, not commercial accuracy.
