@@ -175,15 +175,14 @@ Pre-aggregate workers need significantly more resources than warehouse workers b
 
 ### DuckDB memory tuning
 
-Each Parquet conversion uses one DuckDB thread and has its own memory limit. If a conversion runs out of memory, raise `PRE_AGGREGATE_DUCKDB_WRITE_MEMORY_LIMIT` and restart the worker.
+If a materialization fails because DuckDB ran out of memory while writing Parquet, raise the write limit from its `256MB` default and restart the worker. For example:
 
 ```yaml
 configMap:
-  PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT: "1GB"
-  PRE_AGGREGATE_DUCKDB_WRITE_MEMORY_LIMIT: "256MB"
+  PRE_AGGREGATE_DUCKDB_WRITE_MEMORY_LIMIT: "512MB"
 ```
 
-Size each pod for concurrent writes and one read limit per warm project. For example, eight writes at `256MB` each and one project at `1GB` leave about 1.2GiB of a `4Gi` pod for Node.js, the OS, and other allocations.
+Each conversion gets its own limit and uses one thread. Two simultaneous conversions at `512MB` can use about `1GB` together. The pod also needs memory for Node.js and a DuckDB query instance for each project it serves.
 
 ### Optional environment variables
 
@@ -212,11 +211,7 @@ No worker consumes the `pre-aggregate` stream. See [troubleshooting pre-aggregat
 
 ### Worker OOM kills
 
-Pre-aggregate workers run DuckDB which can consume significant memory:
-
-1. Set `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` to cap each project query instance
-2. Increase the worker's memory request and limit
-3. Reduce `concurrency` to limit parallel materializations
+If Kubernetes reports `OOMKilled`, the whole worker pod ran out of memory. Lower `preAggregateNatsWorker.concurrency` to run fewer jobs at once, or increase the pod's memory limit. If queries account for most of the memory, set `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` to cap each project's query instance.
 
 ### Materialization failures
 
