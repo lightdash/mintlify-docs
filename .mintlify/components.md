@@ -96,7 +96,7 @@ description: "Rolling windows calculate metrics like rolling averages using the 
 
 ## Media
 
-**Every image, video, diagram, and iframe is wrapped in `<Frame>`.** Frames constrain content to the column, so an unwrapped iframe overflows the layout, and an unwrapped image sits flush against the prose with no separation. There is no exception for small images.
+**Every content image, video, diagram, and iframe is wrapped in `<Frame>`.** Frames constrain content to the column, so an unwrapped iframe overflows the layout, and an unwrapped image sits flush against the prose with no separation. Decorative icons inside controls use the shared SVG assets described under Icons.
 
 ```mdx
 <Frame caption="The chart config panel, with the Y-axis section open">
@@ -179,6 +179,8 @@ That leaves one job for `<Card>`: a small set of deliberate cross-area jumps, wh
 
 The library is Tabler, set once in `docs.json` (`icons.library`). Use [Tabler's names](https://tabler.io/icons) exactly — an unrecognised name renders nothing, silently. `iconType` is Font Awesome-only and does nothing here; leave it off.
 
+Reusable SVG assets live in `images/icons/`, named for the product or glyph they depict. Use `/images/icons/<name>.svg` in a native component's `icon` prop or an image for a colored brand mark. In custom controls, monochrome marks use the `.svg-icon` CSS mask with `--svg-icon: url("/images/icons/<name>.svg")` and optional `--svg-icon-size`, so they inherit `currentColor`. Decorative icons have `aria-hidden="true"` and images also have `alt=""`; the control supplies its accessible label. Athena, ClickHouse, and DuckDB assets include a dark backing for contrast across themes.
+
 Tabler is the library because its chart set is the one that covers this product: `chart-treemap`, `chart-sankey`, `chart-funnel`, and `chart-area-line` all exist, and the chart-type gallery is the most icon-dense surface on the site.
 
 **Only top-level areas carry icons.** All twelve do, in `docs.json`; no nested group does, and no page does. Icons are all-or-none per level (navigation rule 5) — a lone icon on one subsection reads as a rendering fault rather than a distinction, and the sidebar stops being scannable the moment the pattern is mixed. A page or nested group that feels like it deserves one is asking to be a top-level area instead, which is an IA question (ia-rules principle 12), not an icon question.
@@ -259,7 +261,7 @@ Site-wide colour — brand primary, dark mode, backgrounds — lives in `docs.js
 Two gates sit behind it, and the split is what keeps enforcement honest while the corpus still carries debt:
 
 - **Blocking rules** run inside `validate:docs` and fail the build. A rule is promoted once the corpus is clean of it, so a change is never blocked by debt it did not create. Every rule on this page blocks today.
-- **The baseline ratchet** is the holding pen for anything not yet clean. `scripts/docs/component-baseline.json` records how many findings each rule carries, and `aube run audit:components -- --baseline` fails if any rule gained one. It is empty, and a new rule lands there before it graduates.
+- **The baseline ratchet** is the holding pen for anything not yet clean. `scripts/docs/component-baseline.json` records how many findings each rule carries, and `aube run audit:components -- --baseline` fails if any rule gained one. A new rule lands there before it graduates; today it holds the `prose.*` and `heading.*` writing rules from [`AGENTS.md`](AGENTS.md). When a rule gains a finding, the audit lists that rule's findings in the files the change touched.
 
 Findings are annotated inline on the pull request diff, on the line that caused them, scoped to the files the change touched.
 

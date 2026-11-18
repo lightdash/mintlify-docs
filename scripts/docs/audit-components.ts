@@ -36,6 +36,13 @@ import { docsJsonLine, groupIcons } from './lib/navigation.ts';
 import { buildWorkflowAnnotations, createFinding } from './lib/findings.ts';
 import { parseFrontmatter } from './lib/frontmatter.ts';
 import { extractImages } from './lib/images.ts';
+import {
+  anchorIndexes,
+  fillerWords,
+  interfaceNarration,
+  overviewHeadings,
+  questionHeadings,
+} from './lib/prose.ts';
 import type { Finding } from './lib/types.ts';
 
 export interface ComponentAuditReport {
@@ -121,6 +128,21 @@ export function regressions(baseline: Baseline, byRule: Record<string, number>):
     .map((rule) => ({ rule, baseline: baseline.rules[rule] ?? 0, current: byRule[rule] ?? 0 }))
     .filter(({ baseline: was, current }) => current > was)
     .sort((left, right) => left.rule.localeCompare(right.rule));
+}
+
+/**
+ * Where to look for a rule's new finding. A count alone leaves the author to
+ * hunt for it, so a regression lists the rule's findings in the files the
+ * change touched, or all of them when those files hold none.
+ */
+export function regressionCandidates(
+  findings: Finding[],
+  rule: string,
+  changed?: ReadonlySet<string>,
+): Finding[] {
+  const ofRule = findings.filter((finding) => finding.rule === rule);
+  const scoped = changed === undefined ? [] : ofRule.filter((finding) => changed.has(finding.file));
+  return scoped.length > 0 ? scoped : ofRule;
 }
 
 export interface AuditComponentsOptions {
@@ -399,6 +421,54 @@ export function auditComponents({ root = process.cwd() }: AuditComponentsOptions
         { severity: 'warning' },
       ));
     }
+
+    // The writing guide's mechanical rules. They carry corpus debt, so the
+    // baseline ratchet holds them rather than BLOCKING_RULES.
+    for (const { line, text } of fillerWords(content)) {
+      findings.push(createFinding(
+        'prose.filler-word',
+        file,
+        line,
+        `"${text}" claims ease or quality — cut it, or say what the reader does.`,
+        { severity: 'warning', target: text.toLowerCase() },
+      ));
+    }
+    for (const { line, text } of interfaceNarration(content)) {
+      findings.push(createFinding(
+        'prose.interface-narration',
+        file,
+        line,
+        `"${text}" narrates the interface — give the action and stop.`,
+        { severity: 'warning', target: text.toLowerCase() },
+      ));
+    }
+    for (const { line, text } of anchorIndexes(content)) {
+      findings.push(createFinding(
+        'prose.anchor-index',
+        file,
+        line,
+        `${text} same-page links in one paragraph repeat the table of contents — link a section where the context calls for it.`,
+        { severity: 'warning', target: text },
+      ));
+    }
+    for (const { line, text } of overviewHeadings(content)) {
+      findings.push(createFinding(
+        'heading.overview',
+        file,
+        line,
+        `"${text}" names no topic — say what the section covers, or drop the heading and open with the text.`,
+        { severity: 'warning', target: text },
+      ));
+    }
+    for (const { line, text } of questionHeadings(content)) {
+      findings.push(createFinding(
+        'heading.question',
+        file,
+        line,
+        'A heading states the task or the topic, not a question.',
+        { severity: 'warning', target: text },
+      ));
+    }
   }
 
   const docsPath = path.join(root, 'docs.json');
@@ -484,13 +554,14 @@ export async function main(): Promise<void> {
       for (const row of table(report.summary.byArea)) console.log(row);
     }
 
+    const changed = changedFileList === undefined
+      ? undefined
+      : new Set(fs.readFileSync(changedFileList, 'utf8').split('\n').map((line) => line.trim()).filter(Boolean));
+
     // Annotate the lines a reviewer can actually act on. GitHub renders these
     // inline on the diff, so scoping to the change keeps them from drowning the
     // review in debt the change never touched.
     if (process.env.GITHUB_ACTIONS === 'true') {
-      const changed = changedFileList === undefined
-        ? undefined
-        : new Set(fs.readFileSync(changedFileList, 'utf8').split('\n').map((line) => line.trim()).filter(Boolean));
       const scoped = advisoryWorkflowFindings(report.findings, changed);
       const annotations = buildWorkflowAnnotations(scoped, 30);
       for (const command of annotations.commands) console.log(command);
@@ -507,6 +578,9 @@ export async function main(): Promise<void> {
       } else {
         for (const { rule: name, baseline, current } of grown) {
           console.log(`REGRESSION ${name}: ${baseline} -> ${current}`);
+          for (const item of regressionCandidates(report.findings, name, changed)) {
+            console.log(`${item.file}:${item.line} [${item.rule}] ${item.message}`);
+          }
         }
         console.log('\nFix them, or run `npm run audit:components -- --update-baseline` if the rise is intended.');
         process.exitCode = 1;
