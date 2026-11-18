@@ -520,6 +520,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Get a Semantic Studio workspace","href":"/api-reference/semantic-studio/get-a-semantic-studio-workspace","parents":["Reference","Semantic Studio"]},
 {"title":"Rename a Semantic Studio workspace","href":"/api-reference/semantic-studio/rename-a-semantic-studio-workspace","parents":["Reference","Semantic Studio"]},
 {"title":"Switch to a Semantic Studio workspace","href":"/api-reference/semantic-studio/switch-to-a-semantic-studio-workspace","parents":["Reference","Semantic Studio"]},
+{"title":"Get a Semantic Studio workspace's draft","href":"/api-reference/semantic-studio/get-a-semantic-studio-workspaces-draft","parents":["Reference","Semantic Studio"]},
 {"title":"Finish a Semantic Studio workspace","href":"/api-reference/semantic-studio/finish-a-semantic-studio-workspace","parents":["Reference","Semantic Studio"]},
 {"title":"Get a semantic layer model","href":"/api-reference/semantic-studio/get-a-semantic-layer-model","parents":["Reference","Semantic Studio"]},
 {"title":"Get the state of my semantic layer draft","href":"/api-reference/semantic-studio/get-the-state-of-my-semantic-layer-draft","parents":["Reference","Semantic Studio"]},
