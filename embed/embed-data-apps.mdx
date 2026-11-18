@@ -102,6 +102,38 @@ Like the in-app view, a standalone embed keeps the app's view state — selected
 
 Data app tiles on an embedded dashboard don't read or write `state`.
 
+## Send events to your page
+
+An embedded data app can tell the page that embeds it that something happened, such as a viewer confirming an import, so your page can react right away instead of polling. Ask the agent for it while you build the app, for example "when I click Confirm import, tell the host page with an `import-confirmed` event that includes the plan ID".
+
+In app code, call `emitEvent(name, payload)` from `@lightdash/query-sdk`:
+
+```js
+import { emitEvent } from '@lightdash/query-sdk';
+
+emitEvent('import-confirmed', { planId, rows });
+```
+
+Lightdash relays the call to your page as a `lightdash:appEvent` [embed event](/embed/iframe#listen-for-embed-events), so the same setup applies: embed events turned on for your page's origin, and a `targetOrigin` parameter on the embed URL. The event's `payload` holds the app's `name` and its `payload`:
+
+```js
+window.addEventListener('message', (event) => {
+  if (event.origin !== 'https://app.lightdash.cloud') return;
+  if (event.data?.type !== 'lightdash:appEvent') return;
+  const { name, payload } = event.data.payload;
+  if (name === 'import-confirmed') openImportSummary(payload);
+});
+```
+
+Events are relayed from a standalone data app embed and from data app tiles on an [embedded dashboard](/embed/embed-dashboards#view-data-apps). With the React SDK, they arrive in the dashboard's [`onEvent`](/embed/react-sdk#listen-to-events) handler with the type `appEvent`.
+
+- **Names** are up to 100 characters and can't be empty.
+- **Payloads** are JSON, up to 64 KB serialized, or `null` when the app sends none. Send larger data through an [external connection](/data-apps/external-connections) and emit a reference to it.
+- **`emitEvent` throws** on an invalid name, a payload that isn't JSON-serializable, or a payload over the limit, so the app can show the error instead of losing the event silently.
+- **Outside an embed**, such as when the app is open in Lightdash, nothing is relayed.
+
+The app picks only the event's `name` and `payload`. The outer type is always `lightdash:appEvent`, so an app can't send one of Lightdash's own events. Both values come from the app's author, so validate them before your page acts on them.
+
 ## How access works
 
 A `dataApp` JWT is intentionally narrow: it authorizes the named app for the named project and nothing else. In practice, this means:
