@@ -386,6 +386,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Get AI router instruction","href":"/api-reference/get-ai-router-instruction","parents":["Reference","API Reference"]},
 {"title":"Upsert AI router instruction","href":"/api-reference/upsert-ai-router-instruction","parents":["Reference","API Reference"]},
 {"title":"Route prompt","href":"/api-reference/route-prompt","parents":["Reference","API Reference"]},
+{"title":"Route dashboard capture","href":"/api-reference/route-dashboard-capture","parents":["Reference","API Reference"]},
 {"title":"Commit router decision","href":"/api-reference/commit-router-decision","parents":["Reference","API Reference"]},
 {"title":"List router decisions","href":"/api-reference/list-router-decisions","parents":["Reference","API Reference"]},
 {"title":"List AI agent skills","href":"/api-reference/list-ai-agent-skills","parents":["Reference","API Reference"]},
