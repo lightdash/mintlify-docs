@@ -7,6 +7,7 @@ import test from 'node:test';
 import {
   advisoryWorkflowFindings,
   auditComponents,
+  regressionCandidates,
   regressions,
   readBaseline,
   writeBaseline,
@@ -32,6 +33,13 @@ import {
   tabsBlocks,
   ungroupedAccordions,
 } from '../scripts/docs/lib/components.ts';
+import {
+  anchorIndexes,
+  fillerWords,
+  interfaceNarration,
+  overviewHeadings,
+  questionHeadings,
+} from '../scripts/docs/lib/prose.ts';
 
 function fixture(files: Record<string, string>): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'component-audit-'));
@@ -544,4 +552,118 @@ test('scopes blocking component findings to the files a change touched', async (
 
   const touched = await validateDocs({ root, changedFiles: ['broken.mdx'] });
   assert.equal(touched.findings.some((f) => f.rule === 'icon.unknown'), true);
+});
+
+test('flags the filler words the writing guide bans, outside code', () => {
+  const content = [
+    'You can simply run the command, and it is Easily undone.',
+    '',
+    'Run `simply` or:',
+    '',
+    '```bash',
+    'echo "a powerful, seamless example"',
+    '```',
+    '',
+    'A seamlessly powerful sentence.',
+  ].join('\n');
+
+  assert.deepEqual(fillerWords(content), [
+    { line: 1, text: 'simply' },
+    { line: 1, text: 'Easily' },
+    { line: 9, text: 'seamlessly' },
+    { line: 9, text: 'powerful' },
+  ]);
+  assert.deepEqual(fillerWords('Add just one filter, then ease the limit.'), []);
+});
+
+test('flags narration of what the screen does after an action', () => {
+  assert.deepEqual(
+    interfaceNarration('Select **Save**. An "Agent identity saved." notification confirms it.').map(({ text }) => text),
+    ['notification confirms'],
+  );
+  assert.equal(interfaceNarration('If you have unsaved changes, a confirmation dialog will appear.').length, 1);
+  assert.equal(interfaceNarration('A success message shows the new role.').length, 1);
+  // A condition the reader needs before acting is not narration.
+  assert.deepEqual(interfaceNarration('The menu appears once a chart has two or more series.'), []);
+  assert.deepEqual(interfaceNarration('Select **Save**, then confirm the change.'), []);
+});
+
+test('flags a paragraph that repeats the table of contents, not a lookup table', () => {
+  const index = 'This page covers [planning](#plan), [creating](#create), [charts](#add-charts), and [filters](#add-filters).';
+  const backlink = 'Supports the shared [compilation](#compilation), [deployment](#deployment), and [preview options](#preview).';
+  const row = '| [a](#a) | [b](#b) | [c](#c) | [d](#d) |';
+  const repeated = 'See [filters](#filters), then [filters](#filters) again, [filters](#filters), and [filters](#filters).';
+
+  assert.deepEqual(anchorIndexes([index, '', backlink, '', row, '', repeated].join('\n')), [{ line: 1, text: '4' }]);
+  assert.deepEqual(anchorIndexes('See [a](/other#a), [b](/other#b), [c](/other#c), and [d](/other#d).'), []);
+});
+
+test('flags headings that name no topic or ask a question', () => {
+  const content = [
+    '## Overview',
+    '',
+    '### What are skills?',
+    '',
+    '## Create a dashboard',
+    '',
+    '## Who is "Unknown user"? <Badge>Beta</Badge>',
+    '',
+    '```md',
+    '## Introduction',
+    '## Why?',
+    '```',
+    '',
+    '## Overview of roles',
+  ].join('\n');
+
+  assert.deepEqual(overviewHeadings(content), [{ line: 1, text: 'Overview' }]);
+  assert.deepEqual(questionHeadings(content).map(({ line }) => line), [3, 7]);
+});
+
+test('reports prose findings under their own rules, held to the ratchet rather than blocking', () => {
+  const root = fixture({
+    'docs.json': NAV(['explore/prose']),
+    'explore/prose.mdx': page([
+      '## Overview',
+      '',
+      'You can simply select **Save**. A toast appears.',
+      '',
+      '## Why use it?',
+      '',
+      'Jump to [a](#a), [b](#b), [c](#c), or [d](#d).',
+    ].join('\n')),
+  });
+
+  const { byRule } = auditComponents({ root }).summary;
+  assert.deepEqual(byRule, {
+    'heading.overview': 1,
+    'heading.question': 1,
+    'prose.anchor-index': 1,
+    'prose.filler-word': 1,
+    'prose.interface-narration': 1,
+  });
+  for (const rule of Object.keys(byRule)) assert.equal(BLOCKING_RULES.has(rule), false);
+});
+
+test('points a regression at the changed files, or at every finding when they hold none', () => {
+  const root = fixture({
+    'docs.json': NAV(['old', 'new']),
+    'old.mdx': page('This is easily done.'),
+    'new.mdx': page('This is simply done.'),
+  });
+  const { findings } = auditComponents({ root });
+
+  assert.deepEqual(
+    regressionCandidates(findings, 'prose.filler-word', new Set(['new.mdx'])).map(({ file }) => file),
+    ['new.mdx'],
+  );
+  assert.deepEqual(
+    regressionCandidates(findings, 'prose.filler-word', new Set(['docs.json'])).map(({ file }) => file),
+    ['new.mdx', 'old.mdx'],
+  );
+  assert.deepEqual(
+    regressionCandidates(findings, 'prose.filler-word').map(({ file }) => file),
+    ['new.mdx', 'old.mdx'],
+  );
+  assert.deepEqual(regressionCandidates(findings, 'heading.overview', new Set(['new.mdx'])), []);
 });

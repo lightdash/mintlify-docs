@@ -13,7 +13,7 @@ The `tag` slot therefore carries lifecycle badges only (`Experimental`, `Beta` �
 | Type | Declaration | Form contract |
 | --- | --- | --- |
 | Docs (default) | none | Feature documentation: what it is, how it behaves, its options. Most pages. |
-| Tutorial | `doc-type: tutorial` | Walks one task start to finish. Verb-first title and slug: "Set up agents in Slack" → `set-up-slack-agents`. States prerequisites; links to canonical docs instead of re-teaching them. |
+| Tutorial | `doc-type: tutorial` | Walks one task start to finish. Verb-first title and slug: "Set up agents in Slack" → `set-up-slack-agents`. States prerequisites and ends with a check that shows the result; links to canonical docs instead of re-teaching them. |
 | Guide | `doc-type: guide` | Opinionated: how to work The Lightdash Way. Noun-phrase title and slug. |
 | Reference | `doc-type: reference` | Exhaustive lookup: schemas, tables, flags. Length is fine; one lookup topic and working anchors are required. |
 

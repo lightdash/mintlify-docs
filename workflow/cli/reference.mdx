@@ -18,8 +18,6 @@ doc-type: reference
 
 For installation instructions, see [How to install the Lightdash CLI](/workflow/cli/install).
 
-Look up [global options](#global-options), [shared command options](#shared-command-options), [dbt options](#dbt-options), [commands](#commands), or [environment variables](#environment-variables).
-
 ## Dependencies
 
 The Lightdash CLI requires Node, NPM, and the [dbt core](https://docs.getdbt.com/docs/core/installation-overview) or [dbt cloud](https://docs.getdbt.com/docs/cloud/cloud-cli-installation) CLI to be installed and available under the `dbt` command.
@@ -30,7 +28,7 @@ The Lightdash CLI requires Node, NPM, and the [dbt core](https://docs.getdbt.com
 
 Affected commands: `lightdash generate`, `lightdash preview` and `lightdash start-preview`
 
-These commands rely on the warehouse credentials from the active project, as the dbt Cloud CLI does not expose credentials directly. Ensure the project's credentials have access to all development and staging schemas for a seamless experience.
+These commands rely on the warehouse credentials from the active project, as the dbt Cloud CLI does not expose credentials directly. Ensure the project's credentials have access to all development and staging schemas.
 
 **Empty warehouse credentials for new projects**
 
@@ -151,7 +149,9 @@ These options apply to `lightdash preview` and `lightdash start-preview`.
 
 - `--no-warehouse-credentials`
   - (default: false)
-  - Create the preview without reading warehouse credentials from `profiles.yml`. The preview copies its warehouse connection from the upstream project (your [selected project](#lightdash-config-set-project)). Also skips dbt compile and the warehouse catalog. When updating an existing preview, keeps the credentials it already has.
+  - Create the preview without reading warehouse credentials from `profiles.yml` or sending them to Lightdash. The preview copies its warehouse connection from the upstream project (your [selected project](#lightdash-config-set-project)). Re-running `lightdash start-preview` on an existing preview keeps the connection it already has.
+  - Use it when your dbt profile signs in through a browser or SSO (for example Snowflake `externalbrowser`) or uses short-lived credentials.
+  - Unlike on `lightdash compile` and `lightdash deploy`, the flag doesn't skip dbt compile or the warehouse catalog on preview commands, so a profile that needs a local sign-in still prompts. To skip them, also pass `--skip-dbt-compile` and `--skip-warehouse-catalog`.
 - `--table-configuration [prod/all]`
   - (default: all)
   - If set to 'prod' it will copy the table configuration from the source project
@@ -485,18 +485,18 @@ The link expired before you approved it. Run `lightdash agent connect` to get a 
 When the connection fails, the command gives the reason and how to try again. For example:
 
 ```text
-Connection failed: Your Snowflake sign-in is not an agent session. Ask your Snowflake admin to set IS_AGENTIC = TRUE on the security integration used for AI. Run `lightdash agent connect` to try again.
+Connection failed: Your Snowflake sign-in is not an agent session. Ask your Snowflake admin to set IS_AGENTIC = TRUE on the security integration used for agents. Run `lightdash agent connect` to try again.
 ```
 
-When the project does not need an agent connection, the command prints "Agent connection is not required for this project" and stops. When agents on the project use a shared agent account, it prints "Not needed: agents on this project use the shared agent account", opens no browser, and exits with code 0.
+When the project does not need an agent connection, the command prints "Agent sign-in is not required for this project" and stops. When agents on the project use a shared agent account, it prints "The CLI runs as you until agent connect issues an agent credential.", opens no browser, and exits with code 0.
 
 The CLI checks the connection for its own Lightdash user. If the browser is signed in to Lightdash as a different user, the command says so. Sign in to the browser as the same user, then run the command again.
 
 #### `lightdash agent status`
 
-Shows your agent connection status for a project. When your agent is not connected, it shows the reason and the connect link. When agents on the project use a shared agent account, it prints "Not needed: agents on this project use the shared agent account" and exits with code 0.
+Shows your agent connection status for a project. When your agent is not connected, it shows the reason and the connect link. When agents on the project use a shared agent account, it prints "The CLI runs as you until agent connect issues an agent credential." and exits with code 0.
 
-While [agent identity](/agents/agent-identity#the-lightdash-cli) is on, the CLI itself runs as you, and both `lightdash agent` commands say "The CLI runs as you until agent connect issues an agent credential."
+The CLI itself runs as you. See [agent identity](/agents/agent-identity#the-lightdash-cli).
 
 ```console
 lightdash agent status --project <project uuid or slug>
@@ -943,7 +943,7 @@ Supports the shared [content transfer options](#content-transfer-options).
 
 E.g. if you're running this command inside your dbt directory (eg: `/home/javi/dbt`) then it will create a folder (`/home/javi/dbt/lightdash`).
 
-You can make changes to the code and upload these changes back to your Lightdash project. Content that's been downloaded as code can still be managed in the Lightdash UI.
+You can make changes to the code and upload these changes back to your Lightdash project. Content that's been downloaded as code can still be managed in the Lightdash UI. If the project has [`content_as_code.sync`](/workflow/content-as-code#review-ui-edits-to-git-backed-content) turned on, UI edits to uploaded content are saved as drafts instead.
 
 
 **Options:**
@@ -1103,7 +1103,7 @@ Supports the shared [content transfer options](#content-transfer-options).
 If there have been changes made to a chart or dashboard in the application that is being uploaded from code, `lightdash upload` will overwrite the changes.
 
 <Note>
-`lightdash upload` preserves empty dashboard filters — active filters with no values on operators that require values (for example, `equals` or `greaterThan`). These act as an "unset default" control: at runtime they render as `is any value` in the filter bar and do not override chart-level filters on the same field until a viewer picks a value. Value-less relative-date operators (`inTheCurrent`, `notInTheCurrent`) are compiled from `settings.unitOfTime` rather than `values`, so they are not treated as empty and continue to apply as before. See [Empty default dashboard filters](/explore/dashboards/filter#empty-default-dashboard-filters).
+`lightdash upload` preserves empty dashboard filters — active filters with no values on operators that require values (for example, `equals` or `greaterThan`). These act as an "unset default" control: at runtime they render as `is any value` in the controls bar and do not override chart-level filters on the same field until a viewer picks a value. Value-less relative-date operators (`inTheCurrent`, `notInTheCurrent`) are compiled from `settings.unitOfTime` rather than `values`, so they are not treated as empty and continue to apply as before. See [Empty default dashboard filters](/explore/dashboards/filter#empty-default-dashboard-filters).
 </Note>
 
 **Options:**
