@@ -150,10 +150,11 @@ type DashboardProps = {
     isEditMode: boolean,
   ) => void;                        // Callback when the embed enters or leaves edit mode
   chartSaveDestinations?: ('dashboard' | 'space')[]; // Where "New chart" and "Save as new chart" save (default: ['dashboard'])
+  refreshKey?: number;              // Change the value to reload the saved dashboard in place
   onExplore?: (options: {
     chart: SavedChart
   }) => void;                       // Handle "Explore from here" in your app instead of the embed
-  onEvent?: LightdashEventHandler;  // Saves, filter and tab changes, notifications
+  onEvent?: LightdashEventHandler;  // Saves, content state, tab changes, notifications
   onError?: (error: SdkError) => void; // Load and request failures
 };
 ```
@@ -260,6 +261,8 @@ function EditableDashboard() {
 
 The dashboard must be in one of the token's write spaces. The add-chart picker lists saved charts from the write spaces and any [source spaces](/embed/reference#add-charts-from-other-spaces); charts from a source space can't be edited from the dashboard. See [Write actions](/embed/reference#write-actions) for the JWT claim.
 
+Edit mode also edits the dashboard's controls. See [Edit dashboard controls](/embed/embed-dashboards#edit-dashboard-controls).
+
 #### Choose where new charts are saved
 
 When the token sets `canExplore: true`, edit mode offers **New chart** in the add-tile menu and **Save as new chart** when editing a chart. Use `chartSaveDestinations` to control where those new charts are saved:
@@ -281,6 +284,30 @@ When the token sets `canExplore: true`, edit mode offers **New chart** in the ad
 ```
 
 If the dashboard isn't in one of the token's write spaces, Lightdash saves new charts to the first write space whatever this prop says. Iframe embeds have no equivalent setting and always save to the dashboard.
+
+#### Reload the saved dashboard
+
+Change `refreshKey` to reload the dashboard after its saved version changes outside the component, for example when [an AI agent edits it](#refresh-a-dashboard-after-the-agent-saves-it). The dashboard reloads in place: Lightdash fetches the saved dashboard, its saved charts and its SQL charts again, and the viewer keeps their filters, parameters and active tab.
+
+```tsx
+const [refreshKey, setRefreshKey] = useState(0);
+
+<Lightdash.Dashboard
+  instanceUrl="https://app.lightdash.cloud"
+  token={token}
+  refreshKey={refreshKey}
+/>
+
+// When the saved dashboard changes:
+setRefreshKey((current) => current + 1);
+```
+
+After a reload:
+
+- Filters and parameter values the viewer changed stay as the viewer set them. Saved filters the viewer didn't change, and parameters the viewer didn't set, take their new saved values.
+- If the viewer is in edit mode, the reload waits until they leave it.
+
+`Lightdash.DashboardBuilder` doesn't accept `refreshKey`.
 
 <a id="lightdashdashboardbuilder" />
 
@@ -548,6 +575,8 @@ export function generateExploreToken() {
 }
 ```
 
+`canExportCsv` and `canExportImages` add the results export and the chart image download. A [metrics catalog token](/embed/reference#metrics-catalog-token) has no export flags, so its downloads follow the write actor's role, as described in [Export options](/embed/reference#export-options).
+
 <a id="lightdashaiagent" />
 
 ### Lightdash.AiAgent
@@ -570,6 +599,7 @@ type AiAgentProps = {
   onThreadChange?: (options: { threadUuid: string }) => void; // Fires when the embed opens or creates a thread
   binding?: AiThreadBinding;        // Bind threads started here to a dashboard
   threadContext?: string;           // Background for threads started here (max 10,000 characters)
+  initialPrompt?: string;           // First message of a new thread; ignored with threadUuid
   renderMode?: 'iframe' | 'native'; // Beta: 'native' renders in your page. Default 'iframe'
   onEvent?: LightdashEventHandler;  // Charts and dashboards the agent creates or edits
   onError?: (error: SdkError) => void;
@@ -666,6 +696,43 @@ Pass `binding` to bind the thread the embed creates to a dashboard, and `threadC
 
 The dashboard must be in one of the token's write spaces or `sourceSpaceUuids`. Errors, such as a dashboard outside those spaces, surface when the first message is sent. See [Bind a thread to a dashboard](/embed/embed-ai-agents#bind-a-thread-to-a-dashboard) for what a bound thread does and how to create one from your backend.
 
+#### Ask a question when the agent opens
+
+Pass `initialPrompt` to send a question as the first message of a new thread as soon as the agent opens. Use it to show ready-made questions next to the embed, so a click asks one immediately:
+
+```tsx
+import Lightdash from '@lightdash/sdk';
+import { useState } from 'react';
+
+const SUGGESTED_QUESTIONS = ['Why did margin drop?', 'Which region grew fastest?'];
+
+function DashboardAssistant({ token, dashboardUuid }: { token: string; dashboardUuid: string }) {
+  const [question, setQuestion] = useState<string>();
+
+  return (
+    <>
+      {SUGGESTED_QUESTIONS.map((q) => (
+        <button key={q} onClick={() => setQuestion(q)}>
+          {q}
+        </button>
+      ))}
+      <Lightdash.AiAgent
+        instanceUrl="https://app.lightdash.cloud"
+        agentUuid="your-agent-uuid"
+        token={token}
+        binding={{ type: 'dashboard', dashboardUuid }}
+        initialPrompt={question}
+      />
+    </>
+  );
+}
+```
+
+- The prompt is sent the same way as a typed question, so `binding`, `threadContext`, `onThreadChange` and `onEvent` behave as they do for a first message the viewer types.
+- `initialPrompt` is ignored when `threadUuid` opens an existing thread.
+- Changing `initialPrompt` on a mounted agent starts a new thread with the new prompt. In iframe mode the iframe reloads. Clearing it leaves the viewer on their current thread.
+- In iframe mode, the prompt travels in the URL hash fragment after the token, so it isn't sent to the server in request URLs or written to server logs.
+
 #### Render the agent natively
 
 <FeatureBadge label="Beta" />
@@ -691,6 +758,7 @@ In native mode:
 - `styles.fontFamily` applies, and `onError` reports every load and request failure. In iframe mode, `onError` only reports token errors.
 - `onThreadChange` is called directly instead of through `postMessage`. Setting `threadUuid` to `undefined` opens a new thread.
 - The agent shows no toast notifications. Its messages reach [`onEvent`](#listen-to-events) as `notification` events instead, and `onError` reports failures.
+- An agent bound to a `Lightdash.Dashboard` on the same page answers with the filters, parameters, date zoom and tab the viewer has on screen.
 
 #### Token generation for AI agents
 
@@ -928,7 +996,7 @@ Use the `spaceUuids` option as a filter, not as an authorization boundary — au
 
 ### Lightdash.useLightdashAiAgentThreads
 
-Use `useLightdashAiAgentThreads` when you want to show your users a list of their previous AI agent conversations — for example a "Recent chats" sidebar next to a `Lightdash.AiAgent` embed. The hook calls the AI agent threads endpoint with the embed JWT, so it returns only the threads for the token's agent, write actor, and first write space. Viewers whose tokens share those see the same threads; `user.externalId` doesn't separate them.
+Use `useLightdashAiAgentThreads` when you want to show your users a list of their previous AI agent conversations — for example a "Recent chats" sidebar next to a `Lightdash.AiAgent` embed. The hook calls the AI agent threads endpoint with the embed JWT, so it returns only the [threads that token can open](/embed/embed-ai-agents#thread-access): those for its agent, write actor, write spaces and `user.externalId`.
 
 Pair it with `Lightdash.AiAgent`'s `threadUuid` and `onThreadChange` props to let users resume any past conversation.
 
@@ -1036,7 +1104,7 @@ function ShopInsightsAgentWithHistory({
 }
 ```
 
-`useLightdashAiAgentThreads` uses the same embed JWT you pass to `Lightdash.AiAgent`. The token's `content.agentUuid` and first write space are what scope the returned threads — the hook cannot list threads from a different agent or space, even if you pass a different `agentUuid` argument.
+`useLightdashAiAgentThreads` uses the same embed JWT you pass to `Lightdash.AiAgent`, and that token scopes the returned threads, so the hook cannot list threads from a different agent, space or viewer, even if you pass a different `agentUuid` argument.
 
 ## Generating embed tokens
 
@@ -1183,11 +1251,14 @@ Each event has a `type` and a `payload`:
 | --- | --- | --- |
 | `chartSaved` | `{ chartUuid: string; action: 'created' \| 'updated' }` | A viewer saves a new chart, or a new version of an existing one, from Explore, chart edit mode, or a dashboard tile, or the AI agent creates or edits a chart |
 | `dashboardSaved` | `{ dashboardUuid: string; action: 'created' \| 'updated' }` | A viewer saves a dashboard in edit mode, or the AI agent creates or edits a dashboard |
-| `filterChanged` | `{ hasFilters: boolean; filterCount: number }` | Dashboard filters change. Filter values aren't included |
+| `contentStateChanged` | `{ type: 'dashboard' \| 'chart' \| 'explore'; ... }` | The filters, parameters, tab, or query the viewer sees settle after load, and again after each change. See [Read what the viewer sees](#read-what-the-viewer-sees) |
+| `filterChanged` | `{ hasFilters: boolean; filterCount: number }` | Deprecated: use `contentStateChanged`, which includes the filter values. Dashboard filters change |
+| `parameterChanged` | `{ parameters: Record<string, string \| number \| string[] \| number[]> }` | A viewer changes dashboard parameters. `parameters` holds the values the dashboard now runs with, by parameter name. Not sent on load or when an editor enters edit mode |
 | `tabChanged` | `{ tabIndex: number }` | A viewer switches dashboard tab |
 | `allTilesLoaded` | `{ tilesCount: number; loadTimeMs: number }` | Every tile on the dashboard has loaded, including tiles that failed. It's sent again each time the tiles reload, for example after a tab or filter change |
 | `contentHeightChanged` | `{ height: number }` | The dashboard's rendered height changes, in CSS pixels. Sent once when the dashboard renders, then at most once every 150 ms while the height changes. Only dashboards send it |
 | `notification` | `{ id: string; variant: 'success' \| 'error' \| 'info' \| 'warning'; title: string \| null; message: string \| null }` | The embed has something to tell the viewer |
+| `appEvent` | `{ name: string; payload: unknown }` | A data app tile's code calls `emitEvent`. `name` and `payload` are chosen by the app. See [Send events to your page](/embed/embed-data-apps#send-events-to-your-page) |
 
 The `LightdashEvent` type also lists `locationChanged` and `error`. SDK components don't send either: `locationChanged` comes only from [iframe embeds](/embed/iframe), and failures go to [`onError`](#handle-errors).
 
@@ -1204,23 +1275,43 @@ In iframe mode, the agent posts events from the iframe to your page with `postMe
 
 Without these, the agent works but `onEvent` never fires. Native mode calls `onEvent` directly and needs no instance setup.
 
+### Read what the viewer sees
+
+`contentStateChanged` gives your app the state of the embed as the viewer has it now, including changes they haven't saved, for example to export what's on screen from your own UI.
+
+The event is sent once after the embed loads, then after each change. Changes less than 300 ms apart are sent as one event, and a state identical to the last one sent isn't sent again. The payload's `type` tells you which content it describes:
+
+| `type` | Sent by | Payload |
+| --- | --- | --- |
+| `dashboard` | `Lightdash.Dashboard` and `Lightdash.DashboardBuilder` | `dashboardUuid`, `activeTabUuid`, `dashboard`, `exportRequest` |
+| `chart` | `Lightdash.Chart` with `isEditMode` | `chartUuid`, `chart`, `exportRequest` |
+| `explore` | `Lightdash.Explore`, and Explore opened from **Explore from here** or a drill-down | `chart`, `exportRequest` |
+
+- `dashboard` is the dashboard as it is now: `tiles`, `tabs`, `filters`, `parameters` and `config`, with unsaved edits, the filters the viewer added and the current parameter values. Filter labels are not translated by `contentOverrides`.
+- `chart` is the chart as it is now, unsaved edits included: `tableName`, `metricQuery`, `parameters`, `chartConfig`, `tableConfig` and `pivotConfig`.
+- `exportRequest` holds the values the embed's own exports send: the filters, parameters and date zoom for a dashboard, or the `queryUuid` of the query on screen and its download options for a chart or Explore.
+
+The chart editor a viewer opens from a dashboard tile sends no `chart` or `explore` state.
+
+The SDK exports the `DashboardContentState`, `ChartContentState`, `ExploreContentState` and `ContentStateChangedPayload` types for the payload.
+
 ### Refresh a dashboard after the agent saves it
 
-An embedded `Lightdash.Dashboard` doesn't reload when the agent next to it edits the dashboard. Listen for `dashboardSaved` on the agent and remount the dashboard with a new `key`:
+An embedded `Lightdash.Dashboard` doesn't reload when the agent next to it edits the dashboard. Listen for `dashboardSaved` on the agent and change the dashboard's [`refreshKey`](#reload-the-saved-dashboard):
 
 ```tsx
 import Lightdash, { type LightdashEvent } from '@lightdash/sdk';
 import { useState } from 'react';
 
 function DashboardWithAgent({ dashboardUuid, dashboardToken, agentToken }) {
-  const [revision, setRevision] = useState(0);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   return (
     <>
       <Lightdash.Dashboard
-        key={revision}
         instanceUrl="https://app.lightdash.cloud"
         token={dashboardToken}
+        refreshKey={refreshKey}
       />
       <Lightdash.AiAgent
         instanceUrl="https://app.lightdash.cloud"
@@ -1232,7 +1323,7 @@ function DashboardWithAgent({ dashboardUuid, dashboardToken, agentToken }) {
             event.type === 'dashboardSaved' &&
             event.payload.dashboardUuid === dashboardUuid
           ) {
-            setRevision((current) => current + 1);
+            setRefreshKey((current) => current + 1);
           }
         }}
       />
@@ -1241,7 +1332,7 @@ function DashboardWithAgent({ dashboardUuid, dashboardToken, agentToken }) {
 }
 ```
 
-Remounting resets the dashboard's filters and selected tab. If the agent saves a new dashboard instead, `action` is `'created'` and `dashboardUuid` is the new dashboard; mint a dashboard token for it to show it.
+The viewer keeps their filters, parameters and active tab. If the agent saves a new dashboard instead, `action` is `'created'` and `dashboardUuid` is the new dashboard; mint a dashboard token for it to show it.
 
 ## Handle errors
 
@@ -1373,7 +1464,7 @@ Beyond the `styles` prop, you can target embedded dashboard elements directly fr
 | Class                              | Element                          |
 |------------------------------------|----------------------------------|
 | `ld-dashboard-header`              | The dashboard header bar         |
-| `ld-dashboard-filters`             | The filter bar row               |
+| `ld-dashboard-filters`             | The controls bar row             |
 | `ld-dashboard-filter`              | An individual filter pill        |
 | `ld-dashboard-date-zoom`           | The date-zoom control(s)         |
 | `ld-dashboard-parameters`          | The parameters row               |
@@ -1382,6 +1473,7 @@ Beyond the `styles` prop, you can target embedded dashboard elements directly fr
 | `ld-dashboard-date-zoom-dropdown`  | The open date-zoom menu          |
 | `ld-dashboard-parameter-dropdown`  | An open parameter's dropdown     |
 | `ld-dashboard-guided-setup`        | The guided setup card shown while [required filters or requirement groups](/explore/dashboards/filter#required-filters-and-filter-requirement-groups) are unmet |
+| `ld-dashboard-control-editor`      | The control editor popover and tile-picking row in edit mode. The popover also carries its control's dropdown class |
 
 ```css
 .ld-dashboard-filters {
@@ -1394,7 +1486,7 @@ Beyond the `styles` prop, you can target embedded dashboard elements directly fr
 }
 ```
 
-The filter, date-zoom, and parameter dropdowns render in a portal at the page root — outside the dashboard container — so target them with a global selector rather than as a descendant of the embedded dashboard.
+The filter, date-zoom, and parameter dropdowns and the control editor popover render in a portal at the page root — outside the dashboard container — so target them with a global selector rather than as a descendant of the embedded dashboard.
 
 ## Light and dark mode
 
@@ -1479,7 +1571,7 @@ Pass `filters` to `<Lightdash.Dashboard/>` to filter dimensions by value. The fi
 
 When you pass `filters`, they replace the dashboard's saved dimension filters for that embed instead of adding to them. [Locked](/explore/dashboards/filter#locking-dashboard-filters) saved filters are the exception: they stay applied, and an SDK filter on a locked field is ignored.
 
-Each SDK filter applies to every tile that has a field with the same name and type as the `model` and `field` you pass. Any per-tile targets set on the dashboard filter's **Tiles** (or **Tabs & tiles**) tab aren't used. A tile with no matching field isn't filtered.
+Each SDK filter applies to every tile that has a field with the same name and type as the `model` and `field` you pass. Any per-tile targets set on the dashboard filter aren't used. A tile with no matching field isn't filtered.
 
 <Warning>
 For the `filters` prop to work, your JWT must have `dashboardFiltersInteractivity` set to `enabled: 'all'`. Without this configuration, filters will not be applied.
@@ -1648,8 +1740,10 @@ These translation maps can be imported into tools like Locize to begin translati
 
 **Filter labels.** If a dashboard has filters with custom labels, the map includes a `filters.labels` block mapping each source label to its translation. Replace the right-hand values with the translated strings. Entries are keyed by the source label rather than by position, so translations keep working when filters are reordered, added, or removed. Renaming a filter label in Lightdash invalidates its entry, and the filter pill falls back to the untranslated label until you regenerate the map. Filters without a custom label show the field name, which isn't translatable.
 
+**Dashboard control names.** Section names, parameter control labels and date zoom names are keyed the same way; see [Dashboard control names](/embed/translate-embedded-dashboards#dashboard-control-names).
+
 <Note>
-Translations only change what viewers see. When someone saves an embedded dashboard in edit mode, Lightdash keeps the source filter labels, so the saved dashboard is unchanged for other languages.
+Translations only change what viewers see. When someone saves an embedded dashboard in edit mode, Lightdash keeps the source filter labels and control names, so the saved dashboard is unchanged for other languages.
 </Note>
 
 #### Runtime translation
@@ -1732,6 +1826,7 @@ Keys are flat dot-paths, namespaced by the surface they translate:
 
 - `filters.*` – operator labels (including date-specific variants), units of time, filter pills, the add/edit filter popover, value inputs, autocomplete states, the collapsed filter-bar summary, cross-filtering menu items, and the required-filters flow viewers see
 - `dateZoom.*` – the date zoom control, granularity names, tooltips, and the per-tile zoom indicator
+- `controls.*` – the dashboard controls bar and editor: sections, the **Untitled section** name, and the control editors
 - `tileMenu.*` – the tile menu: Explore from here, Download data, Export image, View underlying data
 - `dashboard.*` – dashboard-level export and print buttons
 - `explorer.*` – the Back button that returns from an embedded Explore to the dashboard, chart, or starting query
