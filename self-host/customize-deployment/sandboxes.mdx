@@ -47,6 +47,7 @@ the provider with the `SANDBOX_PROVIDER` environment variable.
 | **AWS Lambda MicroVMs** | `lambda-microvm` | Production on AWS (self-hosted) | microVM | <Icon icon="x" className="matrix-no" /> |
 | **Azure Container Apps Sandboxes** | `azure-sandboxes` | Production on Azure (self-hosted) | microVM | <Icon icon="check" /> |
 | **Google Cloud Run Sandboxes** | `gcp-cloud-run` | GCP (self-hosted, preview) | gVisor | <Icon icon="check" /> |
+| **GKE Agent Sandbox** | `gke-agent-sandbox` | Python execution on GKE (self-hosted) | gVisor | <Icon icon="check" /> |
 | **Local Docker** | `docker` | Local development only | container | <Icon icon="check" /> |
 
 </div>
@@ -645,6 +646,121 @@ upgrading Lightdash alone doesn't change what runs in the sandbox.
 Redeploying replaces the single gateway instance, so active sandboxes are lost. Upgrade
 during a quiet period. To roll back, redeploy the previous version's tag or digest.
 
+## GKE Agent Sandbox (self-hosted)
+
+Use the `gke-agent-sandbox` provider to run [Python execution](#python-execution) sandboxes
+as [gVisor](https://gvisor.dev) pods in your own GKE cluster. Lightdash claims a pre-started
+pod from a warm pool for each run, drives it through the Kubernetes exec API, and deletes
+the claim when the run finishes.
+
+<Note>
+This provider runs Python execution only. Data app generation and AI writeback fail with a
+configuration error while `SANDBOX_PROVIDER=gke-agent-sandbox`.
+</Note>
+
+### Prerequisites
+
+- **A GKE cluster with the Agent Sandbox add-on**, which installs the `SandboxTemplate`,
+  `SandboxWarmPool`, and `SandboxClaim` resources. See
+  [Agent Sandbox on GKE](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/machine-learning/agent-sandbox).
+- **A gVisor node pool.** Sandbox pods only schedule on nodes created with
+  `--sandbox type=gvisor`:
+
+  ```bash
+  gcloud container node-pools create gvisor \
+    --cluster <cluster> --location <location> \
+    --machine-type n2-standard-4 --num-nodes 2 \
+    --image-type cos_containerd --sandbox type=gvisor
+  ```
+
+- **Network policy enforcement** (GKE Dataplane V2), so the sandbox network policy applies.
+- **The Lightdash backend and scheduler running in the same cluster.** They authenticate to
+  the Kubernetes API with their pod's service account.
+
+### 1. Build the Python runner image
+
+Build the image from a checkout of the Lightdash repository at the version you deploy, and
+push it to a registry your cluster can pull from. The node pool above runs `linux/amd64`,
+so build on a machine with that architecture:
+
+```bash
+./sandboxes/python-runner/build-local-image.sh <your-registry>/lightdash-python-runner:<lightdash-version>
+docker push <your-registry>/lightdash-python-runner:<lightdash-version>
+```
+
+### 2. Create the template, warm pool, and network policy
+
+`sandboxes/python-runner/gke/sandbox-template.yaml` in the Lightdash repository defines all
+three in a `sandboxes` namespace. Set `image` to the image you pushed, then apply it:
+
+```bash
+kubectl create namespace sandboxes
+kubectl apply -f sandboxes/python-runner/gke/sandbox-template.yaml
+```
+
+The file sets up:
+
+- **A `SandboxTemplate`** that runs each pod on the `gvisor` runtime class as a non-root
+  user, with 1 vCPU and 1 GiB of memory and no service account token.
+- **A `SandboxWarmPool`** that keeps `replicas` pods started and ready. A run that finds a
+  ready pod starts immediately; when the pool is empty, the run waits for a new pod to
+  start. Set `replicas` to the number of Python runs you expect to start at the same time,
+  and size the node pool to fit the warm pods plus the pods in use.
+- **A deny-all `NetworkPolicy`.** The add-on's default policy allows sandboxes to reach the
+  public internet, so the template sets `networkPolicyManagement: Unmanaged` and the policy
+  blocks all sandbox traffic. Lightdash doesn't configure sandbox networking on this
+  provider: if you change or remove the policy, Python code can reach whatever it allows.
+
+### 3. Let Lightdash claim sandboxes
+
+Grant the service account your backend and scheduler run as these permissions in the
+sandbox namespace:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: lightdash-sandbox-driver
+  namespace: sandboxes
+rules:
+  - apiGroups: ["extensions.agents.x-k8s.io"]
+    resources: ["sandboxclaims"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: lightdash-sandbox-driver
+  namespace: sandboxes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: lightdash-sandbox-driver
+subjects:
+  - kind: ServiceAccount
+    name: <lightdash-service-account>
+    namespace: <lightdash-namespace>
+```
+
+### 4. Configure Lightdash
+
+Set these on both the backend and the scheduler, then
+[turn Python execution on](#turn-it-on):
+
+```bash
+SANDBOX_PROVIDER=gke-agent-sandbox
+GKE_AGENT_SANDBOX_PYTHON_NAMESPACE=sandboxes
+GKE_AGENT_SANDBOX_PYTHON_WARM_POOL=python-runner
+```
+
+### Upgrading
+
+When you upgrade Lightdash, build the runner image for the new version and update `image`
+in the `SandboxTemplate`, then apply the file again.
+
 ## Local Docker provider (development)
 
 For local development you can run sandboxes as plain Docker containers on your own machine
@@ -712,7 +828,8 @@ must return a pandas DataFrame.
 ### Supported providers
 
 Python execution runs on the **E2B**, **Azure Container Apps Sandboxes**, **Google Cloud
-Run**, and **Local Docker** providers. It doesn't work on `lambda-microvm`.
+Run**, **GKE Agent Sandbox**, and **Local Docker** providers. It doesn't work on
+`lambda-microvm`.
 
 ### Make sure the Python sandbox exists
 
@@ -733,6 +850,9 @@ Run**, and **Local Docker** providers. It doesn't work on `lambda-microvm`.
 - **Google Cloud Run** — deploy the separate Python gateway and set
   `GCP_CLOUD_RUN_PYTHON_SANDBOX_URL` and `GCP_CLOUD_RUN_PYTHON_SANDBOX_SECRET`. See
   [Deploy the Python gateway](#6-deploy-the-python-gateway-optional).
+- **GKE Agent Sandbox** — create the template and warm pool and set
+  `GKE_AGENT_SANDBOX_PYTHON_NAMESPACE` and `GKE_AGENT_SANDBOX_PYTHON_WARM_POOL`. See
+  [GKE Agent Sandbox](#gke-agent-sandbox-self-hosted).
 - **Azure Container Apps Sandboxes** — build the image from `sandboxes/python-runner/` and
   register it as a disk image in a dedicated Python sandbox group. The directory ships an
   E2B Dockerfile, so first derive `Dockerfile.local` from it with
@@ -795,7 +915,7 @@ destroy the sandbox, so nothing idles in the first place.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `SANDBOX_PROVIDER` | `e2b` | Sandbox backend: `e2b`, `lambda-microvm`, `azure-sandboxes`, `gcp-cloud-run`, or `docker`. |
+| `SANDBOX_PROVIDER` | `e2b` | Sandbox backend: `e2b`, `lambda-microvm`, `azure-sandboxes`, `gcp-cloud-run`, `gke-agent-sandbox`, or `docker`. |
 | `ANTHROPIC_API_KEY` | — | API key for the Claude Code agent running inside the sandbox. |
 | `E2B_API_KEY` | — | E2B API key (required when `SANDBOX_PROVIDER=e2b`). |
 | `E2B_TEMPLATE_NAME` | `lightdash/lightdash-data-app` | E2B template for data app sandboxes. |
@@ -826,6 +946,9 @@ destroy the sandbox, so nothing idles in the first place.
 | `GCP_CLOUD_RUN_SANDBOX_SECRET` | — | Shared secret the data app gateway was deployed with (required for data apps when `gcp-cloud-run`). |
 | `GCP_CLOUD_RUN_PYTHON_SANDBOX_URL` | — | URL of the Python sandbox gateway Cloud Run service (required for Python execution when `gcp-cloud-run`). |
 | `GCP_CLOUD_RUN_PYTHON_SANDBOX_SECRET` | — | Shared secret the Python gateway was deployed with (required for Python execution when `gcp-cloud-run`). |
+| `GKE_AGENT_SANDBOX_PYTHON_NAMESPACE` | — | Namespace holding the Python sandbox warm pool (required for Python execution when `SANDBOX_PROVIDER=gke-agent-sandbox`). |
+| `GKE_AGENT_SANDBOX_PYTHON_WARM_POOL` | — | Name of the `SandboxWarmPool` Python sandboxes are claimed from (required for Python execution when `gke-agent-sandbox`). |
+| `GKE_AGENT_SANDBOX_PYTHON_CONTAINER` | `runner` | Container in the sandbox pod that commands run in (`gke-agent-sandbox`). |
 | `SANDBOX_DOCKER_IMAGE` | `lightdash-sandbox:local` | Local image for data app sandboxes (`docker` provider). |
 | `SANDBOX_AI_WRITEBACK_DOCKER_IMAGE` | `lightdash-ai-writeback:local` | Local image for writeback sandboxes (`docker` provider). |
 | `SANDBOX_PYTHON_DOCKER_IMAGE` | `lightdash-python-runner:local` | Local image for Python execution sandboxes (`docker` provider). |
