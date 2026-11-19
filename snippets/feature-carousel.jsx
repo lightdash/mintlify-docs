@@ -3,7 +3,8 @@
     export.
 
     The carousel only presents: titles, descriptions and media are passed in
-    by the page that owns them. Every description is rendered at once and
+    by the page that owns them. An item's optional imageDark replaces image
+    in dark mode; without it, image shows in both themes. Every description is rendered at once and
     stacked in one grid cell so the card keeps the height of the longest one
     and the controls never jump between slides.
 
@@ -29,7 +30,15 @@ export const FeatureCarousel = ({ label, items }) => {
     <section className="feature-carousel" aria-roledescription="carousel" aria-label={label} onKeyDown={onKeyDown}>
       <div className="feature-carousel-media">
         <Frame>
-          <img key={current.image} src={current.image} alt={current.alt} />
+          <img
+            key={current.image}
+            className={current.imageDark ? "feature-carousel-image-light" : undefined}
+            src={current.image}
+            alt={current.alt}
+          />
+          {current.imageDark && (
+            <img key={current.imageDark} className="feature-carousel-image-dark" src={current.imageDark} alt={current.alt} />
+          )}
         </Frame>
         <button type="button" className="feature-carousel-arrow is-previous" aria-label="Previous" onClick={() => go(active - 1)}>
           {chevron}
