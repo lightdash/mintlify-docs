@@ -599,6 +599,7 @@ type AiAgentProps = {
   onThreadChange?: (options: { threadUuid: string }) => void; // Fires when the embed opens or creates a thread
   binding?: AiThreadBinding;        // Bind threads started here to a dashboard
   threadContext?: string;           // Background for threads started here (max 10,000 characters)
+  initialPrompt?: string;           // First message of a new thread; ignored with threadUuid
   renderMode?: 'iframe' | 'native'; // Beta: 'native' renders in your page. Default 'iframe'
   onEvent?: LightdashEventHandler;  // Charts and dashboards the agent creates or edits
   onError?: (error: SdkError) => void;
@@ -694,6 +695,43 @@ Pass `binding` to bind the thread the embed creates to a dashboard, and `threadC
 ```
 
 The dashboard must be in one of the token's write spaces or `sourceSpaceUuids`. Errors, such as a dashboard outside those spaces, surface when the first message is sent. See [Bind a thread to a dashboard](/embed/embed-ai-agents#bind-a-thread-to-a-dashboard) for what a bound thread does and how to create one from your backend.
+
+#### Ask a question when the agent opens
+
+Pass `initialPrompt` to send a question as the first message of a new thread as soon as the agent opens. Use it to show ready-made questions next to the embed, so a click asks one immediately:
+
+```tsx
+import Lightdash from '@lightdash/sdk';
+import { useState } from 'react';
+
+const SUGGESTED_QUESTIONS = ['Why did margin drop?', 'Which region grew fastest?'];
+
+function DashboardAssistant({ token, dashboardUuid }: { token: string; dashboardUuid: string }) {
+  const [question, setQuestion] = useState<string>();
+
+  return (
+    <>
+      {SUGGESTED_QUESTIONS.map((q) => (
+        <button key={q} onClick={() => setQuestion(q)}>
+          {q}
+        </button>
+      ))}
+      <Lightdash.AiAgent
+        instanceUrl="https://app.lightdash.cloud"
+        agentUuid="your-agent-uuid"
+        token={token}
+        binding={{ type: 'dashboard', dashboardUuid }}
+        initialPrompt={question}
+      />
+    </>
+  );
+}
+```
+
+- The prompt is sent the same way as a typed question, so `binding`, `threadContext`, `onThreadChange` and `onEvent` behave as they do for a first message the viewer types.
+- `initialPrompt` is ignored when `threadUuid` opens an existing thread.
+- Changing `initialPrompt` on a mounted agent starts a new thread with the new prompt. In iframe mode the iframe reloads. Clearing it leaves the viewer on their current thread.
+- In iframe mode, the prompt travels in the URL hash fragment after the token, so it isn't sent to the server in request URLs or written to server logs.
 
 #### Render the agent natively
 
