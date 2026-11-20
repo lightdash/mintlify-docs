@@ -419,6 +419,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Cancel query","href":"/api-reference/v2/cancel-query","parents":["Reference","v2"]},
 {"title":"Calculate totals","href":"/api-reference/v2/calculate-totals","parents":["Reference","v2"]},
 {"title":"Execute merge query","href":"/api-reference/v2/execute-merge-query","parents":["Reference","v2"]},
+{"title":"Execute saved chart merge query","href":"/api-reference/v2/execute-saved-chart-merge-query","parents":["Reference","v2"]},
 {"title":"Execute compose merge query","href":"/api-reference/v2/execute-compose-merge-query","parents":["Reference","v2"]},
 {"title":"Execute metric query","href":"/api-reference/v2/execute-metric-query","parents":["Reference","v2"]},
 {"title":"Estimate metric query","href":"/api-reference/v2/estimate-metric-query","parents":["Reference","v2"]},
