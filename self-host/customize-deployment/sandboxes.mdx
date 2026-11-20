@@ -649,9 +649,9 @@ during a quiet period. To roll back, redeploy the previous version's tag or dige
 ## GKE Agent Sandbox (self-hosted)
 
 Use the `gke-agent-sandbox` provider to run [Python execution](#python-execution) sandboxes
-as [gVisor](https://gvisor.dev) pods in your own GKE cluster. Lightdash claims a pre-started
-pod from a warm pool for each run, drives it through the Kubernetes exec API, and deletes
-the claim when the run finishes.
+as [gVisor](https://gvisor.dev) pods in your own GKE cluster. For each run, Lightdash claims
+a started pod from a warm pool, runs commands in the pod through the Kubernetes exec API,
+and deletes the claim when the run finishes.
 
 <Note>
 This provider runs Python execution only. Data app generation and AI writeback fail with a
@@ -660,11 +660,11 @@ configuration error while `SANDBOX_PROVIDER=gke-agent-sandbox`.
 
 ### Prerequisites
 
-- **A GKE cluster with the Agent Sandbox add-on**, which installs the `SandboxTemplate`,
-  `SandboxWarmPool`, and `SandboxClaim` resources. See
+- **A GKE cluster with the Agent Sandbox add-on**, Autopilot or Standard. The add-on
+  installs the `SandboxTemplate`, `SandboxWarmPool`, and `SandboxClaim` resources. See
   [Agent Sandbox on GKE](https://docs.cloud.google.com/kubernetes-engine/docs/concepts/machine-learning/agent-sandbox).
-- **A gVisor node pool.** Sandbox pods only schedule on nodes created with
-  `--sandbox type=gvisor`:
+- **gVisor nodes.** Autopilot creates them when the first sandbox pod is scheduled. On a
+  Standard cluster, create a node pool with `--sandbox type=gvisor`:
 
   ```bash
   gcloud container node-pools create gvisor \
@@ -673,15 +673,17 @@ configuration error while `SANDBOX_PROVIDER=gke-agent-sandbox`.
     --image-type cos_containerd --sandbox type=gvisor
   ```
 
-- **Network policy enforcement** (GKE Dataplane V2), so the sandbox network policy applies.
+- **Network policy enforcement.** Autopilot clusters always enforce network policies. A
+  Standard cluster needs GKE Dataplane V2. Without enforcement, the policy in
+  [Restrict sandbox network access](#restrict-sandbox-network-access) has no effect.
 - **The Lightdash backend and scheduler running in the same cluster.** They authenticate to
   the Kubernetes API with their pod's service account.
 
 ### 1. Build the Python runner image
 
 Build the image from a checkout of the Lightdash repository at the version you deploy, and
-push it to a registry your cluster can pull from. The node pool above runs `linux/amd64`,
-so build on a machine with that architecture:
+push it to a registry that your cluster can pull from. gVisor nodes run `linux/amd64`, so
+build on a machine with that architecture:
 
 ```bash
 ./sandboxes/python-runner/build-local-image.sh <your-registry>/lightdash-python-runner:<lightdash-version>
@@ -690,26 +692,30 @@ docker push <your-registry>/lightdash-python-runner:<lightdash-version>
 
 ### 2. Create the template, warm pool, and network policy
 
-`sandboxes/python-runner/gke/sandbox-template.yaml` in the Lightdash repository defines all
-three in a `sandboxes` namespace. Set `image` to the image you pushed, then apply it:
+In the Lightdash repository, `sandboxes/python-runner/gke/sandbox-template.yaml` defines all
+three resources in a `sandboxes` namespace. The same file works on Autopilot and Standard
+clusters. Set `image` to the image you pushed, then apply the file:
 
 ```bash
 kubectl create namespace sandboxes
 kubectl apply -f sandboxes/python-runner/gke/sandbox-template.yaml
 ```
 
-The file sets up:
+The file creates these resources:
 
 - **A `SandboxTemplate`** that runs each pod on the `gvisor` runtime class as a non-root
-  user, with 1 vCPU and 1 GiB of memory and no service account token.
+  user, with 1 vCPU, 1 GiB of memory, and no service account token.
 - **A `SandboxWarmPool`** that keeps `replicas` pods started and ready. A run that finds a
-  ready pod starts immediately; when the pool is empty, the run waits for a new pod to
-  start. Set `replicas` to the number of Python runs you expect to start at the same time,
-  and size the node pool to fit the warm pods plus the pods in use.
-- **A deny-all `NetworkPolicy`.** The add-on's default policy allows sandboxes to reach the
-  public internet, so the template sets `networkPolicyManagement: Unmanaged` and the policy
-  blocks all sandbox traffic. Lightdash doesn't configure sandbox networking on this
-  provider: if you change or remove the policy, Python code can reach whatever it allows.
+  ready pod starts immediately. When the pool is empty, the run waits for a new pod to
+  start. Set `replicas` to the number of Python runs that you expect to start at the same
+  time.
+- **A `NetworkPolicy`** that blocks all traffic to and from sandbox pods. See
+  [Restrict sandbox network access](#restrict-sandbox-network-access).
+
+A new pod needs a gVisor node with free capacity. On a Standard cluster, size the node
+pool to fit the warm pods plus the pods in use. On Autopilot, a pod that needs a new node
+can wait several minutes for GKE to create it, so keep the warm pool large enough that runs
+don't wait for a node.
 
 ### 3. Let Lightdash claim sandboxes
 
@@ -745,15 +751,54 @@ subjects:
     namespace: <lightdash-namespace>
 ```
 
-### 4. Configure Lightdash
+### 4. Select the provider in Lightdash
 
-Set these on both the backend and the scheduler, then
+Set these variables on both the backend and the scheduler, then
 [turn Python execution on](#turn-it-on):
 
 ```bash
 SANDBOX_PROVIDER=gke-agent-sandbox
 GKE_AGENT_SANDBOX_PYTHON_NAMESPACE=sandboxes
 GKE_AGENT_SANDBOX_PYTHON_WARM_POOL=python-runner
+```
+
+### Restrict sandbox network access
+
+Python sandboxes run code that users and AI agents write, so block all of their network
+traffic.
+Lightdash doesn't set network rules on this provider. The policies in your cluster decide
+what a sandbox can reach.
+
+Without your own policy, the Agent Sandbox add-on creates a default one for each template.
+That default policy blocks private IP ranges and the metadata server, but it allows
+sandboxes to connect to the public internet. Code in a sandbox could then send query
+results to any public host.
+
+Python execution needs no network access. Lightdash writes the inputs and reads the results
+through the Kubernetes exec API, which reaches the pod through the node and not through the
+pod network. To block all traffic, keep both of these settings from
+`sandbox-template.yaml`:
+
+- **`networkPolicyManagement: Unmanaged`** on the `SandboxTemplate`, so the add-on doesn't
+  create its default policy.
+- **The `python-runner-deny-all` `NetworkPolicy`**, which selects the sandbox pods and
+  allows no ingress and no egress.
+
+Apply these practices to the rest of the setup:
+
+- **Use a namespace that holds only sandbox pods.** The role in
+  [step 3](#3-let-lightdash-claim-sandboxes) lets Lightdash run commands in every pod in
+  that namespace.
+- **Keep `automountServiceAccountToken: false`** in the template, so code in a sandbox has
+  no Kubernetes credentials.
+- **Don't add egress rules for Python execution.** The image already contains the
+  libraries, and nothing is installed at runtime.
+
+To check the policy, run a request from a warm pod. The request must fail:
+
+```bash
+kubectl -n sandboxes exec <sandbox-pod> -- \
+  python3 -c "import urllib.request; urllib.request.urlopen('https://example.com', timeout=5)"
 ```
 
 ### Upgrading
