@@ -161,6 +161,25 @@ aws_session_token: "{{ env_var('AWS_SESSION_TOKEN') }}"
 
 Queries in the preview stop working when temporary credentials expire; refresh them and run `lightdash preview` again. If the target has no keys, the preview uses IAM role authentication, which runs as the Lightdash server's own AWS identity rather than yours. To use the upstream project's saved connection instead, pass `--no-warehouse-credentials`.
 
+### Snowflake with `authenticator: oauth`
+
+If your dbt Snowflake profile sets `authenticator: oauth` with an OAuth access token in `token`, `lightdash preview`, `lightdash compile` and `lightdash deploy` use that token for the warehouse catalog lookup. `user` is optional with this authenticator. The CLI doesn't send the profile's `role`, so the session uses the role the token was issued for.
+
+```yaml
+dev:
+  type: snowflake
+  account: abc123
+  authenticator: oauth
+  token: "{{ env_var('SNOWFLAKE_OAUTH_TOKEN') }}"
+  database: ANALYTICS
+  warehouse: TRANSFORMING
+  schema: dbt_me
+```
+
+The access token expires, so Lightdash never stores it on the project. If your instance has [Sign in with Snowflake](/integrations/connect-project#sign-in-with-snowflake) turned on, the project or preview is created to ask each user to sign in with Snowflake in Lightdash. If it doesn't, the CLI warns and creates it without warehouse credentials, as with `--no-warehouse-credentials`. In that case, re-running `lightdash start-preview` on an existing preview, or running `lightdash set-warehouse`, leaves the stored credentials unchanged.
+
+The refresh-token form of Snowflake OAuth, where the profile also sets `oauth_client_id` and `oauth_client_secret`, isn't supported, because the CLI doesn't exchange the refresh token. The CLI also stops with an error when `authenticator: oauth` has no `token`, or when another authenticator has no password or private key. To continue without a warehouse connection, pass `--skip-warehouse-catalog`. When `lightdash deploy` creates a project, also pass `--no-warehouse-credentials`.
+
 ## Permissions
 
 ### Permissions are copied from the parent project
