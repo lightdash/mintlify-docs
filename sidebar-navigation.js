@@ -543,6 +543,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Discard one model from my semantic layer draft","href":"/api-reference/semantic-studio/discard-one-model-from-my-semantic-layer-draft","parents":["Reference","Semantic Studio"]},
 {"title":"Reorder a change in my semantic layer draft","href":"/api-reference/semantic-studio/reorder-a-change-in-my-semantic-layer-draft","parents":["Reference","Semantic Studio"]},
 {"title":"Keep my draft of a model over what was published since","href":"/api-reference/semantic-studio/keep-my-draft-of-a-model-over-what-was-published-since","parents":["Reference","Semantic Studio"]},
+{"title":"Save an edit of a model to my semantic layer draft","href":"/api-reference/semantic-studio/save-an-edit-of-a-model-to-my-semantic-layer-draft","parents":["Reference","Semantic Studio"]},
 {"title":"Take the live version of one part of my drafted model","href":"/api-reference/semantic-studio/take-the-live-version-of-one-part-of-my-drafted-model","parents":["Reference","Semantic Studio"]},
 {"title":"Discard a change from my semantic layer draft","href":"/api-reference/semantic-studio/discard-a-change-from-my-semantic-layer-draft","parents":["Reference","Semantic Studio"]},
 {"title":"Undo semantic layer changes","href":"/api-reference/semantic-studio/undo-semantic-layer-changes","parents":["Reference","Semantic Studio"]},
