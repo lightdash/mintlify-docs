@@ -715,6 +715,7 @@ Enterprise-only. For setup steps and when a pre-aggregate worker is needed, see 
 | `PRE_AGGREGATES_PARQUET_ENABLED`             | Store materializations as Parquet files instead of JSON Lines. Set `true`. (default=false)                                                              |
 | `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT`    | Memory per project query instance. Uses DuckDB's default when unset.                                                                                          |
 | `PRE_AGGREGATE_DUCKDB_WRITE_MEMORY_LIMIT`   | Memory per managed Parquet conversion. Use a positive whole number with `MB` or `GB` (e.g. `1GB`). Defaults to `256MB`. |
+| `PRE_AGGREGATE_MATERIALIZATION_TIMEOUT_MS`   | How long, in milliseconds, the scheduler waits for a materialization query to finish before it gives up. Raise it for very wide or large pre-aggregates. (default=1800000, 30 minutes) |
 | `PRE_AGGREGATE_RESULTS_S3_BUCKET`            | S3 bucket for pre-aggregate Parquet storage. Required when configuring pre-aggregate result storage.                                                  |
 | `PRE_AGGREGATE_RESULTS_S3_REGION`            | Region for the pre-aggregate S3 bucket. Required when configuring pre-aggregate result storage.                                                       |
 | `PRE_AGGREGATE_RESULTS_S3_ACCESS_KEY`        | Access key for the pre-aggregate S3 bucket.                                                                                                          |
@@ -1067,7 +1068,11 @@ Set `LD_SETUP_USER_ATTRIBUTES` to a JSON array to declare [user attributes](/wor
 
 <FeatureBadge label="Enterprise" />
 
-On every boot, Lightdash matches each entry to an existing user attribute by its `name`: new names are created, existing names are updated in place. Attributes that are not present in the array are left untouched — this reconcile is non-destructive and never deletes attributes you created in the UI.
+On every boot, Lightdash matches each entry to an existing user attribute by its `name`: new names are created, existing names are overwritten. Attributes not in the array are left untouched.
+
+<Warning>
+  Every deploy replaces a declared attribute's description, default and assignments with what the config says. Groups not listed in `groups` are unassigned, a default left out of the entry is cleared, and per-user (by-email) values are removed, including ones set in the UI, the API or by an identity provider. To manage an attribute in the UI or API instead, leave it out of the array.
+</Warning>
 
 ### Schema
 
@@ -1099,11 +1104,11 @@ LD_SETUP_USER_ATTRIBUTES='[
 
 Group bindings are resolved **by group name** because group UUIDs aren't known at deploy time — groups provisioned via [SCIM](/workspace-admin/sso/scim) are created by your IdP, not by Lightdash.
 
-If a group name in `groups` doesn't match any existing group at the time the deploy runs (for example, because SCIM hasn't synced it yet), Lightdash logs a warning and skips that mapping rather than failing the deploy. The mapping is retried on the next deploy, so once the group exists the binding reconciles automatically.
+If a group name in `groups` doesn't match any existing group at the time the deploy runs (for example, because SCIM hasn't synced it yet), Lightdash logs a warning and skips that mapping rather than failing the deploy. The mapping is retried on the next deploy, so once the group exists the binding reconciles automatically. Because the assignment set is replaced, a skipped mapping leaves that group without a value for the attribute until then.
 
 ### Per-user mappings
 
-`LD_SETUP_USER_ATTRIBUTES` only supports group-based mappings. Per-user (by-email) values still need to be assigned through the UI or API.
+`LD_SETUP_USER_ATTRIBUTES` only supports group-based mappings. For per-user (by-email) values, leave the attribute out of the array and assign them in the UI or API.
 
 <a id="declare-group--project-access" />
 
