@@ -523,6 +523,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Leave my Semantic Studio workspace","href":"/api-reference/semantic-studio/leave-my-semantic-studio-workspace","parents":["Reference","Semantic Studio"]},
 {"title":"Get my Semantic Studio checkout","href":"/api-reference/semantic-studio/get-my-semantic-studio-checkout","parents":["Reference","Semantic Studio"]},
 {"title":"Compile my Semantic Studio checkout","href":"/api-reference/semantic-studio/compile-my-semantic-studio-checkout","parents":["Reference","Semantic Studio"]},
+{"title":"Claim a Semantic Studio compile follow-up","href":"/api-reference/semantic-studio/claim-a-semantic-studio-compile-follow-up","parents":["Reference","Semantic Studio"]},
 {"title":"Publish my Semantic Studio checkout","href":"/api-reference/semantic-studio/publish-my-semantic-studio-checkout","parents":["Reference","Semantic Studio"]},
 {"title":"List Semantic Studio source files","href":"/api-reference/semantic-studio/list-semantic-studio-source-files","parents":["Reference","Semantic Studio"]},
 {"title":"Read a Semantic Studio source file","href":"/api-reference/semantic-studio/read-a-semantic-studio-source-file","parents":["Reference","Semantic Studio"]},
