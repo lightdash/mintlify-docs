@@ -744,6 +744,9 @@ For native projects, see [Deploy Lightdash YAML](/semantic-layer/yaml#step-4-dep
 - `--disable-timestamp-conversion [true|false]`
   - (default: false)
   - Snowflake only. Disable converting timestamps to UTC. Only honored together with `--create`; the value is persisted to the new project. When deploying to an existing project, the flag is ignored with a warning and the saved project setting is used instead.
+- `--prune`
+  - (default: false)
+  - Remove every explore that the deploy doesn't upload, so the project holds exactly the selected models. See [Partial deploys](#partial-deploys).
 
 
 **Examples:**
@@ -774,7 +777,15 @@ lightdash deploy --select "tag:marketing" --combine-manifest ./prod-manifest.jso
 
 #### Partial deploys
 
-A deploy with `--select` adds and updates explores for the selected models and leaves every other previously deployed explore unchanged. It never removes an explore whose model still exists in the project, even when that model is in the selection. Changes that remove an explore, such as setting [`hidden: true`](/semantic-layer/tables#hiding-the-base-explore) on a base explore or deleting an entry from `explores:`, only take effect on a full `lightdash deploy` without `--select` or on [`lightdash refresh`](#lightdash-refresh).
+A deploy with a [selection flag](#dbt-node-selection), such as `--select`, adds and updates explores for the selected models and keeps every other previously deployed explore by default. It never removes an explore whose model still exists in the project, even when that model is in the selection. Changes that remove an explore, such as setting [`hidden: true`](/semantic-layer/tables#hiding-the-base-explore) on a base explore or deleting an entry from `explores:`, take effect on a full `lightdash deploy` without a selection flag, on [`lightdash refresh`](#lightdash-refresh), or on a partial deploy with `--prune`.
+
+To make the project match the selection, add `--prune`. The deploy removes every explore it doesn't upload, so the project holds exactly the selected models. [Virtual views](/semantic-layer/virtual-views) are kept.
+
+```bash
+lightdash deploy --select tag:lightdash --prune
+```
+
+Charts built on a removed explore break, the same as after a full deploy, and show in the [validator](/workflow/validating-your-content). The CLI refuses `--prune` on a project with more than one dbt source and together with `--combine-manifest`, because the deploy would remove the explores that come from the other source or manifest. Without a selection flag, `--prune` deploys like a full deploy.
 
 
 ### `lightdash refresh`
