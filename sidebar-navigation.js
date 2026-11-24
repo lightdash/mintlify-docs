@@ -176,6 +176,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Set up and manage","href":"/integrations/live-data-sources/set-up-and-manage","parents":["Integrations","Live data sources"]},
 {"title":"PostHog","href":"/integrations/live-data-sources/posthog","parents":["Integrations","Live data sources"]},
 {"title":"Amplitude","href":"/integrations/live-data-sources/amplitude","parents":["Integrations","Live data sources"]},
+{"title":"Mixpanel","href":"/integrations/live-data-sources/mixpanel","parents":["Integrations","Live data sources"]},
 {"title":"Google Analytics 4","href":"/integrations/live-data-sources/google-analytics","parents":["Integrations","Live data sources"]},
 {"title":"Google Search Console","href":"/integrations/live-data-sources/google-search-console","parents":["Integrations","Live data sources"]},
 {"title":"Meta Ads","href":"/integrations/live-data-sources/meta-ads","parents":["Integrations","Live data sources"]},
