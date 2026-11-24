@@ -124,7 +124,6 @@ window.lightdashSidebarNavigation = [
 {"title":"Agent context","href":"/agents/agent-context","parents":["Agents","Improve answers"]},
 {"title":"Knowledge documents","href":"/agents/knowledge-documents","parents":["Agents","Improve answers"]},
 {"title":"Custom agent skills","href":"/agents/custom-agent-skills","parents":["Agents","Improve answers"]},
-{"title":"Verified answers","href":"/agents/verified-answers","parents":["Agents","Improve answers"]},
 {"title":"Create evaluation suites","href":"/agents/create-evaluation-suites","parents":["Agents","Improve answers"]},
 {"title":"Visibility","href":"/agents/visibility","parents":["Agents","Improve answers"]},
 {"title":"Issues","href":"/agents/issues","parents":["Agents","Improve answers"]},
