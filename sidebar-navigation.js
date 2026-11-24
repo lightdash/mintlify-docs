@@ -542,6 +542,8 @@ window.lightdashSidebarNavigation = [
 {"title":"Apply my semantic layer draft","href":"/api-reference/semantic-studio/apply-my-semantic-layer-draft","parents":["Reference","Semantic Studio"]},
 {"title":"Apply one model from my semantic layer draft","href":"/api-reference/semantic-studio/apply-one-model-from-my-semantic-layer-draft","parents":["Reference","Semantic Studio"]},
 {"title":"Discard one model from my semantic layer draft","href":"/api-reference/semantic-studio/discard-one-model-from-my-semantic-layer-draft","parents":["Reference","Semantic Studio"]},
+{"title":"Get another person's semantic layer draft of a model","href":"/api-reference/semantic-studio/get-another-persons-semantic-layer-draft-of-a-model","parents":["Reference","Semantic Studio"]},
+{"title":"Discard one model from another person's stale semantic layer draft","href":"/api-reference/semantic-studio/discard-one-model-from-another-persons-stale-semantic-layer-draft","parents":["Reference","Semantic Studio"]},
 {"title":"Reorder a change in my semantic layer draft","href":"/api-reference/semantic-studio/reorder-a-change-in-my-semantic-layer-draft","parents":["Reference","Semantic Studio"]},
 {"title":"Keep my draft of a model over what was published since","href":"/api-reference/semantic-studio/keep-my-draft-of-a-model-over-what-was-published-since","parents":["Reference","Semantic Studio"]},
 {"title":"Save an edit of a model to my semantic layer draft","href":"/api-reference/semantic-studio/save-an-edit-of-a-model-to-my-semantic-layer-draft","parents":["Reference","Semantic Studio"]},
