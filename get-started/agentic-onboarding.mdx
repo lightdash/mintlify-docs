@@ -1,7 +1,7 @@
 ---
-title: "Agentic onboarding with Aurora"
+title: "Agentic onboarding with the Analytics agent"
 sidebarTitle: "Agentic onboarding"
-description: Sign up, connect a warehouse, and chat with Aurora before any dbt models exist
+description: Sign up, connect a warehouse, and chat with an AI agent before any dbt models exist
 tag: "Beta"
 ---
 
@@ -10,12 +10,7 @@ import { FeatureBadge } from '/snippets/feature-badge.jsx';
 
 <div className="feature-badges"><FeatureBadge label="Beta" /></div>
 
-<Info>
-  Agentic onboarding is gated by a feature flag. Contact Lightdash
-    support to enable it for your organization or instance.
-</Info>
-
-Agentic onboarding is a guided flow for brand-new organizations. You sign up with an email, set up your organization, connect a warehouse, and land on a provisioned **Getting started** homepage where **Aurora** — a default AI agent Lightdash creates for the new project — is ready to chat. Because Aurora runs in SQL mode from day zero, you can query your warehouse before you've built any dbt models, semantic layer, or explores.
+Agentic onboarding is a guided flow for brand-new organizations. You sign up with an email, set up your organization, connect a warehouse, and land on a provisioned **Getting started** homepage where the **Analytics agent**, a default AI agent Lightdash creates for the new project, is ready to chat. Because the agent runs in SQL mode from day zero, you can query your warehouse before you've built any dbt models, semantic layer, or explores.
 
 ## When to use it
 
@@ -29,13 +24,11 @@ If you already have a dbt project you want to connect, use the standard [Quickst
 
 ## Prerequisites
 
-Agentic onboarding is gated by a single feature flag:
+Agentic onboarding is on by default for every instance. Email-only signup needs an email server: on self-hosted instances without [SMTP](/self-host/customize-deployment/environment-variables#smtp) configured, the register page asks for a name and password instead.
 
-- `new-onboarding` — turns on the whole journey as one unit: email-only signup (an anonymous, instance-wide flag on the register page), the full-page organization setup, and the dbt-less warehouse-connect flow. Off by default.
+For the day-0 chat and the provisioned homepage you need:
 
-For the day-0 chat and the provisioned homepage you also need:
-
-- The AI copilot feature flag on the organization — required for Aurora to be auto-provisioned and for the chat composer to create real threads.
+- The AI copilot feature flag on the organization — required for the Analytics agent to be auto-provisioned and for the chat composer to create real threads.
 - The homepage-builder feature flag on the organization — required for Lightdash to provision the **Getting started** homepage when the first project is created.
 
 If AI copilot isn't enabled, the flow still completes but the day-0 chat composer is rendered disabled with an explainer callout. Enable copilot to unlock the live chat.
@@ -79,11 +72,11 @@ If AI copilot isn't enabled, the flow still completes but the day-0 chat compose
   <Step title="Getting started homepage">
     You land on a custom homepage Lightdash provisioned when the project was created. It contains:
 
-    - An **ask-AI hero** with a greeting and a chat composer bound to the Aurora agent.
+    - An **ask-AI hero** with a greeting and a chat composer bound to the Analytics agent.
     - A **recommended actions** checklist rendered inside the hero (see below).
     - A **quick actions** row with shortcuts to ask AI, run a query, browse dashboards, and browse spaces.
 
-    The composer opens threads with **SQL mode enabled** whenever the project has no dbt connection and you can use the SQL runner, so Aurora can answer using warehouse discovery tools before any semantic layer exists.
+    The composer opens threads with **SQL mode enabled** whenever the project has no dbt connection and you can use the SQL runner, so the agent can answer using warehouse discovery tools before any semantic layer exists.
   </Step>
 </Steps>
 
@@ -103,20 +96,20 @@ If you're the founder or business owner setting up Lightdash but don't have your
 
 When your teammate clicks the emailed link:
 
-- Under the `new-onboarding` flag they see a single **Continue as `teammate@ecom-store.com`** card — no password, name, or SSO form. Clicking it hits a passwordless activation endpoint that provisions the pending user, marks the email verified (opening the emailed single-use link proves mailbox ownership), consumes the invite, and logs the session in.
+- They see a single **Continue as `teammate@ecom-store.com`** card — no password, name, or SSO form. Clicking it hits a passwordless activation endpoint that provisions the pending user, marks the email verified (opening the emailed single-use link proves mailbox ownership), consumes the invite, and logs the session in.
 - They land on the warehouse connect screen. If they haven't completed the "About you" interstitial, it carries a redirect param so they return to onboarding rather than the app root.
 - Activation is a click-triggered POST so mail scanners that prefetch the link can't consume the invite.
 
-Instances with password authentication disabled, and any environment with the flag off, keep the legacy invite-accept flow with the full form.
+Instances with password authentication disabled keep the invite-accept flow with the full form.
 
-## Aurora auto-provisioning
+## Analytics agent auto-provisioning
 
 When the first non-preview project is created in a new organization, Lightdash provisions a default AI agent server-side:
 
-- The agent is named **Aurora** and is created with data access enabled and SQL mode available.
-- **User context is enabled by default** on Aurora so the agent can address the user by name and collect a missing name from an email-only signup (see [Name collection](#name-collection-from-email-only-signup) below). User context stays opt-in for every other agent — existing agents are unaffected.
+- The agent is named **Analytics agent** and is created with data access enabled and SQL mode available.
+- **User context is enabled by default** on the Analytics agent so the agent can address the user by name and collect a missing name from an email-only signup (see [Name collection](#name-collection-from-email-only-signup) below). User context stays opt-in for every other agent — existing agents are unaffected.
 - Provisioning is gated on AI copilot being enabled for the organization. If copilot is disabled, provisioning is skipped and the day-0 chat is rendered disabled.
-- The operation is **idempotent** — repeated project-creation events on the same organization won't create duplicate Aurora agents.
+- The operation is **idempotent** — repeated project-creation events on the same organization won't create duplicate default agents.
 - Provisioning is **non-throwing**. If it fails for any reason, project creation still succeeds and you can create an agent manually from [Set up agents](/agents/set-up-agents).
 - The `ai_agent.created` analytics event carries an `autoProvisioned: true` flag so this path can be distinguished from a manually-created agent in analytics.
 
@@ -149,21 +142,21 @@ Behavior:
 
 ### Ask input with schema-grounded suggestions
 
-The homepage ask composer creates real Aurora threads and enables SQL mode automatically when the project has no dbt connection and the user can use the SQL runner.
+The homepage ask composer creates real Analytics agent threads and enables SQL mode automatically when the project has no dbt connection and the user can use the SQL runner.
 
 Prompt-chip suggestions above the composer are also grounded in the warehouse:
 
 - On projects with explores or verified content, chips are drawn from those signals.
-- On a fresh, dbt-less project with zero explores, chips are grounded in the real, fully-qualified warehouse tables (`database.schema.table`) so Aurora can answer via `runSql` against tables that actually exist — instead of showing generic "set up your data" prompts.
-- In that zero-explores mode, chips are **SQL-only**. Aurora won't offer prompts that ask for charts, visualizations, dashboards, or dashboard tiles, because the visualization tools require semantic-layer explores that don't exist yet. Every chip is a plain data question answerable with a SQL result.
+- On a fresh, dbt-less project with zero explores, chips are grounded in the real, fully-qualified warehouse tables (`database.schema.table`) so the agent can answer via `runSql` against tables that actually exist — instead of showing generic "set up your data" prompts.
+- In that zero-explores mode, chips are **SQL-only**. The agent won't offer prompts that ask for charts, visualizations, dashboards, or dashboard tiles, because the visualization tools require semantic-layer explores that don't exist yet. Every chip is a plain data question answerable with a SQL result.
 
 ## SQL mode on day zero
 
-Threads Aurora opens from the homepage composer run in SQL mode whenever the project has no dbt connection and you have SQL runner access. This matters on a warehouse-only project:
+Threads the Analytics agent opens from the homepage composer run in SQL mode whenever the project has no dbt connection and you have SQL runner access. This matters on a warehouse-only project:
 
 - Without any dbt models, the project has zero explores and zero semantic-layer content.
-- In SQL mode, Aurora uses the warehouse discovery tools (list schemas, list tables, describe columns, run SQL) instead of only searching explores.
-- The zero-explores system prompt is tuned so Aurora will offer warehouse-catalog answers rather than telling you there is no data.
+- In SQL mode, the agent uses the warehouse discovery tools (list schemas, list tables, describe columns, run SQL) instead of only searching explores.
+- The zero-explores system prompt is tuned so the agent will offer warehouse-catalog answers rather than telling you there is no data.
 
 You can turn SQL mode off later once you've built explores; see [Data access](/agents/data-access) for how SQL mode interacts with agent permissions.
 
@@ -172,14 +165,14 @@ rendered disabled with an explainer, and no agent thread is created.
 
 ## Name collection from email-only signup
 
-Email-only signup registers users without a first or last name, so Aurora doesn't know what to call you at day zero. Because Aurora is auto-provisioned with user context enabled, its requesting-user prompt detects the missing name and:
+Email-only signup registers users without a first or last name, so the Analytics agent doesn't know what to call you at day zero. Because the Analytics agent is auto-provisioned with user context enabled, its requesting-user prompt detects the missing name and:
 
-- Answers your request first — Aurora never blocks on collecting a name.
+- Answers your request first. The agent never blocks on collecting a name.
 - Politely asks for your first and last name once, at a natural moment (typically at the end of the first reply).
 - Saves the name to your user profile via the `updateUserName` agent tool and greets you by first name from then on.
 - Doesn't ask again in the same conversation if you decline or ignore the request.
 
-The `updateUserName` tool is agent-only and only exposed when the prompt identity is trusted (user context is enabled on the agent and the sender is verified). It isn't exposed to MCP clients. If you later want to change the name yourself, you can either ask Aurora to correct it or update it from your account settings.
+The `updateUserName` tool is agent-only and only exposed when the prompt identity is trusted (user context is enabled on the agent and the sender is verified). It isn't exposed to MCP clients. If you later want to change the name yourself, you can either ask the agent to correct it or update it from your account settings.
 
 ## Coding-agent handoff prompt
 
@@ -230,8 +223,8 @@ This keeps the coding agent focused on the warehouse location the project is alr
 
 ## After onboarding
 
-Once you're chatting with Aurora, the project behaves like any other Lightdash project:
+Once you're chatting with the Analytics agent, the project behaves like any other Lightdash project:
 
-- Add more agents or customize Aurora from [Set up agents](/agents/set-up-agents).
+- Add more agents or customize the Analytics agent from [Set up agents](/agents/set-up-agents).
 - Build out the dbt project and semantic layer either by running the coding-agent prompt above, or by following the [Quickstart](/get-started/quickstart).
 - Invite the rest of your team — see [Invite your team](/workspace-admin/invite-new-users).
