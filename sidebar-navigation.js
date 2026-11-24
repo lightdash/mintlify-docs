@@ -477,7 +477,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Unpin AI agent thread","href":"/api-reference/unpin-ai-agent-thread","parents":["Reference","API Reference"]},
 {"title":"Get AI agent thread pull request","href":"/api-reference/get-ai-agent-thread-pull-request","parents":["Reference","API Reference"]},
 {"title":"List AI agent thread pull requests","href":"/api-reference/list-ai-agent-thread-pull-requests","parents":["Reference","API Reference"]},
-{"title":"Post apiv1projects aiagents threads messages","href":"/api-reference/post-apiv1projects-aiagents-threads-messages","parents":["Reference","API Reference"]},
+{"title":"Create AI agent thread message","href":"/api-reference/create-ai-agent-thread-message","parents":["Reference","API Reference"]},
 {"title":"Restore data app version","href":"/api-reference/restore-data-app-version","parents":["Reference","API Reference"]},
 {"title":"Post apiv1projects aiagents threads tool calls sql approval","href":"/api-reference/post-apiv1projects-aiagents-threads-tool-calls-sql-approval","parents":["Reference","API Reference"]},
 {"title":"Post apiv1projects aiagents threads stream","href":"/api-reference/post-apiv1projects-aiagents-threads-stream","parents":["Reference","API Reference"]},
