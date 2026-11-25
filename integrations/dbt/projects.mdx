@@ -233,6 +233,13 @@ Push and merge your changes to the branch your Lightdash project is connected to
 
 `lightdash deploy` runs the `dbt` installed where you run the CLI, so dbt plugins installed there, such as dbt-loom, take part in the compile. Git connection methods compile with Lightdash's own dbt installation, which has dbt-core and the warehouse adapters only, so third-party dbt plugins don't run on a server-side refresh.
 
+
+Saving connection settings on a Git-connected project, from **Test & deploy project** or `PATCH /api/v1/projects/{projectUuid}`, also queues a server-side compile, as do a refresh and merging an AI write-back PR from Lightdash. Lightdash saves the settings first and compiles after, so a compile failure, such as one from models that depend on a dbt plugin or a cross-project `ref`, doesn't undo the save.
+
+If you compile client-side and deploy with `lightdash deploy`, set the dbt connection **Type** to **CLI**. Saving settings then only tests the warehouse connection and skips the compile. AI write-back isn't available on a CLI-only connection.
+
+To change only the warehouse connection, send `PUT /api/v1/projects/{projectUuid}/warehouse-credentials` with a `warehouseConnection` body. It saves the warehouse connection without a compile or a connection test and leaves the dbt connection and dbt version as they are. Changes to those still go through the compiling update.
+
 `lightdash refresh` requires a remote git connection. It fails with a `ParameterError` if the project's `dbtConnection.type` is `NONE`.
 
 Refresh is async. `lightdash refresh` and the refresh API both return a `jobUuid` and the work continues server-side. If your CI needs to know the refresh succeeded, poll `GET /api/v1/jobs/{jobUuid}` before exiting the workflow.
