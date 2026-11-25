@@ -180,6 +180,14 @@ Any omitted result storage setting inherits its corresponding `S3_*` value.
 Raw JSONL result downloads use a presigned URL that browsers fetch directly from `RESULTS_S3_ENDPOINT`. This endpoint must be reachable from users' browsers; `S3_PUBLIC_ENDPOINT` does not apply to the query results bucket. The bucket can remain private, but an IP policy that limits `GetObject` to Lightdash's backend egress addresses will block these downloads.
 </Warning>
 
+### Let DuckDB read query results
+
+[Merged queries](/explore/merge-queries) and [AI agent DuckDB steps](/self-host/enterprise-features/ai-agents#post-processing-with-duckdb-and-python) run on an embedded DuckDB engine that reads result files directly from the query results bucket. It needs no extra license or setup beyond the following:
+
+- **CA certificates.** If the results endpoint uses HTTPS, the Lightdash image needs a CA certificate bundle. The official image ships one. On a custom image, install `ca-certificates` or set `SSL_CERT_FILE` to a PEM bundle; without one, these queries fail with a configuration error.
+- **Memory.** DuckDB shares the pre-aggregate memory budget. To cap it, set `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` (for example `2GB`).
+- **NATS workers.** With NATS enabled, these queries can run on a worker instead of the API; see [Streams and workers](/self-host/nats-workers#streams-and-workers). That worker needs the same results storage settings.
+
 ### Use separate storage for uploads
 
 AI agent avatars and homepage announcement images are served through permanent links, so they must not be deleted by a lifecycle rule. If your main bucket has one, point these uploads at a bucket without one:
