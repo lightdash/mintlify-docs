@@ -130,7 +130,6 @@ window.lightdashSidebarNavigation = [
 {"title":"Linear and Jira","href":"/agents/issues-linear-jira","parents":["Agents","Improve answers"]},
 {"title":"Agents as code","href":"/agents/agents-as-code","parents":["Agents","Build agent workflows"]},
 {"title":"AI writeback","href":"/agents/ai-writeback","parents":["Agents","Build agent workflows"]},
-{"title":"AI coding agent","href":"/agents/ai-coding-agent","parents":["Agents","Build agent workflows"]},
 {"title":"Autopilot","href":"/agents/autopilot","parents":["Agents","Build agent workflows"]},
 {"title":"Set up agents in Slack","href":"/agents/set-up-slack-agents","parents":["Agents","Integrations"]},
 {"title":"Lightdash MCP server","href":"/agents/lightdash-mcp","parents":["Agents","Integrations"]},
