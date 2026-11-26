@@ -23,7 +23,7 @@ The two limits are independent — raising the query-row limit does not change C
 
 ## Google Sheets dashboard exports
 
-Exporting a dashboard to Google Sheets is bounded separately, because Google caps a single spreadsheet at 10 million cells across all of its tabs. These limits are fixed and are not configurable from this panel:
+Exporting a dashboard to Google Sheets is bounded separately, so the new spreadsheet stays inside Google's [cell limit per spreadsheet](#google-sheets-sync-limits). These limits are fixed and are not configurable from this panel:
 
 | Limit | Value | What happens when it's reached |
 | --- | --- | --- |
@@ -31,6 +31,27 @@ Exporting a dashboard to Google Sheets is bounded separately, because Google cap
 | Rows per tab | 50,000 | That tab is trimmed to the first 50,000 rows |
 
 A tab trimmed by either limit is still created and still contains data — it's marked `Truncated` in the export's summary tab, along with the number of rows that were written. The export as a whole still succeeds.
+
+## Google Sheets Sync limits
+
+A [Google Sheets Sync](/integrations/google-sheets) writes the full result of its query to a tab on every run. These limits apply to each sync:
+
+| Limit | Value | What happens when a sync reaches it |
+| --- | --- | --- |
+| Google's cells per spreadsheet, across all tabs, empty cells included | 20,000,000 | The sync fails before it writes, and the tab keeps its data. |
+| Google's write requests per user | 60 per minute | Lightdash waits and tries again, and the sync stays on. |
+| Lightdash's characters per cell | 50,000 | Lightdash cuts the value and ends it with `... [TRUNCATED]`. |
+
+Lightdash writes a large result in batches to a hidden tab, then copies it into the synced tab in steps. Each step holds at most 100,000 rows, 500,000 cells, 12 MB, and 100,000 values of 64 or more characters. A sync of several hundred thousand rows takes a few minutes, and the synced tab shows its old data until Lightdash copies the new data in.
+
+When a sync fails, the tab keeps its old data. In two cases, a failure can leave new rows at the top of the tab and old rows below:
+
+- The copy takes more than one step, and a later step fails.
+- The spreadsheet has no room for a second copy of the data, so Lightdash writes into the tab directly.
+
+The email about the failure says which rows are new, for example "Rows 1-100,000 of the tab are new. The rows after them can be from the previous sync until a later run completes." See [When a sync fails](/integrations/google-sheets#when-a-sync-fails) for who gets the email and how to turn the sync back on.
+
+To sync a result that doesn't fit, remove tabs that you don't use from the spreadsheet, or split the result across charts that sync to separate spreadsheets.
 
 ## Set per-organization limits
 
@@ -49,11 +70,11 @@ Changes take effect immediately for new queries and exports. Existing scheduled 
 | Explorer and SQL runner row-limit selector | Maximum value is clamped to the org's effective query row limit. |
 | CSV and Excel downloads from charts, dashboards, and underlying data | `All results` and `Custom` exports are truncated to the org's effective cell limit. `Table rows` exports return the rows already loaded and aren't capped. SQL runner and SQL chart downloads aren't capped by the cell limit. The download dialog shows the cell limit and, before you export, how many rows will be kept when the selection exceeds it. When truncation happens, a warning notification, **The results in this export have been limited.**, shows for about 5 seconds and then closes. |
 | Scheduled deliveries (CSV, Excel) | Use the org's effective cell limit at run time. |
-| Google Sheets Sync (recurring chart sync) | Bounded by the org's effective query row limit, not the cell limit. The sync runs the chart's saved query as-is and fails, rather than truncating, if that query's row limit is above the ceiling. |
+| Google Sheets Sync (recurring chart sync) | Bounded by the org's effective query row limit, not the cell limit, and by [Google's spreadsheet limits](#google-sheets-sync-limits). The sync fails instead of truncating when the chart's row limit is above the query row limit. |
 | API responses for `/api/v1/org/settings` | Return the resolved effective values, falling back to the instance defaults when no override is set. |
 
 <Note>
-  A Google Sheets Sync never applies the **Maximum CSV/Excel cells** override — raising it has no effect on a Sync's ceiling. Because **Maximum query rows** can't exceed `LIGHTDASH_QUERY_MAX_LIMIT`, an org admin on shared Cloud infrastructure can't self-serve a higher ceiling for Syncs from this panel; that's only possible on a dedicated or self-hosted instance, by changing the instance default itself. This doesn't apply to the one-off [export a dashboard to Google Sheets](/integrations/google-sheets#export-a-dashboard-to-google-sheets), which is bounded by its own fixed cell and row limits, not by either org setting.
+  Because **Maximum query rows** can't exceed `LIGHTDASH_QUERY_MAX_LIMIT`, an org admin on shared Cloud infrastructure can't raise the row ceiling for Syncs from this panel. Only a dedicated or self-hosted instance can, by changing the instance default itself.
 </Note>
 
 ## Related
