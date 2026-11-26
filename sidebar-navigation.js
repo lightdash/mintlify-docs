@@ -513,6 +513,7 @@ window.lightdashSidebarNavigation = [
 {"title":"Post apiv1projects aiagents evaluations append","href":"/api-reference/post-apiv1projects-aiagents-evaluations-append","parents":["Reference","API Reference"]},
 {"title":"Post apiv1projects aiagents append instruction","href":"/api-reference/post-apiv1projects-aiagents-append-instruction","parents":["Reference","API Reference"]},
 {"title":"Get Semantic Studio status","href":"/api-reference/semantic-studio/get-semantic-studio-status","parents":["Reference","Semantic Studio"]},
+{"title":"Get the Semantic Studio agent","href":"/api-reference/semantic-studio/get-the-semantic-studio-agent","parents":["Reference","Semantic Studio"]},
 {"title":"List stored semantic layer models","href":"/api-reference/semantic-studio/list-stored-semantic-layer-models","parents":["Reference","Semantic Studio"]},
 {"title":"List Semantic Studio workspaces","href":"/api-reference/semantic-studio/list-semantic-studio-workspaces","parents":["Reference","Semantic Studio"]},
 {"title":"Start a Semantic Studio workspace","href":"/api-reference/semantic-studio/start-a-semantic-studio-workspace","parents":["Reference","Semantic Studio"]},
