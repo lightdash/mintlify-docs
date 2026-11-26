@@ -1,237 +1,107 @@
 ---
-title: "Agentic onboarding with Aurora"
+title: "Agentic onboarding"
 sidebarTitle: "Agentic onboarding"
-description: Sign up, connect a warehouse, and chat with Aurora before any dbt models exist
-tag: "Beta"
+description: "Sign up, connect your data, and ask your first question before any dbt models exist"
 ---
 
-import { FeatureBadge } from '/snippets/feature-badge.jsx';
+Agentic onboarding is the flow every new organization goes through. You sign up, set up your organization, connect a warehouse or a live data source, and land on a homepage where you can ask an AI agent about your data straight away. The project needs no dbt models, semantic layer, or explores to start: the agent can answer from your warehouse tables with SQL.
 
-
-<div className="feature-badges"><FeatureBadge label="Beta" /></div>
-
-<Info>
-  Agentic onboarding is gated by a feature flag. Contact Lightdash
-    support to enable it for your organization or instance.
-</Info>
-
-Agentic onboarding is a guided flow for brand-new organizations. You sign up with an email, set up your organization, connect a warehouse, and land on a provisioned **Getting started** homepage where **Aurora** — a default AI agent Lightdash creates for the new project — is ready to chat. Because Aurora runs in SQL mode from day zero, you can query your warehouse before you've built any dbt models, semantic layer, or explores.
-
-## When to use it
-
-Use agentic onboarding when you want to:
-
-- Evaluate Lightdash against a warehouse without preparing a dbt project first.
-- Get a working AI agent that can answer questions using the warehouse catalog directly.
-- Hand off the semantic-layer buildout to a coding agent (Claude Code, Cursor, etc.) and keep an analyst-facing chat live in the meantime.
-
-If you already have a dbt project you want to connect, use the standard [Quickstart](/get-started/quickstart) instead.
-
-## Prerequisites
-
-Agentic onboarding is gated by a single feature flag:
-
-- `new-onboarding` — turns on the whole journey as one unit: email-only signup (an anonymous, instance-wide flag on the register page), the full-page organization setup, and the dbt-less warehouse-connect flow. Off by default.
-
-For the day-0 chat and the provisioned homepage you also need:
-
-- The AI copilot feature flag on the organization — required for Aurora to be auto-provisioned and for the chat composer to create real threads.
-- The homepage-builder feature flag on the organization — required for Lightdash to provision the **Getting started** homepage when the first project is created.
-
-If AI copilot isn't enabled, the flow still completes but the day-0 chat composer is rendered disabled with an explainer callout. Enable copilot to unlock the live chat.
+If you already have a dbt project you want to connect, you can still follow the [Quickstart](/get-started/quickstart).
 
 ## The flow
 
 <Steps>
-  <Step title="Email-only signup">
-    A new user registers with just an email address — no password, no dbt setup, no name. Ownership is proven via the existing email OTP verification. For example, `alex@ecom-store.com` can sign up in one step and set a password later from settings or a password reset.
+  <Step title="Create an account">
+    On the **Create an account** page, sign up with single sign-on if your instance offers it, or with your work email.
+
+    When the instance can send email, the form asks only for your email address and Lightdash sends a 6-digit code to verify it. You set no password. Self-hosted instances without SMTP ask for a name and password instead; see [email-only signup](/self-host/customize-deployment/use-sso-login-for-self-hosted-lightdash#email-only-signup-and-otp-login).
   </Step>
-  <Step title="Full-page organization setup">
-    A full-page setup screen collects the organization name, appearance, and a short "tell us about yourself" section. When the signup email uses a company domain, Lightdash pulls the brand (logo, colors) from that domain via Brandfetch as a starting point. You can override anything before continuing.
+  <Step title="Set up your organization">
+    The setup page has two parts:
+
+    - **Name your organization.** The name is prefilled from a company email domain. For company domains you can also let anyone with an email at that domain join.
+    - **Tell us about you.** Enter your first name, last name, and role.
+
+    People who join an existing organization from an invite see only the second part.
   </Step>
-  <Step title="Data-source picker (`/onboarding/data-source`)">
-    Pick a warehouse from a two-tier picker:
+  <Step title="Choose a source">
+    The **Connect your data** page lists the warehouses you can connect: BigQuery, Snowflake, Databricks, Postgres, Redshift, ClickHouse, Athena, Trino, and DuckDB. You can also:
 
-    - **Most popular** — a hero row featuring **BigQuery** and **Snowflake** with SSO-oriented subtitles.
-    - **All warehouses** — a compact grid with Postgres, Redshift, Databricks, Trino, ClickHouse, DuckDB, and Athena.
-
-    Two warehouses have smart defaults tuned for the onboarding path:
-
-    - **Snowflake** — **Connect via CLI (SSO)** is pre-selected as the authentication method, with an account-identifier placeholder to guide you (for example `xy12345.us-east-1`).
-    - **BigQuery** — when the **Sign in with Google** (user-account SSO) auth method is selected, the project, location, dataset, and advanced fields stay hidden until you sign in. Once the SSO check resolves, the project and dataset become autocompletes backed by the resources your account can access, and picking a dataset auto-fills the location (still editable). Keyfile auth keeps the manual inputs.
-
-    Not the person who owns the warehouse credentials? Use **Invite a teammate to connect the warehouse** — see [Handing warehouse connect to a teammate](#handing-warehouse-connect-to-a-teammate) below.
+    - **Try the demo project** to explore sample data first, when your instance offers it.
+    - **Start with a live data source** such as PostHog, instead of a warehouse. See [Start without a warehouse](#start-without-a-warehouse).
+    - **Invite a teammate to connect it** if you don't have the warehouse details. See [Hand the warehouse connection to a teammate](#hand-the-warehouse-connection-to-a-teammate).
   </Step>
-  <Step title="Warehouse-only project creation">
-    The connect form is the standard warehouse settings form without the dbt project step and without the general settings section — you can rename the project later. Submitting **Test & save** creates a warehouse-only project in your organization. No dbt models are required. The per-warehouse schema or dataset field renders inside the warehouse card so BigQuery has a dataset input and Postgres has a schema input, even in this dbt-less flow.
-
-    **Test & save** stays disabled until every required field for the selected warehouse and auth variant is filled in — for example Snowflake password vs. key-pair, Databricks PAT vs. OAuth, Athena access keys, or MotherDuck credentials. Editing an existing project keeps its previous behavior of accepting blank secrets as "keep existing".
+  <Step title="Connect your warehouse">
+    Fill in the connection form for your warehouse and click **Test & save**. Lightdash creates a project with only a warehouse connection. No dbt project is imported and no dbt compilation runs. For the fields each warehouse needs, see [Connect a project](/integrations/connect-project).
   </Step>
-  <Step title="Project ready checklist (`/onboarding/project-ready/:projectUuid`)">
-    A staged checklist runs against the real warehouse catalog:
-
-    - Connecting to warehouse
-    - Reading schemas (with the schema count from the catalog)
-    - Indexing tables & columns (with the table count from the catalog)
-
-    When the checklist finishes, Lightdash fires a one-shot confetti burst and hands you off to the provisioned homepage.
+  <Step title="Connect your repo">
+    If you already have models in a repository, click **Connect repo** so your team can ask questions with them. Otherwise click **Skip for now**; you can connect a repository later in project settings.
   </Step>
-  <Step title="Getting started homepage">
-    You land on a custom homepage Lightdash provisioned when the project was created. It contains:
-
-    - An **ask-AI hero** with a greeting and a chat composer bound to the Aurora agent.
-    - A **recommended actions** checklist rendered inside the hero (see below).
-    - A **quick actions** row with shortcuts to ask AI, run a query, browse dashboards, and browse spaces.
-
-    The composer opens threads with **SQL mode enabled** whenever the project has no dbt connection and you can use the SQL runner, so Aurora can answer using warehouse discovery tools before any semantic layer exists.
+  <Step title="Connect your tools">
+    Connect [live data sources](/integrations/live-data-sources), such as PostHog under **Product analytics** and the Google connectors under **Marketing and search**. This step is optional, and it appears only when live data sources are available to you.
+  </Step>
+  <Step title="Bring in your team">
+    Connect the integrations your team works in: Slack and Microsoft Teams under **Share answers**, and GitHub and GitLab under **Review changes**. This step is optional, and Lightdash skips it when the instance has none of these integrations configured.
+  </Step>
+  <Step title="Ask your first question">
+    The **You're all set** page confirms your data is ready. Click **Ask your first question** to open a conversation with the agent, which starts by asking what's in your data and which questions are worth asking. Click **I'll look around first** to go to the project homepage instead.
   </Step>
 </Steps>
 
-If you get to the app before a project exists (for example the homepage
-hasn't been provisioned yet), Lightdash lands you on `/get-started` — a
-day-0 page with the greeting, an inert ask composer, and the
-recommended-actions checklist. This replaces the old redirect to
-`/createProject`.
+## Start without a warehouse
 
-## Handing warehouse connect to a teammate
+On the **Connect your data** page, the live data source card lets you start from a tool instead of a warehouse. Depending on what your instance has configured, it offers PostHog alone, or PostHog, Google Analytics 4, and Search Console.
 
-If you're the founder or business owner setting up Lightdash but don't have your warehouse credentials, you can hand the warehouse-connect step to a teammate without leaving the flow. The onboarding footer opens an **Invite a teammate** modal that sends a task-framed **setup invite**:
+Choosing it creates a project with no warehouse and no dbt project, then takes you to **Connect your tools**, where you must connect at least one tool to continue. You can add a warehouse to the project later.
 
-- The invite is a new type of invite link with `purpose: setup` and always carries the **admin** role, which is required to create a project. Setup invites can't be silently downgraded.
-- If you don't have a name on your profile yet (email-only signup), the modal asks for your first and last name so the invite email can attribute you personally; those values are saved back to your account.
-- The email is sent from the current template system and explains what Lightdash is, why the invitee is being asked, and that accepting leads straight to connecting the warehouse.
+Self-hosted instances need an Enterprise license for [live data sources](/integrations/live-data-sources).
 
-When your teammate clicks the emailed link:
+## Hand the warehouse connection to a teammate
 
-- Under the `new-onboarding` flag they see a single **Continue as `teammate@ecom-store.com`** card — no password, name, or SSO form. Clicking it hits a passwordless activation endpoint that provisions the pending user, marks the email verified (opening the emailed single-use link proves mailbox ownership), consumes the invite, and logs the session in.
-- They land on the warehouse connect screen. If they haven't completed the "About you" interstitial, it carries a redirect param so they return to onboarding rather than the app root.
-- Activation is a click-triggered POST so mail scanners that prefetch the link can't consume the invite.
+If you're setting up Lightdash but don't hold the warehouse credentials, click **Invite a teammate to connect it** on the **Connect your data** page. Lightdash emails your teammate a setup invite that explains what they're being asked to do.
 
-Instances with password authentication disabled, and any environment with the flag off, keep the legacy invite-accept flow with the full form.
+- The invite gives your teammate the **admin** role, which they need to create the project.
+- When password sign-in is allowed, your teammate opens the emailed link and clicks **Continue as** with their email address. This activates their account without a password and takes them to the warehouse connection.
+- Other instances show the standard invite form.
 
-## Aurora auto-provisioning
+## The default agent
 
-When the first non-preview project is created in a new organization, Lightdash provisions a default AI agent server-side:
+When the first project in an organization is created, Lightdash creates a default agent for it, named **Analytics agent**.
 
-- The agent is named **Aurora** and is created with data access enabled and SQL mode available.
-- **User context is enabled by default** on Aurora so the agent can address the user by name and collect a missing name from an email-only signup (see [Name collection](#name-collection-from-email-only-signup) below). User context stays opt-in for every other agent — existing agents are unaffected.
-- Provisioning is gated on AI copilot being enabled for the organization. If copilot is disabled, provisioning is skipped and the day-0 chat is rendered disabled.
-- The operation is **idempotent** — repeated project-creation events on the same organization won't create duplicate Aurora agents.
-- Provisioning is **non-throwing**. If it fails for any reason, project creation still succeeds and you can create an agent manually from [Set up agents](/agents/set-up-agents).
-- The `ai_agent.created` analytics event carries an `autoProvisioned: true` flag so this path can be distinguished from a manually-created agent in analytics.
+- The agent has [data access](/agents/data-access) and content tools turned on.
+- User context is turned on, so the agent can address you by name.
+- Lightdash creates the agent only when AI agents are available to the organization. Without them, the project is still created and the homepage shows a greeting with quick actions instead of the ask box.
+- Preview projects don't get a default agent. A project that already has an agent doesn't get a second one.
+- If creating the agent fails, the project is still created. You can add an agent yourself from [Set up agents](/agents/set-up-agents).
 
-Preview projects don't get an auto-provisioned agent — the flag only applies to real projects that would receive an agent anyway.
+The agent's instructions end with "If no explores are available yet, use your warehouse tools to discover the schema and answer with SQL." That fallback applies only in [SQL mode](/agents/use-ai-agents#sql-mode), for people who can use the SQL Runner.
 
-## Provisioned Getting started homepage
+## The homepage on day one
 
-When the first project is created, Lightdash also provisions a **Getting started** homepage published to everyone in the organization. The homepage config is fixed and contains:
+After onboarding you land on the project homepage. For a new organization it opens with an ask box, a **Your data** block, and a **Getting started** panel that you can minimize.
 
-- An ask-AI hero with `showGreeting: true` and `showRecommendedActions: true`.
-- A quick-actions row (ask AI, run a query, browse dashboards, browse spaces).
+On a project with no explores, the suggested questions above the ask box are based on your real warehouse tables, and each one can be answered with a SQL result.
 
-Homepage provisioning is idempotent and never fails project creation — if it fails, the project is still created and the standard homepage is shown. You can edit or replace this homepage later from the homepage builder.
+### Getting started panel
 
-### Recommended actions checklist
+The **Getting started** panel tracks what's left to set up. It appears during an organization's first 14 days, for people who can manage the project. It lists:
 
-The ask-AI hero renders a recommended actions checklist as a rotating carousel. The fixed action list is:
+- **Connect your warehouse**
+- **Define metrics and dimensions**
+- **Build your first chart**
+- **Try a chart type**
+- **Apply your brand**
+- **Invite your team**
+- **Connect your Git repository**
+- **Connect Slack**
+- **Add more data sources**
 
-- **Connect warehouse** — unskippable; hidden once complete.
-- **Add a semantic layer** — hidden until a project exists.
-- **Connect source control** — provider-neutral, detecting GitHub or GitLab installations. Hidden on instances without either integration configured.
-- **Connect Slack** — hidden on instances without a Slack integration configured.
-
-Behavior:
-
-- One incomplete card is shown at the top of a stack of "up next" cards. Users can move up and down through the incomplete cards.
-- Skippable actions have a **Skip** control; the connect-warehouse step is deliberately unskippable so users aren't stranded with an inert composer.
-- Skipped and completed state is persisted per project in local storage.
-- The stack **auto-rotates** every 10 seconds, pausing when the user hovers the stack.
-
-### Ask input with schema-grounded suggestions
-
-The homepage ask composer creates real Aurora threads and enables SQL mode automatically when the project has no dbt connection and the user can use the SQL runner.
-
-Prompt-chip suggestions above the composer are also grounded in the warehouse:
-
-- On projects with explores or verified content, chips are drawn from those signals.
-- On a fresh, dbt-less project with zero explores, chips are grounded in the real, fully-qualified warehouse tables (`database.schema.table`) so Aurora can answer via `runSql` against tables that actually exist — instead of showing generic "set up your data" prompts.
-- In that zero-explores mode, chips are **SQL-only**. Aurora won't offer prompts that ask for charts, visualizations, dashboards, or dashboard tiles, because the visualization tools require semantic-layer explores that don't exist yet. Every chip is a plain data question answerable with a SQL result.
-
-## SQL mode on day zero
-
-Threads Aurora opens from the homepage composer run in SQL mode whenever the project has no dbt connection and you have SQL runner access. This matters on a warehouse-only project:
-
-- Without any dbt models, the project has zero explores and zero semantic-layer content.
-- In SQL mode, Aurora uses the warehouse discovery tools (list schemas, list tables, describe columns, run SQL) instead of only searching explores.
-- The zero-explores system prompt is tuned so Aurora will offer warehouse-catalog answers rather than telling you there is no data.
-
-You can turn SQL mode off later once you've built explores; see [Data access](/agents/data-access) for how SQL mode interacts with agent permissions.
-
-If AI copilot is disabled for your organization, the homepage composer is
-rendered disabled with an explainer, and no agent thread is created.
-
-## Name collection from email-only signup
-
-Email-only signup registers users without a first or last name, so Aurora doesn't know what to call you at day zero. Because Aurora is auto-provisioned with user context enabled, its requesting-user prompt detects the missing name and:
-
-- Answers your request first — Aurora never blocks on collecting a name.
-- Politely asks for your first and last name once, at a natural moment (typically at the end of the first reply).
-- Saves the name to your user profile via the `updateUserName` agent tool and greets you by first name from then on.
-- Doesn't ask again in the same conversation if you decline or ignore the request.
-
-The `updateUserName` tool is agent-only and only exposed when the prompt identity is trusted (user context is enabled on the agent and the sender is verified). It isn't exposed to MCP clients. If you later want to change the name yourself, you can either ask Aurora to correct it or update it from your account settings.
-
-## Coding-agent handoff prompt
-
-From the connect flow, you can also copy a prompt to run in your coding agent (Claude Code, Cursor, or similar). The agent uses that prompt to finish setting up the semantic layer — building the dbt project, models, and metrics — on top of the warehouse you just connected.
-
-The agent models one focused use case, the smallest one that the warehouse and your repository give evidence for, rather than every table your credentials can reach. It extends your dbt project if the repository has one, or writes [Lightdash YAML](/semantic-layer/yaml) models if not, then builds a starter dashboard for that use case. Tables outside it don't appear in Explore until you model them, in dbt or Lightdash YAML, yourself or by asking your coding agent to extend the models.
-
-The copiable prompt includes the **configured database and schema** from the project's warehouse connection, alongside the warehouse type and prepared project UUID:
-
-```markdown
-# Complete Lightdash project setup
-
-## Prepared setup
-
-- Warehouse type: snowflake
-- Prepared project UUID: 00000000-0000-0000-0000-000000000000
-- Configured database: ANALYTICS
-- Configured schema: PUBLIC
-
-## Next step
-
-Fetch and follow the remaining instructions from: https://app.lightdash.cloud/api/v1/prompts/project-onboarding
-Use the prepared setup values above whenever those instructions refer to a setup value.
-```
-
-Credentials from the warehouse connection are never included in the prompt.
-Only the non-sensitive `database` and `schema` fields are copied, so the
-coding agent knows where in the warehouse to focus.
-
-The database and schema fields are derived from the warehouse connection you saved, and are mapped consistently across warehouse types:
-
-| Warehouse | Database | Schema |
-| --- | --- | --- |
-| Snowflake, Athena | `database` | `schema` |
-| Postgres, Redshift, Trino | `dbname` | `schema` |
-| BigQuery | `project` | `dataset` |
-| Databricks | `catalog` | `database` |
-| ClickHouse | — | `schema` |
-| DuckDB (Ducklake) | `catalogAlias` (defaults to `ducklake`) | `schema` |
-
-The onboarding instructions the coding agent follows also changed:
-
-- The agent is told to use the warehouse type, project UUID, and — when listed — the configured database and schema from the prompt.
-- When running the broad catalog query, the agent is instructed to **prioritize tables in the configured database and schema** (matching names case-insensitively) unless repository evidence points elsewhere.
-- If the catalog spans many databases or schemas and neither the configured connection nor repository evidence identifies where to look, the agent is told to **ask you which database and schema to use** before continuing.
-
-This keeps the coding agent focused on the warehouse location the project is already pointed at, instead of picking arbitrary tables from anywhere the credentials happen to reach.
+Click **Skip for now** on an item to set it aside, and **Add back** to restore it.
 
 ## After onboarding
 
-Once you're chatting with Aurora, the project behaves like any other Lightdash project:
+The project behaves like any other Lightdash project:
 
-- Add more agents or customize Aurora from [Set up agents](/agents/set-up-agents).
-- Build out the dbt project and semantic layer either by running the coding-agent prompt above, or by following the [Quickstart](/get-started/quickstart).
-- Invite the rest of your team — see [Invite your team](/workspace-admin/invite-new-users).
+- Add more agents or customize the default one from [Set up agents](/agents/set-up-agents).
+- Build your semantic layer by following the [Quickstart](/get-started/quickstart).
+- Invite the rest of your team; see [Invite your team](/workspace-admin/invite-new-users).
