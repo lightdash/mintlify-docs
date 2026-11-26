@@ -389,7 +389,6 @@ window.lightdashSidebarNavigation = [
 {"title":"Get AI router instruction","href":"/api-reference/get-ai-router-instruction","parents":["Reference","API Reference"]},
 {"title":"Upsert AI router instruction","href":"/api-reference/upsert-ai-router-instruction","parents":["Reference","API Reference"]},
 {"title":"Route prompt","href":"/api-reference/route-prompt","parents":["Reference","API Reference"]},
-{"title":"Route dashboard capture","href":"/api-reference/route-dashboard-capture","parents":["Reference","API Reference"]},
 {"title":"Commit router decision","href":"/api-reference/commit-router-decision","parents":["Reference","API Reference"]},
 {"title":"List router decisions","href":"/api-reference/list-router-decisions","parents":["Reference","API Reference"]},
 {"title":"List AI agent skills","href":"/api-reference/list-ai-agent-skills","parents":["Reference","API Reference"]},
@@ -1186,7 +1185,10 @@ window.lightdashSidebarNavigation = [
 {"title":"Post apiv2projects ai accessmarkertest","href":"/api-reference/v2/post-apiv2projects-ai-accessmarkertest","parents":["Reference","v2"]},
 {"title":"Get apiv2orgagent permissions","href":"/api-reference/v2/get-apiv2orgagent-permissions","parents":["Reference","v2"]},
 {"title":"Put apiv2orgagent permissions","href":"/api-reference/v2/put-apiv2orgagent-permissions","parents":["Reference","v2"]},
-{"title":"Post apiv2orgagent permissionsreset","href":"/api-reference/v2/post-apiv2orgagent-permissionsreset","parents":["Reference","v2"]}
+{"title":"Post apiv2orgagent permissionsreset","href":"/api-reference/v2/post-apiv2orgagent-permissionsreset","parents":["Reference","v2"]},
+{"title":"List project agent restrictions","href":"/api-reference/v2/list-project-agent-restrictions","parents":["Reference","v2"]},
+{"title":"Save project agent restrictions","href":"/api-reference/v2/save-project-agent-restrictions","parents":["Reference","v2"]},
+{"title":"Remove project agent restrictions","href":"/api-reference/v2/remove-project-agent-restrictions","parents":["Reference","v2"]}
 ]}
 ];
 window.dispatchEvent(new Event('lightdash:navigation-ready'));
