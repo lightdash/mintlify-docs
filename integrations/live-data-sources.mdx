@@ -16,9 +16,21 @@ Live data sources let you analyze the live data in your tools, with or without a
 
 Each query goes to the tool's API when it runs, so results are as current as the tool and its data isn't loaded into your warehouse. Speed, history and rate limits depend on each tool. A project can use live data sources on their own, with no warehouse connected.
 
+## How it works
+
+<Frame>
+  <img src="/images/integrations/live-data-sources/how-it-works.svg" alt="A query from Explore, a dashboard or an AI agent goes to Lightdash, which checks access, cache and rate limits, then calls the tool's API and returns the rows" />
+</Frame>
+
+When someone runs a query on a live data source, Lightdash:
+
+1. Checks that they can query the source.
+2. Returns a cached result if the same query ran within the source's [freshness window](#caching).
+3. Otherwise turns the query into a call to the tool's API, within the source's [rate limits](#rate-limits), and returns the rows.
+
 ## Connect your tools
 
-Project developers and admins [add a source](/integrations/live-data-sources/set-up-and-manage#connect-a-live-data-source) by signing in to the tool or entering an API key. There's no sync to schedule or dbt model to write. Each integration page lists its dimensions, metrics, supported features and limits.
+People with the **Developer or Admin role** [add a source](/integrations/live-data-sources/set-up-and-manage#connect-a-live-data-source) by signing in to the tool or entering an API key. There's no sync to schedule or dbt model to write. Each integration page lists its dimensions, metrics, supported features and limits.
 
 <CardGroup cols={3}>
   <Card title="PostHog" href="/integrations/live-data-sources/posthog">
@@ -63,21 +75,15 @@ Project developers and admins [add a source](/integrations/live-data-sources/set
   <Card title="Salesforce" href="/integrations/live-data-sources/salesforce">
     Opportunities, accounts, leads and contacts, totalled by Salesforce
   </Card>
+  <Card title="Sentry" href="/integrations/live-data-sources/sentry">
+    Errors, issues and crash-free release health from your Sentry projects
+  </Card>
+  <Card title="Supabase" href="/integrations/live-data-sources/supabase">
+    Rows of one table or view in a Supabase project
+  </Card>
 </CardGroup>
 
-To ask for another tool, click **Request a live source** in the **Add a live data source** dialog and enter its name. You can also contact [Lightdash support](mailto:support@lightdash.com).
-
-## Explore prefix
-
-Each live data source has an **explore prefix**, the start of its explore names in the semantic layer. A PostHog source with the explore prefix `posthog` adds a `posthog_events` explore, and its fields are named like `posthog_events_event_name`. Saved charts, dashboards and content as code refer to these names.
-
-- **Lightdash suggests one from the name.** Keep the default if you connect one source from an integration. Give each source its own explore prefix when you connect several from the same integration, such as `posthog_eu` and `posthog_us`.
-- **It never changes.** Renaming a source keeps its explore prefix, so saved charts keep working. To use another explore prefix, delete the source and add a new one.
-- **Deleted sources keep theirs.** No other source can take a deleted source's explore prefix. When you add a source of the same integration again, you can reattach the deleted one: the new source takes its explore prefix, so its charts work again and its field edits come back.
-
-An integration can have several explores, such as the **Pull requests**, **Issues** and **Contributors** of a GitHub source. Explore groups them in a folder under the source's name.
-
-Use lowercase letters, numbers and underscores, starting with a letter, up to 40 characters.
+Anyone in the project can ask for another tool: click **Request a live data source** in the **Add a live data source** dialog and enter its name. See [Request an integration](/integrations/live-data-sources/set-up-and-manage#request-an-integration).
 
 ## Integration levels
 
@@ -97,22 +103,22 @@ A source uses one shared connection, so everyone who can query it sees the same 
 
 | Topic | How it works |
 | --- | --- |
-| Who can manage sources | Project developers and admins add, edit, sign in again and delete sources. In a custom role, this is the `manage:LiveSource` scope, separate from data app connections: a custom role with only `manage:ExternalConnection` can no longer manage sources |
+| Who can manage sources | The **Developer or Admin role** adds, lists, edits and deletes sources. In a custom role, this is the `manage:LiveSource` scope, separate from data app connections: a custom role with only `manage:ExternalConnection` can't manage sources. Without it, people still see the source's explores |
 | Who can query | People with the Interactive viewer role or above, unless the source has an access rule. Viewers can open saved charts and dashboards |
 | Whose access queries use | The account that signed in, or the API key, within the dimensions and metrics in use |
 | Access requested | Read-only. Each integration page lists what it needs |
 | Credentials | Sign-in tokens and API keys are stored encrypted and never shown again |
-| What AI agents see | Source names, the dimensions and metrics in use with their labels, descriptions and AI hints, and the rows their queries return |
-| Usage | Each source shows data read, API calls, cache hits and median latency over the query history retention window, 32 days by default |
+| What AI agents see | Source names, the integration and account each reads, the explores, dimensions and metrics in use with their labels, descriptions and AI hints, and the rows their queries return |
+| Usage | Each source shows the charts that use it, data read, API calls and median latency over the query history retention window, 32 days by default |
 
 ### Limit who can query a source
 
-To limit who can query a source, give it an access rule made of [user attributes](/workspace-admin/user-attributes). On the **Semantic Layer** page, open the source, go to its **Settings** tab, and select **Edit** under **Who can query**:
+To limit who can query a source, give it an access rule made of [user attributes](/workspace-admin/user-attributes). On the **Semantic Layer** page, open the source, click **Edit** on its **Access** card, set **Query access** to **Restricted**, and choose how the conditions combine:
 
 - **Must match all**: each attribute must have one of the listed values.
 - **Must match any**: at least one attribute must have one of the listed values.
 
-A rule like "team is marketing" also covers groups, because groups can hold attribute values. With no conditions, everyone in the project can query the source.
+A rule like "team is marketing" also covers groups, because groups can hold attribute values. With **Query access** set to **Everyone**, everyone in the project can query the source.
 
 People who don't match the rule don't see the source's explores, and can't query them from the explorer, charts, dashboards, AI agents, MCP or the API. On a shared chart or dashboard, they see its title, and its tiles say they don't have access. Scheduled deliveries run as the person who created them. Admins aren't exempt, and a lock icon marks a source that has a rule.
 
@@ -126,9 +132,19 @@ To keep sensitive data, such as properties that hold email addresses, away from 
 
 ### Rate limits
 
-Each source caps queries at once, calls per minute and calls per hour, and everyone who queries it shares those caps. Each person's first open of a chart makes its own call, so a popular dashboard can reach them. Scheduled deliveries send results to people without each of them querying the source.
+Each source caps concurrent requests and calls per time window, such as per second, minute, hour or day. Each integration page lists its caps. Everyone who queries a source shares them, and cached results don't count toward them. Scheduled deliveries send results to people without each of them querying the source.
 
-A query waits up to 15 seconds for a free slot. Over a cap, it fails with a message saying when to retry. Calls also count toward your API quota with the tool.
+A query over a cap waits its turn, then fails with a message saying when to retry. How long it waits depends on where it runs:
+
+| Where the query runs | Waits up to |
+| --- | --- |
+| Explore, charts, dashboards and the API | 60 seconds |
+| AI agents and MCP | 30 seconds |
+| Scheduled deliveries and alerts | 120 seconds |
+
+When the tool itself asks Lightdash to slow down, the source pauses its calls until the time the tool gives. Calls also count toward your API quota with the tool.
+
+To leave more of the tool's API quota for other clients that use the same account, lower a source's limits. On the source's page, click **Edit** on the **Rate limits** card and enter lower numbers for **Concurrent requests**, each time window and **Per day**. You can't raise a limit above the integration's cap, shown as **Max** under each field. **Per day** has no limit until you set one, unless the integration has its own. The card also shows how much of each limit is in use and when it resets.
 
 ### Date ranges and rows
 
@@ -141,9 +157,10 @@ These aren't available on any live data source:
 - View underlying data
 - SQL runner and compiled SQL
 - Embedded dashboards and charts
-- Funnels, retention and user paths
+- Funnels, retention and user paths, except the **Funnel** and **Retention** tables of [Amplitude](/integrations/live-data-sources/amplitude) and [Mixpanel](/integrations/live-data-sources/mixpanel)
 - Pivot tables and charts grouped by a dimension
-- Data apps
+- Date zoom
+- Data app connections
 
 Other features, such as table calculations and custom metrics, vary by integration. A query that uses an unsupported feature fails with a message saying what to remove, even when the control for it still appears.
 
@@ -151,9 +168,9 @@ Filters work differently. Filter menus only offer the fields, operators and filt
 
 ## Caching
 
-Live data sources reuse results only while [results caching](/semantic-layer/caching) is on for the project. While it's on, each source reuses results for its own freshness window, up to the project's cache duration. While it's off, every query calls the integration. Integrations have their own processing delays, listed on each integration page.
+Live data sources reuse results only while [results caching](/semantic-layer/caching) is on for the project. While it's on, each source reuses results for its own freshness window, up to the project's cache duration. While it's off, every query calls the integration, and the source's **Caching** card says caching is off for the project. Integrations have their own processing delays, listed on each integration page.
 
-- **Repeat queries.** When anyone runs the same query on a source within its freshness window, they get the earlier result. It doesn't call the integration or count toward its rate limits, and it counts as a cache hit in the source's usage. The default window is 1 hour for every integration. You can change it per source, from **Always fetch** up to 24 hours, or clear a source's cached results. See [Manage a live data source](/integrations/live-data-sources/set-up-and-manage#manage-a-live-data-source). Signing in to a source again also clears its stored results.
+- **Repeat queries.** When anyone runs the same query on a source within its freshness window, they get the earlier result. It doesn't call the integration or count toward its rate limits, and it counts toward the hit rate on the source's **Caching** card. The default window is 1 hour for every integration. On the **Caching** card, change it per source, from **No caching** up to 24 hours, or click **Clear** to drop the source's cached results. Signing in again or changing the source's token or key also clears them.
 - **Scheduled deliveries.** Deliveries fetch new results unless **Use cached results when available** is on.
 - **Clearing the cache.** Clearing cached results for a project, chart, dashboard or explore, on demand or on a schedule, also clears live data source results.
 
@@ -165,4 +182,4 @@ Live data sources reuse results only while [results caching](/semantic-layer/cac
 | [Your warehouse](/get-started/build-your-semantic-layer) | Join a tool's data with other data, model it, or keep history the tool doesn't |
 | [External sources](/explore/external-sources) | Upload a CSV or connect a Google Sheet and explore it as a table in your project |
 
-You can't join a live data source to other tables in Explore. AI agents with [composer queries](/agents/use-ai-agents#post-process-results-with-duckdb-and-python) turned on can join its results with another live data source or explore. Each live data source's row limit in the join must be within its integration's most rows per query.
+You can't join a live data source to other tables in Explore or combine it in a [merge query](/explore/merge-queries). AI agents with [composer queries](/agents/use-ai-agents#post-process-results-with-duckdb-and-python) turned on, and the MCP `query` tool, can join its results with a warehouse explore or another live data source. Each live data source's row limit in the join must be within its integration's most rows per query.
