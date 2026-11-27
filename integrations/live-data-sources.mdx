@@ -9,9 +9,7 @@ import { FeatureBadge } from '/snippets/feature-badge.jsx';
 <div className="feature-badges"><FeatureBadge label="Beta" /></div>
 
 <Info>
-  [Contact Lightdash support](mailto:support@lightdash.com) to enable live data sources for your organization.
-
-  On a self-hosted Enterprise instance, [enable them with a feature flag](/self-host/enterprise-features#live-data-sources).
+  Self-hosted instances need an Enterprise license for live data sources. See [live data sources setup](/self-host/enterprise-features#live-data-sources).
 </Info>
 
 Live data sources let you analyze the live data in your tools, with or without a warehouse. Sign in to a tool and you get a ready-made set of dimensions and metrics to explore, chart and ask AI agents about.
@@ -25,6 +23,12 @@ Project admins [add a source](/integrations/live-data-sources/set-up-and-manage#
 <CardGroup cols={3}>
   <Card title="PostHog" href="/integrations/live-data-sources/posthog">
     Product events, persons and sessions through HogQL
+  </Card>
+  <Card title="Amplitude" href="/integrations/live-data-sources/amplitude">
+    Events, active users, funnels and retention for a project
+  </Card>
+  <Card title="Mixpanel" href="/integrations/live-data-sources/mixpanel">
+    Events, saved funnels and retention for a project
   </Card>
   <Card title="Google Analytics 4" href="/integrations/live-data-sources/google-analytics">
     Users, sessions, events and revenue for a property
@@ -44,9 +48,24 @@ Project admins [add a source](/integrations/live-data-sources/set-up-and-manage#
   <Card title="LinkedIn Ads" href="/integrations/live-data-sources/linkedin-ads">
     Campaign spend, clicks, leads and conversions
   </Card>
+  <Card title="GitHub" href="/integrations/live-data-sources/github">
+    Pull requests, issues and contributors of a repository
+  </Card>
+  <Card title="Pylon" href="/integrations/live-data-sources/pylon">
+    Support issues, customer accounts and contacts
+  </Card>
+  <Card title="Attio" href="/integrations/live-data-sources/attio">
+    Companies, people, deals, users and workspaces from your CRM
+  </Card>
+  <Card title="HubSpot" href="/integrations/live-data-sources/hubspot">
+    Deals, contacts, companies, tickets and leads from your CRM
+  </Card>
+  <Card title="Salesforce" href="/integrations/live-data-sources/salesforce">
+    Opportunities, accounts, leads and contacts, totalled by Salesforce
+  </Card>
 </CardGroup>
 
-To ask for another tool, click **Request** next to it in the **Add a live data source** dialog. If it isn't listed, contact [Lightdash support](mailto:support@lightdash.com).
+To ask for another tool, click **Request a live source** in the **Add a live data source** dialog and enter its name. You can also contact [Lightdash support](mailto:support@lightdash.com).
 
 ## Explore prefix
 
@@ -55,6 +74,8 @@ Each live data source has an **explore prefix**, the start of its explore names 
 - **Lightdash suggests one from the name.** Keep the default if you connect one source from an integration. Give each source its own explore prefix when you connect several from the same integration, such as `posthog_eu` and `posthog_us`.
 - **It never changes.** Renaming a source keeps its explore prefix, so saved charts keep working. To use another explore prefix, delete the source and add a new one.
 - **Deleted sources keep theirs.** No other source can take a deleted source's explore prefix. When you add a source of the same integration again, you can reattach the deleted one: the new source takes its explore prefix, so its charts work again and its field edits come back.
+
+An integration can have several explores, such as the **Pull requests**, **Issues** and **Contributors** of a GitHub source. Explore groups them in a folder under the source's name.
 
 Use lowercase letters, numbers and underscores, starting with a letter, up to 40 characters.
 
@@ -82,7 +103,7 @@ A source uses one shared connection, so everyone who can query it sees the same 
 | Access requested | Read-only. Each integration page lists what it needs |
 | Credentials | Sign-in tokens and API keys are stored encrypted and never shown again |
 | What AI agents see | Source names, the dimensions and metrics in use with their labels, descriptions and AI hints, and the rows their queries return |
-| Usage | Each source shows data read, API calls and median latency |
+| Usage | Each source shows data read, API calls, cache hits and median latency over the query history retention window, 32 days by default |
 
 [User attributes](/workspace-admin/user-attributes) don't apply to live data sources, so you can't limit rows or columns per person. To limit who can query a source, connect it in a separate project that only those people can access.
 
@@ -113,11 +134,13 @@ These aren't available on any live data source:
 
 Other features, such as table calculations and custom metrics, vary by integration. A query that uses an unsupported feature fails with a message saying what to remove, even when the control for it still appears.
 
+Filters work differently. Filter menus only offer the fields, operators and filter groups the source supports, listed on each integration page. A saved filter the source can't run shows a warning in the filters panel. Remove it to run the chart.
+
 ## Caching
 
-[Results caching](/semantic-layer/caching) doesn't apply to live data sources, so its project setting, duration and sharing between people have no effect. Integrations have their own processing delays, listed on each integration page.
+Live data sources reuse results only while [results caching](/semantic-layer/caching) is on for the project. While it's on, each source reuses results for its own freshness window, up to the project's cache duration. While it's off, every query calls the integration. Integrations have their own processing delays, listed on each integration page.
 
-- **Repeat queries.** If you run the same query again within 60 seconds, you get your earlier result. It doesn't call the integration or count toward its rate limits. This reuse is per person, so the same query from someone else calls the integration.
+- **Repeat queries.** When anyone runs the same query on a source within its freshness window, they get the earlier result. It doesn't call the integration or count toward its rate limits, and it counts as a cache hit in the source's usage. The default window is 1 hour for every integration. You can change it per source, from **Always fetch** up to 24 hours, or clear a source's cached results. See [Manage a live data source](/integrations/live-data-sources/set-up-and-manage#manage-a-live-data-source). Signing in to a source again also clears its stored results.
 - **Scheduled deliveries.** Deliveries fetch new results unless **Use cached results when available** is on.
 - **Clearing the cache.** Clearing cached results for a project, chart, dashboard or explore, on demand or on a schedule, also clears live data source results.
 
@@ -129,4 +152,4 @@ Other features, such as table calculations and custom metrics, vary by integrati
 | [Your warehouse](/get-started/build-your-semantic-layer) | Join a tool's data with other data, model it, or keep history the tool doesn't |
 | [External sources](/explore/external-sources) | Upload a CSV or connect a Google Sheet and explore it as a table in your project |
 
-You can't join a live data source to other tables in Explore.
+You can't join a live data source to other tables in Explore. AI agents with [composer queries](/agents/use-ai-agents#post-process-results-with-duckdb-and-python) turned on can join its results with another live data source or explore. Each live data source's row limit in the join must be within its integration's most rows per query.

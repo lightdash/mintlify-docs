@@ -23,7 +23,7 @@ You can see a list of every time your project is compiled by visiting the [proje
   <img src="/images/integrations/connect-project/project-connection-settings.png" alt="Lightdash project settings, opened from the gear icon, with Connection settings selected and the warehouse connection form on the right" />
 </Frame>
 
-Changing the warehouse connection doesn't change the tables in Explore. They still come from the project's dbt or [Lightdash YAML](/semantic-layer/yaml) models, so if you point a project at a different warehouse, deploy models for that warehouse's tables. Otherwise queries fail because the old tables don't exist there. This includes the **Playground (sample data)** project: its sample tables stay after you change its connection, so create a new project for your own warehouse instead.
+Changing the warehouse connection doesn't change the tables in Explore. They still come from the project's dbt or [Lightdash YAML](/semantic-layer/yaml) models, so if you point a project at a different warehouse, deploy models for that warehouse's tables. Otherwise queries fail because the old tables don't exist there. The **Playground (sample data)** project's connection can't be changed, so create a new project for your own warehouse instead.
 
 **To create a new project**, go to **Organization settings**, then **All projects** and click **Create new**.
 
@@ -33,21 +33,21 @@ Changing the warehouse connection doesn't change the tables in Explore. They sti
 
 ## 1. Connect to a warehouse
 
-We currently support [BigQuery](#bigquery), [Postgres](#postgres), [Supabase](#supabase), [Redshift](#redshift), [Snowflake](#snowflake), [Databricks](#databricks), [Trino](#trino), [ClickHouse](#clickhouse), [DuckDB](#duckdb), and [Athena](#athena). If your warehouse isn't listed, you may still be able to connect to it through [Trino](#trino).
+Lightdash supports [BigQuery](#bigquery), [Postgres](#postgres), [Supabase](#supabase), [Redshift](#redshift), [Snowflake](#snowflake), [Databricks](#databricks), [Trino](#trino), [ClickHouse](#clickhouse), [DuckDB](#duckdb) and [Athena](#athena). If your warehouse isn't listed, you may still be able to connect to it through [Trino](#trino).
 
-We always recommend giving read-only permissions to Lightdash, that way you ensure than no data can be manipulated. See each section below for warehouse specific details.
+Give Lightdash read-only permissions so it can't change your data.
 
 A Postgres, Athena or Snowflake project can also query more than one warehouse. See [multiple warehouse connections](/workspace-admin/multiple-warehouse-connections).
 
 <AccordionGroup>
   <Accordion title="Connect to your warehouse without a dbt project (warehouse-first onboarding)">
-  When the `new-onboarding` feature flag is enabled, the **Create new project** screen shows a **Connect to your warehouse** option alongside the standard "Connect via CLI" and "Connect manually" flows.
+  The **Create new project** screen shows a **Connect to your warehouse** option alongside the standard "Connect via CLI" and "Connect manually" flows.
 
-  Choosing it takes you directly to the warehouse connection form and creates the project with dbt type `NONE` — no dbt project is imported and no dbt compilation runs. You can create the same kind of project without the feature flag: choose **Connect manually** and set the dbt connection **Type** to **CLI**.
+  Choosing it takes you directly to the warehouse connection form and creates the project with dbt type `NONE` — no dbt project is imported and no dbt compilation runs. You can create the same kind of project another way: choose **Connect manually** and set the dbt connection **Type** to **CLI**.
 
   The project starts with no tables in Explore. You can query the warehouse from the [SQL Runner](/explore/sql-runner) straight away, and tables appear in Explore once you deploy dbt models or [Lightdash YAML](/semantic-layer/yaml) models for them. You can add or switch to a dbt project later from **Project settings**.
 
-  Combine this with **Connect via Lightdash CLI (SSO)** on Snowflake or **Sign in with Google** on BigQuery (see below) to create a project without ever pasting a credential — the same feature flag also enables smart defaults (recommended project, largest dataset/database, recommended warehouse) after you authenticate.
+  Combine this with **Connect via Lightdash CLI (SSO)** on Snowflake or **Sign in with Google** on BigQuery (see below) to create a project without ever pasting a credential. The setup wizard also suggests smart defaults (recommended project, largest dataset/database, recommended warehouse) after you authenticate.
   </Accordion>
 
   <a id="adding-lightdashs-static-ip-addresses-to-your-allow-list" />
@@ -123,7 +123,7 @@ To let AI agents run as a separate service account, see [BigQuery: the shared ag
 
 When you use "Sign in with Google" - Lightdash will execute queries against bigquery with your personal google user account. This is the simplest way to get connected quickly using your existing account.
 
-When the `new-onboarding` feature flag is enabled, new BigQuery projects default to **Sign in with Google** and the setup wizard suggests smart defaults after you authenticate: a recommended **Project ID** based on your Google account's BigQuery activity, and the largest available **Dataset** (marked with a *Recommended · largest* badge in the picker). You can override either at any time.
+When Google sign-in is available on your instance, new BigQuery projects default to **Sign in with Google** and the setup wizard suggests smart defaults after you authenticate: a recommended **Project ID** based on your Google account's BigQuery activity, and the largest available **Dataset** (marked with a *Recommended · largest* badge in the picker). You can override either at any time.
 
 <Accordion title="BigQuery tokens expiring">
   If your Google Workspace uses [Google Cloud session control](https://support.google.com/a/answer/9368756), users are asked to reconnect their Google account every session (16 hours by default). When the session ends, queries fail with this error:
@@ -819,7 +819,7 @@ Choose to authenticate using either a user account (using "Sign in with Snowflak
 ##### Connect via Lightdash CLI (SSO)
 
 <Info>
-  This method is available behind the `new-onboarding` feature flag and only applies during **project creation**. Contact Lightdash support to enable it for your workspace.
+  This method only applies during **project creation**.
 </Info>
 
 Use this when your Snowflake account requires SSO (or MFA) and you don't want to paste a password, private key, or PAT to create the project. The Lightdash CLI signs you in to Snowflake in your browser and provisions a durable credential that is deposited straight into the project connection form — you never handle the secret yourself.
@@ -1177,9 +1177,9 @@ Enable this option to use HTTPS/SSL for secure connections to your ClickHouse da
 
 For ClickHouse Cloud, use the HTTPS port, usually `8443`, and turn on **Secure**. ClickHouse connections can't use an SSH tunnel, so if your ClickHouse service restricts access by IP, add Lightdash's [static IP addresses](#adding-lightdashs-static-ip-addresses-to-your-allow-list) to its IP access list.
 
-##### Retries
+##### Timeout in seconds
 
-The number of times Lightdash should retry ClickHouse queries that result in unhandled server errors. By default, this is set to 3.
+If a query takes longer than this timeout to complete, then the query will be cancelled. By default, this is set to 300 seconds.
 
 ##### Start of week
 
@@ -1504,9 +1504,9 @@ Then scroll down to the dbt project section:
   <img src="/images/integrations/connect-project/project-connection-dbt.png" alt="The dbt connection section of Lightdash project settings, with type GitHub, OAuth authorization, and repository, dbt version, and branch fields" />
 </Frame>
 
-The **dbt version** field sets the dbt Core 1.x version Lightdash uses when it compiles your project. Lightdash supports dbt Core 1.4 to 1.12. The default, **latest**, uses the newest version Lightdash supports, currently 1.12. If a refresh fails with a dbt compile error and the project is pinned to an older version, choose a newer version, or **latest**, and refresh again. `lightdash deploy` and `lightdash preview` compile with the dbt you have installed, so for those, upgrade dbt locally. The list has no dbt Core v2 (Fusion) option: for a Fusion project, keep **latest** and keep the project compatible with dbt Core 1.10 or later, as described in [Moving to dbt Core v2 (Fusion)](/integrations/dbt/upgrading#moving-to-dbt-core-v2-fusion).
+The **dbt version** field sets the dbt Core 1.x version Lightdash uses when it compiles your project. Lightdash supports dbt Core 1.4 to 1.12. The default, **latest**, uses the newest version Lightdash supports, currently 1.12. If a refresh fails with a dbt compile error and the project is pinned to an older version, choose a newer version, or **latest**, and refresh again. `lightdash deploy` and `lightdash preview` compile with the dbt you have installed, so for those, upgrade dbt locally. The list has no dbt v2 option: for a dbt v2 project, keep **latest** and keep the project compatible with dbt Core 1.10 or later, as described in [Moving to dbt v2](/integrations/dbt/upgrading#moving-to-dbt-v2-fusion).
 
-Pick your connection type and follow the guide below: [GitHub](#github), [GitLab](#gitlab), [Azure DevOps](#azure-devops), [Bitbucket](#bitbucket), [dbt Cloud](#dbt-cloud), or the [CLI](#cli).
+Pick your connection type and follow its section below: [GitHub](#github), [GitLab](#gitlab), [Azure DevOps](#azure-devops), [Bitbucket](#bitbucket), [dbt Cloud](#dbt-cloud), or the [CLI](#cli).
 
 **dbt Cloud managed repositories**
 

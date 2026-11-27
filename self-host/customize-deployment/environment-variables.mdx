@@ -55,6 +55,7 @@ Core variables that control how the Lightdash server runs, how it's reached, and
 | `COOKIES_MAX_AGE_HOURS`                       | How many hours a user session exists before the user is automatically signed out. For example if 24, then the user will be automatically after 24 hours of inactivity.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `TRUST_PROXY`                                 | This tells the Lightdash server that it can trust the X-Forwarded-Proto header it receives in requests. This is useful if you use `SECURE_COOKIES=true` behind a HTTPS terminated proxy that you can trust. (default=false)                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `LIGHTDASH_MAX_PAYLOAD`                       | Maximum HTTP request body size (default=5mb)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `HTTP_RESPONSE_COMPRESSION_ENABLED`           | Compresses query results pages with brotli or gzip when the client accepts it. Set to `false` to turn it off, for example when a proxy in front of Lightdash already compresses responses. Restart the server after a change. (default=true)                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `LIGHTDASH_MODE`                              | Mode for Lightdash (default, demo, pr, etc.) (default=default)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `ALLOW_MULTIPLE_ORGS`                         | If set to `true`, new users registering on Lightdash will have their own organization, separated from others (default=false)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `LIGHTDASH_DISABLE_UPDATE_CHECK`              | When `true`, stops the API server from polling Docker Hub (`hub.docker.com`) for the latest Lightdash release. Use this if your deployment blocks outbound traffic to Docker Hub. It also stops the calls to the GitHub API (`api.github.com`) for [release highlights](/self-host/upgrading#when-to-upgrade). When disabled, the "update available" badge and release highlights are hidden in the UI. (default=false)                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -91,15 +92,15 @@ Variables that control the scheduler worker and background cleanup jobs.
 | `SCHEDULER_ENABLED`              | Enables/Disables the scheduler worker that triggers the scheduled deliveries. (default=true)                                    |
 | `SCHEDULER_CONCURRENCY`          | How many scheduled delivery jobs can be processed concurrently. (default=3)                                                     |
 | `SCHEDULER_JOB_TIMEOUT`          | After how many milliseconds the job should be timeout so the scheduler worker can pick other jobs. (default=600000, 10 minutes) |
-| `SCHEDULER_QUERY_POLLING_TIMEOUT` | How many milliseconds a scheduled delivery waits for each query to finish. When the wait runs out, Lightdash marks the query cancelled and the delivery fails with `Query polling timed out`. Must be at most 90% of `SCHEDULER_JOB_TIMEOUT`, or Lightdash doesn't start. To wait longer than 9 minutes, raise both variables. It doesn't apply to image and PDF deliveries. (default=300000, 5 minutes, or 90% of `SCHEDULER_JOB_TIMEOUT` if that is lower) |
+| `SCHEDULER_QUERY_POLLING_TIMEOUT` | How many milliseconds a scheduled delivery waits for each query to finish. When the wait runs out, Lightdash cancels the query and the delivery fails with `Query did not finish within <seconds>s, the query time limit for scheduled deliveries`. Must be at most 90% of `SCHEDULER_JOB_TIMEOUT`, or Lightdash doesn't start. To wait longer than 9 minutes, raise both variables. It doesn't apply to image and PDF deliveries. (default=300000, 5 minutes, or 90% of `SCHEDULER_JOB_TIMEOUT` if that is lower) |
 | `SCHEDULER_SCREENSHOT_TIMEOUT`   | Timeout in milliseconds for taking screenshots                                                                                  |
 | `SCHEDULER_SHUTDOWN_TIMEOUT`     | How many milliseconds a stopping scheduler worker waits for in-flight jobs to finish before releasing them for retry. Keep it below your pod's termination grace period. (default=60000, 1 minute) |
 | `SCHEDULER_INCLUDE_TASKS`        | Comma-separated list of scheduler tasks to include                                                                              |
 | `SCHEDULER_EXCLUDE_TASKS`        | Comma-separated list of scheduler tasks to exclude                                                                              |
 | `SCHEDULER_POLL_INTERVAL`        | Polling interval in milliseconds for the scheduler worker to check for new jobs.                                                |
-| `QUERY_HISTORY_CLEANUP_ENABLED`  | Enables the background job that periodically deletes old query-history rows. (default=true)                                     |
+| `QUERY_HISTORY_CLEANUP_ENABLED`  | Enables the background job that periodically deletes old query-history rows and live data source call log rows. (default=true)  |
 | `QUERY_HISTORY_CLEANUP_SCHEDULE` | Cron expression controlling how often query history is cleaned up. (default=`0 2 * * *`)                                          |
-| `QUERY_HISTORY_RETENTION_DAYS`   | How many days the cleanup job keeps query-history rows before deleting them. (default=32)                                       |
+| `QUERY_HISTORY_RETENTION_DAYS`   | How many days the cleanup job keeps query-history rows and live data source call log rows before deleting them. (default=32)    |
 | `APP_STATE_HISTORY_CLEANUP_ENABLED` | Enables the background job that periodically deletes old data app shared-state history versions. (default=true)              |
 | `APP_STATE_HISTORY_RETENTION_DAYS` | How many days the cleanup job keeps data app shared-state history versions before deleting them. (default=90)                 |
 | `APP_STATE_HISTORY_KEEP_VERSIONS` | How many of each key's newest shared-state history versions are always kept, regardless of age. (default=50)                   |
@@ -121,7 +122,7 @@ Variables that control PAT availability and lifetime.
 | Variable                          | Description                                                                                          |
 | :-------------------------------- | :--------------------------------------------------------------------------------------------------- |
 | `DISABLE_PAT`                     | Disables Personal Access Tokens (default=false)                                                      |
-| `PAT_ALLOWED_ORG_ROLES`           | Comma-separated list of organization roles allowed to use Personal Access Tokens (default=All roles) |
+| `PAT_ALLOWED_ORG_ROLES`           | Deprecated - use the `manage:PersonalAccessToken` scope on a [custom role](/workspace-admin/custom-roles) instead. Comma-separated list of system organization roles allowed to use Personal Access Tokens (default=All roles). Accepts system role names only, so it can't allow a custom role. |
 | `PAT_MAX_EXPIRATION_TIME_IN_DAYS` | Maximum expiration time in days for Personal Access Tokens                                           |
 
 ## Timezone and localization
@@ -194,12 +195,13 @@ Enable or disable individual product features across the instance.
 | `CUSTOM_VISUALIZATIONS_ENABLED`              | Enables/Disables custom chart functionality (default=false)                                                                                                                                                                          |
 | `EXTENDED_USAGE_ANALYTICS`                   | When `true`, adds "Dashboard views (top 20)" and "Chart views (top 20)" tables to the [User Activity dashboard](/workspace-admin/usage-analytics#user-activity-dashboard) in Project Settings > Usage Analytics. (default=false) |
 | `DISABLE_DASHBOARD_COMMENTS`                 | Disables dashboard comments (default=false)                                                                                                                                                                                          |
+| `DISABLE_MERGE_QUERY_AUTHORING`              | When `true`, nobody on the instance can build or change a [merge query](/explore/merge-queries), whatever their role. This includes Admins. Saved merged charts and dashboard tiles still run and can be viewed. (default=false) |
 | `ORGANIZATION_WAREHOUSE_CREDENTIALS_ENABLED` | Enables organization warehouse settings (default=false)                                                                                                                                                                              |
 | `EDIT_YAML_IN_UI_ENABLED`                    | Enables the in-UI YAML editor for tables and metrics. (default=false)                                                                                                                                                                |
 | `ECHARTS_V6_ENABLED`                         | Opt into the ECharts v6 renderer. (default=false)                                                                                                                                                                                    |
 | `FUNNEL_BUILDER_ENABLED`                     | Enables the funnel chart builder. (default=false)                                                                                                                                                                                    |
 | `SAVE_CREDENTIALS_FORM_ENABLED`              | Enables the "save credentials" form so warehouse credentials can be stored per-user. (default=false)                                                                                                                                 |
-| `AUTH_MOBILE_LOGIN_ENABLED`                  | Controls sign-in from the Lightdash mobile apps (iOS/Android, published as **Lightdash AI**). Mobile sign-in works against any Lightdash instance, including self-hosted ones — users enter their instance's own URL and sign in with the same account they use on the web app. Set to `false` to disable mobile sign-in for this instance. (default=true) |
+| `AUTH_MOBILE_LOGIN_ENABLED`                  | Sets `auth.mobileLogin.available` in the `/api/v1/health` response. The [Lightdash mobile apps](/workflow/lightdash-mobile) read it to choose their sign-in screen. When `false`, the apps show an older screen that offers password and Google sign-in, if the instance allows them, and no SSO. It doesn't stop mobile sign-in. To turn off the mobile apps, see [Turn off the mobile apps](/workflow/lightdash-mobile#turn-off-the-mobile-apps). (default=true) |
 
 <Note>
   `PARTIAL_COMPILATION_ENABLED` has been removed and no longer controls server or CLI behavior. Project create, update, and refresh paths use partial compilation, and CLI compilation uses it by default. To report failures normally handled by partial compilation as errors in a supported CLI command, use [`--no-partial-compilation`](/workflow/cli/reference#partial-compilation) for that run.
@@ -212,7 +214,7 @@ Use these to force feature flags on or off across your deployment regardless of 
 | Variable                          | Description                                                                                                                                          |
 | :-------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `LIGHTDASH_ENABLE_FEATURE_FLAGS`  | Comma-separated list of feature-flag IDs to force-enable for everyone in your instance. Example: `embedding,user-impersonation,scim-token-management` |
-| `LIGHTDASH_DISABLE_FEATURE_FLAGS` | Comma-separated list of feature-flag IDs to force-disable for everyone. Takes precedence over per-org overrides. Example: `dashboard-comments-enabled` |
+| `LIGHTDASH_DISABLE_FEATURE_FLAGS` | Comma-separated list of feature-flag IDs to force-disable for everyone. Takes precedence over per-org overrides. Example: `mobile-app-access` |
 
 Lightdash doesn't validate these IDs. An ID that no longer gates anything, for example a flag that has been retired or made always-on, is ignored without an error and has no effect, so you can remove it from the list.
 
@@ -330,7 +332,6 @@ Scheduled-delivery links longer than 7 days automatically switch to a persistent
 | Variable                     | Description                                                                                     |
 | :--------------------------- | :---------------------------------------------------------------------------------------------- |
 | `RESULTS_CACHE_ENABLED`      | Deprecated - forces results caching on or off for every project and locks each project's own setting. Unset it and turn on results caching per project under **Project settings → Results caching** instead |
-| `AUTOCOMPLETE_CACHE_ENABLED` | Enables caching for filter autocomplete results (default=false)                                 |
 | `CACHE_STALE_TIME_SECONDS`   | Defines how long cached results remain valid before being considered stale (default=86400, 24h) |
 
 These variables are **deprecated**; use the `RESULTS_S3_*` versions instead.
@@ -424,22 +425,19 @@ These settings configure storage for the [usage analytics project](/workspace-ad
 
 ## AI agents
 
-Enterprise-only. For setup steps (which provider to pick, how to point at an LLM gateway, how to enable verified answers), see [AI agents](/self-host/enterprise-features/ai-agents). The tables below cover AI provider and runtime settings.
+Enterprise-only. For setup steps (which provider to pick, how to point at an LLM gateway), see [AI agents](/self-host/enterprise-features/ai-agents). The tables below cover AI provider and runtime settings.
 
 | Variable                                  | Description                                                                                                                                              |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `AI_COPILOT_ENABLED`                      | Enables AI agents (default=false)                                                                                                                       |
 | `ASK_AI_BUTTON_ENABLED`                   | Enables the "Ask AI" button in the interface for direct access to AI agents, when disabled agents can be accessed from `/ai-agents` route (default=false) |
-| `AI_EMBEDDING_ENABLED`                    | Enables AI embedding functionality for verified answers similarity matching (default=false)                                                              |
 | `AI_DEFAULT_PROVIDER`                     | Default AI provider to use (`openai`, `azure`, `anthropic`, `google`, `vertex`, `openrouter`, `bedrock`) (default=openai)                                                    |
-| `AI_DEFAULT_EMBEDDING_PROVIDER`           | Default AI provider for embeddings (`openai`, `bedrock`, `azure`) (default=openai)                                                                       |
 | `AI_COPILOT_DEBUG_LOGGING_ENABLED`        | Enables debug logging for AI agents (default=false)                                                                                                     |
 | `AI_COPILOT_TELEMETRY_ENABLED`            | Enables telemetry for AI agents (default=false)                                                                                                         |
 | `AI_COPILOT_THREAD_DUMP_ENABLED`          | Enables the [AI thread debug dump](/support/ai-thread-debug-dump) download action for organization AI admins (default=false)                             |
 | `AI_COPILOT_REQUIRES_FEATURE_FLAG`        | Requires a feature flag to use AI agents (default=false)                                                                                                |
 | `AI_COPILOT_MAX_QUERY_LIMIT`              | Maximum number of rows returned in AI-generated queries and by the MCP `run_metric_query` tool (default=5000)                                                                                    |
 | `AI_COPILOT_RUN_SQL_MAX_LIMIT`            | Maximum number of rows the AI agent `run_sql` tool can return. Falls back to `AI_COPILOT_MAX_QUERY_LIMIT`, then to 5000.                                |
-| `AI_VERIFIED_ANSWER_SIMILARITY_THRESHOLD` | Similarity threshold (0-1) for verified answer matching (default=0.6)                                                                                    |
 | `AI_COPILOT_MCP_TIMEOUT_MS` | Timeout in milliseconds when connecting to an external MCP server (default=20000). |
 | `AI_TOOL_DESCRIPTION_MAX_CHARS` | Maximum tool-result description length sent to the AI agent (default=600). |
 | `AI_ANALYTICS_PROJECT_UUID`               | UUID of the project used to render the internal AI usage analytics dashboard.                                                                            |
@@ -465,10 +463,8 @@ Optional HTTP(S) base URLs for the Data app coding agent using instance-managed 
 | ------------------------- | ------------------------------------------------------------------------------------------- |
 | `OPENAI_API_KEY`          | (Required when using OpenAI) API key for OpenAI                                             |
 | `OPENAI_MODEL_NAME`       | OpenAI model name to use (default=gpt-6-sol)                                                |
-| `OPENAI_EMBEDDING_MODEL`  | OpenAI embedding model for verified answers (default=text-embedding-3-small)                |
 | `OPENAI_BASE_URL`         | Optional base URL for OpenAI compatible API                                                 |
 | `OPENAI_AVAILABLE_MODELS` | Comma-separated list of models available in the model picker (default=All supported models) |
-| `OPENAI_ZERO_DATA_RETENTION` | Set to `true` if your OpenAI account or LLM gateway enforces Zero Data Retention (ZDR). (default=false) |
 | `OPENAI_CUSTOM_HEADERS`  | JSON object of extra HTTP headers to send with every OpenAI request                          |
 | `OPENAI_SUPPORTS_STREAMING` | Set to `false` if the endpoint behind `OPENAI_BASE_URL` (e.g. an LLM gateway) doesn't support streaming (SSE) completions — Lightdash will make non-streaming requests instead (default=true) |
 | `OPENAI_USE_CHAT_COMPLETIONS` | Set to `true` if the endpoint behind `OPENAI_BASE_URL` only implements the Chat Completions API (`/chat/completions`) and not the Responses API. Reasoning summaries are unavailable in this mode. (default=false) |
@@ -513,7 +509,6 @@ Optional HTTP(S) base URLs for the Data app coding agent using instance-managed 
 | `AZURE_AI_ENDPOINT`               | (Required when using Azure AI) Endpoint for Azure AI                       |
 | `AZURE_AI_API_VERSION`            | (Required when using Azure AI) API version for Azure AI                    |
 | `AZURE_AI_DEPLOYMENT_NAME`        | (Required when using Azure AI) Deployment name for Azure AI                |
-| `AZURE_EMBEDDING_DEPLOYMENT_NAME` | Deployment name for Azure embedding model (default=text-embedding-3-small) |
 | `AZURE_USE_DEPLOYMENT_BASED_URLS` | Use deployment-based URLs for Azure OpenAI API calls (default=true)        |
 | `AZURE_AI_DEPLOYMENT_SUPPORTS_REASONING` | Set to `true` if your Azure deployment exposes a reasoning-capable model (e.g. `o3`). Enables reasoning-mode prompts. (default=false) |
 | `AZURE_AI_USE_CHAT_COMPLETIONS` | Set to `true` if your endpoint (e.g. a gateway that mirrors the Azure OpenAI URL layout) only implements the Chat Completions API and not the Responses API. Reasoning summaries are unavailable in this mode. (default=false) |
@@ -546,7 +541,6 @@ Optional HTTP(S) base URLs for the Data app coding agent using instance-managed 
 | `BEDROCK_REGION`            | **(Required)** AWS region for Bedrock                                                        |
 | `BEDROCK_MODEL_NAME`        | Bedrock model name to use (default=claude-sonnet-4-5)                                        |
 | `BEDROCK_MAX_OUTPUT_TOKENS` | Maximum output tokens per model call, sent to Bedrock as the `maxTokens` inference setting. Raise it if long answers are cut off or come back empty. Must be a positive integer; invalid values stop the backend at startup. For models with a fixed thinking budget, the budget is added on top of this cap. (default=24000) |
-| `BEDROCK_EMBEDDING_MODEL`   | Bedrock embedding model for verified answers (default=cohere.embed-english-v3)               |
 | `BEDROCK_BASE_URL`          | Optional HTTP(S) base URL for a Bedrock-compatible gateway. Routes backend Bedrock calls and Bedrock-backed Data app coding agents through the gateway. |
 | `CLAUDE_CODE_SKIP_BEDROCK_AUTH` | Set to `true` or `1` to omit AWS authentication from Claude Code when `BEDROCK_BASE_URL` points to a gateway that performs upstream authentication. The backend still requires a supported Bedrock credential mode. |
 | `BEDROCK_AVAILABLE_MODELS`  | Comma-separated list of models available in the model picker (default=All supported models)  |
@@ -713,9 +707,11 @@ Enterprise-only. For setup steps and when a pre-aggregate worker is needed, see 
 
 | Variable                                     | Description                                                                                                                                          |
 | :------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PRE_AGGREGATES_ENABLED`                     | Enables pre-aggregates. Requires `LIGHTDASH_LICENSE_KEY` and the bucket below; disable per instance with `LIGHTDASH_DISABLE_FEATURE_FLAGS=pre-aggregates`. (default=false)                                                                |
+| `PRE_AGGREGATES_ENABLED`                     | Enables pre-aggregates. Requires `LIGHTDASH_LICENSE_KEY` and the bucket below. (default=false)                                                                |
 | `PRE_AGGREGATES_PARQUET_ENABLED`             | Store materializations as Parquet files instead of JSON Lines. Set `true`. (default=false)                                                              |
-| `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT`    | DuckDB memory limit for pre-aggregate queries (e.g. `4GB`).                                                                                          |
+| `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT`    | Memory per project query instance. Uses DuckDB's default when unset.                                                                                          |
+| `PRE_AGGREGATE_DUCKDB_WRITE_MEMORY_LIMIT`   | Memory per managed Parquet conversion. Use a positive whole number with `MB` or `GB` (e.g. `1GB`). Defaults to `256MB`. |
+| `PRE_AGGREGATE_MATERIALIZATION_TIMEOUT_MS`   | How long, in milliseconds, the scheduler waits for a materialization query to finish before it gives up. Raise it for very wide or large pre-aggregates. (default=1800000, 30 minutes) |
 | `PRE_AGGREGATE_RESULTS_S3_BUCKET`            | S3 bucket for pre-aggregate Parquet storage. Required when configuring pre-aggregate result storage.                                                  |
 | `PRE_AGGREGATE_RESULTS_S3_REGION`            | Region for the pre-aggregate S3 bucket. Required when configuring pre-aggregate result storage.                                                       |
 | `PRE_AGGREGATE_RESULTS_S3_ACCESS_KEY`        | Access key for the pre-aggregate S3 bucket.                                                                                                          |
@@ -750,7 +746,7 @@ Enterprise-only. Sandboxes execute through [E2B](https://e2b.dev/). For setup st
 
 ## Chart library
 
-Enterprise-only. Applies when the `chart-type-registry` feature flag is on. For enabling the library and reading it from a private mirror, see [chart library](/self-host/enterprise-features/data-apps#chart-library).
+Enterprise-only. For setting up the library and reading it from a private mirror, see [chart library](/self-host/enterprise-features/data-apps#chart-library).
 
 <ChartLibraryEnv />
 
@@ -758,7 +754,7 @@ Enterprise-only. Applies when the `chart-type-registry` feature flag is on. For 
 
 ## Autopilot
 
-Enterprise-only scheduled project maintenance, always using the AI SDK and shared AI provider configuration. Enable AI agents, configure a provider at the instance or organization level, and enable the `ai-autopilot` feature flag. Apply the same environment configuration to API and scheduler processes and restart both after changes. See [Autopilot setup](/self-host/enterprise-features/ai-agents#autopilot).
+Enterprise-only scheduled project maintenance, always using the AI SDK and shared AI provider configuration. Enable AI agents and configure a provider at the instance or organization level. Apply the same environment configuration to API and scheduler processes and restart both after changes. See [Autopilot setup](/self-host/enterprise-features/ai-agents#autopilot).
 
 | Variable | Description |
 | :--- | :--- |
@@ -1068,7 +1064,11 @@ Set `LD_SETUP_USER_ATTRIBUTES` to a JSON array to declare [user attributes](/wor
 
 <FeatureBadge label="Enterprise" />
 
-On every boot, Lightdash matches each entry to an existing user attribute by its `name`: new names are created, existing names are updated in place. Attributes that are not present in the array are left untouched — this reconcile is non-destructive and never deletes attributes you created in the UI.
+On every boot, Lightdash matches each entry to an existing user attribute by its `name`: new names are created, existing names are overwritten. Attributes not in the array are left untouched.
+
+<Warning>
+  Every deploy replaces a declared attribute's description, default and assignments with what the config says. Groups not listed in `groups` are unassigned, a default left out of the entry is cleared, and per-user (by-email) values are removed, including ones set in the UI, the API or by an identity provider. To manage an attribute in the UI or API instead, leave it out of the array.
+</Warning>
 
 ### Schema
 
@@ -1100,11 +1100,11 @@ LD_SETUP_USER_ATTRIBUTES='[
 
 Group bindings are resolved **by group name** because group UUIDs aren't known at deploy time — groups provisioned via [SCIM](/workspace-admin/sso/scim) are created by your IdP, not by Lightdash.
 
-If a group name in `groups` doesn't match any existing group at the time the deploy runs (for example, because SCIM hasn't synced it yet), Lightdash logs a warning and skips that mapping rather than failing the deploy. The mapping is retried on the next deploy, so once the group exists the binding reconciles automatically.
+If a group name in `groups` doesn't match any existing group at the time the deploy runs (for example, because SCIM hasn't synced it yet), Lightdash logs a warning and skips that mapping rather than failing the deploy. The mapping is retried on the next deploy, so once the group exists the binding reconciles automatically. Because the assignment set is replaced, a skipped mapping leaves that group without a value for the attribute until then.
 
 ### Per-user mappings
 
-`LD_SETUP_USER_ATTRIBUTES` only supports group-based mappings. Per-user (by-email) values still need to be assigned through the UI or API.
+`LD_SETUP_USER_ATTRIBUTES` only supports group-based mappings. For per-user (by-email) values, leave the attribute out of the array and assign them in the UI or API.
 
 <a id="declare-group--project-access" />
 

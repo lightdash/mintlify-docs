@@ -166,6 +166,10 @@ Each table in an explore is filtered independently using one of two modes:
 
 Tagging the base model does not restrict joined models. Once an explore is visible, each joined table is filtered by its own tags only. A joined table with no tags falls into explore-level mode, so all of its fields are visible to the agent. To restrict a joined model's fields, add field-level tags to that model (see Scenarios 4 and 6 below).
 
+<Warning>
+  `hidden: true` is a setting for the Lightdash field picker, not an agent access control. A hidden field in an explore the agent can see is still available to the agent, which can query it when it names the field id, and hidden field ids can appear in the agent's field suggestions. Hidden fields are often used inside metric definitions, so agents need to know they exist. To keep a field away from an agent, use field-level tags: once any field in a table has tags, the agent only gets the fields whose tags match its own.
+</Warning>
+
 ### Adding tags at the model level
 
 Tag entire models to give your AI agent access to all metrics and dimensions within that explore:
@@ -520,3 +524,14 @@ For a user with `sales_region: 'EMEA'` and no `can_view_pii` attribute:
 ## Limiting how much agent queries scan
 
 On BigQuery, you can set an AI agent query limit on the connection. Lightdash dry-runs every agent query before it executes and refuses queries estimated to process more than the limit. The agent receives the estimate so it can narrow the query and try again. `Maximum bytes billed`, or [AI agent maximum bytes billed](/integrations/connect-project#ai-agent-maximum-bytes-billed) when it's set, stays the hard limit, because dry-run estimates can be lower than what a query is billed for. See **Query cost estimates** in the [BigQuery connection settings](/integrations/connect-project#bigquery).
+
+## Troubleshoot an agent that says it has no data to query
+
+If an agent replies that it has no data it can query, that no explores are available, or that you should ask an administrator to set up explores or adjust the agent configuration, the list of explores it can see for the person asking is empty. An explore only reaches the agent when it passes all four checks:
+
+1. Tables configuration: the model is included in the project's [Tables configuration](/semantic-layer/tables#choosing-which-tables-appear-in-lightdash) under **Project settings**.
+2. Agent tags: the agent's tags match the explore or its fields. See [Limiting access to specific explores and fields](#limiting-access-to-specific-explores-and-fields). The base table has to match, and adding any tag excludes every virtual view.
+3. User attributes: the asking user's [user attributes](/workspace-admin/user-attributes) satisfy the explore's `required_attributes` or `any_attributes`. See [User attributes and permissions](#user-attributes-and-permissions).
+4. Compile: the explore compiled without errors. A failed dbt refresh or compile can remove an explore, so check the project's last refresh for errors.
+
+To tell which check is failing, open the same agent in the Lightdash app as the same user who got the reply. If the agent finds explores there, the cause is specific to that user, such as their user attributes. In Slack, [the agent uses the attributes of the user who created it](#default-behavior) unless the **AI Agents OAuth requirement** is on. If the agent finds no explores in the app either, the cause is on the agent or project side: its tags, Tables configuration or a compile error.

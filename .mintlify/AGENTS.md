@@ -8,6 +8,8 @@ These rules govern every change. The full system — doc-type contracts and the 
 
 - **Search first.** Look for an existing home for the content (site search, or `rg` locally). Default to extending the canonical page over adding one.
 - **One home per fact.** Every fact, schema, table, command, and number has exactly one canonical page. If you're about to restate something from another page, link to it or transclude a `snippets/` snippet instead — copies drift, and this corpus has shipped contradictory versions because of it.
+- **Document intended behavior.** A bug, a workaround for one, or behavior someone is changing stays out of the docs; report it to the team that owns the feature instead. A limit the product is designed to have is a fact and belongs on the feature's page, with the supported way to get the same result when there is one.
+- **Size the addition to its container.** A missing detail joins the sentence, paragraph, or bullet that already covers the topic, and gets no heading, paragraph, or callout of its own. A bullet or a table cell stays one line: when the detail needs more, write it on the canonical page and link to it.
 
 ## Placement and naming
 
@@ -41,12 +43,13 @@ Write the way the best pages here already read (`explore/dashboards.mdx` is a go
 - **Headings say the task.** Sentence case, and imperative for a task ("Create a dashboard", "Add filters"); a noun phrase for a concept or reference ("Dashboard filters"). No questions, no "Overview".
 - **Plain and short.** Everyday words, short sentences, one idea per paragraph. Define a term the first time you use it, or link to where it is defined. No "simply", "just", "easily", "powerful" or "seamless".
 - **UI as the reader sees it.** Bold the exact label for buttons, menu items and fields (**New**, **Save**); give a path as **Settings** → **Project** → **dbt selector**. Code, file names, settings keys and commands go in backticks.
-- **Exact over vague.** Name the setting, the default, the limit and who can do it (the role or permission). "Admins and editors" beats "users with access".
+- **Exact over vague.** Name the setting, the default, the limit and who can do it (the role or permission). "Admins and editors" beats "users with access". For an action gated by role, name the scopes that gate it, then the system roles that carry them; see [`feature-availability.md`](.mintlify/feature-availability.md#publish-the-claim-once).
 - **Steps are numbered and one action each.** Say where the reader is before telling them what to click, and show the result when it isn't obvious.
 - **Document tasks, not interface narration.** Give the settings path and the actions needed to finish the task. Omit routine menus opening, confirmation buttons, success notifications, and empty states. Explain a status only when it changes the reader's next action; keep troubleshooting in a dedicated subsection.
 - **Choose one form per fact.** Use a table for comparable options, a list for parallel points, and steps for an ordered task. Do not repeat the same information in prose, a list, and a table. Link to a section where context calls for it; never dump a page's headings into a paragraph of anchor links.
 - **Descriptions are one line.** The frontmatter `description` says what the page lets the reader do, in a phrase with no trailing full stop.
 - **No promises or prices.** No roadmap, timelines or "coming soon"; no prices or plan costs. Use the shared plan badges in [`components.md`](.mintlify/components.md); reserve `<Info>` for feature-specific enablement requirements.
+- **No unbacked assurances.** A "Lightdash never…" sentence is a claim about the product. Make it once, where the rule is set, and only when the product source backs it.
 - **US spelling in prose; product spelling in labels.** Prose uses US English (analyze, color, labeled). UI labels, settings keys, code identifiers, and quoted prompts stay exactly as the product spells them, even when British: **Analyse this view**, `analyseOnLoad`, "stop analysing on load". Verify a label in the product source before "fixing" it.
 - **Contractions are fine.** Use don't, isn't, can't the way the best pages here do; spelling them out reads stiff.
 
@@ -83,7 +86,7 @@ Start `mint dev --port 3333` **once** in the background and reuse it for the who
 Use the named tasks in `package.json` instead of invoking their scripts directly. Run from the repository root:
 
 - `aube run validate:docs -- --changed-files <file-list>` checks frontmatter, nav reachability, redirects, internal links, media placement, IA annotations, and blocking component rules. The file list contains one changed path per line, including deleted paths; omit `--changed-files <file-list>` for a full-site audit.
-- `aube run audit:components -- --baseline` checks for component regressions across the site.
+- `aube run audit:components -- --baseline` checks for component and prose regressions across the site.
 - `mint validate` checks the Mintlify build and needs to run outside the sandbox because it writes under `~/.mintlify/previews`; `mint broken-links --check-anchors` checks page links and heading anchors. Both need a mint CLI at least as new as the version CI pins in `.github/workflows/validate-docs.yml`. An outdated CLI is missing `mint validate`, ignores `.mintignore`, and reports phantom broken links in `.mintlify/` files and OpenAPI-generated `api-reference` pages — if you see those findings, update with `npm install --global mint@<pinned-version>` instead of editing anything.
 - `aube run check` type-checks and tests the utilities when tooling changes.
 - `aube run audit:external-links` reports unavailable third-party links when auditing external URLs; findings are advisory.
