@@ -186,6 +186,8 @@ window.lightdashSidebarNavigation = [
 {"title":"Attio","href":"/integrations/live-data-sources/attio","parents":["Integrations","Live data sources"]},
 {"title":"HubSpot","href":"/integrations/live-data-sources/hubspot","parents":["Integrations","Live data sources"]},
 {"title":"Salesforce","href":"/integrations/live-data-sources/salesforce","parents":["Integrations","Live data sources"]},
+{"title":"Sentry","href":"/integrations/live-data-sources/sentry","parents":["Integrations","Live data sources"]},
+{"title":"Supabase","href":"/integrations/live-data-sources/supabase","parents":["Integrations","Live data sources"]},
 {"title":"Metrics SQL API","href":"/integrations/metrics-sql-api","parents":["Integrations"]},
 {"title":"Snowflake Cortex","href":"/integrations/snowflake-cortex","parents":["Integrations"]},
 {"title":"Apache Ossie","href":"/integrations/apache-ossie","parents":["Integrations"]},
