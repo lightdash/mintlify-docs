@@ -24,6 +24,10 @@ models:
 
 Write these entries by hand, or generate one for every column in a model with [`lightdash generate`](/workflow/cli/generate).
 
+The column `name` is the dimension's name, exactly as you write it. References to that dimension in another dimension's `sql` or in a join's `sql_on` use the `${table.field}` syntax and are matched case-sensitively on every warehouse, so `${accounts.ID}` and `${accounts.id}` are different fields. This is separate from how your warehouse treats the casing of the column itself; see [Using special characters or capital letters in your column names](#using-special-characters-or-capital-letters-in-your-column-names).
+
+A reference that matches nothing does not stop the explore from compiling, because [partial compilation](/workflow/cli/reference#partial-compilation) is on by default. In a dimension's `sql`, the error is attached to that dimension, its SQL compiles to `NULL`, and the explore gets the warning `Dimension "account_name" failed to compile: Model "deals" in dimension "account_name" has a dimension reference: ${accounts.ID} which matches no dimension`. In a join's `sql_on`, the join is skipped with a warning and the joined table's fields are absent from the explore; see [Adding joins in your models](/semantic-layer/joins#adding-joins-in-your-models) for the message. Project validation does not report these warnings. An explore with warnings shows a yellow warning triangle next to its name in the **Tables** list; hover over it to read them. If a joined table is missing after a refresh, check there first.
+
 <Warning>
   Dimensions cannot use window functions in their `sql`. A dimension's SQL is inserted into the same `SELECT` as the main `GROUP BY` in the generated query, and SQL does not allow window functions in that position. If you need window-function logic, either model it directly in your dbt model (so the value is precomputed before Lightdash queries it), or add a [table calculation](/explore/table-calculations) on the query results. Lightdash also supports a small set of built-in window operations through [post calculation metrics](/semantic-layer/metrics#post-calculation-metrics) (`percent_of_previous`, `percent_of_total`, `running_total`).
 </Warning>
@@ -164,7 +168,7 @@ The table below shows all the dimension properties you can customize:
 | [description](#description) | No    | string | Description of the dimension in Lightdash. You can use this to override the description you have for the dimension in dbt. |
 | sql | No            | string | Custom SQL applied to the column used to define the dimension. |
 | [time_intervals](#time-intervals) | No | 'default' or OFF or an array[] containing elements of [date](#date-options), [numeric](#numeric-options), [string](#string-options) options, or [custom granularity](#using-custom-granularities) names | 'default' (or not setting the time_intervals property) will be converted into ['DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR'] for dates and ['RAW', 'DAY', 'WEEK', 'MONTH', 'QUARTER', 'YEAR'] for timestamps; if you want no time intervals set 'OFF'. You can also include custom granularity names defined in `lightdash.config.yml`. |
-| hidden | No       | boolean | If set to true, the dimension is hidden from Lightdash. By default, this is set to false if you don't include this property. Hidden dimensions are also excluded from drilldowns (View underlying data). Hiding a dimension that a dashboard filter already uses doesn't remove the filter — it still applies, but shows as a [locked filter chip](/explore/dashboards/filter#locked-filters-on-hidden-fields) until an editor replaces it. A hidden dimension can't be used in a model's [`default_filters` or `required_filters`](/semantic-layer/tables#default-filters). |
+| hidden | No       | boolean | If set to true, the dimension is hidden from Lightdash. By default, this is set to false if you don't include this property. Hidden dimensions are also excluded from drilldowns (View underlying data). Hiding a dimension that a dashboard filter already uses doesn't remove the filter — it still applies, but shows as a [locked filter chip](/explore/dashboards/filter#locked-filters-on-hidden-fields) until an editor replaces it. A hidden dimension can't be used in a model's [`default_filters` or `required_filters`](/semantic-layer/tables#default-filters). `hidden` doesn't limit what an [AI agent](/agents/data-access#limiting-access-to-specific-explores-and-fields) can use: to keep a dimension away from an agent, use field-level [tags](#tags). |
 | [compact](#compact) | No     | string | This option will compact the number value (e.g. 1,500 to 1.50K). Currently supports one of the following: ['auto', 'thousands', 'millions', 'billions', 'trillions', 'kilobytes', 'megabytes', 'gigabytes', 'terabytes', 'petabytes', 'kibibytes', 'mebibytes', 'gibibytes', 'tebibytes', 'pebibytes']. Use `auto` to dynamically pick K/M/B/T based on each value's magnitude. |
 | [format](#format) | No       | string | This option will format the output value on the results table and CSV export. Supports spreadsheet-style formatting (e.g. #,##0.00). Use [this website](https://customformats.com) to help build your custom format. |
 | [separator](#separator) | No | string | This option controls the grouping and decimal characters used when rendering numbers (e.g. `1.234.567,50` for European locales). One of: `default`, `commaPeriod`, `spacePeriod`, `periodComma`, `noSeparatorPeriod`, `apostrophePeriod`. |
@@ -186,7 +190,7 @@ The table below shows all the dimension properties you can customize:
 
 The types of your dimensions are pulled from your data warehouse, automatically. You can override these types using the `type` meta tag in your .yml file. If you run `lightdash generate` to generate your .yml files, then Lightdash will add the `type` from your data warehouse to your .yml files automatically.
 
-Lightdash reads column types from the warehouse's catalog each time it compiles your project. A column it can't find there, for example because the model hasn't been built in the target schema yet or the warehouse user can't read it, gets the type `string`. Warehouse types with no matching Lightdash type, such as Postgres `uuid`, `jsonb`, or array columns, are also read as `string`. Set `type` to override either case.
+Lightdash reads column types from the warehouse's catalog each time it compiles your project. A column it can't find there, for example because the model hasn't been built in the target schema yet or the warehouse user can't read it, gets the type `string`. Warehouse types with no matching Lightdash type, such as Postgres `uuid`, `jsonb`, or array columns, are also read as `string`. BigQuery and Databricks array columns are the exception: see [Nested and repeated columns](/semantic-layer/nested-and-repeated-columns). Set `type` to override either case.
 
 <CodeGroup>
 ```yaml dbt v1.10+
@@ -392,6 +396,10 @@ dimensions:
     time_intervals: ['DAY', 'DAY_OF_MONTH_NUM', 'MONTH', 'QUARTER_NAME', 'YEAR']
 ```
 </CodeGroup>
+
+<Note>
+  Interval names are case-insensitive: `DAY` and `day` select the same interval. The dimension Lightdash generates keeps the column name and adds a lowercase interval suffix, so `created` with `DAY` or `day` becomes `created_day` either way, and the uppercase lists on this page produce the same field IDs as a lowercase list in your YAML. Custom granularity names are matched exactly as you wrote them in `lightdash.config.yml`.
+</Note>
 
 You can see all of the standard interval options for date and timestamp fields below. You can also add custom intervals using _additional dimensions_, there's an example below the following tables.
 
@@ -724,6 +732,8 @@ dimensions:
 </CodeGroup>
 
 `urls` is only available on dbt-modeled dimensions — [virtual views](/semantic-layer/virtual-views) don't support it.
+
+In Excel (`.xlsx`) exports, text values of a field with `urls` are clickable hyperlinks to its first URL.
 
 ### How to add custom URLs
 
@@ -2047,6 +2057,8 @@ SELECT
   "orders"."Status" AS "orders_status"
 FROM "postgres"."jaffle"."orders" AS "orders"
 ```
+
+Declare the dimension's `type` as well, as the example does. When Lightdash compiles your project, it looks up each model's table and column names from your YAML in the warehouse catalog to read column types. On every warehouse except Snowflake that lookup is case-sensitive, so `status` in your YAML does not match a `Status` column in the warehouse, and a dimension with no declared `type` falls back to `string`. On Snowflake, where the catalog reports unquoted identifiers in uppercase, the lookup is case-insensitive, so lowercase names in your YAML match the uppercase columns in the warehouse.
 
 
 ## Additional dimensions

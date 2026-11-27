@@ -13,7 +13,7 @@ import { FeatureBadge } from '/snippets/feature-badge.jsx';
   Custom roles must be enabled for your organization. On Lightdash Cloud, contact [Lightdash support](mailto:support@lightdash.com) to enable them; on self-hosted instances, add `custom-roles` to [`LIGHTDASH_ENABLE_FEATURE_FLAGS`](/self-host/enterprise-features#custom-roles) on an instance with an Enterprise license key. After they're enabled, refresh your browser to see **Custom roles** in **Organization settings**.
 </Info>
 
-## Overview
+## System and custom roles
 
 Lightdash provides two types of roles:
 
@@ -242,7 +242,9 @@ The existing single-role endpoints keep working. Their responses report the **pr
 - **A user lost their extra roles** — a single-role write (an older client, script, or IdP payload) replaced the set. Re-assign the extras with the picker or the `…/set` endpoint.
 - **A custom role in the set does not seem to restrict anything** — sets are additive; check whether a system role sits in the same set or at the organization level. See [How additive permissions work](#how-additive-permissions-work).
 - **Changes not visible yet** — the affected user may need to refresh; permissions rebuild on their next request.
-- **`403 Cannot grant permissions exceeding your own`** — to create or edit an organization role, or assign one, your own organization roles must cover every scope it grants. If your set has no system role, only your custom roles' scopes count, not the system Admin scopes. When you move admins onto custom organization roles, keep at least one person on the system **Admin** role, so someone can still grant any scope. If no one can, contact [Lightdash support](mailto:support@lightdash.com).
+- **`403 Cannot grant permissions exceeding your own`** — your own organization roles must cover every scope you grant. If your set has no system role, only your custom roles' scopes count, not the system Admin scopes.
+  - **Creating, editing or assigning an organization role:** when you move admins onto custom organization roles, keep at least one person on the system **Admin** role, so someone can still grant any scope. If no one can, contact [Lightdash support](mailto:support@lightdash.com).
+  - **Inviting a user** (shown as **Failed to create invite link**): see [Invite scopes](#invite-scopes).
 
 ## Scope reference
 
@@ -258,7 +260,7 @@ Four scopes control access to [content as code](/workflow/content-as-code), the 
 
 **Upload content as code to own previews** (`manage:ContentAsCode@self`) is a narrow upload right: users can run `lightdash upload` only against preview projects they created themselves. This is the intended day-to-day scope for non-Developer users in CI/CD-style workflows where they need to validate their own preview but shouldn't push to shared projects. Pair it with `view:ContentAsCode` so they can still pull from shared projects.
 
-**Upload content as code** (`create:ContentAsCode`) grants chart, dashboard, and SQL-chart uploads across any project the role applies to, without the broader scheduled-delivery, alert, and Google Sheets upload rights that `manage:ContentAsCode` includes. This is the scope built-in **Editors** hold — it unlocks `lightdash upload` for charts and dashboards (and the AI agent / MCP content tools that create or edit the same content) while still enforcing the same space-level access checks that the UI applies. Writing SQL charts still requires `manage:CustomSql`; adding or changing custom SQL dimensions still requires `manage:CustomFields`; adding or changing custom SQL table calculations still requires `manage:CustomSqlTableCalculations`. Custom SQL is diffed against the persisted chart, so re-uploading a chart whose SQL hasn't changed passes without those extra scopes.
+**Upload content as code** (`create:ContentAsCode`) grants chart, dashboard, and SQL-chart uploads across any project the role applies to, without the broader scheduled-delivery, alert, and Google Sheets upload rights that `manage:ContentAsCode` includes. This is the scope built-in **Editors** hold — it unlocks `lightdash upload` for charts and dashboards (and the AI agent / MCP content tools that create or edit the same content) while still enforcing the same space-level access checks that the UI applies. Writing SQL charts still requires `manage:CustomSql`; adding or changing custom SQL dimensions or custom metrics with hand-written SQL still requires `manage:CustomFields`; adding or changing custom SQL table calculations still requires `manage:CustomSqlTableCalculations`. Custom SQL is diffed against the persisted chart, so re-uploading a chart whose SQL hasn't changed passes without those extra scopes. A custom metric also passes without `manage:CustomFields` when its SQL matches a field modelled in the explore, or SQL already saved on a chart you can view in the same explore.
 
 **Download and upload content as code** (`manage:ContentAsCode`) grants everything in `create:ContentAsCode` plus the ability to upload scheduled deliveries, alerts, Google Sheets uploads, and space/permission mutations via content as code. This is the scope built-in **Developers** and **Admins** hold. It implies `view:ContentAsCode`, `create:ContentAsCode`, and the `@self` upload right.
 
@@ -316,6 +318,14 @@ Two scopes control [verified content](/explore/verified-content), and they do di
 
 The two are deliberately separate: a role can be allowed to edit verified content without being able to keep or apply its badge (saving then drops verification), and a role can be allowed to verify content it can't otherwise edit. Granting neither gives editors a create → review → verify → lock workflow, where shared sources of truth can't be changed by the general editor population.
 
+### Merge query scope
+
+**Manage Merge Query** (`manage:MergeQuery`) lets a user build a [merge query](/explore/merge-queries) in Explore and save a chart with a new or changed merge. It depends on `manage:Explore`, so the role builder selects both together. Developers and Admins hold it by default.
+
+Running a merge that is already saved doesn't need the scope. A user without it can open merged charts and dashboard tiles in spaces they can access, and can edit a merged chart's visualization as long as the merge stays the same. In Explore, the merge is shown read-only and **Merge another query** is not offered.
+
+To let Editors or Interactive Viewers merge queries, clone their role and add `manage:MergeQuery`. To stop a Developer merging, clone the Developer role, remove the scope, and assign the clone at the project level. Organization Developers and Admins keep the scope in every project, whatever their project role. To turn off merge authoring for every role on a self-hosted instance, set [`DISABLE_MERGE_QUERY_AUTHORING`](/self-host/customize-deployment/environment-variables#feature-toggles) to `true`.
+
 ### Preview-edit scopes
 
 Four `@self` scopes let a user edit content **only inside [preview projects](/workflow/preview-projects) they created themselves**, without granting any edit rights in production:
@@ -350,7 +360,11 @@ To set up the "view-only in production, edit freely in own preview" workflow:
    - The view scopes the user needs in production (e.g. `view:Dashboard`, `view:SavedChart`, `view:Space`, `view:Project`).
    - `create:Project` so they can create preview projects.
    - All four preview-edit scopes: `manage:Dashboard@self`, `manage:SavedChart@self`, `manage:Space@self`, `manage:Explore@self`.
+   - `update:Project@self` (description: *Update projects created by the user*) so they can [refresh their own preview](/workflow/preview-projects#refreshing-expiration-on-an-existing-preview) by re-running `lightdash start-preview` with the same `--name`. Without permission to update the preview, the refresh returns a `403`.
+   - Optionally, `delete:Project@self` (description: *Delete projects created by the user*) so they can delete their own previews.
 3. **Assign the custom role** to the user at the production project level.
+
+Both `update:Project@self` and `delete:Project@self` apply only to preview projects the user created, and depend on `view:Project` and `create:Project@preview`.
 
 With this setup, the user can browse production read-only, spin up a preview from production, edit dashboards/charts/spaces and run the Explorer inside that preview, and request promotion back to production. They cannot edit production content directly, and they cannot edit content in previews created by other users.
 
@@ -419,6 +433,14 @@ Two scopes decide what someone sees under **Ask AI** in the settings:
 - **`manage:AiAgent`** is a project scope. It shows the Ask AI section, such as **Threads** and **Agents**, with data limited to the projects where the role applies.
 - **`manage:OrganizationAiAgent`** (description: *Configure organization AI settings*) is an organization-only scope, so add it to an organization-level custom role. It adds **Ask AI** → **General** and covers every project. Organization Developers and Admins hold it.
 
+### Invite scopes
+
+To let people who aren't admins invite users, add **Manage Invite Link** (`manage:InviteLink`, under **Organization Management**) to an organization-level custom role. It gives them **Add user** in **Users & groups**.
+
+Invitees join as **Member** unless the inviter also has **Manage Organization Member Profile** (`manage:OrganizationMemberProfile`), which lets them pick another role.
+
+The inviter's organization roles must also cover every scope of the invitee's role, or the invite fails with **Failed to create invite link: Cannot grant permissions exceeding your own**. For a **Member** invitee, that's `view:Learn`, `view:OrganizationMemberProfile`, `view:PinnedItems` and `view:JobStatus`, plus `manage:PersonalAccessToken` if personal access tokens are allowed for members. Project roles don't count. Add the missing scopes to the custom role, or keep the system **Member** role and add the custom role on top as a [role set](#assigning-multiple-roles-role-sets).
+
 ### Learn scope
 
 The `view:Learn` scope (description: *View and use Learn walkthroughs*), in the **Organization Management** group, controls who can see and open [Learn](/explore/learn). Every built-in organization role includes it. Users whose organization role is a custom role only see Learn if that role includes `view:Learn`, so you can roll Learn out to some roles first. Adding the scope to a project-level custom role doesn't grant access.
@@ -431,11 +453,11 @@ The `view:Learn` scope (description: *View and use Learn walkthroughs*), in the 
 
 These scopes control different SQL features. They are independent — granting one does not grant the others.
 
-**Manage Sql Runner** controls access to the [SQL Runner](/explore/sql-runner), which lets users write and run ad-hoc SQL queries directly against your data warehouse. It also controls raw SQL from AI agents ([SQL mode](/agents/use-ai-agents#sql-mode)) and the MCP **Run SQL** tool. Saving a query as a [virtual view](/semantic-layer/virtual-views) needs `create:VirtualView` (description: *Create virtual views*), and [writing back dbt models](/integrations/dbt/write-back) needs `manage:SourceCode`, so a role can run SQL without either. Leaving `manage:SqlRunner` out of a role doesn't affect dashboards, Explore, or the queries AI agents and the MCP **Run metric query** tool build from your semantic layer (the MCP tool needs `manage:Explore`).
+**Manage Sql Runner** controls access to the [SQL Runner](/explore/sql-runner), which lets users write and run ad-hoc SQL queries directly against your data warehouse. It also controls raw SQL from AI agents ([SQL mode](/agents/use-ai-agents#sql-mode)) and the MCP **Run SQL** tool. Saving a query as a [virtual view](/semantic-layer/virtual-views) needs `create:VirtualView` (description: *Create virtual views*), and [writing back dbt models](/integrations/dbt/write-back) needs `manage:SourceCode`, so a role can run SQL without either. Leaving `manage:SqlRunner` out of a role doesn't affect dashboards, Explore, or the queries AI agents and the MCP **Run metric query** tool build from your semantic layer (the MCP tool needs `manage:Explore`). Roles don't change which tables or rows the warehouse returns; to control that, see [Warehouse credentials](/workspace-admin/warehouse-credentials).
 
 **Manage Custom Sql** (description: *Save SQL charts*) controls the ability to save the output of a SQL Runner query as a saved chart. Users with this scope can save SQL charts; without it, they can still run queries in SQL Runner but cannot persist the output. This scope does **not** grant access to custom SQL dimensions in Explore.
 
-**Manage Custom Fields** (description: *Create and edit custom dimensions*) controls the ability to create and edit [custom SQL dimensions](/explore/create-custom-fields#custom-sql) inside the Explore view. Custom SQL dimensions let users add calculated fields to an existing table using raw SQL. It also covers custom metrics with hand-written SQL. This scope does **not** grant access to the SQL Runner.
+**Manage Custom Fields** (description: *Create and edit custom dimensions*) controls the ability to create and edit [custom SQL dimensions](/explore/create-custom-fields#custom-sql) inside the Explore view. Custom SQL dimensions let users add calculated fields to an existing table using raw SQL. It also covers custom metrics with hand-written SQL. Without it, saving a chart or dashboard that adds or changes such a metric fails with an error that names the metrics. This scope does **not** grant access to the SQL Runner.
 
 **Manage Custom Sql Table Calculations** (description: *Create and edit SQL table calculations*) controls writing SQL [table calculations](/explore/table-calculations). Formula table calculations and quick calculations don't need it; see [project roles and permissions](/workspace-admin/roles#project-roles-and-permissions).
 
@@ -554,5 +576,3 @@ Custom roles can only **add** permissions—they cannot remove permissions grant
 <Danger>
   Deleting a custom role is permanent. You can't remove a role that is assigned to users or groups.
 </Danger>
-
-Custom roles provide powerful flexibility in managing access to your Lightdash organization. By carefully designing roles that match your team's responsibilities and workflows, you can ensure users have exactly the permissions they need while maintaining security and organization.

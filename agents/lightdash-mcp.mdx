@@ -12,8 +12,6 @@ The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) lets extern
 
 This is for pointing an outside assistant **into** Lightdash. To give your Lightdash agents tools from outside services like Notion, Linear, or Confluence, that's the reverse direction — see [Connect external MCP servers](/agents/connect-external-mcp-servers).
 
-Find [client connection options](#connect-a-client) and [manual setup](#manual-setup), look up [capabilities](#what-it-can-do), apply [agent context](#using-ai-agent-context), or troubleshoot a connection in the [FAQ](#faq).
-
 ## Connect a client
 
 Lightdash generates the server URL and configuration for your instance and your client. Open **Settings → MCP → Connect**, pick a client, and copy what it gives you: a command, a config file, or the server URL.
@@ -255,7 +253,7 @@ If you're building your own agents or automated workflows, you can integrate dir
 When the [agent identity](/agents/agent-identity) feature flag is on, the Lightdash OAuth server is stricter. A custom OAuth client must:
 
 - **Send the `resource` parameter** set to the MCP URL, for example `https://<your_instance_name>.lightdash.cloud/api/v1/mcp`. Each token is for the Lightdash API or for MCP, and one audience refuses the other's tokens. Without `resource`, the token is for the API, so the MCP endpoint refuses it.
-- **Register exact redirect URIs.** Only an http loopback redirect (`localhost`, `127.0.0.1` or `[::1]`) can use a different port. Allowed schemes are https, http on a loopback host, reverse-DNS native schemes such as `com.example.app`, and `cursor`, `vscode`, `vscode-insiders`, `windsurf` and `lightdash`. Dynamic client registration refuses wildcards, except for the loopback port.
+- **Register exact redirect URIs.** Only an http loopback redirect (`localhost`, `127.0.0.1` or `[::1]`) can use a different port. Allowed schemes are https, http on a loopback host, reverse-DNS native schemes such as `com.example.app`, and `cursor`, `vscode`, `vscode-insiders`, `windsurf`, `lightdash` and `claude`. Dynamic client registration refuses wildcards, except for the loopback port.
 - **Use PKCE with `S256`.**
 - **Send the token in the `Authorization` header.** Lightdash refuses a bearer token in the query string.
 
@@ -314,6 +312,7 @@ When the header is set:
 - The agent's project is pinned the same way as with [`X-Lightdash-Project`](#pin-a-project-with-the-x-lightdash-project-header): a tool call for any other project is refused, and `list_projects` is hidden.
 - `route_agent` and `list_agents` return only the pinned agent, and `get_context` reports it as `activeAgent`.
 - The agent's instructions are added to the server instructions that the client receives when it connects.
+- If the agent has [data access](/agents/data-access) turned off, the session works with saved content only. Field discovery and query tools such as `grep_fields`, `run_metric_query` and `run_sql` are not listed, even when the caller has Explore or SQL Runner permissions.
 - Access is still enforced: the caller must have access to the agent and be able to view its project. The header can only narrow what the caller can already reach.
 
 **Enable agents over MCP** must be on for your organization (see [Using AI agent context](#using-ai-agent-context)). You can find the agent UUID in the Lightdash URL when viewing the agent (`/projects/<projectUuid>/ai-agents/<agentUuid>`).
@@ -419,7 +418,7 @@ This setting only limits what MCP clients can reach; it doesn't change a user's 
 
 ### Core capabilities
 
-MCP provides AI assistants with powerful tools to interact with your Lightdash data:
+MCP gives AI assistants these tools for your Lightdash data:
 
 #### Project management
 
@@ -500,7 +499,7 @@ An active project must be set before MCP can retrieve any data. Your AI assistan
 
 MCP can read, create, and edit Lightdash charts and dashboards using the same [content-as-code](/workflow/content-as-code) payloads that the Lightdash CLI uses. This lets agents make targeted edits to existing content or build new charts and dashboards directly in a conversation, without downloading YAML files locally.
 
-- **Read content** (`read_content`) - Fetch a chart or dashboard as JSON by slug. Call this before editing so the agent can see the current state.
+- **Read content** (`read_content`) - Fetch a chart or dashboard as JSON by slug. Call this before editing so the agent can see the current state. It also reads [documents](/explore/documents) and [data apps](#reading-a-data-app), which return a different shape.
 - **Edit content** (`edit_content`) - Apply an [RFC 6902 JSON Patch](https://datatracker.ietf.org/doc/html/rfc6902) to an existing chart or dashboard, then validate and persist. Use this for surgical changes (e.g. rename a field, add a filter, swap a chart color) without rewriting the whole object.
 - **Create content** (`create_content`) - Create a new chart or dashboard from a full chart-as-code or dashboard-as-code object. Returns the persisted slug and URL.
 
@@ -622,7 +621,20 @@ MCP can build [data apps](/data-apps) — interactive applications generated fro
 - **List data app themes** (`list_data_app_themes`) - List the organization's [themes](/data-apps/customize-themes) so the assistant can apply one when it builds.
 - **Get data app build status** (`get_data_app_build_status`) - Check how a build is going, and get the app's URL once it's ready. The assistant checks this for you while the build runs.
 
-Builds run in the background, so the assistant reports that the build has started and then follows up when it's ready. Once it is, the assistant can open the app for you, read it back with `read_content`, or keep iterating.
+Builds run in the background, so the assistant reports that the build has started and then follows up when it's ready. Once it is, the assistant can open the app for you, [read it back with `read_content`](#reading-a-data-app), or keep iterating.
+
+<a id="reading-a-data-app" />
+
+##### Reading a data app
+
+`read_content` with `type: "data_app"` reads the app's latest ready version. It fails if the app has no ready version yet. The result doesn't include the app's code or the executed query for each visualization. It has two parts:
+
+- Metadata: name, description, template, version, version count, and the space and creator. If a newer version is still building or has failed, it's reported as `newerVersion` with its status. The result also lists the app's external connections and the context attached when the version was generated: charts, dashboard, files, and image count.
+- `dataReferences`: the app's data footprint, grouped by explore. It lists the dimensions, metrics, filter fields, sort fields, and parameter keys the app's queries use, the saved charts linked into the app, and the paths the app calls on each external connection. It's `null` when no references were recorded for the version.
+
+Lightdash extracts `dataReferences` statically from the app's source code when the version is built. Anything the app computes at runtime from component state, such as a filter or date window that depends on what the viewer selects, can stay unresolved. Filter fields are listed but filter values aren't. The `stats` object counts the call sites (queries, filters, linked charts and external fetches) that were fully resolved, partially resolved, or unresolved, and the `unresolved` list says what couldn't be resolved, so you can judge how complete the footprint is.
+
+To keep a number readable to outside agents the way any chart is, [link the saved chart](/data-apps#adding-context) into the app. The chart shows up under `linkedCharts`, and `read_content` on its slug returns the full chart definition.
 
 An app built over MCP is created as the calling user's **personal app**: at the project root, in no space, visible only to them until they move it into a space from the Lightdash UI. This mirrors what the in-product [AI agent](/agents) does.
 
@@ -795,7 +807,7 @@ The assistant will:
 
 If your organization has [Lightdash AI agents](/agents) configured, you can reuse their configuration in your MCP sessions — so you get consistent guidance regardless of where you're working. Organization admins enable these tools with **Enable agents over MCP** in **Settings → MCP → General**. While [agent permissions](/agents/agent-permissions#agents-over-mcp) are available to your organization, admins change this setting on **Organization settings → Agents**.
 
-### How is this different from Lightdash AI agents?
+### MCP compared with Lightdash AI agents
 
 [Lightdash AI agents](/agents) are a fully managed experience inside Lightdash and Slack. They handle everything end-to-end: interpreting your question, picking the right data, running queries, and presenting results.
 
@@ -806,7 +818,6 @@ With MCP, you can use Lightdash data in other contexts, but the AI assistant dri
 When you activate an agent in your MCP session, your AI assistant receives:
 
 - **[Specialized content](/agents/effective-analytics-with-agents#think-specialized-not-general)**: only the data models relevant to that agent's domain
-- **[Verified answers](/agents/verified-answers#how-verified-answers-work)**: curated example queries that demonstrate correct usage of the data model
 - **[Custom instructions](/agents/set-up-agents#instructions)**: domain-specific rules like _"Always filter orders by status = 'completed'"_
 
 ### Example workflow

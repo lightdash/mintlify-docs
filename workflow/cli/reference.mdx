@@ -18,8 +18,6 @@ doc-type: reference
 
 For installation instructions, see [How to install the Lightdash CLI](/workflow/cli/install).
 
-Look up [global options](#global-options), [shared command options](#shared-command-options), [dbt options](#dbt-options), [commands](#commands), or [environment variables](#environment-variables).
-
 ## Dependencies
 
 The Lightdash CLI requires Node, NPM, and the [dbt core](https://docs.getdbt.com/docs/core/installation-overview) or [dbt cloud](https://docs.getdbt.com/docs/cloud/cloud-cli-installation) CLI to be installed and available under the `dbt` command.
@@ -30,7 +28,7 @@ The Lightdash CLI requires Node, NPM, and the [dbt core](https://docs.getdbt.com
 
 Affected commands: `lightdash generate`, `lightdash preview` and `lightdash start-preview`
 
-These commands rely on the warehouse credentials from the active project, as the dbt Cloud CLI does not expose credentials directly. Ensure the project's credentials have access to all development and staging schemas for a seamless experience.
+These commands rely on the warehouse credentials from the active project, as the dbt Cloud CLI does not expose credentials directly. Ensure the project's credentials have access to all development and staging schemas.
 
 **Empty warehouse credentials for new projects**
 
@@ -151,7 +149,9 @@ These options apply to `lightdash preview` and `lightdash start-preview`.
 
 - `--no-warehouse-credentials`
   - (default: false)
-  - Create the preview without reading warehouse credentials from `profiles.yml`. The preview copies its warehouse connection from the upstream project (your [selected project](#lightdash-config-set-project)). Also skips dbt compile and the warehouse catalog. When updating an existing preview, keeps the credentials it already has.
+  - Create the preview without reading warehouse credentials from `profiles.yml` or sending them to Lightdash. The preview copies its warehouse connection from the upstream project (your [selected project](#lightdash-config-set-project)). Re-running `lightdash start-preview` on an existing preview keeps the connection it already has.
+  - Use it when your dbt profile signs in through a browser or SSO (for example Snowflake `externalbrowser`) or uses short-lived credentials.
+  - Unlike on `lightdash compile` and `lightdash deploy`, the flag doesn't skip dbt compile or the warehouse catalog on preview commands, so a profile that needs a local sign-in still prompts. To skip them, also pass `--skip-dbt-compile` and `--skip-warehouse-catalog`.
 - `--table-configuration [prod/all]`
   - (default: all)
   - If set to 'prod' it will copy the table configuration from the source project
@@ -333,7 +333,7 @@ For examples and command-specific options, click through the command in the tabl
 |[`lightdash generate-exposures`](/workflow/cli/reference#lightdash-generate-exposures) | Generates a YAML file for Lightdash exposures                                      |
 |[`lightdash download`](/workflow/cli/reference#lightdash-download)                     | Download all charts and dashboards from your Lightdash project as code             |
 |[`lightdash upload`](/workflow/cli/reference#lightdash-upload)                         | Upload charts and dashboards as code to your Lightdash project                     |
-|[`lightdash slug-update`](/workflow/cli/reference#lightdash-slug-update)               | Rename a chart or dashboard slug and update its local content-as-code references    |
+|[`lightdash slug-update`](/workflow/cli/reference#lightdash-slug-update)               | Rename a chart, dashboard, or data app slug and update its local content-as-code references |
 |[`lightdash apps create`](/workflow/cli/reference#lightdash-apps-create)               | Scaffold a new [data app](/workflow/local-data-app-development) locally                          |
 |[`lightdash apps preview`](/workflow/cli/reference#lightdash-apps-preview)             | Preview a downloaded [data app](/workflow/local-data-app-development) locally against real data   |
 |[`lightdash apps validate`](/workflow/cli/reference#lightdash-apps-validate)           | Validate a [data app](/workflow/local-data-app-development) locally before uploading             |
@@ -393,7 +393,7 @@ lightdash login https://custom.lightdash.domain --token bv6105f53cb127087189cfib
 Sign in to Snowflake using browser-based SSO and deposit a durable credential into an open Lightdash project setup wizard. Use this during project creation when your Snowflake account requires SSO or MFA and you want to avoid pasting a password, private key, or PAT.
 
 <Info>
-  This command is only useful during project creation and requires the `new-onboarding` feature flag to be enabled on your Lightdash instance. Start the flow from the **Connect via Lightdash CLI (SSO)** option on the Snowflake connection form — the wizard generates the one-time `--code` and shows the full command for you to run.
+  This command is only useful during project creation. Start the flow from the **Connect via Lightdash CLI (SSO)** option on the Snowflake connection form — the wizard generates the one-time `--code` and shows the full command for you to run.
 </Info>
 
 The CLI opens Snowflake SSO in a browser, then provisions a durable credential in this order:
@@ -485,18 +485,18 @@ The link expired before you approved it. Run `lightdash agent connect` to get a 
 When the connection fails, the command gives the reason and how to try again. For example:
 
 ```text
-Connection failed: Your Snowflake sign-in is not an agent session. Ask your Snowflake admin to set IS_AGENTIC = TRUE on the security integration used for AI. Run `lightdash agent connect` to try again.
+Connection failed: Your Snowflake sign-in is not an agent session. Ask your Snowflake admin to set IS_AGENTIC = TRUE on the security integration used for agents. Run `lightdash agent connect` to try again.
 ```
 
-When the project does not need an agent connection, the command prints "Agent connection is not required for this project" and stops. When agents on the project use a shared agent account, it prints "Not needed: agents on this project use the shared agent account", opens no browser, and exits with code 0.
+When the project does not need an agent connection, the command prints "Agent sign-in is not required for this project" and stops. When agents on the project use a shared agent account, it prints "The CLI runs as you until agent connect issues an agent credential.", opens no browser, and exits with code 0.
 
 The CLI checks the connection for its own Lightdash user. If the browser is signed in to Lightdash as a different user, the command says so. Sign in to the browser as the same user, then run the command again.
 
 #### `lightdash agent status`
 
-Shows your agent connection status for a project. When your agent is not connected, it shows the reason and the connect link. When agents on the project use a shared agent account, it prints "Not needed: agents on this project use the shared agent account" and exits with code 0.
+Shows your agent connection status for a project. When your agent is not connected, it shows the reason and the connect link. When agents on the project use a shared agent account, it prints "The CLI runs as you until agent connect issues an agent credential." and exits with code 0.
 
-While [agent identity](/agents/agent-identity#the-lightdash-cli) is on, the CLI itself runs as you, and both `lightdash agent` commands say "The CLI runs as you until agent connect issues an agent credential."
+The CLI itself runs as you. See [agent identity](/agents/agent-identity#the-lightdash-cli).
 
 ```console
 lightdash agent status --project <project uuid or slug>
@@ -744,6 +744,9 @@ For native projects, see [Deploy Lightdash YAML](/semantic-layer/yaml#step-4-dep
 - `--disable-timestamp-conversion [true|false]`
   - (default: false)
   - Snowflake only. Disable converting timestamps to UTC. Only honored together with `--create`; the value is persisted to the new project. When deploying to an existing project, the flag is ignored with a warning and the saved project setting is used instead.
+- `--prune`
+  - (default: false)
+  - Remove every explore that the deploy doesn't upload, so the project holds exactly the selected models. See [Partial deploys](#partial-deploys).
 
 
 **Examples:**
@@ -774,7 +777,15 @@ lightdash deploy --select "tag:marketing" --combine-manifest ./prod-manifest.jso
 
 #### Partial deploys
 
-A deploy with `--select` adds and updates explores for the selected models and leaves every other previously deployed explore unchanged. It never removes an explore whose model still exists in the project, even when that model is in the selection. Changes that remove an explore, such as setting [`hidden: true`](/semantic-layer/tables#hiding-the-base-explore) on a base explore or deleting an entry from `explores:`, only take effect on a full `lightdash deploy` without `--select` or on [`lightdash refresh`](#lightdash-refresh).
+A deploy with a [selection flag](#dbt-node-selection), such as `--select`, adds and updates explores for the selected models and keeps every other previously deployed explore by default. It never removes an explore whose model still exists in the project, even when that model is in the selection. Changes that remove an explore, such as setting [`hidden: true`](/semantic-layer/tables#hiding-the-base-explore) on a base explore or deleting an entry from `explores:`, take effect on a full `lightdash deploy` without a selection flag, on [`lightdash refresh`](#lightdash-refresh), or on a partial deploy with `--prune`.
+
+To make the project match the selection, add `--prune`. The deploy removes every explore it doesn't upload, so the project holds exactly the selected models. [Virtual views](/semantic-layer/virtual-views) are kept.
+
+```bash
+lightdash deploy --select tag:lightdash --prune
+```
+
+Charts built on a removed explore break, the same as after a full deploy, and show in the [validator](/workflow/validating-your-content). The CLI refuses `--prune` on a project with more than one dbt source and together with `--combine-manifest`, because the deploy would remove the explores that come from the other source or manifest. Without a selection flag, `--prune` deploys like a full deploy.
 
 
 ### `lightdash refresh`
@@ -943,7 +954,7 @@ Supports the shared [content transfer options](#content-transfer-options).
 
 E.g. if you're running this command inside your dbt directory (eg: `/home/javi/dbt`) then it will create a folder (`/home/javi/dbt/lightdash`).
 
-You can make changes to the code and upload these changes back to your Lightdash project. Content that's been downloaded as code can still be managed in the Lightdash UI.
+You can make changes to the code and upload these changes back to your Lightdash project. Content that's been downloaded as code can still be managed in the Lightdash UI. If the project has [`content_as_code.sync`](/workflow/content-as-code#review-ui-edits-to-git-backed-content) turned on, UI edits to uploaded content are saved as drafts instead.
 
 
 **Options:**
@@ -1103,7 +1114,7 @@ Supports the shared [content transfer options](#content-transfer-options).
 If there have been changes made to a chart or dashboard in the application that is being uploaded from code, `lightdash upload` will overwrite the changes.
 
 <Note>
-`lightdash upload` preserves empty dashboard filters — active filters with no values on operators that require values (for example, `equals` or `greaterThan`). These act as an "unset default" control: at runtime they render as `is any value` in the filter bar and do not override chart-level filters on the same field until a viewer picks a value. Value-less relative-date operators (`inTheCurrent`, `notInTheCurrent`) are compiled from `settings.unitOfTime` rather than `values`, so they are not treated as empty and continue to apply as before. See [Empty default dashboard filters](/explore/dashboards/filter#empty-default-dashboard-filters).
+`lightdash upload` preserves empty dashboard filters — active filters with no values on operators that require values (for example, `equals` or `greaterThan`). These act as an "unset default" control: at runtime they render as `is any value` in the controls bar and do not override chart-level filters on the same field until a viewer picks a value. Value-less relative-date operators (`inTheCurrent`, `notInTheCurrent`) are compiled from `settings.unitOfTime` rather than `values`, so they are not treated as empty and continue to apply as before. See [Empty default dashboard filters](/explore/dashboards/filter#empty-default-dashboard-filters).
 </Note>
 
 **Options:**
@@ -1267,7 +1278,7 @@ lightdash upload --organization --send-invites
 
 ### `lightdash slug-update`
 
-Renames a chart or dashboard slug in Lightdash and updates the corresponding files in your local content-as-code directory.
+Renames a chart, dashboard, or data app slug in Lightdash and updates the corresponding files in your local content-as-code directory.
 
 ```bash
 lightdash slug-update --from old-chart-slug --to new-chart-slug
@@ -1284,12 +1295,12 @@ A successful rename:
 
 You do not need to run `lightdash upload` afterward. The command updates Lightdash first and then updates the local files. If you keep content in Git, review and commit the resulting file changes.
 
-The command supports regular charts and dashboards. It does not rename SQL chart, space, or data app slugs. Dashboard tile slugs are also left unchanged because they identify the tile, not the chart.
+The command supports regular charts, dashboards, and data apps. It does not rename SQL chart or space slugs. Dashboard tile slugs are also left unchanged because they identify the tile, not the chart.
 
 **Options:**
 
-- `--type <chart|dashboard>`
-  - the content type to rename; defaults to `chart`.
+- `--type <chart|dashboard|app>`
+  - the content type to rename; defaults to `chart`. Use `app` for a data app.
 - `--from <slug>`
   - required; the content's current canonical slug, or its previous slug when safely retrying the same rename.
 - `--to <slug>`
@@ -1297,7 +1308,7 @@ The command supports regular charts and dashboards. It does not rename SQL chart
 - `--path <path>`
   - use a custom content-as-code directory instead of the default `lightdash/` directory in your current working directory.
 - `--project <project uuid or slug>`
-  - rename the chart or dashboard in a specific project instead of your currently selected project.
+  - rename the content in a specific project instead of your currently selected project.
 - `--dry-run`
   - preview the intended slug change and list the local files that would change without renaming the content or writing files.
 
@@ -1328,6 +1339,17 @@ lightdash slug-update \
   --from copy-of-weekly-kpis \
   --to weekly-kpis
 ```
+
+Rename a data app slug:
+
+```bash
+lightdash slug-update \
+  --type app \
+  --from copy-of-sales-overview \
+  --to sales-overview
+```
+
+Renaming a data app keeps its UUID, version history, and links, and the previous slug stays as an alias. Locally, the command updates `slug` in the app's `lightdash-app.yml`, renames the app's folder when the folder name matches the old slug, and updates `appSlug` in dashboard data app tiles. You need permission to manage the app. Official chart types installed from the [chart library](/visualizations/chart-library) can't be renamed. Renaming data apps needs Lightdash and the CLI v3.165.0 or later.
 
 The command is idempotent. Re-running the same rename safely completes any missing local updates. You can also rename content back to one of its previous slugs; the slug you replace becomes the new alias.
 

@@ -180,6 +180,15 @@ Any omitted result storage setting inherits its corresponding `S3_*` value.
 Raw JSONL result downloads use a presigned URL that browsers fetch directly from `RESULTS_S3_ENDPOINT`. This endpoint must be reachable from users' browsers; `S3_PUBLIC_ENDPOINT` does not apply to the query results bucket. The bucket can remain private, but an IP policy that limits `GetObject` to Lightdash's backend egress addresses will block these downloads.
 </Warning>
 
+### Let DuckDB read query results
+
+[Merge queries](/explore/merge-queries) and the DuckDB steps of AI agent [composer queries](/agents/use-ai-agents#post-process-results-with-duckdb-and-python) run DuckDB inside the Lightdash server process (the API pod, or a NATS worker), which reads result files from the query results bucket. It needs no extra license or setup beyond the following:
+
+- **CA certificates.** If the results endpoint uses HTTPS, the Lightdash image needs a CA certificate bundle. The official image includes one. On a custom image, install `ca-certificates` or set `SSL_CERT_FILE` to a PEM bundle. Without one, these queries fail with a configuration error.
+- **Extensions.** DuckDB reads object storage through its `httpfs` and `aws` extensions. The official image bundles them. A custom image without them downloads them on first use, which needs outbound internet access.
+- **Memory.** Each merge or composer query runs in its own DuckDB session, capped at `512MB` and 2 threads by default. Setting `PRE_AGGREGATE_DUCKDB_QUERY_MEMORY_LIMIT` replaces the memory cap and removes the thread cap. The cap applies to each query, not in total, so concurrent heavy queries add up in one pod. A query over its cap spills to disk and slows down, and some operations fail with an out-of-memory error. Give the pod at least the cap times the heavy queries you expect at once, plus headroom: with the limit at `2GB` and four concurrent queries, allow more than `8GB`.
+- **Dedicated worker.** Without a worker, these queries use the API pod's memory. On NATS deployments, run them on a dedicated worker: the [pre-aggregate worker](/self-host/nats-workers/pre-aggregate-workers) on an Enterprise instance, or a worker started with `--stream duckdb` otherwise. That worker needs the same results storage settings. See [Streams and workers](/self-host/nats-workers#streams-and-workers).
+
 ### Use separate storage for uploads
 
 AI agent avatars and homepage announcement images are served through permanent links, so they must not be deleted by a lifecycle rule. If your main bucket has one, point these uploads at a bucket without one:

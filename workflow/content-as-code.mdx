@@ -16,7 +16,7 @@ You can mix and match these within your organization. For example, use disposabl
 |  | Disposable editing | Git-managed dashboards |
 | --- | --- | --- |
 | **Source of truth** | Lightdash UI | Git repository |
-| **UI editing** | Users with edit access can edit | Restricted to view-only for managed content |
+| **UI editing** | Users with edit access can edit | View-only for managed content, or saved as drafts and [reviewed through a pull request](#review-ui-edits-to-git-backed-content) |
 | **Version history** | Lightdash's built-in history | Full Git audit trail with diffs and blame |
 | **Review process** | None required | Pull requests with approvals |
 | **Concurrent editing** | Not supported. The last upload overwrites earlier changes | Supported through branches, merges, and conflict resolution |
@@ -35,14 +35,14 @@ See [Editing dashboards with agents](/workflow/edit-dashboards-with-agents) for 
 
 ### Git-managed dashboards
 
-An approach where your **Git repository is the single source of truth** for charts and dashboards. All changes flow through version control, and the UI is read-only for managed content.
+An approach where your **Git repository is the single source of truth** for charts and dashboards. All changes flow through version control. The UI is either read-only for managed content, or UI edits are held as drafts until they're [written back to the repository](#review-ui-edits-to-git-backed-content).
 
 #### When to use this workflow
 
 - Multiple people need to change the same charts, dashboards, or other objects concurrently
 - You want a full audit trail of every dashboard change via Git history
 - You want to enforce review processes (pull requests, approvals) before changes reach production
-- You're comfortable with all edits happening in code rather than the UI
+- You're comfortable with edits happening in code, or going through a pull request when they're made in the UI
 - You want to validate dashboard changes in [preview environments](/workflow/preview-projects) before merging
 - You're deploying the same content across multiple Lightdash instances
 
@@ -332,6 +332,17 @@ For example:
 - Priyanka makes changes to `total-new-clients.yml` then runs `lightdash upload` and uploads her changes and overwrites the changes that Jake made in the Lightdash application.
 - Both Jake and Priyanka can update the same chart as code, or in the Lightdash application.
 
+##### Uploads never delete charts or dashboards
+
+`lightdash upload` creates and updates the charts and dashboards that match a file in your `lightdash/` directory. It never deletes anything on the server. If you delete a chart's or dashboard's YAML file from your repository, or change its `slug` in the file, the existing chart or dashboard stays on the server, in the same space, with that space's access.
+
+To remove content that's no longer in your repository, use one of these:
+
+- Delete the chart or dashboard in the Lightdash UI.
+- Script it. After each upload, compare the slugs in your repository against the charts and dashboards in the project, then call `DELETE /api/v1/saved/{chartUuid}` or `DELETE /api/v1/dashboards/{dashboardUuid}` for each one that's no longer in the repository.
+
+`lightdash download` doesn't delete local files either. When you delete a chart or dashboard in the UI, delete its YAML file too, or the next upload creates it again.
+
 ### What download and upload include
 
 When you select a dashboard with `-d`, its dependencies follow it — automatically in some cases, behind a flag in others:
@@ -371,6 +382,12 @@ Local updates include dashboard chart tiles, scheduled deliveries, alerts, Googl
 ```text
 charts/copy-of-total-orders.yml -> charts/total-orders.yml
 dashboards/executive-overview.yml
+```
+
+To rename a [data app](/workflow/local-data-app-development) slug, pass `--type app`. The command updates the app's `lightdash-app.yml`, its folder when the folder is named after the old slug, and `appSlug` references in dashboard tiles:
+
+```bash
+lightdash slug-update --type app --from copy-of-sales-overview --to sales-overview
 ```
 
 You do not need to upload after a successful rename: Lightdash and your local files are already synchronized. For a Git-managed workflow, review the changes and commit them in the same pull request as any related content updates.
@@ -414,11 +431,11 @@ Slug renaming supports regular charts and dashboards. SQL chart, space, and data
 
 ## Lightdash content templates
 
-You can use the `lightdash download` and `lightdash upload` commands to easily build templates for Lightdash content and reuse these templates to build new or update existing projects.
+You can use the `lightdash download` and `lightdash upload` commands to build templates for Lightdash content and reuse these templates to build new or update existing projects.
 
 ### Creating a new Lightdash project from a Lightdash template
 
-If you're creating many dbt projects with similar models and want to easily spin up new versions of these projects, but with different table, field, or chart names, then you can use content as code to create a Lightdash template of your project to reuse.
+If you're creating many dbt projects with similar models and want to spin up new versions of these projects, but with different table, field, or chart names, then you can use content as code to create a Lightdash template of your project to reuse.
 
 To do this, you'll need to:
 
@@ -431,7 +448,7 @@ To do this, you'll need to:
 
 ### Adding content to an existing project from a Lightdash template
 
-Sometimes, if you're managing multiple dbt projects with similar models, you want to be able to easily create and manage the same charts and dashboards across all of the projects at the same time. You can do this with content as code to create a Lightdash template project.
+Sometimes, if you're managing multiple dbt projects with similar models, you want to be able to create and manage the same charts and dashboards across all of the projects at the same time. You can do this with content as code to create a Lightdash template project.
 
 - You want to create a Lightdash project that only contains all of the content that you want to share across your projects
 - From your CLI, you can run `lightdash download` to download all of this content as code
@@ -640,7 +657,7 @@ The examples below are not exhaustive, so if you have additional questions, you 
 
 ### Dashboards
 
-For a dashboard with experimental parameter controls and tile assignments, see [Save the dashboard as code](/explore/dashboards/parameter-controls#save-the-dashboard-as-code). For experimental filter sections and control order, see [Sections in dashboards-as-code](/explore/dashboards/filter#sections-in-dashboards-as-code) and [Control order in dashboards-as-code](/explore/dashboards/filter#control-order-in-dashboards-as-code).
+For a dashboard with parameter controls and tile assignments, see [Save the dashboard as code](/explore/dashboards/parameter-controls#save-the-dashboard-as-code). For sections and control order, including named date zooms, see [Sections in dashboards-as-code](/explore/dashboards/filter#sections-in-dashboards-as-code) and [Control order in dashboards-as-code](/explore/dashboards/filter#control-order-in-dashboards-as-code).
 
 These are the simpler of the two content types.
 
@@ -744,14 +761,16 @@ config:
     - Year
   defaultDateZoomGranularity: Month # Default granularity setting when dashboard loads
   dateZoomConfig: # Named date zoom controls and which charts each one governs
-    controls: # Each control is a pill in the dashboard toolbar
+    controls: # Each control is a pill in the controls bar
       - uuid: 1f0a8c2e-7b3d-4a9f-bf21-2c6e9d4a1b00
+        slug: revenue-zoom # Optional; resolves this zoom's entry in controlOrder
         name: Revenue zoom # Label shown on the control pill
         granularity: Week # Default granularity for this control
         hidden: false # Optional; when true the control's grain applies but the pill is hidden from viewers
     tileTargets: # Maps a chart tile (by its slug) to the control that governs it
       company-sales: # Tile slug, matching one of the chart tiles above
         controlUuid: 1f0a8c2e-7b3d-4a9f-bf21-2c6e9d4a1b00 # Must match a control above
+        controlSlug: revenue-zoom # Written on download, ignored on upload
         fieldId: orders_order_date # Date field the zoom applies to on this chart
         tableName: orders
 slug: my-cool-dashboard
@@ -1336,7 +1355,7 @@ You can use AI coding assistants like Cursor, Claude Code, and Codex to create a
   <iframe width="560" height="315" src="https://www.youtube.com/embed/nAN5LBUCxCM" title="AI-assisted chart development with Cursor" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
 </Frame>
 
-See [Editing dashboards with agents](/workflow/edit-dashboards-with-agents) for the full agent workflow, including the recommended practice of treating downloaded files as temporary rather than committing them.
+See [Editing dashboards with agents](/workflow/edit-dashboards-with-agents) for the full agent workflow, including the recommended practice of treating downloaded files as temporary rather than committing them. If several people edit the same content, or changes need review, commit the files and use [Git-managed dashboards](#git-managed-dashboards) instead.
 
 ## Validate content YAML in your editor
 
