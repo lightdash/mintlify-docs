@@ -7,8 +7,7 @@ The PostHog [live data source](/integrations/live-data-sources) reads one PostHo
 
 ## Before you start
 
-- **Live data sources enabled** for your organization. See [Live data sources](/integrations/live-data-sources).
-- **Admin role** in the Lightdash project.
+- **Developer or Admin role** in the Lightdash project.
 - **Your PostHog region**, US Cloud or EU Cloud. Check the address you use for PostHog: `us.posthog.com` or `eu.posthog.com`.
 - **One of these PostHog credentials:**
   - An account on the PostHog project, to use **Sign in with PostHog**. This option appears only when your Lightdash instance has a PostHog sign-in app configured.
@@ -17,15 +16,15 @@ The PostHog [live data source](/integrations/live-data-sources) reads one PostHo
 ## Connect PostHog
 
 1. On the nav bar, click **Browse** → **Semantic Layer**.
-2. In the sidebar, select **Live data sources**, then click **Add**.
+2. Click **Add** → **Live data source**.
 3. Select **PostHog**.
 4. Under **Connect with**, choose **Sign in** or **API key**, then choose your **Region**.
 5. If you chose **API key**, enter the **Project ID** and **Personal API key**, then click **Test**. The **Scopes** card lists the scope the key needs.
-6. Under **Details**, check the **Name** and **Explore prefix**. People see the name in Explore and agents use it to refer to the source. The prefix is filled in from the name and can't be changed later. See [Explore prefix](/integrations/live-data-sources#explore-prefix).
+6. Under **Details**, check the **Name**. People see the name in Explore and agents use it to refer to the source.
 7. Click **Continue to PostHog** and pick the project, or click **Add source** if you used a key.
 
 <Frame>
-  <img src="/images/integrations/live-data-sources/add-posthog-source.png" alt="The Add PostHog source dialog with the query:read scope, Region set to US Cloud, Project ID and Personal API key fields with a Test button, and Name and Explore prefix under Details" />
+  <img src="/images/integrations/live-data-sources/posthog-config.png" alt="The Add PostHog source dialog with the query:read scope, Connect with and Region under Authentication, Project ID and Personal API key fields with a Test button, and Name under Details" />
 </Frame>
 
 Lightdash reads the project's event and person properties, and adds an **Events** table to Explore.
@@ -39,7 +38,7 @@ Lightdash reads the project's event and person properties, and adds an **Events*
 | Event name | Such as `$pageview` or a custom event |
 | Distinct ID | The ID the event was captured with |
 | Person ID | The person after identify and merges |
-| Current URL, Pathname, Referring domain, UTM source, Browser, OS, Device type, Country | Common event properties |
+| Current URL, Path, Referring domain, UTM source, Browser, Operating system, Device type, Country code | Common event properties. Country code is the two-letter code from the IP address |
 
 ## Metrics
 
@@ -47,9 +46,9 @@ Lightdash reads the project's event and person properties, and adds an **Events*
 | --- | --- |
 | Events | Events captured |
 | Unique users | Distinct people, after identify and merges |
-| Unique sessions | Distinct sessions |
+| Unique sessions | Distinct sessions. Events without a session ID aren't counted |
 
-Lightdash also adds the event properties and person properties defined in your project as dimensions, up to 2,000. Internal PostHog properties are left out. Click **Refresh** next to **Fields** on the source's **Settings** tab after you add properties in PostHog, and turn **In use** off for anything people or agents shouldn't query. See [Dimensions and metrics](/integrations/live-data-sources/set-up-and-manage#dimensions-and-metrics).
+Lightdash also adds the event properties and person properties defined in your project as dimensions, up to 2,000 of each. Person property dimensions start with **Person**, such as **Person email**. PostHog's own properties, whose names start with `$`, and ad click IDs such as `gclid` are left out. Properties start out of use: pick the ones people need in the Semantic Layer. Click **Refresh** at the top of the source's page after you add properties in PostHog. See [Dimensions and metrics](/integrations/live-data-sources/set-up-and-manage#dimensions-and-metrics).
 
 ## Supported features
 
@@ -68,21 +67,26 @@ Lightdash also adds the event properties and person properties defined in your p
 | --- | --- |
 | Default date range | Last 30 days, when the query has no filter on Event date |
 | Most rows per query | 49,999 |
-| Timeout | 10 seconds |
-| Queries at once | 3 per source |
+| Timeout | 10 seconds of running time in PostHog, after up to 30 seconds in its queue |
+| Concurrent requests | 3 per source |
 | Calls per minute | 240 per source |
 | Calls per hour | 2,400 per source |
-
-Funnels, retention and user paths aren't available from the PostHog source. Ask for events or unique users by event, date or property instead.
 
 ## Example questions
 
 - *"Daily unique users who triggered `signed_up` over the last two weeks."*
 - *"Top 10 pathnames by pageviews this month."*
-- *"Unique sessions by country and device type last week."*
+- *"Unique sessions by country code and device type last week."*
+- *"How many unique users triggered `export_clicked` between 3 March and 19 April?"*
 
 ## Troubleshooting
 
 **PostHog rejected the API key.** Check that the region matches your PostHog project: a key from an EU project is rejected by US Cloud, and a key from a US project is rejected by EU Cloud. Then check that the key has the **Query Read** scope and access to the project ID you entered.
 
-**A property is missing.** Click **Refresh** next to **Fields** on the source's **Settings** tab, then check that the property's dimension is **In use**. Property names must start with a letter, `_` or `$`, and contain only letters, numbers, `_` and `$`.
+**PostHog project was not found in the connection's region.** Check the **Project ID** and the **Region**.
+
+**PostHog query budget exceeded.** The source made too many calls to PostHog. Wait for the time the message gives, or a minute, and run the query again.
+
+**PostHog stopped the query after 10 seconds.** Narrow the date range, or group by fewer or coarser dimensions.
+
+**A property is missing.** Click **Refresh** at the top of the source's page, then check that the property's dimension is **In use**. Property names must start with a letter, `_` or `$`, contain only letters, numbers, `_` and `$`, and be at most 100 characters long.
